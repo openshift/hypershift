@@ -15,6 +15,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -56,6 +57,12 @@ func registryOverridesTestDeployment(name string, images ...string) appsv1.Deplo
 		d.Spec.Template.Spec.Containers = append(d.Spec.Template.Spec.Containers, corev1.Container{Name: containerName, Image: image})
 	}
 	return d
+}
+
+func registryOverridesTestCronJob(name, image string) batchv1.CronJob {
+	c := batchv1.CronJob{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-hc", Name: name}}
+	c.Spec.JobTemplate.Spec.Template.Spec.Containers = []corev1.Container{{Name: name, Image: image}}
+	return c
 }
 
 func registryOverridesTestStatefulSet(name string, images ...string) appsv1.StatefulSet {
@@ -508,11 +515,15 @@ func TestRegistryOverridesCheckImages(t *testing.T) {
 		name      string
 		change    func([]appsv1.Deployment, []appsv1.StatefulSet) ([]appsv1.Deployment, []appsv1.StatefulSet)
 		overrides map[string]string
+		cronJobs  []batchv1.CronJob
 		want      bool
 		reason    string
 		wantError bool
 	}{
 		{name: "When every workload runs mirror images and is rolled out, it should report done", want: true},
+		{name: "When a CronJob template runs mirror images, it should report done", cronJobs: []batchv1.CronJob{registryOverridesTestCronJob("olm-collect-profiles", mirrored)}, want: true},
+		{name: "When a CronJob template still uses a source, it should name it", cronJobs: []batchv1.CronJob{registryOverridesTestCronJob("olm-collect-profiles", source)}, reason: "CronJob clusters-hc/olm-collect-profiles container olm-collect-profiles still uses"},
+		{name: "When a CronJob template runs the HO image, it should be ignored", cronJobs: []batchv1.CronJob{registryOverridesTestCronJob("olm-collect-profiles", registryOverridesTestHO)}, want: true},
 		{name: "When a container still uses a source, it should name it", change: func(d []appsv1.Deployment, s []appsv1.StatefulSet) ([]appsv1.Deployment, []appsv1.StatefulSet) {
 			d[1].Spec.Template.Spec.Containers[0].Image = source
 			return d, s
@@ -571,7 +582,7 @@ func TestRegistryOverridesCheckImages(t *testing.T) {
 			if tt.overrides != nil {
 				o = tt.overrides
 			}
-			got, reason, err := registryOverridesCheckImages(deployments, statefulSets, o, registryOverridesTestHO, mandatory)
+			got, reason, err := registryOverridesCheckImages(deployments, statefulSets, tt.cronJobs, o, registryOverridesTestHO, mandatory)
 			if tt.wantError {
 				if err == nil {
 					t.Fatalf("want error, got %t, %q", got, reason)
@@ -661,6 +672,272 @@ func TestRegistryOverridesPullSecret(t *testing.T) {
 			}
 			if err != nil || string(got) != `{"auths":{}}` {
 				t.Fatalf("got %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestRegistryOverridesPrimaryContainer(t *testing.T) {
+	t.Run("When a container is named after the Deployment, it should return it", func(t *testing.T) {
+		d := registryOverridesTestDeployment("control-plane-operator", "sidecar-first", "img")
+		d.Spec.Template.Spec.Containers[0].Name, d.Spec.Template.Spec.Containers[1].Name = "sidecar", "control-plane-operator"
+		c, err := registryOverridesPrimaryContainer(&d)
+		if err != nil || c.Image != "img" {
+			t.Fatalf("got %v, %v; want image img", c, err)
+		}
+	})
+	t.Run("When no container is named after the Deployment, it should fail", func(t *testing.T) {
+		d := registryOverridesTestDeployment("control-plane-operator", "img")
+		d.Spec.Template.Spec.Containers[0].Name = "other"
+		if _, err := registryOverridesPrimaryContainer(&d); err == nil {
+			t.Fatal("want error")
+		}
+	})
+}
+
+func TestRegistryOverridesCurrentPods(t *testing.T) {
+	expected := registryOverridesTestOverrides()
+	formatted := registryOverridesFormatArg(expected)
+	pod := func(name string, args ...string) corev1.Pod {
+		return corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-hc", Name: name},
+			Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "ignition-server", Args: args}}},
+			Status:     corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
+		}
+	}
+	terminating := pod("terminating", "--registry-overrides="+formatted)
+	terminating.DeletionTimestamp = &metav1.Time{}
+	notReady := pod("not-ready", "--registry-overrides="+formatted)
+	notReady.Status.Conditions[0].Status = corev1.ConditionFalse
+	inCommand := pod("in-command")
+	inCommand.Spec.Containers[0].Command = []string{"/usr/bin/control-plane-operator", "ignition-server", "--registry-overrides", formatted}
+	onSidecar := pod("on-sidecar")
+	onSidecar.Spec.Containers = append(onSidecar.Spec.Containers, corev1.Container{Name: "sidecar", Args: []string{"--registry-overrides=" + formatted}})
+	for _, tt := range []struct {
+		name      string
+		pods      []corev1.Pod
+		want      []string
+		wantError bool
+	}{
+		{name: "When pods carry the expected flag in Args or Command, it should return them sorted", pods: []corev1.Pod{pod("b", "--registry-overrides="+formatted), inCommand, pod("a", "--registry-overrides", formatted)}, want: []string{"a", "b", "in-command"}},
+		{name: "When a pod is terminating, it should skip it", pods: []corev1.Pod{terminating}},
+		{name: "When a pod is not Ready, it should skip it", pods: []corev1.Pod{notReady}},
+		{name: "When a pod runs the old spec without the flag, it should skip it", pods: []corev1.Pod{pod("old", "start")}},
+		{name: "When a pod has a different mapping, it should skip it", pods: []corev1.Pod{pod("other", "--registry-overrides="+registryOverridesTestSource+"=other.example.com/x")}},
+		{name: "When only a sidecar carries the flag, it should skip the pod", pods: []corev1.Pod{onSidecar}},
+		{name: "When the flag value is malformed, it should fail", pods: []corev1.Pod{pod("bad", "--registry-overrides=broken")}, wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := registryOverridesCurrentPods(tt.pods, "ignition-server", expected)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("want error, got %v", got)
+				}
+				return
+			}
+			if err != nil || !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("got %v, %v; want %v", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegistryOverridesLogHasLine(t *testing.T) {
+	for _, tt := range []struct {
+		name, log string
+		want      bool
+	}{
+		{name: "When a line contains the text, it should report it", log: "a\nI1109 tokensecret_controller.go:331] \"IgnitionProvider generated payload\"\nb\n", want: true},
+		{name: "When the text is on the last line without newline, it should report it", log: "a\nIgnitionProvider generated payload", want: true},
+		{name: "When no line contains the text, it should report not found", log: "Reconciling\ngot ignition payload\n"},
+		{name: "When the log is empty, it should report not found"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := registryOverridesLogHasLine(strings.NewReader(tt.log), "IgnitionProvider generated payload")
+			if err != nil || got != tt.want {
+				t.Fatalf("got %t, %v; want %t", got, err, tt.want)
+			}
+		})
+	}
+	t.Run("When a line exceeds the scanner buffer, it should fail", func(t *testing.T) {
+		if _, err := registryOverridesLogHasLine(strings.NewReader(strings.Repeat("x", 2*1024*1024)), "y"); err == nil {
+			t.Fatal("want error")
+		}
+	})
+}
+
+func TestRegistryOverridesCheckPayloadsGenerated(t *testing.T) {
+	nodePool := func(name, cluster string, conditions ...hyperv1.NodePoolCondition) hyperv1.NodePool {
+		return hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: name},
+			Spec:       hyperv1.NodePoolSpec{ClusterName: cluster},
+			Status:     hyperv1.NodePoolStatus{Conditions: conditions},
+		}
+	}
+	valid := hyperv1.NodePoolCondition{Type: hyperv1.NodePoolValidGeneratedPayloadConditionType, Status: corev1.ConditionTrue, Reason: hyperv1.AsExpectedReason}
+	invalid := hyperv1.NodePoolCondition{Type: hyperv1.NodePoolValidGeneratedPayloadConditionType, Status: corev1.ConditionFalse, Reason: "InvalidConfig", Message: "failed to generate payload"}
+	for _, tt := range []struct {
+		name      string
+		nodePools []hyperv1.NodePool
+		want      bool
+		reason    string
+	}{
+		{name: "When every NodePool of the cluster has a valid payload, it should report done", nodePools: []hyperv1.NodePool{nodePool("a", "hc", valid), nodePool("b", "hc", valid), nodePool("other", "other", invalid)}, want: true},
+		{name: "When a NodePool has an invalid payload, it should report its reason", nodePools: []hyperv1.NodePool{nodePool("a", "hc", valid), nodePool("b", "hc", invalid)}, reason: "NodePool clusters/b ValidGeneratedPayload is False: InvalidConfig: failed to generate payload"},
+		{name: "When a NodePool has no condition, it should report it", nodePools: []hyperv1.NodePool{nodePool("a", "hc")}, reason: "has no ValidGeneratedPayload condition"},
+		{name: "When the cluster has no NodePool, it should report it", nodePools: []hyperv1.NodePool{nodePool("other", "other", valid)}, reason: "no NodePool for cluster hc"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, reason := registryOverridesCheckPayloadsGenerated(tt.nodePools, "hc")
+			if got != tt.want || !strings.Contains(reason, tt.reason) {
+				t.Fatalf("got %t, %q; want %t, %q", got, reason, tt.want, tt.reason)
+			}
+		})
+	}
+}
+
+func TestRegistryOverridesCheckDaemonSet(t *testing.T) {
+	overrides := registryOverridesTestOverrides()
+	mirrored := registryOverridesTestMirror + registryOverridesTestDigest
+	healthy := func() *appsv1.DaemonSet {
+		return &appsv1.DaemonSet{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "global-pull-secret-syncer", Generation: 2},
+			Spec: appsv1.DaemonSetSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "global-pull-secret-syncer", Image: mirrored}},
+			}}},
+			Status: appsv1.DaemonSetStatus{ObservedGeneration: 2, DesiredNumberScheduled: 2, UpdatedNumberScheduled: 2, NumberAvailable: 2},
+		}
+	}
+	for _, tt := range []struct {
+		name      string
+		change    func(*appsv1.DaemonSet)
+		image     string
+		want      bool
+		reason    string
+		wantError bool
+	}{
+		{name: "When the DaemonSet runs the mirror image on every scheduled node, it should report done", want: true},
+		{name: "When the container runs another image, it should report it", change: func(d *appsv1.DaemonSet) {
+			d.Spec.Template.Spec.Containers[0].Image = registryOverridesTestSource + registryOverridesTestDigest
+		}, reason: "runs " + registryOverridesTestSource},
+		{name: "When the container is missing, it should report it", change: func(d *appsv1.DaemonSet) { d.Spec.Template.Spec.Containers[0].Name = "other" }, reason: "has no container global-pull-secret-syncer"},
+		{name: "When the spec is not observed yet, it should report the generation", change: func(d *appsv1.DaemonSet) { d.Status.ObservedGeneration = 1 }, reason: "observed generation"},
+		{name: "When no node is eligible, it should report it", change: func(d *appsv1.DaemonSet) {
+			d.Status.DesiredNumberScheduled, d.Status.UpdatedNumberScheduled, d.Status.NumberAvailable = 0, 0, 0
+		}, reason: "scheduled on no node"},
+		{name: "When pods are still updating, it should report the updated count", change: func(d *appsv1.DaemonSet) { d.Status.UpdatedNumberScheduled = 1 }, reason: "1 updated of 2"},
+		{name: "When an updated pod cannot pull its image, it should report it unavailable", change: func(d *appsv1.DaemonSet) {
+			d.Status.NumberAvailable, d.Status.NumberUnavailable = 1, 1
+		}, reason: "1 available and 1 unavailable of 2"},
+		{name: "When the expected image is not on a mirror, it should fail", image: registryOverridesTestSource + registryOverridesTestDigest, wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := healthy()
+			if tt.change != nil {
+				tt.change(d)
+			}
+			image := mirrored
+			if tt.image != "" {
+				image = tt.image
+			}
+			got, reason, err := registryOverridesCheckDaemonSet(d, image, overrides)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("want error, got %t, %q", got, reason)
+				}
+				return
+			}
+			if err != nil || got != tt.want || !strings.Contains(reason, tt.reason) {
+				t.Fatalf("got %t, %q, %v; want %t, %q", got, reason, err, tt.want, tt.reason)
+			}
+		})
+	}
+	t.Run("When the DaemonSet is nil, it should fail without panic", func(t *testing.T) {
+		if _, _, err := registryOverridesCheckDaemonSet(nil, mirrored, overrides); err == nil {
+			t.Fatal("want error")
+		}
+	})
+}
+
+func TestRegistryOverridesNeedsTrustBundlePatch(t *testing.T) {
+	hc := func(bundle string) *hyperv1.HostedCluster {
+		h := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "hc"}}
+		if bundle != "" {
+			h.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: bundle}
+		}
+		return h
+	}
+	for _, tt := range []struct {
+		name      string
+		hc        *hyperv1.HostedCluster
+		want      bool
+		wantError bool
+	}{
+		{name: "When the HC has no trust bundle, it should need the patch", hc: hc(""), want: true},
+		{name: "When the HC already uses the job bundle, it should not need the patch", hc: hc("registry-overrides-mirror-ca")},
+		{name: "When the HC uses another bundle, it should fail", hc: hc("user-ca-bundle"), wantError: true},
+		{name: "When the HC is nil, it should fail without panic", wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := registryOverridesNeedsTrustBundlePatch(tt.hc, "registry-overrides-mirror-ca")
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("want error, got %t", got)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("got %t, %v; want %t", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func registryOverridesTestNodePool(name, cluster, config string, replicas int32, conditions ...hyperv1.NodePoolCondition) hyperv1.NodePool {
+	return hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: name, Annotations: map[string]string{"hypershift.openshift.io/nodePoolCurrentConfig": config}},
+		Spec:       hyperv1.NodePoolSpec{ClusterName: cluster, Replicas: ptr.To(int32(2))},
+		Status:     hyperv1.NodePoolStatus{Replicas: replicas, Conditions: conditions},
+	}
+}
+
+func TestRegistryOverridesNodePoolConfigs(t *testing.T) {
+	t.Run("When NodePools belong to several clusters, it should return the config of those of the cluster", func(t *testing.T) {
+		got := registryOverridesNodePoolConfigs([]hyperv1.NodePool{
+			registryOverridesTestNodePool("a", "hc", "h1", 2),
+			registryOverridesTestNodePool("b", "hc", "", 2),
+			registryOverridesTestNodePool("other", "other", "h3", 2),
+		}, "hc")
+		if want := map[string]string{"a": "h1", "b": ""}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestRegistryOverridesCheckNodePoolsRolledOut(t *testing.T) {
+	updating := hyperv1.NodePoolCondition{Type: hyperv1.NodePoolUpdatingConfigConditionType, Status: corev1.ConditionTrue}
+	notUpdating := hyperv1.NodePoolCondition{Type: hyperv1.NodePoolUpdatingConfigConditionType, Status: corev1.ConditionFalse}
+	baseline := map[string]string{"a": "old"}
+	for _, tt := range []struct {
+		name      string
+		nodePools []hyperv1.NodePool
+		baseline  map[string]string
+		want      bool
+		reason    string
+	}{
+		{name: "When the config changed and the NodePool is at its replicas, it should report done", nodePools: []hyperv1.NodePool{registryOverridesTestNodePool("a", "hc", "new", 2, notUpdating)}, baseline: baseline, want: true},
+		{name: "When the config has not changed yet, it should report it", nodePools: []hyperv1.NodePool{registryOverridesTestNodePool("a", "hc", "old", 2, notUpdating)}, baseline: baseline, reason: "NodePool clusters/a has not completed the config rollout"},
+		{name: "When the config changed but UpdatingConfig is True, it should report it", nodePools: []hyperv1.NodePool{registryOverridesTestNodePool("a", "hc", "new", 2, updating)}, baseline: baseline, reason: "is updating its config"},
+		{name: "When replicas are missing, it should report them", nodePools: []hyperv1.NodePool{registryOverridesTestNodePool("a", "hc", "new", 1)}, baseline: baseline, reason: "has 1 of 2 replicas"},
+		{name: "When there is no baseline and nothing is updating, it should report done", nodePools: []hyperv1.NodePool{registryOverridesTestNodePool("a", "hc", "old", 2, notUpdating)}, want: true},
+		{name: "When there is no baseline and a rollout is in progress, it should report it", nodePools: []hyperv1.NodePool{registryOverridesTestNodePool("a", "hc", "old", 2, updating)}, reason: "is updating its config"},
+		{name: "When a NodePool of another cluster is updating, it should be ignored", nodePools: []hyperv1.NodePool{registryOverridesTestNodePool("a", "hc", "new", 2), registryOverridesTestNodePool("other", "other", "x", 0, updating)}, baseline: baseline, want: true},
+		{name: "When the cluster has no NodePool, it should report it", nodePools: []hyperv1.NodePool{registryOverridesTestNodePool("other", "other", "x", 2)}, reason: "no NodePool for cluster hc"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, reason := registryOverridesCheckNodePoolsRolledOut(tt.nodePools, "hc", tt.baseline)
+			if got != tt.want || !strings.Contains(reason, tt.reason) {
+				t.Fatalf("got %t, %q; want %t, %q", got, reason, tt.want, tt.reason)
 			}
 		})
 	}
