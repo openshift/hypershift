@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	kasconst "github.com/openshift/hypershift/pkg/kas"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
+	pkgoauth "github.com/openshift/hypershift/pkg/oauth"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -849,6 +850,26 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			},
 			expectKubeadminPasswordHashSecretToExist: false,
 		},
+		"When kubeadminPasswordSecret does not exist and a hash secret exists, it should delete the hash secret": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: hccomanifests.OAuthDeployment(testNamespace).ObjectMeta,
+				},
+			},
+			existingHashSecret: &corev1.Secret{
+				ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
+				Data: map[string][]byte{
+					"kubeadmin": []byte("stale-hash"),
+				},
+			},
+			expectKubeadminPasswordHashSecretToExist: false,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -881,6 +902,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 					actualKubeAdminSecret.Data["kubeadmin"],
 					passwordSecret.Data["password"],
 				)).To(BeNil())
+				g.Expect(passwordSecret.Annotations).To(HaveKeyWithValue(pkgoauth.KubeadminSecretHashAnnotation, string(actualKubeAdminSecret.Data["kubeadmin"])))
 			} else {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
