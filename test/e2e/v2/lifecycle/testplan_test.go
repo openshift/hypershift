@@ -439,6 +439,32 @@ testMatirx: {}
 			wantError: true,
 		},
 		{
+			name: "When parsing YAML with failOnEmpty on a step, it should deserialize it",
+			yaml: true,
+			input: `name: registry-overrides
+platform: aws
+testMatrix:
+  sequential:
+    - name: registry-overrides
+      steps:
+        - name: registry-overrides
+          variant: public
+          labelFilter: registry-overrides
+          failOnEmpty: true
+`,
+			want: &TestPlan{
+				Name:     "registry-overrides",
+				Platform: "aws",
+				TestMatrix: TestMatrix{
+					Sequential: []SequentialGroup{
+						{Name: "registry-overrides", Steps: []TestGroup{
+							{Name: "registry-overrides", Variant: "public", LabelFilter: "registry-overrides", FailOnEmpty: true},
+						}},
+					},
+				},
+			},
+		},
+		{
 			name: "When parsing YAML with parallel groups, it should deserialize correctly",
 			yaml: true,
 			input: `name: smoke
