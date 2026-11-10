@@ -15,6 +15,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	kasconst "github.com/openshift/hypershift/pkg/kas"
@@ -22,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -4204,5 +4206,28 @@ func TestReconcileConfigOperatorReconciliationCondition(t *testing.T) {
 			g.Expect(condition.Message).To(Equal(tc.expectedMessage))
 			g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
 		})
+	}
+}
+
+func TestReconcileAzureCloudNodeManager(t *testing.T) {
+	g := NewWithT(t)
+
+	guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+	r := &reconciler{
+		client:                 guestClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+	}
+
+	errs := r.reconcileAzureCloudNodeManager(t.Context(), "cloud-node-manager-image")
+	g.Expect(errs).To(BeEmpty())
+
+	daemonSet := ccm.CloudNodeManagerDaemonSet()
+	g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(daemonSet), daemonSet)).To(Succeed())
+
+	g.Expect(karpenterutil.KarpenterBaseTaints).ToNot(BeEmpty())
+	for _, taint := range karpenterutil.KarpenterBaseTaints {
+		g.Expect(daemonSet.Spec.Template.Spec.Tolerations).To(ContainElement(Satisfy(func(toleration corev1.Toleration) bool {
+			return toleration.ToleratesTaint(logr.Discard(), &taint, false)
+		})), "cloud node manager must tolerate Karpenter taint %s", taint.Key)
 	}
 }
