@@ -148,6 +148,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&opts.GenerateSSH, "generate-ssh", opts.GenerateSSH, "If true, generate SSH keys")
 	flags.StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
 	flags.StringVar(&opts.EtcdStorageSize, "etcd-storage-size", opts.EtcdStorageSize, "The storage size for etcd data volume. Example: 8Gi")
+	flags.StringArrayVar(&opts.EtcdShards, "etcd-shard", opts.EtcdShards, "A named persistent etcd shard routing the given resources away from the default etcd. Format: name=<name>,resources=<resource1+resource2...> (resources are plural names in the core API group; apiGroup=<group> is optional). Shards require the EtcdSharding feature gate. Can be specified multiple times.")
 	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	flags.StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
 	flags.StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
@@ -192,6 +193,7 @@ type RawCreateOptions struct {
 	ControlPlaneOperatorImage        string
 	EtcdStorageClass                 string
 	EtcdStorageSize                  string
+	EtcdShards                       []string
 	FIPS                             bool
 	GenerateSSH                      bool
 	ImageContentSources              string
@@ -489,7 +491,59 @@ func applyEtcdConfig(cluster *hyperv1.HostedCluster, opts *CreateOptions) error 
 		}
 		cluster.Spec.Etcd.Managed.Storage.PersistentVolume.Size = &etcdStorageSize
 	}
+	if len(opts.EtcdShards) > 0 {
+		shards, err := parseEtcdShards(opts.EtcdShards)
+		if err != nil {
+			return err
+		}
+		cluster.Spec.Etcd.Managed.Shards = shards
+	}
 	return nil
+}
+
+// parseEtcdShards parses --etcd-shard flag values of the form
+// name=<name>,resources=<resource1+resource2>[,apiGroup=<group>] into
+// ManagedEtcdShardSpecs. Every shard is persistent-volume backed; EmptyDir
+// shards are not exposed through the CLI.
+func parseEtcdShards(values []string) ([]hyperv1.ManagedEtcdShardSpec, error) {
+	shards := make([]hyperv1.ManagedEtcdShardSpec, 0, len(values))
+	for _, value := range values {
+		fields := strings.Split(value, ",")
+		var spec hyperv1.ManagedEtcdShardSpec
+		spec.Storage.Type = hyperv1.PersistentVolumeEtcdShardStorage
+		apiGroup := ""
+		var resourceNames []string
+		for _, field := range fields {
+			key, rawValue, found := strings.Cut(field, "=")
+			if !found {
+				return nil, fmt.Errorf("invalid --etcd-shard value %q: field %q is not in key=value form", value, field)
+			}
+			switch key {
+			case "name":
+				spec.Name = rawValue
+			case "apiGroup":
+				apiGroup = rawValue
+			case "resources":
+				resourceNames = strings.Split(rawValue, "+")
+			default:
+				return nil, fmt.Errorf("invalid --etcd-shard value %q: unknown key %q (supported: name, resources, apiGroup)", value, key)
+			}
+		}
+		for _, resource := range resourceNames {
+			if resource == "" {
+				return nil, fmt.Errorf("invalid --etcd-shard value %q: empty resource name", value)
+			}
+			spec.Resources = append(spec.Resources, hyperv1.EtcdShardResource{APIGroup: ptr.To(apiGroup), Resource: resource})
+		}
+		if spec.Name == "" {
+			return nil, fmt.Errorf("invalid --etcd-shard value %q: name is required", value)
+		}
+		if len(spec.Resources) == 0 {
+			return nil, fmt.Errorf("invalid --etcd-shard value %q: resources is required", value)
+		}
+		shards = append(shards, spec)
+	}
+	return shards, nil
 }
 
 func applySSHKey(prototype *resources, opts *CreateOptions) error {
