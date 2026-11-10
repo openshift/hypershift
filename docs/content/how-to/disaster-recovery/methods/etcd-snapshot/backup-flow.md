@@ -251,8 +251,8 @@ graph LR
     ANNOTATION -.->|read during restore| RESTORE[Restore plugin]
 ```
 
-- **HostedCluster status**: Persists across `HCPEtcdBackup` CR deletions (retention). Available for operational reference.
-- **Backup annotation**: Stored inside the Velero backup archive. This is the path used during restore, since Velero strips status fields.
+- **HostedCluster status**: Persists across `HCPEtcdBackup` CR deletions (retention). Available for operational reference. Both the single-shard compatibility URL (`lastSuccessfulEtcdBackupURL`) and the versioned per-shard mapping (`lastSuccessfulEtcdShardBackupURLs`, one entry per persistent shard keyed by its public identity) are persisted, so named-shard URLs survive retention.
+- **Backup annotation**: Stored inside the Velero backup archive. This is the path used during restore, since Velero strips status fields. The OADP plugin archives the per-shard mapping alongside the single URL and, during restore, validates it against `spec.etcd.managed.shards` (failing when a persistent shard has no entry) and injects a per-shard `restoreSnapshotURL`.
 
 ## Failed Backups Leave Objects Behind
 

@@ -23614,8 +23614,8 @@ graph LR
     ANNOTATION -.->|read during restore| RESTORE[Restore plugin]
 ```
 
-- **HostedCluster status**: Persists across `HCPEtcdBackup` CR deletions (retention). Available for operational reference.
-- **Backup annotation**: Stored inside the Velero backup archive. This is the path used during restore, since Velero strips status fields.
+- **HostedCluster status**: Persists across `HCPEtcdBackup` CR deletions (retention). Available for operational reference. Both the single-shard compatibility URL (`lastSuccessfulEtcdBackupURL`) and the versioned per-shard mapping (`lastSuccessfulEtcdShardBackupURLs`, one entry per persistent shard keyed by its public identity) are persisted, so named-shard URLs survive retention.
+- **Backup annotation**: Stored inside the Velero backup archive. This is the path used during restore, since Velero strips status fields. The OADP plugin archives the per-shard mapping alongside the single URL and, during restore, validates it against `spec.etcd.managed.shards` (failing when a persistent shard has no entry) and injects a per-shard `restoreSnapshotURL`.
 
 ## Failed Backups Leave Objects Behind
 
@@ -24507,6 +24507,7 @@ support must be closed before `EtcdSharding` can promote beyond TechPreview.
 | RBAC (fetch-certs) | `etcd-client-tls` secret only | `reconciler.go:ensureRBAC` |
 | Status | Single `snapshotURL` | `etcdbackup_types.go:HCPEtcdBackupStatus` |
 | HostedCluster status | Single `LastSuccessfulEtcdBackupURL` | `hostedcluster_types.go` |
+| HostedCluster shard mapping | New: `LastSuccessfulEtcdShardBackupURLs` persists a versioned per-shard mapping (one entry per persistent shard, keyed by public identity) so named-shard URLs survive HCPEtcdBackup retention; restores validate it via `MissingPersistentShards` and fail when a persistent shard is missing | `hostedcluster_types.go` |
 | Restore | Single `RestoreSnapshotURL` on `ManagedEtcdStorageSpec` | `hostedcluster_types.go` |
 | Restore init container | Only injected on default `etcd` StatefulSet | `statefulset.go:adaptStatefulSet` |
 | Restore condition | Only checks default `etcd` StatefulSet pods | `hostedcontrolplane_controller.go:etcdRestoredCondition` |
@@ -54483,7 +54484,8 @@ Required when storageType is &ldquo;AzureBlob&rdquo;, and forbidden otherwise.</
 ###HCPEtcdShardSnapshot { #hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">HCPEtcdBackupStatus</a>)
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">HCPEtcdBackupStatus</a>,
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>)
 </p>
 <p>
 <p>HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.</p>
@@ -55333,6 +55335,29 @@ string
 <p>lastSuccessfulEtcdBackupURL is the cloud storage URL of the most recent
 successful etcd backup snapshot. Persisted here because HCPEtcdBackup CRs
 are ephemeral and may be deleted by retention policies.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>lastSuccessfulEtcdShardBackupURLs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot">
+[]HCPEtcdShardSnapshot
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>lastSuccessfulEtcdShardBackupURLs is the versioned per-shard snapshot
+URL mapping (mapping format v1) from the most recent successful etcd
+backup: one entry per persistent shard, keyed by the public shard
+identity (&ldquo;default&rdquo; for the default shard, or the
+ManagedEtcdShardSpec.name for named shards). This is the multi-shard
+equivalent of lastSuccessfulEtcdBackupURL and, like it, is persisted on
+the HostedCluster because HCPEtcdBackup CRs are ephemeral and may be
+deleted by retention policies. Restores must validate the mapping
+against spec.etcd.managed.shards and fail when a persistent shard has
+no entry (see MissingPersistentShards).</p>
 </td>
 </tr>
 <tr>

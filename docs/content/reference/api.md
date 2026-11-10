@@ -10333,7 +10333,8 @@ Required when storageType is &ldquo;AzureBlob&rdquo;, and forbidden otherwise.</
 ###HCPEtcdShardSnapshot { #hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">HCPEtcdBackupStatus</a>)
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">HCPEtcdBackupStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>)
 </p>
 <p>
 <p>HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.</p>
@@ -11183,6 +11184,29 @@ string
 <p>lastSuccessfulEtcdBackupURL is the cloud storage URL of the most recent
 successful etcd backup snapshot. Persisted here because HCPEtcdBackup CRs
 are ephemeral and may be deleted by retention policies.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>lastSuccessfulEtcdShardBackupURLs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot">
+[]HCPEtcdShardSnapshot
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>lastSuccessfulEtcdShardBackupURLs is the versioned per-shard snapshot
+URL mapping (mapping format v1) from the most recent successful etcd
+backup: one entry per persistent shard, keyed by the public shard
+identity (&ldquo;default&rdquo; for the default shard, or the
+ManagedEtcdShardSpec.name for named shards). This is the multi-shard
+equivalent of lastSuccessfulEtcdBackupURL and, like it, is persisted on
+the HostedCluster because HCPEtcdBackup CRs are ephemeral and may be
+deleted by retention policies. Restores must validate the mapping
+against spec.etcd.managed.shards and fail when a persistent shard has
+no entry (see MissingPersistentShards).</p>
 </td>
 </tr>
 <tr>

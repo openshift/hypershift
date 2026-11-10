@@ -18,6 +18,7 @@ support must be closed before `EtcdSharding` can promote beyond TechPreview.
 | RBAC (fetch-certs) | `etcd-client-tls` secret only | `reconciler.go:ensureRBAC` |
 | Status | Single `snapshotURL` | `etcdbackup_types.go:HCPEtcdBackupStatus` |
 | HostedCluster status | Single `LastSuccessfulEtcdBackupURL` | `hostedcluster_types.go` |
+| HostedCluster shard mapping | New: `LastSuccessfulEtcdShardBackupURLs` persists a versioned per-shard mapping (one entry per persistent shard, keyed by public identity) so named-shard URLs survive HCPEtcdBackup retention; restores validate it via `MissingPersistentShards` and fail when a persistent shard is missing | `hostedcluster_types.go` |
 | Restore | Single `RestoreSnapshotURL` on `ManagedEtcdStorageSpec` | `hostedcluster_types.go` |
 | Restore init container | Only injected on default `etcd` StatefulSet | `statefulset.go:adaptStatefulSet` |
 | Restore condition | Only checks default `etcd` StatefulSet pods | `hostedcontrolplane_controller.go:etcdRestoredCondition` |
