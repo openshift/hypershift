@@ -2412,7 +2412,9 @@ type ManagedEtcdShardSpec struct {
 	// restoreSnapshotURL allows an optional URL to be provided where an etcd
 	// snapshot for this shard can be downloaded. This snapshot will be restored
 	// on initial startup, only when the shard's PV is empty.
-	// When set, it must be between 1 and 1024 characters.
+	// When set, it must be between 1 and 2048 characters, matching the maximum
+	// length of a snapshot URL recorded in HCPEtcdBackup status (presigned URLs
+	// with signature query parameters can be long).
 	// When omitted, the shard starts with an empty data directory and no
 	// snapshot is restored.
 	// It must be a URL with scheme https or s3.
@@ -2421,7 +2423,7 @@ type ManagedEtcdShardSpec struct {
 	// It cannot be added or removed after creation.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="restoreSnapshotURL is immutable"
 	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="restoreSnapshotURL must be a valid URL with scheme https or s3"
 	RestoreSnapshotURL string `json:"restoreSnapshotURL,omitempty"`

@@ -28,6 +28,7 @@ type HCPEtcdBackupStatusApplyConfiguration struct {
 	SnapshotURL        *string                                            `json:"snapshotURL,omitempty"`
 	ShardSnapshots     []HCPEtcdShardSnapshotApplyConfiguration           `json:"shardSnapshots,omitempty"`
 	EncryptionMetadata *HCPEtcdBackupEncryptionMetadataApplyConfiguration `json:"encryptionMetadata,omitempty"`
+	AttemptKeyPrefix   *string                                            `json:"attemptKeyPrefix,omitempty"`
 }
 
 // HCPEtcdBackupStatusApplyConfiguration constructs a declarative configuration of the HCPEtcdBackupStatus type for use with
@@ -75,5 +76,13 @@ func (b *HCPEtcdBackupStatusApplyConfiguration) WithShardSnapshots(values ...*HC
 // If called multiple times, the EncryptionMetadata field is set to the value of the last call.
 func (b *HCPEtcdBackupStatusApplyConfiguration) WithEncryptionMetadata(value *HCPEtcdBackupEncryptionMetadataApplyConfiguration) *HCPEtcdBackupStatusApplyConfiguration {
 	b.EncryptionMetadata = value
+	return b
+}
+
+// WithAttemptKeyPrefix sets the AttemptKeyPrefix field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AttemptKeyPrefix field is set to the value of the last call.
+func (b *HCPEtcdBackupStatusApplyConfiguration) WithAttemptKeyPrefix(value string) *HCPEtcdBackupStatusApplyConfiguration {
+	b.AttemptKeyPrefix = &value
 	return b
 }

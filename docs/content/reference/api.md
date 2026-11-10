@@ -10225,6 +10225,23 @@ HCPEtcdBackupEncryptionMetadata
 When present, at least one platform-specific encryption block must be set.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>attemptKeyPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>attemptKeyPrefix is the object key prefix used by the most recent
+backup attempt for this HCPEtcdBackup. Objects written by the attempt
+are <attemptKeyPrefix>/<shard>.db for multi-shard backups, or
+<attemptKeyPrefix>.db for single-shard backups. The field lets
+operators identify and clean up objects left behind by failed
+attempts, which are not deleted automatically.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HCPEtcdBackupStorage { #hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage }
@@ -14417,7 +14434,9 @@ string
 <p>restoreSnapshotURL allows an optional URL to be provided where an etcd
 snapshot for this shard can be downloaded. This snapshot will be restored
 on initial startup, only when the shard&rsquo;s PV is empty.
-When set, it must be between 1 and 1024 characters.
+When set, it must be between 1 and 2048 characters, matching the maximum
+length of a snapshot URL recorded in HCPEtcdBackup status (presigned URLs
+with signature query parameters can be long).
 When omitted, the shard starts with an empty data directory and no
 snapshot is restored.
 It must be a URL with scheme https or s3.

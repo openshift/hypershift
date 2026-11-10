@@ -26,6 +26,14 @@ const (
 	BackupRejectedReason              string = "BackupRejected"
 	BackupWaitingForCredentialsReason string = "BackupWaitingForCredentials"
 	EtcdUnhealthyReason               string = "EtcdUnhealthy"
+	// BackupResultIncompleteReason indicates the backup Job succeeded but the
+	// shard snapshot results it reported do not contain exactly one valid
+	// entry per expected shard (missing, duplicate, or unexpected entries).
+	BackupResultIncompleteReason string = "BackupResultIncomplete"
+	// BackupResultExtractionFailedReason indicates the shard snapshot results
+	// could not be extracted from the completed backup Job (for example the
+	// pod or its termination message is gone), after bounded retries.
+	BackupResultExtractionFailedReason string = "BackupResultExtractionFailed"
 )
 
 // HCPEtcdBackupStorageType is the type of storage for etcd backups.
@@ -232,6 +240,17 @@ type HCPEtcdBackupStatus struct {
 	// When present, at least one platform-specific encryption block must be set.
 	// +optional
 	EncryptionMetadata HCPEtcdBackupEncryptionMetadata `json:"encryptionMetadata,omitzero"`
+
+	// attemptKeyPrefix is the object key prefix used by the most recent
+	// backup attempt for this HCPEtcdBackup. Objects written by the attempt
+	// are <attemptKeyPrefix>/<shard>.db for multi-shard backups, or
+	// <attemptKeyPrefix>.db for single-shard backups. The field lets
+	// operators identify and clean up objects left behind by failed
+	// attempts, which are not deleted automatically.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	AttemptKeyPrefix string `json:"attemptKeyPrefix,omitempty"`
 }
 
 // HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.
