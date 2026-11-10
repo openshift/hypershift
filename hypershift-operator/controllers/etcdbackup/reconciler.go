@@ -437,6 +437,18 @@ func (r *HCPEtcdBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			fmt.Sprintf("rejected: backup Job %q is already running for this HCP; delete this CR and retry after the active backup completes", activeJob.Name))
 	}
 
+	// Multi-shard backups require a CPO image that supports the multi-shard
+	// backup flags. The CPO advertises this via a capability label on the HCP;
+	// feature gates control API exposure but not the deployed image. Gate Job
+	// creation on the label so the backup waits (non-terminally) until a
+	// capable CPO is deployed, instead of creating a Job that fails on an
+	// unknown flag. In-flight Jobs from before an upgrade are unaffected.
+	if len(etcdShards(hcp)) > 1 && hcp.Labels[hyperv1.MultiShardEtcdBackupCapabilityLabel] != "true" {
+		return r.setWaitingConditionAndUpdate(ctx, backup, hyperv1.BackupWaitingForCPOCapabilityReason,
+			fmt.Sprintf("waiting: multi-shard etcd backup requires a control plane operator image with multi-shard backup support (label %q is not set on the HostedControlPlane); the backup proceeds once a capable control plane operator is deployed",
+				hyperv1.MultiShardEtcdBackupCapabilityLabel))
+	}
+
 	// Validate prerequisites before creating any resources.
 	// Check credential Secret early so we don't create RBAC/NetworkPolicy unnecessarily.
 	if result, done, err := r.validatePrerequisites(ctx, backup); done || err != nil {
@@ -1279,7 +1291,7 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 
 	releaseImage := imageregistry.HCPControlPlaneReleaseImage(hcp)
 
-	cpoImage, err := r.resolveControlPlaneOperatorImage(ctx, hcp, releaseImage, pullSecretBytes)
+	cpoImage, err := r.resolveControlPlaneOperatorImage(ctx, hcp, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to resolve CPO image: %w", err)
 	}
@@ -1464,26 +1476,18 @@ func attemptKeyPrefix(backup *hyperv1.HCPEtcdBackup, timestamp int64) string {
 	return fmt.Sprintf("%s/%d", keyPrefix, timestamp)
 }
 
-// resolveControlPlaneOperatorImage resolves the CPO image for the given HCP,
-// handling annotation overrides and disconnected environments.
-func (r *HCPEtcdBackupReconciler) resolveControlPlaneOperatorImage(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage string, pullSecret []byte) (string, error) {
-	// Check for annotation override on HCP (propagated from HostedCluster)
-	if val, ok := hcp.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
-		return val, nil
-	}
-
-	// Resolve from release payload — the "hypershift" component is the CPO image
-	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, releaseImage, pullSecret)
+// resolveControlPlaneOperatorImage resolves the CPO image for the given HCP
+// using the same override chain as the CPO deployment itself
+// (imageregistry.GetControlPlaneOperatorImage: annotation, platform/version
+// overrides, release payload, HO image), so the backup Job runs the image
+// actually deployed for this control plane rather than just a mirrored
+// annotation.
+func (r *HCPEtcdBackupReconciler) resolveControlPlaneOperatorImage(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSecret []byte) (string, error) {
+	hc, err := k8sutil.HostedClusterFromAnnotation(ctx, r.Client, hcp)
 	if err != nil {
-		return "", fmt.Errorf("failed to lookup release image: %w", err)
+		return "", fmt.Errorf("failed to look up HostedCluster: %w", err)
 	}
-
-	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
-		return hypershiftImage, nil
-	}
-
-	// Fallback to HO's own image
-	return r.HypershiftOperatorImage, nil
+	return imageregistry.GetControlPlaneOperatorImage(ctx, hc, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecret)
 }
 
 // getCredentialSecretName returns the name of the credential Secret referenced

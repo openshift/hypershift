@@ -57,6 +57,14 @@ const (
 	// ControlPlaneOperatorImageAnnotation is an annotation that allows the specification of the control plane operator image.
 	// This is used for development and e2e workflows
 	ControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/control-plane-operator-image"
+	// MultiShardEtcdBackupCapabilityLabel is set to "true" on the
+	// HostedControlPlane by the control plane operator when the image actually
+	// deployed supports multi-shard etcd backup. The HyperShift operator's etcd
+	// backup controller gates multi-shard backup Job creation on it: feature
+	// gates control API exposure, but do not prove that a particular (possibly
+	// overridden or older) control plane operator image supports the
+	// multi-shard backup flags.
+	MultiShardEtcdBackupCapabilityLabel = "hypershift.openshift.io/control-plane-operator-supports-multishard-etcd-backup"
 	// ControlPlaneOperatorImageLabelsAnnotation is an annotation that allows the specification of the control plane operator image labels.
 	// Labels are provided in a comma-delimited format: key=value,key2=value2
 	// This is used for development and e2e workflows

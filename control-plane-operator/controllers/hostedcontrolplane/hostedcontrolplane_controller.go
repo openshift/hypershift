@@ -670,6 +670,27 @@ func (r *HostedControlPlaneReconciler) reconcileDegradedStatus(ctx context.Conte
 	return nil
 }
 
+// ensureMultiShardBackupCapabilityLabel sets the multi-shard etcd backup
+// capability label on the HCP. This binary supports the multi-shard backup
+// flags, so the label is set unconditionally (one patch per HCP); the
+// HyperShift operator's backup controller gates multi-shard backup Job
+// creation on it, because feature gates control API exposure but do not prove
+// that the deployed (possibly overridden or older) image supports the flags.
+func (r *HostedControlPlaneReconciler) ensureMultiShardBackupCapabilityLabel(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
+	if hostedControlPlane.Labels[hyperv1.MultiShardEtcdBackupCapabilityLabel] == "true" {
+		return nil
+	}
+	original := hostedControlPlane.DeepCopy()
+	if hostedControlPlane.Labels == nil {
+		hostedControlPlane.Labels = map[string]string{}
+	}
+	hostedControlPlane.Labels[hyperv1.MultiShardEtcdBackupCapabilityLabel] = "true"
+	if err := r.Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("failed to set multi-shard backup capability label: %w", err)
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
 	r.Log.Info("Reconciling")
@@ -683,8 +704,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	originalHostedControlPlane := hostedControlPlane.DeepCopy()
-
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
 		return r.reconcileDeletion(ctx, hostedControlPlane)
 	}
@@ -696,6 +715,18 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
 	}
+
+	// Advertise multi-shard etcd backup support on the HCP so the HyperShift
+	// operator's backup controller can gate multi-shard backup Jobs on the
+	// capability of the image actually deployed here.
+	if err := r.ensureMultiShardBackupCapabilityLabel(ctx, hostedControlPlane); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// The patches above (finalizer, capability label) modify the object and
+	// bump its resource version, so the base for the optimistic-lock status
+	// patches at the end of reconciliation is captured here, after them.
+	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 
 	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane) {
 		r.Log.Info("releaseImage is " + imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")

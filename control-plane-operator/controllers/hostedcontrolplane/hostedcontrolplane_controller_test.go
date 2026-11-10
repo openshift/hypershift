@@ -7915,3 +7915,53 @@ func TestGetNamedCertificateCAs(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureMultiShardBackupCapabilityLabel(t *testing.T) {
+	t.Parallel()
+
+	newHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-hcp",
+				Namespace: "test-ns",
+			},
+		}
+	}
+
+	t.Run("When the capability label is absent it should be set on the HCP", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		hcp := newHCP()
+		r := &HostedControlPlaneReconciler{
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp).Build(),
+		}
+		ctx := context.Background()
+
+		g.Expect(r.ensureMultiShardBackupCapabilityLabel(ctx, hcp)).To(Succeed())
+
+		updated := &hyperv1.HostedControlPlane{}
+		g.Expect(r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+		g.Expect(updated.Labels[hyperv1.MultiShardEtcdBackupCapabilityLabel]).To(Equal("true"))
+	})
+
+	t.Run("When the capability label is already set it should be a no-op", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		hcp := newHCP()
+		hcp.Labels = map[string]string{
+			hyperv1.MultiShardEtcdBackupCapabilityLabel: "true",
+			"unrelated": "kept",
+		}
+		r := &HostedControlPlaneReconciler{
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp).Build(),
+		}
+		ctx := context.Background()
+
+		g.Expect(r.ensureMultiShardBackupCapabilityLabel(ctx, hcp)).To(Succeed())
+
+		updated := &hyperv1.HostedControlPlane{}
+		g.Expect(r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+		g.Expect(updated.Labels).To(HaveKeyWithValue("unrelated", "kept"))
+		g.Expect(updated.Labels[hyperv1.MultiShardEtcdBackupCapabilityLabel]).To(Equal("true"))
+	})
+}

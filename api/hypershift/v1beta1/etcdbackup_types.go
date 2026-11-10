@@ -34,6 +34,11 @@ const (
 	// could not be extracted from the completed backup Job (for example the
 	// pod or its termination message is gone), after bounded retries.
 	BackupResultExtractionFailedReason string = "BackupResultExtractionFailed"
+	// BackupWaitingForCPOCapabilityReason indicates a multi-shard backup is
+	// waiting because the deployed control plane operator image does not (yet)
+	// advertise multi-shard etcd backup support on the HostedControlPlane
+	// (the multi-shard backup capability label is absent).
+	BackupWaitingForCPOCapabilityReason string = "BackupWaitingForCPOCapability"
 )
 
 // HCPEtcdBackupStorageType is the type of storage for etcd backups.

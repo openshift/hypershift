@@ -118,6 +118,11 @@ func newHostedCluster() *hyperv1.HostedCluster {
 			Name:      testHCName,
 			Namespace: testHCNamespace,
 		},
+		Spec: hyperv1.HostedClusterSpec{
+			Release: hyperv1.Release{
+				Image: testReleaseImage,
+			},
+		},
 	}
 }
 
@@ -176,6 +181,7 @@ type fakeReleaseProvider struct{}
 func (f *fakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
 	return &releaseinfo.ReleaseImage{
 		ImageStream: &imageapi.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{Name: "4.16.0"},
 			Spec: imageapi.ImageStreamSpec{
 				Tags: []imageapi.TagReference{
 					{Name: "hypershift", From: &corev1.ObjectReference{Name: testCPOImage}},
@@ -234,6 +240,123 @@ func TestReconcile(t *testing.T) {
 		g.Expect(updated.Status.Conditions[0].Type).To(Equal(string(hyperv1.BackupCompleted)))
 		g.Expect(updated.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
 		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupFailedReason))
+	})
+
+	t.Run("When a multi-shard backup lacks the CPO capability label it should wait without creating a Job", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 1,
+				Resources: []hyperv1.EtcdShardResource{{
+					APIGroup: ptr.To(""),
+					Resource: "events",
+				}},
+				Storage: hyperv1.ManagedEtcdShardStorageSpec{
+					Type: hyperv1.PersistentVolumeEtcdShardStorage,
+				},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		eventsSTS := newEtcdStatefulSet(1, 1)
+		eventsSTS.Name = "etcd-events"
+		r := newReconciler(backup, hcp, defaultSTS, eventsSTS)
+
+		result, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result.RequeueAfter).To(Equal(credentialWaitRequeueInterval))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupWaitingForCPOCapabilityReason))
+		g.Expect(cond.Message).To(ContainSubstring(hyperv1.MultiShardEtcdBackupCapabilityLabel))
+
+		// No Job was created while waiting.
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(context.Background(), jobList)).To(Succeed())
+		g.Expect(jobList.Items).To(BeEmpty())
+	})
+
+	t.Run("When a multi-shard backup has the CPO capability label it should proceed past the gate", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		hcp.Labels = map[string]string{hyperv1.MultiShardEtcdBackupCapabilityLabel: "true"}
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 1,
+				Resources: []hyperv1.EtcdShardResource{{
+					APIGroup: ptr.To(""),
+					Resource: "events",
+				}},
+				Storage: hyperv1.ManagedEtcdShardStorageSpec{
+					Type: hyperv1.PersistentVolumeEtcdShardStorage,
+				},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		eventsSTS := newEtcdStatefulSet(1, 1)
+		eventsSTS.Name = "etcd-events"
+		hc := newHostedCluster()
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+		r := newReconciler(backup, hcp, defaultSTS, eventsSTS, hc, pullSecret, credSecret)
+
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// The gate passed: a backup Job was created.
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(context.Background(), jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Reason).ToNot(Equal(hyperv1.BackupWaitingForCPOCapabilityReason))
+	})
+
+	t.Run("When a single-shard backup lacks the CPO capability label it should not be gated", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane() // no shards: single-shard, no label
+		sts := newEtcdStatefulSet(3, 3)
+		hc := newHostedCluster()
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+		r := newReconciler(backup, hcp, sts, hc, pullSecret, credSecret)
+
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(context.Background(), jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
 	})
 
 	t.Run("When etcd StatefulSet is not ready it should set EtcdUnhealthy", func(t *testing.T) {
@@ -616,7 +739,7 @@ func TestReconcile(t *testing.T) {
 
 		// A completed Job for a prior backup is visible only via the API
 		// reader; it must not block a new backup.
-		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, sts, newHostedCluster(), pullSecret, credSecret)
 		r.APIReader = fake.NewClientBuilder().
 			WithScheme(newScheme()).
 			WithObjects(newOtherBackupJob("etcd-backup-prior", "prior-backup",
@@ -1788,7 +1911,7 @@ func TestCreateBackupJob(t *testing.T) {
 				"credentials": []byte("fake-creds"),
 			},
 		}
-		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), pullSecret, credSecret)
 		ctx := context.Background()
 
 		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
@@ -1868,7 +1991,7 @@ func TestCreateBackupJob(t *testing.T) {
 		}
 		// No credential secret — createBackupJob does not validate it;
 		// validation is done earlier in Reconcile via getCredentialSecretName + Get.
-		r := newReconciler(backup, hcp, pullSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), pullSecret)
 		ctx := context.Background()
 
 		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
@@ -1918,7 +2041,7 @@ func TestCreateBackupJob(t *testing.T) {
 				Namespace: testHONamespace,
 			},
 		}
-		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), pullSecret, credSecret)
 		ctx := context.Background()
 
 		creds := resolvedCredentials{Mode: credentialModeAzureClientSecret, SecretName: "azure-creds"}
@@ -1973,7 +2096,7 @@ func TestCreateBackupJob(t *testing.T) {
 				Namespace: testHONamespace,
 			},
 		}
-		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), pullSecret, credSecret)
 		ctx := context.Background()
 
 		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
@@ -1999,7 +2122,7 @@ func TestCreateBackupJob(t *testing.T) {
 		credSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
 		}
-		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), pullSecret, credSecret)
 		ctx := context.Background()
 
 		creds := resolvedCredentials{
@@ -2082,7 +2205,7 @@ func TestCreateBackupJob(t *testing.T) {
 		credSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds", Namespace: testHONamespace},
 		}
-		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), pullSecret, credSecret)
 		ctx := context.Background()
 
 		creds := resolvedCredentials{
@@ -2143,7 +2266,7 @@ func TestCreateBackupJob(t *testing.T) {
 		credSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds", Namespace: testHONamespace},
 		}
-		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), pullSecret, credSecret)
 		ctx := context.Background()
 
 		creds := resolvedCredentials{Mode: credentialModeAzureManagedIdentity, SecretName: "azure-creds"}
@@ -2175,7 +2298,7 @@ func TestCreateBackupJob(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
 			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
 		}
-		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), pullSecret, credSecret)
 		ctx := context.Background()
 
 		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
@@ -2313,7 +2436,7 @@ func TestReconcileHappyPath(t *testing.T) {
 				"credentials": []byte("fake-creds"),
 			},
 		}
-		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), sts, pullSecret, credSecret)
 		ctx := context.Background()
 
 		result, err := r.Reconcile(ctx, ctrl.Request{
@@ -2635,40 +2758,54 @@ func TestValidatePrerequisites(t *testing.T) {
 }
 
 func TestResolveControlPlaneOperatorImage(t *testing.T) {
-	t.Run("When HCP has ControlPlaneOperatorImage annotation it should use the override", func(t *testing.T) {
+	t.Run("When the HostedCluster has the ControlPlaneOperatorImage annotation it should use the override", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		hcp := newHostedControlPlane()
-		hcp.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = "quay.io/custom/cpo:override"
+		hc := newHostedCluster()
+		hc.Annotations = map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: "quay.io/custom/cpo:override"}
 		pullSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
 			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
 		}
-		r := newReconciler(hcp, pullSecret)
+		r := newReconciler(hcp, hc, pullSecret)
 
-		image, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, testReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+		image, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, pullSecret.Data[corev1.DockerConfigJsonKey])
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(image).To(Equal("quay.io/custom/cpo:override"))
 	})
 
-	t.Run("When HCP has no annotation it should resolve from release payload", func(t *testing.T) {
+	t.Run("When no annotation is set it should resolve from the release payload", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		hcp := newHostedControlPlane()
-		r := newReconciler(hcp)
+		hc := newHostedCluster()
+		r := newReconciler(hcp, hc)
 
-		image, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, testReleaseImage, []byte(`{"auths":{}}`))
+		image, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, []byte(`{"auths":{}}`))
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(image).To(Equal(testCPOImage))
 	})
 
-	t.Run("When release payload has no hypershift component it should fallback to HO image", func(t *testing.T) {
+	t.Run("When the release payload has no hypershift component it should fall back to the HO image", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		hcp := newHostedControlPlane()
-		r := newReconciler(hcp)
+		hc := newHostedCluster()
+		r := newReconciler(hcp, hc)
 		r.ReleaseProvider = &emptyReleaseProvider{}
 
-		image, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, testReleaseImage, []byte(`{"auths":{}}`))
+		image, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, []byte(`{"auths":{}}`))
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(image).To(Equal("quay.io/hypershift/hypershift:latest"))
+	})
+
+	t.Run("When the HostedCluster cannot be found it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := newHostedControlPlane()
+		// No HostedCluster in the fake client.
+		r := newReconciler(hcp)
+
+		_, err := r.resolveControlPlaneOperatorImage(context.Background(), hcp, []byte(`{"auths":{}}`))
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to look up HostedCluster"))
 	})
 }
 
@@ -2677,6 +2814,7 @@ type emptyReleaseProvider struct{}
 func (f *emptyReleaseProvider) Lookup(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 	return &releaseinfo.ReleaseImage{
 		ImageStream: &imageapi.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{Name: "4.16.0"},
 			Spec: imageapi.ImageStreamSpec{
 				Tags: []imageapi.TagReference{},
 			},
@@ -2764,7 +2902,7 @@ func TestReconcileRecoversWhenCredentialSecretAppears(t *testing.T) {
 			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
 		}
 		// Credential Secret intentionally absent for the first reconcile.
-		r := newReconciler(backup, hcp, sts, pullSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), sts, pullSecret)
 		ctx := context.Background()
 
 		req := ctrl.Request{NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}}
@@ -3284,7 +3422,7 @@ func TestReconcileHappyPathWithSTS(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
 			Data:       map[string][]byte{"credentials": []byte("arn:aws:iam::123456789012:role/etcd-backup")},
 		}
-		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), sts, pullSecret, credSecret)
 		ctx := context.Background()
 
 		result, err := r.Reconcile(ctx, ctrl.Request{
@@ -3348,7 +3486,7 @@ func TestReconcileHappyPathWithAzureWI(t *testing.T) {
 				"cloud": []byte("AZURE_CLIENT_ID=my-client-id\nAZURE_TENANT_ID=my-tenant\n"),
 			},
 		}
-		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
+		r := newReconciler(backup, hcp, newHostedCluster(), sts, pullSecret, credSecret)
 		ctx := context.Background()
 
 		result, err := r.Reconcile(ctx, ctrl.Request{
