@@ -1375,6 +1375,13 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent secret: %w", err))
+		} else {
+			// Hash only data that was successfully written to the hosted cluster, so the
+			// DaemonSet rolls only after the new credentials are in place. HashSimple formats
+			// the map with sorted keys, so the hash does not depend on map iteration order.
+			// On a read or write failure the hash stays empty and ReconcileAgentDaemonSet
+			// keeps the existing pod template hash.
+			p.AgentSecretHash = util.HashSimple(agentSecret.Data)
 		}
 	}
 
