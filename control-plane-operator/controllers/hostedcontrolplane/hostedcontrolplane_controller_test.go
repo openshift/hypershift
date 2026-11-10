@@ -4654,7 +4654,7 @@ func TestAggregateEtcdRestoredCondition(t *testing.T) {
 			expectedMessage: `shard "etcd-configmaps": etcd-init container failed (exit code 1): download failed: NoSuchKey`,
 		},
 		{
-			name: "When only named shard has restore URL, it should ignore default shard",
+			name: "When only a named shard has a restore URL, it should fail naming the missing default shard",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -4674,7 +4674,9 @@ func TestAggregateEtcdRestoredCondition(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				// Default shard exists but has no restore URL — should be ignored
+				// Default shard exists but has no restore URL — the restore
+				// mapping is incomplete, so the restore must fail rather
+				// than silently start the default shard empty.
 				&appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: ns},
 					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
@@ -4687,8 +4689,50 @@ func TestAggregateEtcdRestoredCondition(t *testing.T) {
 				},
 				readyPod("etcd-events-0", "etcd-events"),
 			},
-			expectedStatus: metav1.ConditionTrue,
-			expectedReason: hyperv1.AsExpectedReason,
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.EtcdRestoreIncompleteReason,
+			expectedMessage: "default",
+		},
+		{
+			name: "When a persistent named shard lacks a restore URL while others have one, it should fail naming the missing shard",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								RestoreSnapshotURL: []string{"https://example.com/default.db"},
+							},
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name:               "events",
+									RestoreSnapshotURL: "https://example.com/events.db",
+									Replicas:           1,
+								},
+								{
+									Name:     "leases",
+									Replicas: 1,
+									Storage: hyperv1.ManagedEtcdShardStorageSpec{
+										Type: hyperv1.PersistentVolumeEtcdShardStorage,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+				},
+				readyPod("etcd-0", "etcd"),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.EtcdRestoreIncompleteReason,
+			expectedMessage: "leases",
 		},
 		{
 			name: "When shard StatefulSet is not found yet, it should return nil",

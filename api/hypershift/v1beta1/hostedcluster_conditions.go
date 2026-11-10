@@ -368,6 +368,12 @@ const (
 	EtcdWaitingForQuorumReason    = "EtcdWaitingForQuorum"
 	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
 	EtcdRecoveryJobFailedReason   = "EtcdRecoveryJobFailed"
+	// EtcdRestoreIncompleteReason is used on the EtcdSnapshotRestored
+	// condition when a restore was requested (any persistent shard has a
+	// restoreSnapshotURL) but not every persistent shard has one: the
+	// restore mapping is incomplete and must fail rather than silently
+	// start the missing shards with empty data directories.
+	EtcdRestoreIncompleteReason = "EtcdRestoreIncomplete"
 
 	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
 	UnmanagedEtcdAsExpected          = "UnmanagedEtcdAsExpected"

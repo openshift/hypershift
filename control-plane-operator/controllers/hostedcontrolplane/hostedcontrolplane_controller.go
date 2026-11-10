@@ -2881,6 +2881,22 @@ func terminatedMessage(terminated *corev1.ContainerStateTerminated) string {
 
 // hasRestoreURLs returns true if any etcd shard (default or named) has a
 // restore snapshot URL configured.
+// restoreURLCoverageGaps returns the public identities of persistent shards
+// that have no restoreSnapshotURL, using the shared MissingPersistentShards
+// contract, given the restore URLs that ARE set.
+func restoreURLCoverageGaps(managed *hyperv1.ManagedEtcdSpec) []string {
+	var covered []hyperv1.HCPEtcdShardSnapshot
+	if len(managed.Storage.RestoreSnapshotURL) > 0 {
+		covered = append(covered, hyperv1.HCPEtcdShardSnapshot{Name: "default"})
+	}
+	for _, shard := range managed.Shards {
+		if shard.RestoreSnapshotURL != "" {
+			covered = append(covered, hyperv1.HCPEtcdShardSnapshot{Name: shard.Name})
+		}
+	}
+	return hyperv1.MissingPersistentShards(covered, managed)
+}
+
 func (r *HostedControlPlaneReconciler) hasRestoreURLs(hcp *hyperv1.HostedControlPlane) bool {
 	if hcp.Spec.Etcd.Managed == nil {
 		return false
@@ -2897,8 +2913,14 @@ func (r *HostedControlPlaneReconciler) hasRestoreURLs(hcp *hyperv1.HostedControl
 }
 
 // aggregateEtcdRestoredCondition checks restore completion across all etcd
-// shard StatefulSets that have a restore URL configured. It returns True only
-// when ALL shards with restore URLs have completed their etcd-init containers.
+// shard StatefulSets. Restore is all-or-nothing: once any persistent shard
+// has a restoreSnapshotURL, every persistent shard must have one — an
+// incomplete mapping fails with EtcdRestoreIncomplete naming the missing
+// shards, instead of reporting success while the missing shards silently
+// start with empty data directories (the pre-multi-shard OADP flow injected
+// a URL for the default shard only; see hypershift-oadp-plugin#333). It
+// returns True only when ALL shards with restore URLs have completed their
+// etcd-init containers.
 func (r *HostedControlPlaneReconciler) aggregateEtcdRestoredCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane) *metav1.Condition {
 	managed := hcp.Spec.Etcd.Managed
 	if managed == nil {
@@ -2927,6 +2949,18 @@ func (r *HostedControlPlaneReconciler) aggregateEtcdRestoredCondition(ctx contex
 
 	if len(shardsToCheck) == 0 {
 		return nil
+	}
+
+	// All-or-nothing: a restore was requested (at least one shard has a
+	// restore URL), so every persistent shard must have one.
+	if missing := restoreURLCoverageGaps(managed); len(missing) > 0 {
+		return &metav1.Condition{
+			Type:   string(hyperv1.EtcdSnapshotRestored),
+			Status: metav1.ConditionFalse,
+			Reason: hyperv1.EtcdRestoreIncompleteReason,
+			Message: fmt.Sprintf("incomplete shard restore mapping: missing restoreSnapshotURL for persistent shard(s) %s; provide a restore URL for every persistent shard, or remove all restore URLs to start every shard empty",
+				strings.Join(missing, ", ")),
+		}
 	}
 
 	var incomplete bool
