@@ -2,6 +2,7 @@ package etcdupload
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,13 +127,17 @@ func TestRunDir(t *testing.T) {
 		g.Expect(writeTestFile(dir, "not-a-snapshot.txt")).To(Succeed()) // should be ignored
 
 		uploader := &fakeUploader{}
+		store := &fakeStore{}
 		opts := options{
-			snapshotDir: dir,
-			keyPrefix:   "backups/test",
+			snapshotDir:     dir,
+			keyPrefix:       "backups/test",
+			resultConfigMap: "etcd-backup-result-clusters-test-backup",
+			store:           store,
 		}
 		err := runDir(context.Background(), opts, uploader)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(uploader.uploads).To(HaveLen(2)) // Verify all shard names are present (order depends on filesystem)
+		g.Expect(uploader.uploads).To(HaveLen(2))
+		g.Expect(store.name).To(Equal("etcd-backup-result-clusters-test-backup")) // Verify all shard names are present (order depends on filesystem)
 		var keys []string
 		for _, u := range uploader.uploads {
 			keys = append(keys, u.key)
@@ -153,43 +158,61 @@ func TestRunDir(t *testing.T) {
 		g.Expect(err.Error()).To(ContainSubstring("failed to read snapshot directory"))
 	})
 
-	t.Run("When the serialized shard results exceed the termination message limit it should return an error", func(t *testing.T) {
+	t.Run("When --result-configmap is omitted it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+
+		uploader := &fakeUploader{}
+		opts := options{
+			snapshotDir: dir,
+			keyPrefix:   "test",
+		}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("--result-configmap is required"))
+	})
+
+	t.Run("When storing the results fails it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+
+		uploader := &fakeUploader{}
+		store := &fakeStore{err: fmt.Errorf("simulated ConfigMap write failure")}
+		opts := options{
+			snapshotDir:     dir,
+			keyPrefix:       "test",
+			resultConfigMap: "etcd-backup-result-clusters-test-backup",
+			store:           store,
+		}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("simulated ConfigMap write failure"))
+	})
+
+	t.Run("When results are large it should still store them (no termination-message size limit)", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		dir := t.TempDir()
 		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
 		g.Expect(writeTestFile(dir, "etcd-events.db")).To(Succeed())
 
 		uploader := &fakeUploader{}
+		// URLs far beyond the old 945-byte pod-level termination-message
+		// budget for an 11-shard Job.
+		uploader.url = "s3://bucket/" + strings.Repeat("a", 2000)
+		store := &fakeStore{}
 		opts := options{
-			snapshotDir: dir,
-			// Each URL is ~2100 bytes, so the JSON array of two shards
-			// exceeds the 4096-byte termination message limit.
-			keyPrefix: strings.Repeat("a", 2100),
+			snapshotDir:     dir,
+			keyPrefix:       "test",
+			resultConfigMap: "etcd-backup-result-clusters-test-backup",
+			store:           store,
 		}
 		err := runDir(context.Background(), opts, uploader)
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("4096"))
-	})
-
-	t.Run("When the serialized shard results exceed a pod-level effective limit it should return an error naming that limit", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		dir := t.TempDir()
-		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
-
-		uploader := &fakeUploader{}
-		// An 11-shard backup Job runs 13 containers, so kubelet truncates
-		// each termination message at floor(12288/13) = 945 bytes; the Job
-		// builder passes that limit via --termination-message-limit.
-		opts := options{
-			snapshotDir:             dir,
-			keyPrefix:               "test",
-			terminationMessageLimit: 945,
-		}
-		// A URL of ~950 bytes keeps the payload below 4096 but above 945.
-		uploader.url = "s3://bucket/" + strings.Repeat("a", 940)
-		err := runDir(context.Background(), opts, uploader)
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("945"))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(len(store.value)).To(BeNumerically(">", 4000))
+		g.Expect(store.value).To(ContainSubstring(`"name":"etcd-events"`))
+		g.Expect(store.value).To(ContainSubstring(`"name":"etcd"`))
 	})
 
 	t.Run("When attemptTimestamp is set it should be used in object keys", func(t *testing.T) {
@@ -203,6 +226,8 @@ func TestRunDir(t *testing.T) {
 			snapshotDir:      dir,
 			keyPrefix:        "backups/test",
 			attemptTimestamp: 1700000000,
+			resultConfigMap:  "etcd-backup-result-clusters-test-backup",
+			store:            &fakeStore{},
 		}
 		err := runDir(context.Background(), opts, uploader)
 		g.Expect(err).ToNot(HaveOccurred())
@@ -231,6 +256,22 @@ func (f *fakeUploader) Upload(_ context.Context, snapshotPath string, key string
 		url = "s3://bucket/" + key
 	}
 	return &UploadResult{URL: url}, nil
+}
+
+// fakeStore records the last stored result.
+type fakeStore struct {
+	name  string
+	value string
+	err   error
+}
+
+func (f *fakeStore) Store(_ context.Context, name, value string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.name = name
+	f.value = value
+	return nil
 }
 
 func writeTestFile(dir, name string) error {

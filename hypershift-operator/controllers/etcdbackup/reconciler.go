@@ -92,6 +92,10 @@ const (
 	// eventually failed and cleaned up.
 	credentialWaitTimeout = 2 * time.Minute
 
+	// resultConfigMapKey is the ConfigMap data key holding the JSON array of
+	// per-shard snapshot results. It must match etcd-upload's writer.
+	resultConfigMapKey = "shardSnapshots"
+
 	// annotationExpectedShardSnapshots records, on the backup Job, the
 	// comma-separated shard names the Job was built to snapshot. The
 	// completion path requires exactly one snapshot result per recorded shard.
@@ -668,9 +672,10 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 		if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
 			logger.Info("backup Job completed successfully", "job", job.Name)
 
-			// Extract shard snapshot URLs from the upload container's termination message.
-			// The etcd-upload command writes JSON to /dev/termination-log.
-			shardSnapshots, err := r.getShardSnapshotsFromPod(ctx, job)
+			// Extract the shard snapshot results: from the result ConfigMap
+			// (multi-shard), falling back to the upload container's
+			// termination message (single-shard legacy).
+			shardSnapshots, err := r.getShardSnapshots(ctx, backup, job)
 			if err != nil {
 				// Retry transient extraction failures (API errors, pod status
 				// lag) before failing the backup terminally. Success is never
@@ -730,6 +735,10 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 			}
 
+			// The results are now persisted in the backup status; the result
+			// ConfigMap is no longer needed.
+			r.deleteResultConfigMap(ctx, backup)
+
 			// Bubble up success to HCP
 			if err := r.updateHCPBackupCondition(ctx, hcp, metav1.Condition{
 				Type:    string(hyperv1.EtcdBackupSucceeded),
@@ -750,6 +759,9 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 			if err := r.cleanupResources(ctx, backup); err != nil {
 				logger.Error(err, "failed to cleanup resources after failed backup")
 			}
+
+			// A failed Job's result ConfigMap (if any) is not needed.
+			r.deleteResultConfigMap(ctx, backup)
 
 			r.setCondition(backup, metav1.Condition{
 				Type:    string(hyperv1.BackupCompleted),
@@ -797,6 +809,7 @@ func (r *HCPEtcdBackupReconciler) retryShardSnapshotExtraction(ctx context.Conte
 
 	if attempts >= maxResultExtractionAttempts {
 		message := fmt.Sprintf("failed to extract shard snapshot results from the completed backup Job after %d attempts: %v", attempts, extractionErr)
+		r.deleteResultConfigMap(ctx, backup)
 		if err := r.cleanupResources(ctx, backup); err != nil {
 			logger.Error(err, "failed to cleanup resources after failed result extraction")
 		}
@@ -841,6 +854,7 @@ func (r *HCPEtcdBackupReconciler) failIncompleteResults(ctx context.Context, bac
 	logger := log.FromContext(ctx)
 
 	message := fmt.Sprintf("backup Job completed but shard snapshot results are incomplete: %s", strings.Join(problems, "; "))
+	r.deleteResultConfigMap(ctx, backup)
 	if err := r.cleanupResources(ctx, backup); err != nil {
 		logger.Error(err, "failed to cleanup resources after incomplete backup results")
 	}
@@ -862,6 +876,27 @@ func (r *HCPEtcdBackupReconciler) failIncompleteResults(ctx context.Context, bac
 		logger.Error(err, "failed to update HCP backup condition")
 	}
 	return ctrl.Result{}, nil
+}
+
+// getShardSnapshots reads the shard snapshot results for a completed backup
+// Job. Multi-shard Jobs write their results to a ConfigMap in the operator
+// namespace, which has no size limits; the lookup uses a quorum read so a
+// ConfigMap written moments ago is already visible. The pod termination
+// message is the legacy channel: single-shard Jobs and images built before
+// the result ConfigMap was introduced.
+func (r *HCPEtcdBackupReconciler) getShardSnapshots(ctx context.Context, backup *hyperv1.HCPEtcdBackup, job *batchv1.Job) ([]hyperv1.HCPEtcdShardSnapshot, error) {
+	cm := &corev1.ConfigMap{}
+	err := r.apiReader().Get(ctx, types.NamespacedName{
+		Name:      resultConfigMapName(backup),
+		Namespace: r.OperatorNamespace,
+	}, cm)
+	if err == nil {
+		return parseShardSnapshots(cm.Data[resultConfigMapKey])
+	}
+	if !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("failed to read result ConfigMap: %w", err)
+	}
+	return r.getShardSnapshotsFromPod(ctx, job)
 }
 
 // getShardSnapshotsFromPod reads the per-shard snapshot URLs from the upload
@@ -1018,6 +1053,56 @@ func (r *HCPEtcdBackupReconciler) ensureRBAC(ctx context.Context, backup *hyperv
 		return fmt.Errorf("failed to ensure Role: %w", err)
 	}
 
+	// Role in the operator namespace granting the backup Job's service
+	// account create/update access to exactly its result ConfigMap, where
+	// etcd-upload stores the multi-shard snapshot results.
+	resultRBACName := resultConfigMapName(backup)
+	resultRole := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resultRBACName,
+			Namespace: r.OperatorNamespace,
+		},
+	}
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, resultRole, func() error {
+		resultRole.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups:     []string{""},
+				Resources:     []string{"configmaps"},
+				ResourceNames: []string{resultRBACName},
+				Verbs:         []string{"create", "update", "patch", "get"},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to ensure result Role: %w", err)
+	}
+
+	resultRB := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resultRBACName,
+			Namespace: r.OperatorNamespace,
+		},
+	}
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, resultRB, func() error {
+		resultRB.RoleRef = rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "Role",
+			Name:     resultRBACName,
+		}
+		resultRB.Subjects = []rbacv1.Subject{
+			{
+				Kind:      rbacv1.ServiceAccountKind,
+				Name:      jobServiceAccountName,
+				Namespace: r.OperatorNamespace,
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to ensure result RoleBinding: %w", err)
+	}
+
 	// RoleBinding binding the HO namespace SA to the HCP namespace Role
 	rb := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1124,6 +1209,19 @@ func (r *HCPEtcdBackupReconciler) cleanupResources(ctx context.Context, backup *
 	}
 
 	var firstErr error
+
+	// The result Role/RoleBinding are named after this backup and never
+	// shared, so they can be deleted unconditionally (unlike the shared
+	// resources below, which the guard protects).
+	for _, obj := range []client.Object{
+		&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: resultConfigMapName(backup), Namespace: r.OperatorNamespace}},
+		&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: resultConfigMapName(backup), Namespace: r.OperatorNamespace}},
+	} {
+		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+			logger.Error(err, "failed to delete backup result RBAC", "name", resultConfigMapName(backup))
+			firstErr = err
+		}
+	}
 
 	// Delete NetworkPolicy
 	np := &networkingv1.NetworkPolicy{
@@ -1324,6 +1422,32 @@ func backupJobDeadlineSeconds(shards []etcdShardInfo, backup *hyperv1.HCPEtcdBac
 	return base + perShard*int64(len(shards)-1)
 }
 
+// resultConfigMapName returns the deterministic name of the ConfigMap, in
+// the HyperShift operator namespace, where a backup Job stores its
+// multi-shard snapshot results. The name is derived from the backup (not the
+// Job, whose name is generated) so both the Job builder and the completion
+// path can compute it, and so the Job's RBAC can be scoped to exactly this
+// ConfigMap.
+func resultConfigMapName(backup *hyperv1.HCPEtcdBackup) string {
+	return fmt.Sprintf("etcd-backup-result-%s-%s", backup.Namespace, backup.Name)
+}
+
+// deleteResultConfigMap deletes a backup's result ConfigMap. It is called
+// once the results have been persisted to the backup status (or the backup
+// has failed terminally), so the ConfigMap is not needed anymore. The
+// ConfigMap intentionally survives transient extraction retries.
+func (r *HCPEtcdBackupReconciler) deleteResultConfigMap(ctx context.Context, backup *hyperv1.HCPEtcdBackup) {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resultConfigMapName(backup),
+			Namespace: r.OperatorNamespace,
+		},
+	}
+	if err := r.Delete(ctx, cm); err != nil && !apierrors.IsNotFound(err) {
+		log.FromContext(ctx).Error(err, "failed to delete backup result ConfigMap")
+	}
+}
+
 // attemptKeyPrefix returns the object key prefix for a backup attempt: the
 // storage keyPrefix from the spec joined with the attempt timestamp. Objects
 // written by the attempt are <prefix>.db (single shard) or <prefix>/<shard>.db
@@ -1492,9 +1616,12 @@ func (r *HCPEtcdBackupReconciler) buildUploadContainer(image string, args []stri
 		Name:    "upload",
 		Image:   image,
 		Command: args,
-		// FallbackToLogsOnError prevents silent truncation of the termination
-		// message when the JSON shard snapshot payload approaches the 4KB limit
-		// (up to 11 shards × ~200-char URLs + JSON framing ≈ 3KB typical).
+		// The termination message is only used by the legacy single-shard
+		// path (a plain URL, well under the 4096-byte limit).
+		// FallbackToLogsOnError surfaces container logs as the message when
+		// the upload container exits non-zero, which aids diagnosis of failed
+		// uploads. Multi-shard results flow through the result ConfigMap
+		// instead, which has no size limit.
 		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		VolumeMounts: []corev1.VolumeMount{
 			{
@@ -1538,19 +1665,9 @@ func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup,
 		args = append(args, "--snapshot-path", fmt.Sprintf("%s/%s.db", mountPathEtcdBackup, shards[0].identity))
 	} else {
 		args = append(args, "--snapshot-dir", mountPathEtcdBackup)
-		// Kubelet divides a pod-level 12288-byte termination-message budget
-		// across every container of the pod (init and main), in addition to the
-		// per-container 4096-byte limit. The backup Job runs one fetch-certs
-		// init container, one snapshot init container per shard, and one upload
-		// container, so the upload container's effective limit is
-		// min(4096, 12288/(len(shards)+2)). Pass it to etcd-upload so the
-		// encoded payload is rejected before the kubelet can truncate it.
-		containerCount := len(shards) + 2
-		limit := 4096
-		if podBudget := (12 * 1024) / containerCount; podBudget < limit {
-			limit = podBudget
-		}
-		args = append(args, "--termination-message-limit", strconv.Itoa(limit))
+		// Multi-shard results are stored in a ConfigMap (no size limits)
+		// rather than the pod termination message.
+		args = append(args, "--result-configmap", resultConfigMapName(backup))
 	}
 
 	switch backup.Spec.Storage.StorageType {

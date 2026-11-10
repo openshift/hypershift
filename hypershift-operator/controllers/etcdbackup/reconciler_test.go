@@ -772,6 +772,35 @@ func TestEnsureRBAC(t *testing.T) {
 		g.Expect(rb.Subjects[0].Name).To(Equal(jobServiceAccountName))
 		g.Expect(rb.Subjects[0].Namespace).To(Equal(testHONamespace))
 	})
+
+	t.Run("When ensureRBAC is called it should create a Role and RoleBinding scoped to the result ConfigMap", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		r := newReconciler(backup)
+		ctx := context.Background()
+
+		err := r.ensureRBAC(ctx, backup)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		name := resultConfigMapName(backup)
+		role := &rbacv1.Role{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: name, Namespace: testHONamespace}, role)).To(Succeed())
+		g.Expect(role.Rules).To(ConsistOf(rbacv1.PolicyRule{
+			APIGroups:     []string{""},
+			Resources:     []string{"configmaps"},
+			ResourceNames: []string{name},
+			Verbs:         []string{"create", "update", "patch", "get"},
+		}))
+
+		rb := &rbacv1.RoleBinding{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: name, Namespace: testHONamespace}, rb)).To(Succeed())
+		g.Expect(rb.RoleRef.Name).To(Equal(name))
+		g.Expect(rb.Subjects).To(ConsistOf(rbacv1.Subject{
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      jobServiceAccountName,
+			Namespace: testHONamespace,
+		}))
+	})
 }
 
 func TestEnsureNetworkPolicy(t *testing.T) {
@@ -1088,6 +1117,46 @@ func TestHandleJobStatus(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
 	})
+	t.Run("When Job succeeds with a result ConfigMap it should persist results and delete the ConfigMap", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		hc := newHostedCluster()
+		job := newTestJob(batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			},
+		})
+		job.Annotations = map[string]string{annotationExpectedShardSnapshots: "default,events"}
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resultConfigMapName(backup),
+				Namespace: testHONamespace,
+			},
+			Data: map[string]string{resultConfigMapKey: `[{"name":"default","url":"s3://bucket/default.db"},{"name":"events","url":"s3://bucket/events.db"}]`},
+		}
+		r := newReconciler(backup, job, hcp, hc, cm)
+
+		result, err := r.handleJobStatus(context.Background(), backup, job, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(updated.Status.ShardSnapshots).To(ConsistOf(
+			hyperv1.HCPEtcdShardSnapshot{Name: "default", SnapshotURL: "s3://bucket/default.db"},
+			hyperv1.HCPEtcdShardSnapshot{Name: "events", SnapshotURL: "s3://bucket/events.db"},
+		))
+		g.Expect(updated.Status.SnapshotURL).To(Equal("s3://bucket/default.db"))
+
+		// The result ConfigMap is deleted once the results are persisted.
+		err = r.Get(context.Background(), types.NamespacedName{Name: resultConfigMapName(backup), Namespace: testHONamespace}, &corev1.ConfigMap{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+
 }
 
 func TestSetEncryptionMetadata(t *testing.T) {
@@ -1287,46 +1356,30 @@ func TestBuildUploadArgs(t *testing.T) {
 		g.Expect(args).ToNot(ContainElement("--snapshot-path"))
 	})
 
-	// Verify multi-shard passes the pod-level effective termination message
-	// limit: min(4096, 12288/(len(shards)+2)). With 11 shards the Job runs 13
-	// containers (fetch-certs + 11 snapshot init containers + upload), so the
-	// upload container's message is truncated by kubelet at 945 bytes.
-	t.Run("When 11 shards it should pass the pod-level effective termination message limit", func(t *testing.T) {
+	// Verify multi-shard passes the deterministic result ConfigMap name so
+	// etcd-upload stores its results where the controller reads them.
+	t.Run("When multiple shards it should pass the result ConfigMap name", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		r := newReconciler()
-		shards := []etcdShardInfo{{name: "etcd", identity: "default", endpoint: "https://etcd-client.test-ns.svc:2379"}}
-		for i := 0; i < 10; i++ {
-			shards = append(shards, etcdShardInfo{
-				name:     fmt.Sprintf("etcd-shard-%d", i),
-				endpoint: fmt.Sprintf("https://etcd-client-shard-%d.test-ns.svc:2379", i),
-			})
-		}
-		args, err := r.buildUploadArgs(newHCPEtcdBackup(), shards, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(args).To(ContainElements("--termination-message-limit", "945"))
-	})
-
-	t.Run("When 2 shards it should pass a 3072-byte termination message limit", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		r := newReconciler()
+		backup := newHCPEtcdBackup()
 		shards := []etcdShardInfo{
 			{name: "etcd", identity: "default", endpoint: "https://etcd-client.test-ns.svc:2379"},
 			{name: "etcd-events", identity: "events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
 		}
-		args, err := r.buildUploadArgs(newHCPEtcdBackup(), shards, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
+		args, err := r.buildUploadArgs(backup, shards, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(args).To(ContainElements("--termination-message-limit", "3072"))
+		g.Expect(args).To(ContainElements("--result-configmap", resultConfigMapName(backup)))
 	})
 
 	// Single-shard Jobs keep the legacy --snapshot-path arg surface and must
-	// not receive --termination-message-limit, so older CPO images that only
-	// know --snapshot-path are unaffected.
-	t.Run("When single shard it should not pass --termination-message-limit", func(t *testing.T) {
+	// not receive --result-configmap, so older CPO images that only know
+	// --snapshot-path are unaffected.
+	t.Run("When single shard it should not pass --result-configmap", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		r := newReconciler()
 		args, err := r.buildUploadArgs(newHCPEtcdBackup(), singleShard, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(args).ToNot(ContainElement("--termination-message-limit"))
+		g.Expect(args).ToNot(ContainElement("--result-configmap"))
 	})
 
 	for _, tt := range tests {
@@ -3927,4 +3980,93 @@ func indexOf(slice []string, value string) int {
 		}
 	}
 	return -1
+}
+
+func TestGetShardSnapshots(t *testing.T) {
+	t.Parallel()
+	newResultConfigMap := func(backup *hyperv1.HCPEtcdBackup, data string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resultConfigMapName(backup),
+				Namespace: testHONamespace,
+			},
+			Data: map[string]string{resultConfigMapKey: data},
+		}
+	}
+	newCompletedJob := func() *batchv1.Job {
+		return newTestJob(batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			},
+		})
+	}
+
+	t.Run("When the result ConfigMap exists it should be preferred over the pod termination message", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		job := newCompletedJob()
+		cm := newResultConfigMap(backup, `[{"name":"default","url":"s3://bucket/default.db"},{"name":"events","url":"s3://bucket/events.db"}]`)
+		r := newReconciler(backup, job, cm)
+
+		snapshots, err := r.getShardSnapshots(t.Context(), backup, job)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(Equal([]hyperv1.HCPEtcdShardSnapshot{
+			{Name: "default", SnapshotURL: "s3://bucket/default.db"},
+			{Name: "events", SnapshotURL: "s3://bucket/events.db"},
+		}))
+	})
+
+	t.Run("When the result ConfigMap is absent it should fall back to the pod termination message", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		job := newCompletedJob()
+		// A legacy single-shard pod message, and no result ConfigMap.
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "backup-pod", Namespace: testHONamespace,
+				Labels: map[string]string{"batch.kubernetes.io/job-name": "etcd-backup-test"},
+			},
+			Spec: corev1.PodSpec{
+				Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+				RestartPolicy: corev1.RestartPolicyNever,
+			},
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{
+					{Name: "upload", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+						ExitCode: 0, Message: "s3://bucket/snapshot.db",
+					}}},
+				},
+			},
+		}
+		r := newReconciler(backup, job, pod)
+
+		snapshots, err := r.getShardSnapshots(t.Context(), backup, job)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(Equal([]hyperv1.HCPEtcdShardSnapshot{
+			{Name: "default", SnapshotURL: "s3://bucket/snapshot.db"},
+		}))
+	})
+
+	t.Run("When the result ConfigMap holds unparsable data it should return no results, which the completeness check fails", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		job := newCompletedJob()
+		cm := newResultConfigMap(backup, "not-json")
+		r := newReconciler(backup, job, cm)
+
+		snapshots, err := r.getShardSnapshots(t.Context(), backup, job)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(BeNil())
+		g.Expect(validateShardSnapshotResults(snapshots, expectedShardNames(job, newHostedControlPlane()))).ToNot(BeEmpty())
+	})
+}
+
+func TestResultConfigMapName(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	backup := newHCPEtcdBackup()
+	g.Expect(resultConfigMapName(backup)).To(Equal("etcd-backup-result-" + testHCPNamespace + "-" + testBackupName))
 }
