@@ -294,7 +294,9 @@ The minimum Go version is declared in [`go.mod`](go.mod). The `api/` module uses
 ## Commit Messages
 
 Use conventional commit format. The installed `commit-msg` hook validates the pending message automatically; use
-`make run-gitlint` to validate a commit range. Do NOT put Jira IDs in commit messages — they belong only in PR titles.
+`make run-gitlint` to validate a commit range. Jira IDs may appear in the commit message body, but must not appear
+in the commit subject (the first line). For PR titles, follow the [PR Title rules](#pr-title), including the
+`NO-JIRA:` exception.
 
 ```
 <type>(<scope>): <description>
