@@ -59,7 +59,7 @@ The backup flow has three phases: CLI initiation, snapshot execution, and Velero
         Job->>etcd: snapshot: etcdctl snapshot save
         Job->>S3: upload: push snapshot.db
 
-        HO->>HO: Extract URL from pod termination message
+        HO->>HO: Extract results (ConfigMap / termination message)
         HO->>HO: Persist URL to HostedCluster status
         HO->>HO: Cleanup RBAC + NetworkPolicy
 
@@ -182,6 +182,8 @@ The controller creates temporary resources required for the backup Job to access
 | `ServiceAccount` | HO namespace | Identity for the backup Job pods |
 | `Role` | HCP namespace | Grants read access to `etcd-client-tls` Secret and `etcd-ca` ConfigMap |
 | `RoleBinding` | HCP namespace | Binds the HO ServiceAccount to the HCP Role |
+| `Role` | HO namespace | Grants the Job's ServiceAccount create/update access to exactly its result ConfigMap (named after the `HCPEtcdBackup`) |
+| `RoleBinding` | HO namespace | Binds the ServiceAccount to the result Role |
 | `NetworkPolicy` | HCP namespace | Allows ingress on port 2379 from the HO namespace to etcd pods |
 
 ### 3.3 Backup Job
@@ -193,7 +195,7 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 | `fetch-certs` | Init container | control-plane-operator | Runs `fetch-etcd-certs`: copies etcd TLS certificates from the HCP namespace using the cross-namespace RBAC |
 | `snapshot-etcd` | Init container | etcd | Runs `etcdctl snapshot save`: connects to the default etcd on port 2379 using the fetched TLS certificates and creates a local snapshot file |
 | `snapshot-etcd-<name>` | Init container (per shard) | etcd | When etcd sharding is enabled, one additional init container per PV-backed shard runs `etcdctl snapshot save` against that shard's client endpoint. EmptyDir-backed shards are skipped |
-| `upload` | Main container | control-plane-operator | Runs `etcd-upload`: `--snapshot-path` for single-shard clusters (backward compatible with older CPO images), `--snapshot-dir` for multi-shard clusters, uploading each shard-named file as a separate object. Writes the snapshot URL (single shard) or a JSON array of per-shard URLs (multi-shard) to the termination message |
+| `upload` | Main container | control-plane-operator | Runs `etcd-upload`: `--snapshot-path` for single-shard clusters (backward compatible with older CPO images), `--snapshot-dir` for multi-shard clusters, uploading each shard-named file as a separate object. Single-shard results (a plain URL) go to the pod termination message; multi-shard results (a JSON array of per-shard URLs) are stored in a result ConfigMap in the HO namespace, which has no size limits |
 
 **Job configuration:**
 
@@ -215,7 +217,7 @@ When the Job is created, the controller also records `HCPEtcdBackup.Status.Attem
 
 On subsequent reconcile loops, the controller checks the Job status:
 
-- **Succeeded**: Extracts the per-shard snapshot URLs from the `upload` container's termination message (JSON array). Transient extraction failures (API errors, pod status lag) are retried with a bound before the backup is failed. The extracted results must contain exactly one valid entry per shard the Job was built to snapshot — recorded on the Job at creation — otherwise the backup fails with reason `BackupResultIncomplete` rather than reporting success with missing shards. On success, populates `HCPEtcdBackup.Status.ShardSnapshots` with all shard entries and sets `Status.SnapshotURL` to the default shard's URL for backward compatibility. Persists the default shard URL to `HostedCluster.Status.LastSuccessfulEtcdBackupURL` using a retry-on-conflict pattern. Marks the `HCPEtcdBackup` as `BackupSucceeded`.
+- **Succeeded**: Extracts the per-shard snapshot results — from the result ConfigMap (multi-shard Jobs; read with a quorum read so a freshly written ConfigMap is already visible), falling back to the `upload` container's termination message (single-shard Jobs and older images). Transient extraction failures (API errors, pod status lag) are retried with a bound before the backup is failed. The extracted results must contain exactly one valid entry per shard the Job was built to snapshot — recorded on the Job at creation — otherwise the backup fails with reason `BackupResultIncomplete` rather than reporting success with missing shards. Once the results are persisted to the backup status, the result ConfigMap is deleted. On success, populates `HCPEtcdBackup.Status.ShardSnapshots` with all shard entries and sets `Status.SnapshotURL` to the default shard's URL for backward compatibility. Persists the default shard URL to `HostedCluster.Status.LastSuccessfulEtcdBackupURL` using a retry-on-conflict pattern. Marks the `HCPEtcdBackup` as `BackupSucceeded`.
 - **Failed**: Marks the `HCPEtcdBackup` as `BackupFailed`.
 - **Running**: Requeues reconciliation after 10 seconds.
 
@@ -254,7 +256,7 @@ graph LR
 
 ## Failed Backups Leave Objects Behind
 
-Multi-shard uploads are not transactional: each shard is uploaded as a separate object, and the per-shard snapshot init containers run before the upload container. A failure partway through — a later shard's upload failing, the termination message exceeding its size limit, or the Job exceeding its deadline — can leave some or all snapshot objects in cloud storage even though the backup failed.
+Multi-shard uploads are not transactional: each shard is uploaded as a separate object, and the per-shard snapshot init containers run before the upload container. A failure partway through — a later shard's upload failing or the Job exceeding its deadline — can leave some or all snapshot objects in cloud storage even though the backup failed.
 
 The controller does **not** delete backup objects automatically. Operators are responsible for cleaning up objects left behind by failed attempts. To identify the affected objects without handling signed URLs, read `HCPEtcdBackup.Status.AttemptKeyPrefix`: every object written by that attempt lives under that prefix (`<attemptKeyPrefix>.db` for single-shard backups, `<attemptKeyPrefix>/<shard>.db` for multi-shard).
 
@@ -267,8 +269,8 @@ The controller does **not** delete backup objects automatically. Operators are r
 | Credential Secret not found in HO namespace | Backup fails immediately | Verify the OADP plugin correctly copied the BSL credentials |
 | Backup Job fails (etcdctl error, upload error) | `BackupCompleted` = `BackupFailed` | Check Job pod logs, verify etcd connectivity and storage permissions |
 | Backup Job exceeds its deadline (base + per-shard allowance; 15 min for a single-shard S3 backup) | Job killed, `BackupCompleted` = `BackupFailed` | Investigate network or storage latency |
-| Shard snapshot results incomplete (missing, duplicate, or unexpected shard entry) | `BackupCompleted` = `BackupResultIncomplete` | Check the upload container termination message and the shard set recorded on the Job; a mismatch between the deployed CPO image and the configured shards can cause this |
-| Shard snapshot results could not be extracted (pod or termination message gone) | `BackupCompleted` = `BackupResultExtractionFailed` after bounded retries | Check whether the Job pod was deleted before the controller read its termination message |
+| Shard snapshot results incomplete (missing, duplicate, or unexpected shard entry) | `BackupCompleted` = `BackupResultIncomplete` | Check the result ConfigMap (or the legacy termination message) and the shard set recorded on the Job; a mismatch between the deployed CPO image and the configured shards can cause this |
+| Shard snapshot results could not be extracted (result ConfigMap and pod termination message both gone) | `BackupCompleted` = `BackupResultExtractionFailed` after bounded retries | Check whether the result ConfigMap and Job pod were deleted before the controller read them |
 | Plugin verification timeout (30s) | Plugin returns error, Velero marks backup failed | Check HyperShift Operator logs for controller issues |
 | Plugin completion timeout (10 min) | Plugin returns error, Velero marks backup failed | Check backup Job status and pod logs |
 | `HCPEtcdBackup` CRD not installed | Plugin fails with explicit error | Enable the `HCPEtcdBackup` feature gate and ensure CRDs are deployed |

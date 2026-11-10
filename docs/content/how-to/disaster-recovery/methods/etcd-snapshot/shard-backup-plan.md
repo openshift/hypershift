@@ -65,14 +65,17 @@ Add per-shard snapshot tracking to `HCPEtcdBackupStatus`:
 ShardSnapshots []HCPEtcdShardSnapshot `json:"shardSnapshots,omitempty"`
 ```
 
-The controller receives this list through the upload container's termination
-message. Kubernetes truncates that message at 4096 bytes per container and also
-divides a 12288-byte pod-level budget across every container of the pod, so the
-effective limit for the upload container is
-`min(4096, 12288 / (shard count + 2))` (the Job runs one fetch-certs init
-container, one snapshot init container per shard, and the upload container).
-The Job builder passes this effective limit to `etcd-upload`, which fails the
-Job rather than emit a payload the kubelet would truncate.
+The controller receives this list through a result ConfigMap in the HyperShift
+operator namespace. The Job builder derives the ConfigMap name deterministically
+from the `HCPEtcdBackup` and grants the Job's service account create/update
+access to exactly that ConfigMap; the upload container writes the JSON array
+there, and the controller reads it (with a quorum read) on completion and
+deletes it once the results are persisted to the backup status. A ConfigMap has
+no size budget, so the full result set always fits — unlike the pod termination
+message, which kubelet truncates at 4096 bytes per container and divides a
+12288-byte pod-level budget across all containers. The termination message
+remains the channel for single-shard backups (a plain URL) and for images built
+before the result ConfigMap was introduced.
 
 ```go
 type HCPEtcdShardSnapshot struct {
@@ -212,7 +215,7 @@ Extend the `etcd-upload` subcommand:
 - Add `--snapshot-dir` flag (mutually exclusive with existing `--snapshot-path`)
 - When `--snapshot-dir` is set, iterate over `*.db` files in the directory
 - Upload each with key `<prefix>/<timestamp>/<shard-name>.db`
-- Write JSON to termination log: `[{"name":"default","url":"s3://..."},{"name":"events","url":"s3://..."}]`
+- Store JSON in the result ConfigMap: `{"shardSnapshots": "[{\"name\":\"default\",\"url\":\"s3://...\"},{\"name\":\"events\",\"url\":\"s3://...\"}]"}`
 
 The existing `--snapshot-path` continues to work for the single-shard case so
 older CPO images remain compatible.
@@ -349,7 +352,7 @@ func (r *HCPEtcdBackupReconciler) etcdShards(hcp *hyperv1.HostedControlPlane) []
    - Health check fails if any shard StatefulSet is unhealthy
    - Job contains correct number of snapshot init containers for N shards
    - EmptyDir shards are excluded from snapshot init containers
-   - Status correctly populates `ShardSnapshots` from JSON termination message
+   - Status correctly populates `ShardSnapshots` from the result ConfigMap JSON
    - Backward compat: single-shard HCP still produces single `SnapshotURL`
 
 2. **Unit tests** (`shard_test.go`):
@@ -384,7 +387,7 @@ func (r *HCPEtcdBackupReconciler) etcdShards(hcp *hyperv1.HostedControlPlane) []
 | 4 | Update `checkEtcdHealth` for multi-shard | Controller |
 | 5 | Update `createBackupJob` to emit per-shard snapshot init containers | Controller |
 | 6 | Extend `etcd-upload` to support `--snapshot-dir` | CPO CLI |
-| 7 | Update `handleJobStatus` to parse JSON termination message | Controller |
+| 7 | Update `handleJobStatus` to parse the result ConfigMap JSON | Controller |
 | 8 | Verify NetworkPolicy pod selector covers shard pods | Controller |
 | 9 | Inject `etcd-init` in `adaptStatefulSetForShard` for PV-backed shards | CPO |
 | 10 | Extend `reconcileEtcdStatus` / `etcdRestoredCondition` for shard StatefulSets | CPO |
