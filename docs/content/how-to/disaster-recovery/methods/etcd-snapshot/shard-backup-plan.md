@@ -163,12 +163,28 @@ each writing to a shard-named snapshot file:
 ```text
 Init containers:
   fetch-certs          (unchanged — shared client TLS works for all shards)
-  snapshot-default     etcdctl --endpoints=etcd-client.<ns>:2379 snapshot save /backup/default.db
-  snapshot-events      etcdctl --endpoints=etcd-client-events.<ns>:2379 snapshot save /backup/events.db
+  snapshot             one container, one background etcdctl per shard:
+                         etcdctl --endpoints=etcd-client.<ns>:2379 snapshot save /backup/default.db &
+                         etcdctl --endpoints=etcd-client-events.<ns>:2379 snapshot save /backup/events.db &
+                         wait; fail (naming the shard) if any snapshot failed
 
 Main container:
   upload               control-plane-operator etcd-upload --snapshot-dir /backup/ ...
 ```
+
+##### Snapshot consistency model
+
+Each shard's snapshot is taken with `etcdctl snapshot save`, which produces an
+individually consistent point-in-time copy of that shard's data (etcd quorum
+semantics). All shards are snapshotted **concurrently** from a single init
+container, so across shards the copies are approximately simultaneous: the
+cross-shard skew is bounded by the duration of the slowest single snapshot,
+not by the sum of all snapshot durations. Cross-shard point-in-time
+consistency is not guaranteed — there is no coordinated multi-shard snapshot
+protocol — so resources routed to different shards can represent materially
+adjacent, but not identical, moments. This is the same guarantee the
+single-shard backup has trivially (one shard, no skew), and it is the
+consistency model under which the feature is consumable.
 
 The upload command changes from `--snapshot-path` (single file) to `--snapshot-dir`
 (directory of shard-named files), uploading each as a separate object with the
