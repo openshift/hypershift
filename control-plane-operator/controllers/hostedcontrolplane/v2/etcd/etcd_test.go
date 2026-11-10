@@ -882,6 +882,26 @@ func etcdListenURLTestCases() []etcdListenURLTestCase {
 			expectedMetricsURLs: "https://0.0.0.0:2382",
 			expectedMetricsArgs: ipv4MetricsArgs,
 		},
+		// An IPv6 address without zero compression contains no "::". These cases fail if the
+		// startup script brackets only "::" addresses (for example *::* instead of *:*).
+		{
+			name:                "When guest network is IPv6 and pod IP is an uncompressed IPv6 address, it should start etcd with bracketed IPv6 listen URLs",
+			guestCIDR:           "fd01::/48",
+			podIP:               "fd00:1:2:3:4:5:6:7",
+			expectedPeerURLs:    "https://[fd00:1:2:3:4:5:6:7]:2380",
+			expectedClientURLs:  "https://[fd00:1:2:3:4:5:6:7]:2379,https://localhost:2379",
+			expectedMetricsURLs: "https://[::]:2382",
+			expectedMetricsArgs: ipv6MetricsArgs,
+		},
+		{
+			name:                "When guest network is IPv4 and pod IP is an uncompressed IPv6 address, it should start etcd with bracketed IPv6 listen URLs",
+			guestCIDR:           "10.128.0.0/14",
+			podIP:               "fd00:1:2:3:4:5:6:7",
+			expectedPeerURLs:    "https://[fd00:1:2:3:4:5:6:7]:2380",
+			expectedClientURLs:  "https://[fd00:1:2:3:4:5:6:7]:2379,https://localhost:2379",
+			expectedMetricsURLs: "https://0.0.0.0:2382",
+			expectedMetricsArgs: ipv4MetricsArgs,
+		},
 	}
 }
 
@@ -912,7 +932,10 @@ func expectEtcdListenURLsAtStartup(t *testing.T, sts *appsv1.StatefulSet, assetC
 	for _, clusterState := range []string{"new", "existing"} {
 		result := runEtcdContainerCommand(t, *etcdContainer, podName, tc.podIP, clusterState)
 
-		g.Expect(result.stubPID).To(Equal(result.shellPID), "etcd must replace the shell through exec")
+		// Matching PIDs show that the etcd process replaced the shell. They do not prove the
+		// script uses an explicit exec, because a shell may replace itself for its final
+		// command anyway; runEtcdContainerCommand asserts the explicit exec in the script.
+		g.Expect(result.stubPID).To(Equal(result.shellPID), "etcd should replace the shell process")
 		g.Expect(result.env).To(HaveKeyWithValue("ETCD_LISTEN_PEER_URLS", tc.expectedPeerURLs))
 		g.Expect(result.env).To(HaveKeyWithValue("ETCD_LISTEN_CLIENT_URLS", tc.expectedClientURLs))
 		g.Expect(result.env).To(HaveKeyWithValue("ETCD_INITIAL_CLUSTER_STATE", clusterState))
@@ -950,6 +973,7 @@ func runEtcdContainerCommand(t *testing.T, c corev1.Container, podName, podIP, c
 	script := c.Command[2]
 	g.Expect(strings.Count(script, etcdBinaryPath)).To(Equal(1))
 	g.Expect(strings.Count(script, etcdClusterStatePath)).To(Equal(1))
+	// This enforces the explicit exec, which the PID comparison cannot prove.
 	g.Expect(script).To(ContainSubstring("exec " + etcdBinaryPath))
 	// The kubelet rewrites $(NAME) references to container env vars before the shell
 	// runs; the only command substitution must be the cluster state read.
