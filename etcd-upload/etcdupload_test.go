@@ -132,8 +132,7 @@ func TestRunDir(t *testing.T) {
 		}
 		err := runDir(context.Background(), opts, uploader)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(uploader.uploads).To(HaveLen(2))
-		// Verify all shard names are present (order depends on filesystem)
+		g.Expect(uploader.uploads).To(HaveLen(2)) // Verify all shard names are present (order depends on filesystem)
 		var keys []string
 		for _, u := range uploader.uploads {
 			keys = append(keys, u.key)
@@ -192,6 +191,27 @@ func TestRunDir(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("945"))
 	})
+
+	t.Run("When attemptTimestamp is set it should be used in object keys", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+		g.Expect(writeTestFile(dir, "etcd-events.db")).To(Succeed())
+
+		uploader := &fakeUploader{}
+		opts := options{
+			snapshotDir:      dir,
+			keyPrefix:        "backups/test",
+			attemptTimestamp: 1700000000,
+		}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(uploader.uploads).To(HaveLen(2))
+		for _, u := range uploader.uploads {
+			g.Expect(u.key).To(HavePrefix("backups/test/1700000000/"))
+		}
+	})
+
 }
 
 type uploadRecord struct {
