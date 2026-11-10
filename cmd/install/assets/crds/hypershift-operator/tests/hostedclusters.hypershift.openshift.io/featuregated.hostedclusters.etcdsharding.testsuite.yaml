@@ -999,7 +999,59 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "restoreSnapshotURL must be a valid URL with scheme https or s3"
+    expectedError: "restoreSnapshotURL must be a valid URL with scheme https"
+  - name: When restoreSnapshotURL has s3 scheme it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            shards:
+            - name: events
+              replicas: 1
+              resources:
+              - apiGroup: ""
+                resource: events
+              storage:
+                type: PersistentVolume
+              restoreSnapshotURL: "s3://bucket/snapshot.db"
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "restoreSnapshotURL must be a valid URL with scheme https"
   - name: When restoreSnapshotURL is 2048 characters it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1

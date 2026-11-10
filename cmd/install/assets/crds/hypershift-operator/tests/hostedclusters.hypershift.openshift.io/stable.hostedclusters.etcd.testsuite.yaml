@@ -140,7 +140,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "restoreSnapshotURL must be a valid URL with scheme https or s3"
+    expectedError: "restoreSnapshotURL must be a valid URL with scheme https"
 
   - name: When restoreSnapshotURL has https scheme it should pass
     initial: |
@@ -187,7 +187,7 @@ tests:
             type: Route
             route: {}
 
-  - name: When restoreSnapshotURL has s3 scheme it should pass
+  - name: When restoreSnapshotURL has s3 scheme it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
@@ -231,6 +231,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
+    expectedError: "restoreSnapshotURL must be a valid URL with scheme https"
 
   onUpdate:
   - name: When restoreSnapshotURL is changed it should fail

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 902681964e704d9dd5f1cb148aaee408a567c7cb89e37f7caa82956ad39fdda0
+    hypershift.openshift.io/desired-state-hash: 69463cb535472f9855c495c4c8c7b8e86693ff70d58fd35623f9fdb78afd1da3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -313,6 +313,17 @@ spec:
 
           RESTORE_URL_VAR="RESTORE_URL_ETCD"
           RESTORE_URL=${!RESTORE_URL_VAR}
+
+          # Defense in depth: the API requires https restore URLs because this script
+          # fetches the snapshot with curl, which cannot speak the s3 protocol. An
+          # unpresigned s3:// URL reaching this point would otherwise hang or fail
+          # confusingly, so fail with an actionable message instead.
+          case "${RESTORE_URL}" in
+            s3://*)
+              echo "ERROR: restore URL uses the s3:// scheme, which curl cannot fetch."       "Presign the URL to https:// before setting restoreSnapshotURL"       "(the OADP plugin does this automatically)."
+              exit 1
+              ;;
+          esac
 
           # When downloading from S3, curl can succeed even if the object doesn't exist
           # and also when a pre-signed URL is expired.

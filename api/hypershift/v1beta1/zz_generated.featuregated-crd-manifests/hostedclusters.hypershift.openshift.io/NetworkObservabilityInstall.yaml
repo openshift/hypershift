@@ -2792,6 +2792,9 @@ spec:
                               referencing a storage service.
                               This snapshot will be restored on initial startup, only when the etcd PV
                               is empty.
+                              The URL must use the https scheme: s3:// URLs must be presigned to https
+                              before being injected (the OADP plugin does this automatically), because
+                              the restore init container fetches the snapshot with curl.
                             items:
                               maxLength: 1024
                               type: string
@@ -2805,8 +2808,8 @@ spec:
                             - message: restoreSnapshotURL is immutable
                               rule: self == oldSelf
                             - message: restoreSnapshotURL must be a valid URL with
-                                scheme https or s3
-                              rule: self.size() == 0 || self[0].matches('^(https|s3)://.*')
+                                scheme https
+                              rule: self.size() == 0 || self[0].matches('^https://.*')
                           type:
                             description: |-
                               type is the kind of persistent storage implementation to use for etcd.
