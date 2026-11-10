@@ -150,6 +150,19 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
 	}
 
+	deterministicLBArgs := []string{
+		"--endpoint-access=PublicAndPrivate",
+		"--feature-set=TechPreviewNoUpgrade",
+	}
+	if eip := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_EIP"); eip != "" {
+		if subnet := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET"); subnet != "" {
+			deterministicLBArgs = append(deterministicLBArgs,
+				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+eip,
+				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+subnet,
+			)
+		}
+	}
+
 	return []ClusterSpec{
 		{
 			Variant:     "public",
@@ -253,6 +266,15 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 				// Shards run 3 replicas, which needs an HA control plane.
 				"--control-plane-availability-policy=HighlyAvailable",
 			}, v2util.EtcdShardingCreateArgs("")...)...),
+		},
+		{
+			// Dedicated cluster for the deterministic LoadBalancer IP test.
+			// The EIP and public subnet belong to the management cluster and
+			// are reserved by the CI pre-step before create-guests runs.
+			Variant:                 "deterministic-lb",
+			DestroyArgs:             destroyArgs,
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs:              clusterArgs(deterministicLBArgs...),
 		},
 	}
 }
