@@ -1960,10 +1960,13 @@ func TestCreateBackupJob(t *testing.T) {
 		g.Expect(fetchCerts.Command).To(ContainElements("fetch-etcd-certs", "--hcp-namespace", testHCPNamespace))
 
 		snapshot := podSpec.InitContainers[1]
-		g.Expect(snapshot.Name).To(Equal("snapshot-default"))
+		g.Expect(snapshot.Name).To(Equal("snapshot"))
 		g.Expect(snapshot.Image).To(Equal(testEtcdImage))
-		g.Expect(snapshot.Command).To(ContainElement("/usr/bin/etcdctl"))
-		g.Expect(snapshot.Command).To(ContainElement("snapshot"))
+		// One container snapshots all shards concurrently via a shell script.
+		g.Expect(snapshot.Command).To(HaveLen(3))
+		g.Expect(snapshot.Command[0]).To(Equal("/bin/sh"))
+		g.Expect(snapshot.Command[2]).To(ContainSubstring("/usr/bin/etcdctl"))
+		g.Expect(snapshot.Command[2]).To(ContainSubstring(`snap 'default' 'https://etcd-client.` + testHCPNamespace + `.svc:2379' &`))
 		g.Expect(snapshot.Env).To(ContainElement(corev1.EnvVar{Name: "ETCDCTL_API", Value: "3"}))
 
 		// Verify main container
@@ -3890,7 +3893,14 @@ func TestEtcdShards(t *testing.T) {
 func TestBuildSnapshotInitContainers(t *testing.T) {
 	t.Parallel()
 
-	t.Run("When single shard it should create fetch-certs + 1 snapshot container", func(t *testing.T) {
+	scriptFor := func(containers []corev1.Container) string {
+		if len(containers) != 2 {
+			return ""
+		}
+		return containers[1].Command[2]
+	}
+
+	t.Run("When single shard it should create fetch-certs + 1 parallel snapshot container", func(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
 		r := newReconciler()
@@ -3903,30 +3913,40 @@ func TestBuildSnapshotInitContainers(t *testing.T) {
 		containers := r.buildSnapshotInitContainers("cpo:latest", "etcd:latest", "test-ns", shards)
 		g.Expect(containers).To(HaveLen(2))
 		g.Expect(containers[0].Name).To(Equal("fetch-certs"))
-		g.Expect(containers[1].Name).To(Equal("snapshot-default"))
-		g.Expect(containers[1].Command).To(ContainElement(ContainSubstring("etcd-client.test-ns.svc")))
-		g.Expect(containers[1].Command).To(ContainElement(ContainSubstring("/default.db")))
+		g.Expect(containers[1].Name).To(Equal("snapshot"))
+		g.Expect(containers[1].Image).To(Equal("etcd:latest"))
+		g.Expect(containers[1].Command[0]).To(Equal("/bin/sh"))
+		script := scriptFor(containers)
+		g.Expect(script).To(ContainSubstring("etcd-client.test-ns.svc"))
+		g.Expect(script).To(ContainSubstring(`snap 'default' 'https://etcd-client.test-ns.svc:2379' &`))
 	})
 
-	t.Run("When multiple shards it should create fetch-certs + N snapshot containers", func(t *testing.T) {
+	t.Run("When multiple shards it should snapshot every shard from one container", func(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
 		r := newReconciler()
 		shards := []etcdShardInfo{
 			{name: "etcd", identity: "default", endpoint: "https://etcd-client.test-ns.svc:2379"},
 			{name: "etcd-events", identity: "events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
+			{name: "etcd-leases", identity: "leases", endpoint: "https://etcd-client-leases.test-ns.svc:2379"},
 		}
 
 		containers := r.buildSnapshotInitContainers("cpo:latest", "etcd:latest", "test-ns", shards)
-		g.Expect(containers).To(HaveLen(3))
-		g.Expect(containers[0].Name).To(Equal("fetch-certs"))
-		g.Expect(containers[1].Name).To(Equal("snapshot-default"))
-		g.Expect(containers[2].Name).To(Equal("snapshot-events"))
-		g.Expect(containers[2].Command).To(ContainElement(ContainSubstring("etcd-client-events.test-ns.svc")))
-		g.Expect(containers[2].Command).To(ContainElement(ContainSubstring("/events.db")))
+		// One fetch-certs + one snapshot container regardless of shard count.
+		g.Expect(containers).To(HaveLen(2))
+		script := scriptFor(containers)
+		// Every shard's snapshot command runs concurrently (backgrounded).
+		for _, shard := range shards {
+			g.Expect(script).To(ContainSubstring(fmt.Sprintf("snap '%s' '%s' &", shard.identity, shard.endpoint)))
+		}
+		// Snapshot files are named by shard identity.
+		g.Expect(script).To(ContainSubstring(`"$name.db"`))
+		// All snapshots are waited on, and any failure fails the container.
+		g.Expect(script).To(ContainSubstring("wait\n"))
+		g.Expect(script).To(ContainSubstring("snapshot failed"))
+		g.Expect(script).To(ContainSubstring("exit 1"))
 	})
 }
-
 func TestParseShardSnapshots(t *testing.T) {
 	t.Parallel()
 

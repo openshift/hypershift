@@ -1530,39 +1530,57 @@ func (r *HCPEtcdBackupReconciler) buildSnapshotInitContainers(cpoImage, etcdImag
 		},
 	}
 
+	// All shards are snapshotted concurrently from a single init container.
+	// Each etcdctl snapshot save produces an individually consistent copy of
+	// its shard (etcd quorum semantics); running them in parallel bounds the
+	// cross-shard skew by the slowest snapshot instead of the sum of all
+	// snapshot durations. Any failing shard fails the container, naming the
+	// shard.
+	var script strings.Builder
+	script.WriteString("set -u\n")
+	script.WriteString("mkdir -p /tmp/snapshot-status\n")
+	script.WriteString("snap() {\n")
+	script.WriteString("  name=\"$1\"; endpoint=\"$2\"\n")
+	fmt.Fprintf(&script, "  if /usr/bin/etcdctl --endpoints \"$endpoint\" --cacert %s/ca.crt --cert %s/etcd-client.crt --key %s/etcd-client.key snapshot save %s/\"$name.db\"; then\n",
+		mountPathEtcdCerts, mountPathEtcdCerts, mountPathEtcdCerts, mountPathEtcdBackup)
+	script.WriteString("    touch \"/tmp/snapshot-status/$name.ok\"\n")
+	script.WriteString("  else\n")
+	script.WriteString("    echo \"ERROR: etcd snapshot for shard \\\"$name\\\" failed\" >&2\n")
+	script.WriteString("    touch \"/tmp/snapshot-status/$name.fail\"\n")
+	script.WriteString("  fi\n")
+	script.WriteString("}\n")
 	for _, shard := range shards {
-		initContainers = append(initContainers, corev1.Container{
-			Name:  fmt.Sprintf("snapshot-%s", shard.identity),
-			Image: etcdImage,
-			Env: []corev1.EnvVar{
-				{Name: "ETCDCTL_API", Value: "3"},
-			},
-			Command: []string{
-				"/usr/bin/etcdctl",
-				"--endpoints", shard.endpoint,
-				"--cacert", mountPathEtcdCerts + "/ca.crt",
-				"--cert", mountPathEtcdCerts + "/etcd-client.crt",
-				"--key", mountPathEtcdCerts + "/etcd-client.key",
-				"snapshot", "save",
-				fmt.Sprintf("%s/%s.db", mountPathEtcdBackup, shard.identity),
-			},
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      volumeEtcdCerts,
-					MountPath: mountPathEtcdCerts,
-					ReadOnly:  true,
-				},
-				{
-					Name:      volumeEtcdBackup,
-					MountPath: mountPathEtcdBackup,
-				},
-			},
-		})
+		fmt.Fprintf(&script, "snap '%s' '%s' &\n", shard.identity, shard.endpoint)
 	}
+	script.WriteString("wait\n")
+	script.WriteString("failed=$(ls /tmp/snapshot-status/*.fail 2>/dev/null || true)\n")
+	script.WriteString("if [ -n \"$failed\" ]; then\n")
+	script.WriteString("  echo \"ERROR: etcd snapshot failed for shard(s): $failed\" >&2\n")
+	script.WriteString("  exit 1\n")
+	script.WriteString("fi\n")
+
+	initContainers = append(initContainers, corev1.Container{
+		Name:  "snapshot",
+		Image: etcdImage,
+		Env: []corev1.EnvVar{
+			{Name: "ETCDCTL_API", Value: "3"},
+		},
+		Command: []string{"/bin/sh", "-c", script.String()},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      volumeEtcdCerts,
+				MountPath: mountPathEtcdCerts,
+				ReadOnly:  true,
+			},
+			{
+				Name:      volumeEtcdBackup,
+				MountPath: mountPathEtcdBackup,
+			},
+		},
+	})
 
 	return initContainers
 }
-
 func (r *HCPEtcdBackupReconciler) buildJobVolumes(creds resolvedCredentials) []corev1.Volume {
 	volumes := []corev1.Volume{
 		{
