@@ -1,6 +1,7 @@
 package pki
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/openshift/hypershift/support/certs"
@@ -62,16 +63,17 @@ func TestReconcileOAuthServerCert(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+			wantDNS := "oauth-openshift.dummy.svc.cluster.local"
 			if test.expectIP {
-				if len(cert.DNSNames) > 0 {
-					t.Errorf("cert has dns names, none expected")
+				if !slices.Equal(cert.DNSNames, []string{wantDNS}) {
+					t.Errorf("expected DNS names [%s], got %v", wantDNS, cert.DNSNames)
 				}
 				if len(cert.IPAddresses) == 0 {
 					t.Errorf("expected cert to have IP addresses, got none")
 				}
 			} else {
-				if len(cert.DNSNames) == 0 {
-					t.Errorf("expected cert to have DNS names, got none")
+				if !slices.Contains(cert.DNSNames, wantDNS) || !slices.Contains(cert.DNSNames, test.address) {
+					t.Errorf("expected DNS names to include %s and %s, got %v", wantDNS, test.address, cert.DNSNames)
 				}
 				if len(cert.IPAddresses) > 0 {
 					t.Errorf("cert has IP addresses, expected none")

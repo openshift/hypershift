@@ -11,11 +11,12 @@ import (
 
 func ReconcileOAuthServerCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalOAuthAddress string) error {
 	var dnsNames, ips []string
+	dnsNames = append(dnsNames, "oauth-openshift."+secret.GetNamespace()+".svc.cluster.local")
 	oauthIP := net.ParseIP(externalOAuthAddress)
 	if oauthIP != nil {
 		ips = append(ips, externalOAuthAddress)
 	} else {
-		dnsNames = append(dnsNames, externalOAuthAddress, "oauth-openshift."+secret.GetNamespace()+".svc.cluster.local")
+		dnsNames = append(dnsNames, externalOAuthAddress)
 	}
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-oauth", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, ips)
 }
