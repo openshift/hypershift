@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/internal/testtrace"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -33,9 +34,9 @@ func TestReconcile(t *testing.T) {
 		g := NewWithT(t)
 		apiServiceFailure, endpointsFailure, hashFailure := errors.New("apiservice failure"), errors.New("endpoints failure"), errors.New("hash failure")
 		run := newProjectionRun(projectionFixture{controlPlane: controlPlaneInputs(), upsertFailures: map[string]error{
-			objectKey(manifests.OpenShiftAPIServerAPIService("apps")): apiServiceFailure,
-			objectKey(manifests.OpenShiftAPIServerClusterEndpoints()): endpointsFailure,
-			objectKey(manifests.KubeadminPasswordHashSecret()):        hashFailure,
+			testtrace.ObjectKey(manifests.OpenShiftAPIServerAPIService("apps")): apiServiceFailure,
+			testtrace.ObjectKey(manifests.OpenShiftAPIServerClusterEndpoints()): endpointsFailure,
+			testtrace.ObjectKey(manifests.KubeadminPasswordHashSecret()):        hashFailure,
 		}})
 
 		err := Reconcile(t.Context(), run.hosted, run.controlPlane, enabledParams(), APIServiceProjections)
@@ -56,8 +57,8 @@ func TestReconcile(t *testing.T) {
 		g := NewWithT(t)
 		browserFailure, roleFailure := errors.New("browser failure"), errors.New("role failure")
 		run := newProjectionRun(projectionFixture{controlPlane: controlPlaneInputs(), upsertFailures: map[string]error{
-			objectKey(manifests.OAuthServerBrowserClient()): browserFailure,
-			objectKey(manifests.OAuthServingCertRole()):     roleFailure,
+			testtrace.ObjectKey(manifests.OAuthServerBrowserClient()): browserFailure,
+			testtrace.ObjectKey(manifests.OAuthServingCertRole()):     roleFailure,
 		}})
 
 		err := Reconcile(t.Context(), run.hosted, run.controlPlane, enabledParams(), OAuthProjections)
@@ -77,6 +78,6 @@ func TestReconcile(t *testing.T) {
 		err := Reconcile(t.Context(), run.hosted, run.controlPlane, enabledParams(), Stage(99))
 
 		g.Expect(err).To(MatchError("unknown integration reconciliation stage: 99"))
-		g.Expect(run.trace.operations()).To(BeEmpty())
+		g.Expect(run.trace.Operations()).To(BeEmpty())
 	})
 }

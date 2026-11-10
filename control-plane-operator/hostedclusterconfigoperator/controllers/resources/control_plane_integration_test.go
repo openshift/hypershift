@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -14,6 +13,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/internal/testtrace"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	pkgoauth "github.com/openshift/hypershift/pkg/oauth"
@@ -35,70 +35,7 @@ import (
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
-
-// integrationTrace records client operations per cluster so tests can assert which
-// cross-cluster reads and writes the control-plane integration projections perform.
-type integrationTrace struct {
-	mu  sync.Mutex
-	ops []string
-}
-
-func (trace *integrationTrace) record(operation, cluster string, object client.Object, key client.ObjectKey) {
-	trace.mu.Lock()
-	defer trace.mu.Unlock()
-	trace.ops = append(trace.ops, fmt.Sprintf("%s %s %T %s/%s", operation, cluster, object, key.Namespace, key.Name))
-}
-
-func (trace *integrationTrace) operations() []string {
-	trace.mu.Lock()
-	defer trace.mu.Unlock()
-	return slices.Clone(trace.ops)
-}
-
-// tracedClient builds a fake client that records every operation and returns getFailures
-// for the matching "<type> <namespace>/<name>" keys.
-func tracedClient(trace *integrationTrace, cluster string, getFailures map[string]error, objects ...client.Object) client.WithWatch {
-	return fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).WithInterceptorFuncs(interceptor.Funcs{
-		Get: func(ctx context.Context, target client.WithWatch, key client.ObjectKey, object client.Object, opts ...client.GetOption) error {
-			trace.record("get", cluster, object, key)
-			if err := getFailures[fmt.Sprintf("%T %s/%s", object, key.Namespace, key.Name)]; err != nil {
-				return err
-			}
-			return target.Get(ctx, key, object, opts...)
-		},
-		Create: func(ctx context.Context, target client.WithWatch, object client.Object, opts ...client.CreateOption) error {
-			trace.record("create", cluster, object, client.ObjectKeyFromObject(object))
-			return target.Create(ctx, object, opts...)
-		},
-		Update: func(ctx context.Context, target client.WithWatch, object client.Object, opts ...client.UpdateOption) error {
-			trace.record("update", cluster, object, client.ObjectKeyFromObject(object))
-			return target.Update(ctx, object, opts...)
-		},
-		Patch: func(ctx context.Context, target client.WithWatch, object client.Object, patch client.Patch, opts ...client.PatchOption) error {
-			trace.record("patch", cluster, object, client.ObjectKeyFromObject(object))
-			return target.Patch(ctx, object, patch, opts...)
-		},
-		Delete: func(ctx context.Context, target client.WithWatch, object client.Object, opts ...client.DeleteOption) error {
-			trace.record("delete", cluster, object, client.ObjectKeyFromObject(object))
-			return target.Delete(ctx, object, opts...)
-		},
-	}).Build()
-}
-
-// integrationUpserter injects upsert failures keyed by "<type> <namespace>/<name>".
-type integrationUpserter struct {
-	failures map[string]error
-}
-
-func (provider integrationUpserter) CreateOrUpdate(ctx context.Context, target client.Client, object client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
-	if err := provider.failures[fmt.Sprintf("%T %s/%s", object, object.GetNamespace(), object.GetName())]; err != nil {
-		return controllerutil.OperationResultNone, err
-	}
-	return controllerutil.CreateOrUpdate(ctx, target, object, mutate)
-}
 
 type integrationFixture struct {
 	hcp             *hyperv1.HostedControlPlane
@@ -115,7 +52,7 @@ type integrationRun struct {
 	reconciler *reconciler
 	hosted     client.WithWatch
 	cp         client.WithWatch
-	trace      *integrationTrace
+	trace      *testtrace.Recorder
 }
 
 func integrationControlPlaneObjects() []client.Object {
@@ -160,9 +97,10 @@ func newIntegrationRun(fixture integrationFixture) integrationRun {
 		controlPlaneObjects = append(controlPlaneObjects, object)
 	}
 	hostedObjects := append([]client.Object{globalconfig.ProxyConfig(), manifests.NamespaceKubeSystem(), manifests.OpenShiftUserCABundle()}, fixture.additionalGuest...)
-	trace := &integrationTrace{}
-	hostedClient := tracedClient(trace, "hosted", nil, hostedObjects...)
-	controlPlaneClient := tracedClient(trace, "control-plane", fixture.cpGetFailures, controlPlaneObjects...)
+	trace := &testtrace.Recorder{}
+	statusSubresources := []client.Object{&hyperv1.HostedControlPlane{}}
+	hostedClient := testtrace.NewClient(trace, "hosted", testtrace.ClientOptions{Objects: hostedObjects, StatusSubresources: statusSubresources})
+	controlPlaneClient := testtrace.NewClient(trace, "control-plane", testtrace.ClientOptions{Objects: controlPlaneObjects, GetFailures: fixture.cpGetFailures, StatusSubresources: statusSubresources})
 	oauthAddress, oauthPort := fixture.oauthAddress, fixture.oauthPort
 	if oauthAddress == "" {
 		oauthAddress, oauthPort = "oauth.example.com", 443
@@ -172,7 +110,7 @@ func newIntegrationRun(fixture integrationFixture) integrationRun {
 			client:                 hostedClient,
 			uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 			cpClient:               controlPlaneClient,
-			CreateOrUpdateProvider: integrationUpserter{failures: fixture.upsertFailures},
+			CreateOrUpdateProvider: testtrace.FailingUpserter{Failures: fixture.upsertFailures},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
 			hcpName:                hcp.Name,
@@ -327,7 +265,7 @@ func TestReconcileAPIServicesAndOAuth(t *testing.T) {
 		hcp := fakeHCP()
 
 		errs := run.reconciler.reconcileAPIServicesAndOAuth(t.Context(), hcp, controllerruntime.LoggerFrom(t.Context()), integrationReleaseImage())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 
 		g.Expect(errs).To(BeEmpty())
 		for _, group := range manifests.OpenShiftAPIServerAPIServiceGroups() {
@@ -369,7 +307,7 @@ func TestReconcileAPIServicesAndOAuth(t *testing.T) {
 		run := newIntegrationRun(integrationFixture{hcp: oidcHCP(), additionalGuest: []client.Object{existingHash}})
 
 		errs := run.reconciler.reconcileAPIServicesAndOAuth(t.Context(), oidcHCP(), controllerruntime.LoggerFrom(t.Context()), integrationReleaseImage())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 
 		g.Expect(errs).To(BeEmpty())
 		for _, group := range manifests.OpenShiftAPIServerAPIServiceGroups() {
@@ -392,7 +330,7 @@ func TestReconcileAPIServicesAndOAuth(t *testing.T) {
 		run := newIntegrationRun(integrationFixture{removeFromCP: []client.Object{fakeRootCASecret()}})
 
 		errs := run.reconciler.reconcileAPIServicesAndOAuth(t.Context(), fakeHCP(), controllerruntime.LoggerFrom(t.Context()), integrationReleaseImage())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 		g.Expect(controlPlaneWrites(operations)).To(Equal([]string{"update control-plane " + kubeadminKey}))
 
 		owned := integrationErrors(errs)
@@ -417,7 +355,7 @@ func TestReconcileAPIServicesAndOAuth(t *testing.T) {
 		run := newIntegrationRun(integrationFixture{removeFromCP: []client.Object{fakeOpenShiftAPIServerService()}})
 
 		errs := run.reconciler.reconcileAPIServicesAndOAuth(t.Context(), fakeHCP(), controllerruntime.LoggerFrom(t.Context()), integrationReleaseImage())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 		g.Expect(controlPlaneWrites(operations)).To(Equal([]string{"update control-plane " + kubeadminKey}))
 
 		g.Expect(errorMessages(integrationErrors(errs))).To(Equal([]string{
@@ -438,7 +376,7 @@ func TestReconcileAPIServicesAndOAuth(t *testing.T) {
 		run := newIntegrationRun(integrationFixture{replaceInCP: []client.Object{notReady}, additionalGuest: []client.Object{existing}})
 
 		errs := run.reconciler.reconcileAPIServicesAndOAuth(t.Context(), fakeHCP(), controllerruntime.LoggerFrom(t.Context()), integrationReleaseImage())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 
 		g.Expect(errorMessages(integrationErrors(errs))).To(Equal([]string{
 			"failed to reconcile openshift apiserver endpoints: openshift apiserver service in control plane does not yet have a cluster IP",
@@ -454,7 +392,7 @@ func TestReconcileAPIServicesAndOAuth(t *testing.T) {
 		run := newIntegrationRun(integrationFixture{removeFromCP: []client.Object{fakeOpenShiftOAuthAPIServerService()}})
 
 		errs := run.reconciler.reconcileAPIServicesAndOAuth(t.Context(), fakeHCP(), controllerruntime.LoggerFrom(t.Context()), integrationReleaseImage())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 		g.Expect(controlPlaneWrites(operations)).To(Equal([]string{"update control-plane " + kubeadminKey}))
 
 		g.Expect(errorMessages(integrationErrors(errs))).To(Equal([]string{
@@ -472,7 +410,7 @@ func TestReconcileAPIServicesAndOAuth(t *testing.T) {
 		run := newIntegrationRun(integrationFixture{replaceInCP: []client.Object{notReady}})
 
 		errs := run.reconciler.reconcileAPIServicesAndOAuth(t.Context(), fakeHCP(), controllerruntime.LoggerFrom(t.Context()), integrationReleaseImage())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 		g.Expect(controlPlaneWrites(operations)).To(Equal([]string{"update control-plane " + kubeadminKey}))
 
 		g.Expect(errorMessages(integrationErrors(errs))).To(Equal([]string{
@@ -488,7 +426,7 @@ func TestReconcileAPIServicesAndOAuth(t *testing.T) {
 		run := newIntegrationRun(integrationFixture{cpGetFailures: map[string]error{kubeadminKey: unavailable}})
 
 		errs := run.reconciler.reconcileAPIServicesAndOAuth(t.Context(), fakeHCP(), controllerruntime.LoggerFrom(t.Context()), integrationReleaseImage())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 
 		owned := integrationErrors(errs)
 		g.Expect(errorMessages(owned)).To(Equal([]string{"failed to reconcile kubeadmin password hash secret: failed to get kubeadmin password secret: cp unavailable"}))
@@ -508,7 +446,7 @@ func TestReconcileAPIServicesAndOAuth(t *testing.T) {
 		}})
 
 		errs := run.reconciler.reconcileAPIServicesAndOAuth(t.Context(), fakeHCP(), controllerruntime.LoggerFrom(t.Context()), integrationReleaseImage())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 
 		owned := integrationErrors(errs)
 		g.Expect(errorMessages(owned)).To(Equal([]string{
@@ -557,7 +495,7 @@ func TestReconcileNetworkingAndSecrets(t *testing.T) {
 			run := newIntegrationRun(integrationFixture{oauthAddress: tc.address, oauthPort: tc.port})
 
 			errs := run.reconciler.reconcileNetworkingAndSecrets(t.Context(), fakeHCP(), controllerruntime.LoggerFrom(t.Context()), fakePullSecret())
-			operations := run.trace.operations()
+			operations := run.trace.Operations()
 
 			g.Expect(errs).To(BeEmpty())
 			caBundle := manifests.OAuthCABundle()
@@ -605,7 +543,7 @@ func TestReconcileNetworkingAndSecrets(t *testing.T) {
 		run := newIntegrationRun(integrationFixture{hcp: oidcHCP()})
 
 		errs := run.reconciler.reconcileNetworkingAndSecrets(t.Context(), oidcHCP(), controllerruntime.LoggerFrom(t.Context()), fakePullSecret())
-		operations := run.trace.operations()
+		operations := run.trace.Operations()
 
 		g.Expect(errs).To(BeEmpty())
 		expectNotFound(g, run.hosted, oauthProjectionHostedObjects()...)
