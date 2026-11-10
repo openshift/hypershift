@@ -629,7 +629,18 @@ var allowlist = map[string]map[string][]string{
 	},
 	"test/e2e/v2/tests/nodepool_lifecycle_test.go": {
 		"NodePoolAutoRepairTest/It(\"should auto-repair a NodePool when a node is terminated\")#1": {
+			"Condition",
+			"Condition.Reason",
+			"Condition.Status",
+			"Condition.Type",
+			"ConditionPredicate",
+			"EventuallyObject",
+			"Predicate",
 			"WaitForReadyNodesByNodePool",
+			"WithCollectionPredicates",
+			"WithInterval",
+			"WithPredicates",
+			"WithTimeout",
 		},
 		"NodePoolDiskEncryptionTest/It(\"should create a NodePool with Azure DiskEncryptionSet and verify it is applied\")#1": {
 			"WaitForReadyNodesByNodePool",

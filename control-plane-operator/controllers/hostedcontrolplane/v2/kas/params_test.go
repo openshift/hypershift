@@ -128,6 +128,7 @@ func defaultKubeAPIServerConfigParams() KubeAPIServerConfigParams {
 		MaxRequestsInflight:          fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight:  fmt.Sprint(defaultMaxMutatingRequestsInflight),
 		GoAwayChance:                 fmt.Sprint(defaultGoAwayChance),
+		EventTTL:                     defaultEventTTL,
 		APIServerSTSDirectives:       "max-age=31536000,includeSubDomains,preload",
 	}
 }
@@ -314,6 +315,39 @@ func TestNewConfigParams(t *testing.T) {
 				params := defaultKubeAPIServerConfigParams()
 				params.FeatureGates = featureGates
 				params.GoAwayChance = "0.002"
+				return params
+			},
+		},
+		{
+			name: "When eventTTLMinutes is set, it should convert minutes to a duration",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{EventTTLMinutes: 60},
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.EventTTL = "60m"
+				return params
+			},
+		},
+		{
+			name: "When operatorConfiguration is set but eventTTLMinutes is not, it should keep the default",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+					},
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
 				return params
 			},
 		},
@@ -580,5 +614,61 @@ func TestNewConfigParams(t *testing.T) {
 
 			g.Expect(actual).To(Equal(expected))
 		})
+	}
+}
+
+func TestResolveEventTTL(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected string
+	}{
+		{
+			name:     "When operatorConfiguration is nil, it should use the default",
+			hcp:      &hyperv1.HostedControlPlane{},
+			expected: defaultEventTTL,
+		},
+		{
+			name: "When eventTTLMinutes is unset, it should use the default",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{},
+				},
+			},
+			expected: defaultEventTTL,
+		},
+		{
+			name:     "When eventTTLMinutes is the minimum, it should render 5m",
+			hcp:      hcpWithEventTTLMinutes(5),
+			expected: "5m",
+		},
+		{
+			name:     "When eventTTLMinutes is the maximum, it should render 180m",
+			hcp:      hcpWithEventTTLMinutes(180),
+			expected: "180m",
+		},
+		{
+			name:     "When eventTTLMinutes is within the range, it should render 60m",
+			hcp:      hcpWithEventTTLMinutes(60),
+			expected: "60m",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			g.Expect(resolveEventTTL(tc.hcp)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func hcpWithEventTTLMinutes(minutes int32) *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			OperatorConfiguration: &hyperv1.OperatorConfiguration{
+				KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{EventTTLMinutes: minutes},
+			},
+		},
 	}
 }

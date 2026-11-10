@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d705e92f8057bd3fcff2068518b911b2f00aa57e6f4f91d66a6f2a4bd4c20423
+    hypershift.openshift.io/desired-state-hash: a70ce18f0cc2f375fb168d9d24623c84b7b27b0cb77d788690c8aa34544d3bc1
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator
@@ -377,7 +377,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/kubeconfig
         - name: CLUSTER_VERSION_JSON
-          value: '{"kind":"ClusterVersion","apiVersion":"config.openshift.io/v1","metadata":{"name":"version"},"spec":{"clusterID":"","capabilities":{"baselineCapabilitySet":"None","additionalEnabledCapabilities":["Build","CSISnapshot","CloudControllerManager","CloudCredential","Console","DeploymentConfig","ImageRegistry","Ingress","Insights","MachineAPI","NodeTuning","OperatorLifecycleManager","OperatorLifecycleManagerV1","Storage","marketplace","openshift-samples"]},"signatureStores":null},"status":{"desired":{"version":"","image":""},"observedGeneration":0,"versionHash":"","capabilities":{},"availableUpdates":null}}'
+          value: '{"kind":"ClusterVersion","apiVersion":"config.openshift.io/v1","metadata":{"name":"version"},"spec":{"clusterID":"","capabilities":{"baselineCapabilitySet":"None","additionalEnabledCapabilities":["Build","CSISnapshot","CloudControllerManager","CloudCredential","Console","DeploymentConfig","ImageRegistry","Ingress","Insights","NodeTuning","OperatorLifecycleManager","OperatorLifecycleManagerV1","Storage","marketplace","openshift-samples"]},"signatureStores":null},"status":{"desired":{"version":"","image":""},"observedGeneration":0,"versionHash":"","capabilities":{},"availableUpdates":null}}'
         image: cli
         imagePullPolicy: IfNotPresent
         name: bootstrap

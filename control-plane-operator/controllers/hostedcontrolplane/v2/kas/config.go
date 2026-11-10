@@ -15,6 +15,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -34,7 +36,9 @@ import (
 )
 
 const (
-	KubeAPIServerConfigKey  = "config.json"
+	// KubeAPIServerConfigKey is defined in pkg/manifests/cpo so that e2e tests can read the
+	// rendered kube-apiserver config without importing this package.
+	KubeAPIServerConfigKey  = cpomanifests.KubeAPIServerConfigKey
 	AuthenticationConfigKey = "auth.json"
 	OauthMetadataConfigKey  = "oauthMetadata.json"
 	AuditLogFile            = "audit.log"
@@ -220,13 +224,11 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("egress-selector-config-file", cpath(egressSelectorConfigVolumeName, EgressSelectorConfigKey))
 	args.Set("enable-admission-plugins", enabledAdmissionPlugins(p)...)
 	args.Set("disable-admission-plugins", disabledAdmissionPlugins(p)...)
-	if reconcilerpolicy.ConfigOAuthEnabled(p.Authentication) {
+	if usesTokenWebhookAuthenticator(p.Authentication) {
 		args.Set("authentication-token-webhook-config-file", cpath(authTokenWebhookConfigVolumeName, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
-	} else {
-		if p.Authentication != nil && len(p.Authentication.OIDCProviders) > 0 {
-			args.Set("authentication-config", cpath(authConfigVolumeName, AuthenticationConfigKey))
-		}
+	} else if usesDirectOIDCAuthenticationConfig(p.Authentication) {
+		args.Set("authentication-config", cpath(authConfigVolumeName, AuthenticationConfigKey))
 	}
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")
@@ -239,7 +241,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	if len(p.EtcdServersOverrides) > 0 {
 		args.Set("etcd-servers-overrides", p.EtcdServersOverrides...)
 	}
-	args.Set("event-ttl", "3h")
+	args.Set("event-ttl", eventTTLOrDefault(p.EventTTL))
 	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
 	featureGates := append([]string{}, p.FeatureGates...)
 	featureGates = enforceFeatureGates(featureGates, "ValidatingAdmissionPolicy=true", "StructuredAuthenticationConfiguration=true")
@@ -305,6 +307,16 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("tls-private-key-file", cpath(serverCertVolumeName, corev1.TLSPrivateKeyKey))
 	config.APIServerArguments = args
 	return config, nil
+}
+
+// eventTTLOrDefault guards against an empty EventTTL rendering --event-ttl="", which the
+// kube-apiserver rejects at startup. NewConfigParams always populates the field, so this only
+// matters for a zero-value KubeAPIServerConfigParams.
+func eventTTLOrDefault(eventTTL string) string {
+	if eventTTL == "" {
+		return defaultEventTTL
+	}
+	return eventTTL
 }
 
 func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {
@@ -509,4 +521,22 @@ func featureGateMapToSlice(gates map[string]string) []string {
 	slices.Sort(out)
 
 	return out
+}
+
+func usesExternalOIDCAsWebhook(auth *configv1.AuthenticationSpec) bool {
+	return auth != nil &&
+		auth.Type == configv1.AuthenticationTypeOIDC &&
+		len(auth.OIDCProviders) > 0 &&
+		featuregates.Gate().Enabled(featuregates.ExternalOIDCAsWebhook)
+}
+
+func usesTokenWebhookAuthenticator(auth *configv1.AuthenticationSpec) bool {
+	return reconcilerpolicy.ConfigOAuthEnabled(auth) || usesExternalOIDCAsWebhook(auth)
+}
+
+func usesDirectOIDCAuthenticationConfig(auth *configv1.AuthenticationSpec) bool {
+	return auth != nil &&
+		auth.Type == configv1.AuthenticationTypeOIDC &&
+		len(auth.OIDCProviders) > 0 &&
+		!usesExternalOIDCAsWebhook(auth)
 }

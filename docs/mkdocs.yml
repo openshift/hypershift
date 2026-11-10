@@ -104,11 +104,10 @@ nav:
       - how-to/ci/v2-testing/index.md
       - 'Writing V2 Tests': how-to/ci/v2-testing/writing-tests.md
       - 'CI Pipeline Configuration': how-to/ci/v2-testing/ci-pipeline.md
-      - 'Debugging CI Failures': how-to/ci/v2-testing/debugging.md
-      - 'Test Flow': how-to/ci/v2-testing/test-flow.md
       - 'Migrating from V1': how-to/ci/v2-testing/migration.md
   - 'Cluster Capabilities': how-to/cluster-capabilities.md
   - 'Common':
+    - 'Deterministic LoadBalancer IPs': how-to/common/deterministic-loadbalancer-ip.md
     - how-to/common/exposing-services-from-hcp.md
     - 'Global Pull Secret': how-to/common/global-pull-secret.md
     - 'HCP Networking Requirements': how-to/common/hcp-networking-requirements.md
@@ -117,6 +116,7 @@ nav:
   - 'Configure OCP components':
     - how-to/configure-ocp-components/index.md
     - how-to/configure-ocp-components/kubeapi-server.md
+    - how-to/configure-ocp-components/kubeapi-server-event-ttl.md
     - how-to/configure-ocp-components/oauth-serving-certificates.md
     - how-to/configure-ocp-components/custom-kas-kubeconfig.md
     - how-to/configure-ocp-components/configurable-log-levels.md
@@ -157,6 +157,7 @@ nav:
     - 'IDMS/ICSP Config for Management Cluster': how-to/disconnected/idms-icsp-for-management-clusters.md
     - how-to/disconnected/known-issues.md
   - how-to/distribute-hosted-cluster-workloads.md
+  - 'Etcd Sharding (Tech Preview)': how-to/etcd-sharding.md
   - how-to/feature-gates.md
   - 'HyperShift Operator Install':
     - how-to/install/index.md

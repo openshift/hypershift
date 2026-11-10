@@ -209,11 +209,6 @@ func init() {
 		false,
 	)
 	RegisterEnvVar(
-		"E2E_AZURE_CREDENTIALS_FILE",
-		"Path to Azure service principal credentials JSON file for platform-specific tests (auto-repair, disk encryption).",
-		false,
-	)
-	RegisterEnvVar(
 		"E2E_AZURE_DISK_ENCRYPTION_SET_ID",
 		"Azure DiskEncryptionSet resource ID for disk encryption NodePool tests.",
 		false,

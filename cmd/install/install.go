@@ -142,6 +142,7 @@ type Options struct {
 	WaitUntilAvailable                        bool
 	WaitUntilEstablished                      bool
 	RHOBSMonitoring                           bool
+	EnableGMPMonitoring                       bool
 	CVOPrometheusURL                          string
 	SLOsAlerts                                bool
 	MonitoringDashboards                      bool
@@ -388,6 +389,17 @@ func (o *Options) validateMonitoringConfig() []error {
 	if len(o.CVOPrometheusURL) > 0 && !o.RHOBSMonitoring && !o.EnableCVOManagementClusterMetricsAccess {
 		errs = append(errs, fmt.Errorf("--cvo-prometheus-url requires either --rhobs-monitoring or --enable-cvo-management-cluster-metrics-access to be enabled"))
 	}
+	// RHOBS can be enabled through the flag or through additional operator env vars;
+	// match the operator Deployment builder's normalization when checking the GMP conflict.
+	rhobsMonitoring := o.RHOBSMonitoring
+	for key, value := range o.AdditionalOperatorEnvVars {
+		if strings.TrimSpace(key) == rhobsmonitoring.EnvironmentVariable {
+			rhobsMonitoring = rhobsMonitoring || strings.TrimSpace(value) == "1"
+		}
+	}
+	if err := metrics.ValidateGMPMonitoring(o.EnableGMPMonitoring, rhobsMonitoring); err != nil {
+		errs = append(errs, fmt.Errorf("--enable-gmp-monitoring: %w", err))
+	}
 	return errs
 }
 
@@ -496,6 +508,7 @@ func NewCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
 	cmd.Flags().BoolVar(&opts.WaitUntilEstablished, "wait-until-crds-established", opts.WaitUntilEstablished, "If true, pauses installation until all custom resource definitions are established before applying other manifests.")
 	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc). For ROSA HCP, this also enables the Cluster Version Operator to query the RHOBS Prometheus for conditional update evaluation. Use --cvo-prometheus-url to override the default Prometheus endpoint.")
+	cmd.PersistentFlags().BoolVar(&opts.EnableGMPMonitoring, "enable-gmp-monitoring", opts.EnableGMPMonitoring, "If true, HyperShift will use Google Managed Prometheus (monitoring.googleapis.com) monitoring resources instead of the default monitoring.coreos.com resources. Cannot be combined with --rhobs-monitoring. This is a management-cluster-wide switch, not scoped per HostedCluster: only enable it on management clusters where the GMP CRDs are installed, since GCP HostedClusters on a cluster without them would fail to reconcile.")
 	cmd.PersistentFlags().StringVar(&opts.CVOPrometheusURL, "cvo-prometheus-url", opts.CVOPrometheusURL, "Prometheus URL for the Cluster Version Operator to query metrics for conditional update risk evaluation. Only effective when --rhobs-monitoring or --enable-cvo-management-cluster-metrics-access is enabled. If not specified, defaults to the RHOBS monitoring stack for ROSA HCP, or the Thanos querier for self-managed HyperShift.")
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
 	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
@@ -1405,6 +1418,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		IncludeVersion:                          !opts.Template,
 		UWMTelemetry:                            opts.EnableUWMTelemetryRemoteWrite,
 		RHOBSMonitoring:                         opts.RHOBSMonitoring,
+		EnableGMPMonitoring:                     opts.EnableGMPMonitoring,
 		CVOPrometheusURL:                        opts.CVOPrometheusURL,
 		MonitoringDashboards:                    opts.MonitoringDashboards,
 		CertRotationScale:                       opts.CertRotationScale,

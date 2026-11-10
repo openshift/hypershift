@@ -14,6 +14,7 @@ import (
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 	"github.com/openshift/hypershift/test/e2e/v2/util/mirrorregistry"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -231,6 +232,22 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 				"--image-content-sources="+filepath.Join(a.sharedDir, "mirror-registry-ics.yaml"),
 			),
 		},
+		// Etcd sharding can only be configured at creation time, so it needs a
+		// dedicated cluster rather than being layered onto an existing variant.
+		// The EtcdSharding feature gate is TechPreviewNoUpgrade and gates the
+		// spec.etcd.managed.shards field itself, so unless the HyperShift
+		// Operator is installed with --tech-preview-no-upgrade the field is
+		// absent from the CRD, the shards are dropped at admission, and the
+		// specs skip via etcdShardsOrSkip.
+		{
+			Variant:     "etcd-sharded",
+			DestroyArgs: destroyArgs,
+			CreateArgs: clusterArgs(append([]string{
+				"--public-only",
+				// Shards run 3 replicas, which needs an HA control plane.
+				"--control-plane-availability-policy=HighlyAvailable",
+			}, v2util.EtcdShardingCreateArgs("")...)...),
+		},
 	}
 }
 
@@ -316,13 +333,25 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Variant:     "karpenter-upgrade",
 				LabelFilter: "karpenter-upgrade",
 			},
-			{
-				Name:        "image-mirroring",
-				Variant:     "image-mirroring",
-				LabelFilter: "image-mirroring",
-			},
 		},
 		Sequential: []SequentialGroup{
+			// The removal step is a day-2 mutation of imageContentSources that is
+			// not restored, so it must stay the last step on the variant.
+			{
+				Name: "image-mirroring",
+				Steps: []TestGroup{
+					{
+						Name:        "image-mirroring",
+						Variant:     "image-mirroring",
+						LabelFilter: "image-mirroring",
+					},
+					{
+						Name:        "image-mirroring-removal",
+						Variant:     "image-mirroring",
+						LabelFilter: "image-mirroring-removal",
+					},
+				},
+			},
 			{
 				Name: "public",
 				Steps: []TestGroup{
@@ -332,7 +361,8 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						LabelFilter: "hosted-cluster-aws || hosted-cluster-compliance || hosted-cluster-node-communication || " +
 							"hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || " +
 							"hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress || hosted-cluster-dns || " +
-							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || storage-kms",
+							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || storage-kms || " +
+							"hosted-cluster-event-ttl",
 					},
 					{
 						Name:    "public-nodepool-rollouts",
@@ -400,6 +430,26 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						Name:        "etcd-chaos",
 						Variant:     "upgrade",
 						LabelFilter: "etcd-chaos",
+					},
+				},
+			},
+			{
+				Name: "etcd-sharding",
+				Steps: []TestGroup{
+					// Shard deployment, kube-apiserver routing, per-kind key
+					// placement, shard member restart and day-2 immutability.
+					{
+						Name:        "etcd-sharding",
+						Variant:     "etcd-sharded",
+						LabelFilter: "etcd-sharding",
+					},
+					// Cluster operations with sharding enabled: runs after the
+					// sharding specs so it also covers recovery from the shard
+					// member restart.
+					{
+						Name:        "post-sharding-health",
+						Variant:     "etcd-sharded",
+						LabelFilter: "hosted-cluster-health || control-plane-workloads",
 					},
 				},
 			},

@@ -48,6 +48,7 @@ import (
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
 	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	extoidcv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/external_oidc_webhook"
 	fgv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
@@ -200,6 +201,7 @@ type HostedControlPlaneReconciler struct {
 	OperateOnReleaseImage                   string
 	DefaultIngressDomain                    string
 	MetricsSet                              metrics.MetricsSet
+	EnableGMPMonitoring                     bool
 	KASHealthMetrics                        *kas.KASHealthMetrics
 	SREConfigHash                           string
 	ec2Client                               awsapi.EC2API
@@ -287,6 +289,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		schedulerv2.NewComponent(),
 		oapiv2.NewComponent(),
 		oauthapiv2.NewComponent(),
+		extoidcv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		cvov2.NewComponent(r.EnableCVOManagementClusterMetricsAccess),
 		ocmv2.NewComponent(),
@@ -1259,7 +1262,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 	}
 
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Authentication != nil {
-		if err := validations.ValidateAuthenticationSpec(ctx, r.Client, hcp.Spec.Configuration.Authentication, hcp.Namespace, []string{hcp.Spec.IssuerURL}); err != nil {
+		if err := validations.ValidateAuthenticationSpec(ctx, r.Client, hcp.Spec.Configuration.Authentication, hcp.Namespace, hcp.Spec.IssuerURL); err != nil {
 			return err
 		}
 	}
@@ -1468,6 +1471,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		SetDefaultSecurityContext:      r.SetDefaultSecurityContext,
 		DefaultSecurityContextUID:      r.DefaultSecurityContextUID,
 		MetricsSet:                     r.MetricsSet,
+		EnableGMPMonitoring:            r.EnableGMPMonitoring,
 		EnableCIDebugOutput:            r.EnableCIDebugOutput,
 		ImageMetadataProvider:          r.ImageMetadataProvider,
 		NativeSidecarContainersEnabled: r.ManagementClusterCapabilities.Has(capabilities.CapabilityNativeSidecarContainers),

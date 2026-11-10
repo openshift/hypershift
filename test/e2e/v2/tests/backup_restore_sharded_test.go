@@ -112,7 +112,10 @@ func (s *shardedE2E) commonCreateArgs(name string) []string {
 		"--feature-set=TechPreviewNoUpgrade",
 		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
 		"--annotations=hypershift.openshift.io/skip-release-image-validation=true",
-		"--etcd-shard=name=" + shardedE2EShardName + ",resources=" + shardedE2EShardName,
+		// Upstream --etcd-shard format: resources are <apiGroup>/<resource>
+		// with a leading slash for the core group; replicas=1 keeps the
+		// node-less test cluster cheap.
+		"--etcd-shard=name=" + shardedE2EShardName + ",resources=/" + shardedE2EShardName + ",replicas=1",
 	}
 }
 

@@ -5094,6 +5094,8 @@ spec:
 
 If you wanna know more about how to expose the ingress service in the Data Plane side, please access the Recipes section to see how to do it with MetalLB.
 
+To request a specific load balancer address for the kube-apiserver at cluster creation time, see Deterministic LoadBalancer IP Assignment for the Kube API Server. The feature is Technology Preview and does not support changing the address on a running cluster.
+
 
 ---
 
@@ -14138,6 +14140,32 @@ control plane namespace. A stopped approver or a mismatch between the CSR and
 the CAPI Machine identity can block registration. Follow the
 kubelet CSR approval checks.
 
+## Collect worker diagnostics
+
+To collect Azure worker diagnostics with `hypershift dump cluster`, supply
+`--azure-creds` with a credentials file. The Azure identity needs
+`Microsoft.Compute/virtualMachines/read` and
+`Microsoft.Compute/virtualMachines/retrieveBootDiagnosticsData/action` on the
+worker VM resource groups. Enable boot diagnostics before the failure you want
+to investigate. In CI, mount the credentials in both test and dump steps; consult
+the platform configuration
+for the current credential configuration.
+
+Journal collection through the hosted API requires privileged node-log access.
+For optional SSH fallback, provision the worker public key at cluster creation
+with `--ssh-key` and set `AZURE_JOURNAL_SSH_KEY` to the matching private key file.
+Provide port 22 reachability from the collector or a jump host. Configure
+jump-host authentication separately and supply trusted host keys; host-key
+verification is required. Collection uses existing network access and does not
+provision a bastion. See the
+SSH options
+for current jump-host and known-hosts configuration.
+
+Check collection warnings when diagnostics are missing. Successful teardown does
+not establish that logs were collected. Consult the
+diagnostics collector
+for artifact formats and collection behavior.
+
 ## Create a bastion to SSH to a node
 If the machines look like they have been provisioned correctly, you can directly access the virtual machines related to your nodes through a bastion.
 
@@ -14948,7 +14976,7 @@ Pull request callers resolve their reusable workflows from `main`, while post-me
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
 | `codespell.yaml` | `codespell-reusable.yaml` | Spell checking across the codebase |
-| `deadcode.yaml` | `deadcode-reusable.yaml` | Whole-program dead-code analysis; fails on any candidate |
+| `deadcode.yaml` | `deadcode-reusable.yaml` | Whole-program dead-code analysis; temporarily advisory pending CNTRLPLANE-4936 |
 | `gitlint.yaml` | `gitlint-reusable.yaml` | Commit message format validation |
 | `lint.yaml` | `lint-reusable.yaml` | Go linting via `golangci-lint` |
 | `verify.yaml` | `verify-reusable.yaml` | Full verification (`make verify`) |
@@ -15667,7 +15695,7 @@ A test assertion failed. To find which test:
 
 After identifying the failing test, check the job history to determine if this is specific to your PR.
 
-For more details on reading test artifacts and Ginkgo output, see Debugging CI Failures.
+For reading test artifacts and Ginkgo output, see Verify and debug.
 
 ---
 
@@ -15771,10 +15799,9 @@ Post in #forum-ocp-hypershift and tag `@hypershift-engineering-ic` with:
 
 ## Further reading
 
-- Debugging CI Failures — Reading JUnit XML, Ginkgo output, and dump-guests artifacts
-- V2 E2E Testing Overview — Architecture of the v2 test framework
+- Verify and debug — Reading test results, Ginkgo output, and cluster dumps
+- V2 E2E Testing Guides — Authoring, migration, execution flow, and CI configuration
 - CI Pipeline Configuration — How presubmit jobs are configured
-- Test Flow — End-to-end CI sequence, process boundaries, and inter-process communication
 - Daily CI Health — Monitoring periodic and presubmit job health
 
 
@@ -15942,441 +15969,67 @@ Or find the run in the Prow job history :octicons-link-external-16:.
 
 # CI Pipeline Configuration
 
-This page explains how v2 tests run in CI, covering the two-repo model, step registry structure, CI binaries, and how to add or modify CI jobs.
-
-## Two-Repo Model
-
-The HyperShift v2 testing architecture spans two repositories:
-
-- **openshift/hypershift**: Owns test code, test binaries, and the CLI
-- **openshift/release**: Owns job definitions, step registry, and CI orchestration
-
-The `hypershift-tests` image is the bridge between these repos. Built from `Dockerfile.e2e`, it ships compiled test binaries to `/hypershift/bin/`. The image contains both v1 and v2 test binaries; this page covers only v2.
-
-When you add a new v2 test to the hypershift repo and tag it with an existing Ginkgo label filter, it automatically runs in CI the next time the job executes. No release repo changes are needed unless you're adding a new cluster variant, label filter, or platform.
-
-## Step Registry Anatomy
-
-Prow jobs are built from a hierarchy of reusable components in the openshift/release step registry. We'll use the Azure self-managed job as a concrete example.
-
-### Workflow
-
-The top-level workflow orchestrates the entire job. For Azure self-managed v2 tests, this is `hypershift-azure-e2e-v2-self-managed-workflow.yaml`:
-
-```yaml
-workflow:
-  as: hypershift-azure-e2e-v2-self-managed
-  steps:
-    pre:
-    - ref: hypershift-azure-create-selfmanaged-guests
-    test:
-    - ref: hypershift-azure-run-e2e-v2-selfmanaged
-    post:
-    - ref: hypershift-azure-dump-selfmanaged-guests
-    - ref: hypershift-azure-destroy-selfmanaged-guests
-  env:
-  - name: HYPERSHIFT_PLATFORM
-    default: "azure"
-```
-
-The workflow sets `HYPERSHIFT_PLATFORM: "azure"` to tell the CI binaries which `PlatformConfig` to load, then chains together four steps: create → run → dump → destroy.
-
-### Steps
-
-The workflow references individual refs (using `ref:` directives), which may themselves be part of larger chains. In the step registry, a **ref** is a single step (a shell script that calls a binary), while a **chain** groups multiple refs together. The Azure self-managed v2 workflow references refs directly, but those refs may also appear in shared chains used by other jobs.
-
-The four logical phases are:
-
-- **Create** (shared with v1): Provisions management cluster infrastructure, installs HyperShift operator
-- **Run** (v2-specific): Executes the test matrix
-- **Dump** (shared with v1): Collects must-gather artifacts
-- **Destroy** (shared with v1): Tears down clusters and infrastructure
-
-Only the workflow and run ref are v2-specific. The create, dump, and destroy refs are shared between v1 and v2 jobs.
-
-### Ref Scripts
-
-Each ref is a thin shell script that invokes a Go binary from the `hypershift-tests` image. Here's the typical pattern:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-HYPERSHIFT_BINARY="${HYPERSHIFT_BINARY:-/hypershift/bin/hypershift}"
-
-/hypershift/bin/create-guests
-```
-
-The ref script sets up the environment, then calls the compiled binary. All v2-specific logic lives in the binary, not the shell script.
-
-For the full Azure self-managed step registry, see openshift/release#79347.
-
-### Step Execution Order
-
-```mermaid
-flowchart LR
-    A["create-selfmanaged-guests"] --> B["run-e2e-v2-selfmanaged"]
-    B --> C["dump-selfmanaged-guests"]
-    C --> D["destroy-selfmanaged-guests"]
-```
-
-The `pre` steps run before tests (setup), `test` steps run the actual tests, and `post` steps run after tests regardless of test outcome (cleanup).
-
-## The Four CI Binaries
-
-All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and shipped in the `hypershift-tests` image at `/hypershift/bin/`. For how these binaries fit into the overall CI sequence — process boundaries, parallelism, and inter-process communication — see Test Flow.
-
-### `create-guests`
-
-**Source:** `test/e2e/v2/cmd/create-guests/`
-**Shipped as:** `/hypershift/bin/create-guests`
-
-Creates the hosted clusters selected by the resolved `TestPlan` in parallel, runs
-platform-specific hooks, waits for availability and version rollout, and writes
-the cluster manifest and platform configuration to `SHARED_DIR` for downstream
-steps. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing:
-`{variant}-{sha256(prowJobID)[:10]}`. Rollout failures emit JUnit XML and fail
-the step.
-
-If any cluster fails to create or roll out, the binary exits non-zero and the job fails fast.
-
-### `run-tests`
-
-**Source:** `test/e2e/v2/cmd/run-tests/`
-**Shipped as:** `/hypershift/bin/run-tests`
-
-Reads cluster names from `SHARED_DIR` files, then executes the resolved `TestPlan`. For each `TestGroup`:
-
-```bash
-bin/test-e2e-v2 \
-  --ginkgo.label-filter="<filter>" \
-  --e2e.junit-report="<junit-file>" \
-  --ginkgo.timeout="3h" \
-  --ginkgo.skip="<skip-pattern>" \
-  --ginkgo.v
-```
-
-with `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` set to the selected cluster. The JUnit filename is derived as `junit_<TestGroup.Name>.xml`. The `--ginkgo.timeout` defaults to `3h` (overridable via `GINKGO_TIMEOUT` env var) and `--ginkgo.skip` is included when the `TestGroup.Skip` field is non-empty.
-
-Before running any tests, `run-tests` calls `platform.SetupTestEnv(sharedDir)` to let the platform configure any environment variables needed by tests (for example, reading subnet IDs or other infrastructure details from `SHARED_DIR` files).
-
-By default, the binaries use `PlatformConfig.DefaultTestPlan()`. Set `TEST_PLAN` to a JSON or YAML file to provide a custom plan. The plan's `TestMatrix` determines whether a group runs in parallel or sequentially:
-
-```go
-type TestMatrix struct {
-    Parallel   []TestGroup       // all run concurrently
-    Sequential []SequentialGroup // each group runs its Steps in order
-}
-```
-
-**`Parallel`** groups run concurrently. The default Azure plan assigns these
-groups to different clusters; custom plans must not assign one variant to
-multiple concurrent lanes.
-
-**`Sequential`** groups run their `Steps` one after another on the same cluster. If any step fails, remaining steps in that group are skipped. Use sequential groups for ordered workflows like upgrade → validate → downgrade.
-
-See Labels for how to control which tests run in each group.
-
-### `dump-guests`
-
-**Source:** `test/e2e/v2/cmd/dump-guests/`
-**Shipped as:** `/hypershift/bin/dump-guests`
-
-Calls `hypershift dump cluster` in parallel for all clusters, collecting must-gather artifacts to `ARTIFACT_DIR`. Unlike `create` and `destroy`, the dump command is platform-agnostic (no platform subcommand).
-
-For Azure clusters, each variant's `ClusterSpec.DumpArgs` passes `--azure-creds` to `hypershift dump cluster`. It uses `AZURE_CREDS` (default: `/etc/hypershift-ci-jobs-self-managed-azure/credentials.json`) as the credentials file path. The dump command collects Azure machine diagnostics before the general cluster dump. Both the v2 test and dump steps must mount this credential bundle. Its identity needs `Microsoft.Compute/virtualMachines/read` and `Microsoft.Compute/virtualMachines/retrieveBootDiagnosticsData/action` on worker VM resource groups. Azure E2E cluster creation enables managed boot diagnostics before workers boot; the production NodePool default remains disabled.
-
-The helper discovers workers from AzureMachines, including machines that never register a Node, and collects serial logs before journals. Missing diagnostics settings are resolved against the actual VM instead of assumed enabled. Journals are collected first through `oc adm node-logs`, using the hosted API and its localhost kubeconfig through a management API port-forward. This requires privileged node-log access. If API access fails or yields empty output, the helper tries SSH only when `AZURE_JOURNAL_SSH_KEY` points to a configured private key. `AZURE_JOURNAL_SSH_JUMP_HOST` optionally sets a jump host and `AZURE_JOURNAL_SSH_KNOWN_HOSTS` sets the known-hosts file; otherwise the normal SSH known-hosts configuration applies. Host-key verification is required. Provision the matching worker public key at cluster creation with `--ssh-key=/path/to/worker.pub`, and provide port 22 reachability from the collector or jump host. Configure jump-host authentication separately in SSH client configuration. SSH uses the `core` account and existing network reachability; the helper does not create a bastion, open network rules, or install a VM agent.
-
-Artifacts include `machine-console-logs/<AzureMachine>.log`, compressed `machine-journals/<AzureMachine>.{journal,kubelet,crio}.log.gz`, and `machine-diagnostics.json`. The summary records each machine's diagnostics state, transport attempts, outcomes, paths, and uncompressed byte counts. Journals cover the current boot, up to 100,000 lines per stream and a 32 MiB byte limit; reached limits are recorded as truncation. Output beyond the byte bound is discarded while stdout is drained and the command exit status is validated. Failed commands discard partial artifacts. Commands and serial retrieval have two-minute operation limits, with four concurrent machines and a ten-minute per-cluster collection budget. SAS URLs are used only for downloads and are never saved or logged. Missing permissions, unavailable diagnostics, empty output, and collection failures remain nonfatal during teardown.
-
-The `azure-machine-diagnostics` E2E checks are blocking and inspect fresh serial, journal, kubelet and CRI-O artifacts for expected workers. The v2 public and private test groups select these checks. The public lifecycle lane also selects `azure-machine-diagnostics-bootstrap`, which boots an isolated worker with kubelet masked and verifies a serial-console marker without Node registration. Cleanup still runs after diagnostics failures. A successful teardown or an empty artifact directory is not sufficient evidence that diagnostics collection works.
-
-This binary **always exits 0** to ensure cleanup steps run even if dump fails.
-
-### `destroy-guests`
-
-**Source:** `test/e2e/v2/cmd/destroy-guests/`
-**Shipped as:** `/hypershift/bin/destroy-guests`
-
-Calls `hypershift destroy cluster <platform>` in parallel for all clusters.
-
-Exits non-zero if any cluster fails to destroy. Logs `ACTION REQUIRED` messages to stdout for orphaned resources, which appear in job logs for manual cleanup.
-
-## When to Create New CI Clusters
-
-Not every test needs its own cluster. Use this decision framework:
-
-```mermaid
-flowchart TD
-    A["Does your test mutate cluster state?"] -->|No| B["Add to existing cluster"]
-    A -->|Yes| C["Can it share with other mutating tests?"]
-    C -->|Yes| D["Reuse existing cluster"]
-    C -->|No| E["New ClusterSpec needed<br>~15-20 min added to job"]
-```
-
-### Examples
-
-- **Read-only health check**: Add to existing public cluster. No mutation, so safe to share.
-- **Autoscaling + nodepool lifecycle**: Share an existing cluster variant. Both tests mutate NodePools, but in non-conflicting ways.
-- **Upgrade test** (needs N-1 image, HA control plane): New cluster variant required. Upgrade state cannot be shared.
-
-### Adding a New ClusterSpec
-
-If you need a new cluster variant, add it to `ClusterSpecs()` and include it in the default plan's `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
-
-```diff
-// ClusterSpecs() — cluster lifecycle parameters
-+{
-+    Variant:     "my-new-variant",
-+    CreateArgs:  []string{"--my-flag=value"},
-+    DestroyArgs: []string{"--my-destroy-flag=value"},
-+},
-
-// TestMatrix() — test execution parameters
-+{
-+    Name:        "my-new-variant",
-+    Variant:     "my-new-variant",
-+    LabelFilter: "my-new-label",
-+    // Optional fields:
-+    // Skip: "regex-of-tests-to-skip",
-+},
-```
-
-JUnit filenames are derived from `TestGroup.Name` by `TestGroup.JUnitFile()` and do not need to be configured separately.
-
-Each new `ClusterSpec` adds approximately 15–20 minutes to the job runtime (cluster creation + rollout + deletion). Only add new variants when state sharing is impossible.
-
-## Adding a Test to an Existing CI Job
-
-When you write a new v2 test and want it to run in CI, the process depends on whether your test's label is already in an existing label filter.
-
-### Case 1: Label Already Exists in a Matrix Filter
-
-If your test uses a label that's already in a `TestGroup.LabelFilter`, **no changes are needed**. The test automatically runs the next time the job executes.
-
-### Case 2: New or Independently Sharded Label
-
-If your test introduces a new label, add it to the appropriate `TestGroup.LabelFilter` in the platform's test matrix. Suites such as NodePool lifecycle retain a broad parent label for non-lifecycle CI filtering, but long specs also have fine-grained labels so the Azure lifecycle job can assign them independently:
-
-```diff
- {
-     Name:        "oauth-lb-nodepool-config",
-     Variant:     "oauth-lb",
--    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout",
-+    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config || my-new-rollout",
- },
-```
-
-**No release repo changes are needed in either case.** The test matrix lives in the hypershift repo, and the `hypershift-tests` image is rebuilt for every PR.
-
-## Adding a New CI Job for a New Platform
-
-Adding v2 support for a new platform requires changes in both repositories.
-
-### Step 1: Implement PlatformConfig (hypershift repo)
-
-Create `test/e2e/v2/lifecycle/<platform>.go` implementing the `PlatformConfig` interface. Use `azure.go` as a reference:
-
-```go
-// Abbreviated — see platform.go for the full interface.
-type PlatformConfig interface {
-    ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
-    DefaultTestPlan() TestPlan
-    TestMatrix() TestMatrix
-    PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
-    // Also: Name(), DefaultBaseDomain(), SetupTestEnv(sharedDir)
-}
-```
-
-See `test/e2e/v2/lifecycle/platform.go` for the full `PlatformConfig` interface, including `Name()`, `DefaultBaseDomain()`, and `SetupTestEnv()`. Cluster creation and destruction flags are declared in `ClusterSpec.CreateArgs` and `ClusterSpec.DestroyArgs`.
-
-Register your platform in the `NewPlatformConfig()` switch in `test/e2e/v2/lifecycle/platform.go`:
-
-```diff
- func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
-     switch platform {
-     case "azure", "":
-         return NewAzurePlatformConfig(sharedDir), nil
-+    case "my-platform":
-+        return NewMyPlatformConfig(sharedDir), nil
-     default:
-         return nil, fmt.Errorf("unsupported platform %q (supported: azure)", platform)
-     }
- }
-```
-
-### Step 2: Add Step Registry Components (release repo)
-
-Create a workflow, chain, and ref in the openshift/release step registry:
-
-1. **Workflow**: `hypershift-<platform>-e2e-v2-<variant>-workflow.yaml`
-2. **Ref**: `hypershift-<platform>-run-e2e-v2-<variant>.yaml` (shell script that calls `/hypershift/bin/run-tests`)
-
-Reuse existing create/dump/destroy chains where possible (they're usually platform-specific but v1/v2-agnostic).
-
-### Step 3: Wire into Job Definition
-
-Add the job to `ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml`:
-
-```yaml
-- as: e2e-<platform>-v2-<variant>
-  steps:
-    workflow: hypershift-<platform>-e2e-v2-<variant>
-  always_run: false
-  skip_if_only_changed: "^docs/|^contrib/|^\.github/|^.*\\.md$"
-```
-
-Regenerate CI config with `make jobs WHAT=openshift/hypershift` from the release repo root.
-
-For a complete example, see the Azure self-managed v2 implementation in openshift/hypershift#8527.
-
-## Job Configuration Knobs
-
-Common CI configuration points and where to find them:
-
-| Knob | File | Description |
-|------|------|-------------|
-| `always_run` | `ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml` | `true` runs the job on every PR; `false` requires `/test <job-name>` |
-| `skip_if_only_changed` | `ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml` | Regex of file paths that skip the job when they're the only changes |
-| Image dependencies | Workflow/ref YAML | `release:latest`, `release:n1minor` provide OpenShift release images as environment variables |
-| Timeout | Ref YAML `timeout` field | Per-step timeout (e.g., `150m` for lifecycle tests that create clusters) |
-| `HYPERSHIFT_PLATFORM` | Workflow YAML `env` | Tells CI binaries which `PlatformConfig` to load from `test/e2e/v2/lifecycle/` |
-
-All step registry YAML lives in openshift/release. Job definitions live in ci-operator/config/openshift/hypershift/.
-
-After editing job config, regenerate with `make jobs WHAT=openshift/hypershift` from the release repo root, then submit a PR to openshift/release.
-
-
----
-
-## Source: docs/content/how-to/ci/v2-testing/debugging.md
-
-# Debugging CI Failures
-
-This guide explains how to diagnose failing v2 CI jobs by tracing test failures to their source clusters and reading diagnostic artifacts. For background on the overall CI pipeline sequence and process boundaries, see Test Flow.
-
-## Finding Test Results
-
-Each `TestGroup` produces a JUnit XML file named `junit_<TestGroup.Name>.xml` by `TestGroup.JUnitFile()`. These land in `ARTIFACT_DIR` in the Prow job artifacts.
-
-For example, the Azure self-managed job produces:
-
-- `junit_public.xml`
-- `junit_public-nodepool-rollouts.xml`
-- `junit_private.xml`
-- `junit_oauth-lb.xml`
-- `junit_oauth-lb-nodepool-config.xml`
-- `junit_autoscaling-nodepool-machineconfig.xml`
-- `junit_autoscaling-balancing.xml`
-- `junit_external-oidc.xml`
-- `junit_external-oidc-autoscaling.xml`
-- `junit_external-oidc-trust-bundle.xml`
-- `junit_upgrade.xml`
-- `junit_post-upgrade-health.xml`
-- `junit_control-plane-tls.xml`
-- `junit_etcd-chaos.xml`
-
-When a group has informing test failures, the suite also emits a supplemental
-`junit_<TestGroup.Name>_informing.xml` file for lifecycle-aware reporting.
-
-Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` during
-version-rollout handling, recording either success or failure. On failure, the
-JUnit file contains the `HostedCluster` and `NodePool` conditions at the time
-of failure. On success, it records a passing test case confirming the rollout
-completed.
-
-## Mapping Failures to Clusters
-
-To find which cluster a failing test ran against, trace the path:
-
-1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_public-nodepool-rollouts.xml` → `"public-nodepool-rollouts"`)
-2. **TestGroup.Name** → `TestGroup.Variant` (e.g., `"public-nodepool-rollouts"` → `"public"`)
-3. **Variant** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
-
-The `run-tests` step log shows the mapping explicitly:
-
-```text
-Running public tests against public-a1b2c3d4e5...
-Running private tests against private-f6e7d8c9b0...
-```
-
-To find the cluster name for a failing test, search the `run-tests` step log for the line matching the test group name.
-
-## Reading Ginkgo Verbose Output
-
-The `--ginkgo.v` flag produces verbose output that maps test failures to their source code structure.
-
-When a test is running, Ginkgo prints the full test description. The exact format depends on the Ginkgo version; with Ginkgo v2 it looks approximately like:
-
-```text
-Control Plane Workloads Deployment generation kube-apiserver should not indicate rapid rollouts
-```
-
-This maps to the nested test block structure:
-
-```go
-Describe("Control Plane Workloads") →
-    Context("Deployment generation") →
-        Context("kube-apiserver") →
-            It("should not indicate rapid rollouts")
-```
-
-On failure, Ginkgo prints:
-
-- The exact `It` block description
-- The assertion that failed (e.g., `Expected <5> to be <= <3>`)
-- File path and line number (e.g., `control_plane_workloads_test.go:42`)
-- Full label set (e.g., `[control-plane-workloads]`)
-
-Use this information to locate the failing test in the codebase and understand what condition was violated.
-
-## create-guests Failures
-
-The most common failure point in v2 jobs is version rollout in `create-guests`. When this happens:
-
-1. **Check for JUnit XML**: Look for `junit_hosted_cluster_*.xml` in artifacts
-2. **Read conditions**: The JUnit file contains `HostedCluster` and `NodePool` conditions at the time of failure
-3. **No JUnit file?**: If no JUnit file exists, the failure happened before version rollout — check the `create-guests` step log for earlier stages
-
-Common failures before version rollout:
-
-- **Cluster creation**: `hypershift create cluster` command failure — check for invalid flags or missing credentials
-- **Platform hooks**: Platform-specific setup failure — check for API errors when patching resources or applying day-2 configuration
-- **Wait for Available**: Timeout waiting for the `HostedClusterAvailable` condition — indicates control plane startup failure
-- **Shared state**: Failure writing the cluster manifest or platform configuration to `SHARED_DIR` — typically caused by filesystem or permissions errors
-
-## dump-guests Artifacts
-
-`hypershift dump cluster` collects must-gather, events, pod logs, and other diagnostics. These appear in the Prow artifact directory under `artifacts/<step-name>/`.
-
-The `dump-guests` binary exits non-zero if required environment variables (`PROW_JOB_ID`, `ARTIFACT_DIR`) are missing. Once environment setup succeeds, it **always exits 0** even if individual cluster dumps fail, so missing artifacts indicate a dump failure for that cluster. To diagnose:
-
-1. Check the `dump-guests` step log for `WARNING` messages
-2. Look for timeout or API errors when fetching resources
-3. Verify the cluster still existed when dump ran (it may have been deleted by an earlier cleanup step)
-
-Common artifacts to check:
-
-- `namespaces/<control-plane-namespace>/pods/` — pod logs for control plane components
-- `cluster-scoped-resources/events/` — cluster events showing resource creation/deletion
-- `namespaces/<control-plane-namespace>/core/events.yaml` — control plane events
-- `namespaces/openshift-*/` — hosted cluster namespace logs
-
-## Understanding Informing Test Skips
-
-When a test labeled `Informing` fails, the custom fail handler converts it to a skip. It appears as "skipped" (not "failed") in JUnit reports.
-
-To see the actual failure reason, look at the Ginkgo verbose output in the `run-tests` step log. The skip message includes the original failure:
-
-```text
-[SKIP] informing test failure: Expected <false> to be true
-```
-
-The test failure does not block CI or appear in the JUnit summary. This is by design — `Informing` tests are informational only.
-
-!!! warning "Informing tests are invisible to Sippy"
-    Informing test failures do not appear in Sippy or Component Readiness dashboards. If you need a test to be tracked by these tools, do not use the `Informing` label.
+Use this page when adding or changing CI jobs. For test authoring and selection
+in existing jobs, follow Writing V2 Tests. For execution and
+process boundaries, see the execution model.
+
+## Repository ownership
+
+openshift/hypershift owns the tests,
+platform configuration, lifecycle orchestration, and
+test image definition.
+openshift/release owns the CI jobs and step
+registry that consume that image.
+
+Use the current source for implementation details:
+
+- Lifecycle commands:
+  creation, test execution, diagnostic collection, and teardown.
+- Platform configuration
+  and test plans:
+  supported interfaces and plan validation.
+- Platform implementations:
+  current variants and coverage allocation.
+- HyperShift step registry
+  and job configurations:
+  workflows, credentials, images, timeouts, and job selection.
+
+For registry conventions and workflow, chain, and ref definitions, follow the
+OpenShift CI step registry documentation.
+
+## Lifecycle handoff
+
+Creation records cluster identities and teardown inputs in a
+shared manifest
+before provisioning. Execution, collection, and teardown consume that manifest,
+allowing cleanup after partial provisioning. Preserve this handoff when changing
+orchestration, and ensure the CI workflow schedules diagnostic collection and
+teardown after failures.
+
+## Add or change a job
+
+1. Identify whether the change concerns test selection or CI infrastructure.
+   Follow the authoring guide
+   for labels, cluster prerequisites, and plans. Adding coverage to an existing
+   selection does not require a release repository change.
+2. If platform or framework work is needed, agree on the approach through the
+   advance discussion procedure,
+   then implement it in HyperShift using the current interfaces above.
+3. In the release repository, reuse an appropriate workflow and its existing
+   steps where possible. Add or update registry components when the job needs
+   different infrastructure. Ensure the steps receive the required images,
+   credentials, and configuration. For Azure diagnostic access, see
+   worker diagnostic prerequisites.
+4. Add or update the job under `ci-operator/config/openshift/hypershift/`.
+   Review triggers, change filters, image dependencies, and timeouts against the
+   intended coverage. Use current neighboring jobs as examples instead of copying
+   an old configuration fragment.
+5. From the release repository root, run `make jobs WHAT=openshift/hypershift`
+   and the applicable repository validation. Review generated changes and submit
+   the release PR with references to any corresponding HyperShift changes.
+
+Validate that the resulting job selects and exercises the intended coverage;
+use Verify and debug to inspect its results.
 
 
 ---
@@ -16385,107 +16038,43 @@ The test failure does not block CI or appear in the JUnit summary. This is by de
 
 # V2 E2E Test Framework
 
-## Why V2
+The v2 framework uses Ginkgo to test hosted clusters, with individual spec results
+for CI reporting and Component Readiness.
 
-The v1 framework produced test results where a single test case failure appeared as 4–5 separate failures due to how tests were structured. This made Sippy triage impossible and prevented HyperShift from being represented in Component Readiness. The v2 framework (Ginkgo v2 + structured JUnit reporting) produces one JUnit entry per `It` block, which these tools consume directly.
+- Writing V2 Tests: Authoring invariants, test selection,
+  local verification, and debugging.
+- Migrating from V1 to V2: Procedure for transferring test
+  responsibility and retiring the corresponding v1 execution.
+- CI Pipeline Configuration: Job infrastructure and integration
+  with the openshift/release step registry.
 
-## Architecture
+## Execution model
+
+The v2 lifecycle separates provisioning, test execution, diagnostic collection,
+and teardown. Tests consume operational hosted clusters; lifecycle orchestration
+owns provisioning and initial readiness.
 
 ```mermaid
-flowchart TD
-    Prow[Prow Job Trigger] --> CIO[ci-operator]
-    CIO --> Build[Build hypershift-tests image]
-
-    Build --> Image[hypershift-tests image]
-
-    subgraph "openshift/hypershift repo"
-        Tests[test/e2e/v2/tests/]
-        CMD[test/e2e/v2/cmd/]
-        Platform[test/e2e/v2/lifecycle/]
-        Dockerfile[Dockerfile.e2e]
-    end
-
-    subgraph "openshift/release repo"
-        StepRegistry[Step Registry]
-        JobConfig[Job Config]
-        Workflow[workflow YAML]
-        Chain[chain YAML]
-        Ref[ref YAML]
-
-        Workflow --> Chain
-        Chain --> Ref
-    end
-
-    Tests --> Dockerfile
-    CMD --> Dockerfile
-    Platform --> Dockerfile
-    Dockerfile --> Image
-
-    Image --> Binaries["hypershift/bin/<br>create-guests, run-tests,<br>dump-guests, destroy-guests,<br>test-e2e-v2"]
-
-    Binaries --> Ref
-    StepRegistry --> Workflow
-    JobConfig --> Workflow
-
-    style Image fill:#e1f5ff
-    style Binaries fill:#ffe1e1
+flowchart LR
+    P["Test plan"] --> C["Provision guests"]
+    P --> R["Run selected test groups"]
+    C --> S["Shared cluster manifest"]
+    S --> R
+    S --> D["Collect diagnostics"]
+    S --> T["Destroy guests"]
+    R --> B["Test subprocesses"]
+    B --> A["JUnit reports"]
 ```
 
-!!! note "Image contents"
-    The `hypershift-tests` image ships both v1 and v2 test binaries. This documentation covers only the v2 components.
+This diagram shows responsibilities and data dependencies. CI workflows define
+when collection and teardown execute, including after failures; see
+CI Pipeline Configuration.
 
-## Key Concepts
-
-- **Ginkgo labels** — Tags on `Describe`/`It` blocks (e.g., `hosted-cluster-health`, `lifecycle`) used by `--ginkgo.label-filter` to select which tests run on which cluster.
-
-- **TestPlan** — Declarative selection of cluster variants and their test matrix. The platform supplies a default plan, or CI can load a JSON/YAML plan through `TEST_PLAN`.
-
-- **PlatformConfig** — Interface in `test/e2e/v2/lifecycle/platform.go` that encapsulates all platform-specific configuration. Implement this to add a new platform.
-
-- **TestContext** — Shared context initialized in `BeforeSuite` from environment variables. Provides management client (created eagerly in `SetupTestContextFromEnv`) and hosted cluster client (lazy-loaded via `sync.Once` in `GetHostedClusterClient`), along with cluster name/namespace.
-
-- **Informing tests** — Tests labeled `Informing` that convert failures to skips via the custom fail handler. They appear as "skipped" in the main JUnit report and don't fail CI; a supplemental lifecycle report makes informing failures available to Component Readiness.
-
-- **CI binaries** — Four compiled Go programs (`create-guests`, `run-tests`, `dump-guests`, `destroy-guests`) that replace inline bash in the release repo step registry.
-
-- **Step registry** — The openshift/release repo's hierarchy of workflow → chain → ref YAML files that define CI job steps.
-
-## Test Execution Flow
-
-1. Prow triggers the CI job (e.g., `e2e-azure-v2-self-managed`)
-2. ci-operator builds the `hypershift-tests` image from `Dockerfile.e2e`
-3. **create-guests** creates the clusters selected by the `TestPlan` in parallel, runs platform hooks, waits for Available and version rollout, and writes the cluster manifest to `SHARED_DIR`. Emits JUnit XML to `ARTIFACT_DIR` recording success or failure for each cluster's version rollout.
-4. **run-tests** invokes `bin/test-e2e-v2` once per `TestGroup` with a different `--ginkgo.label-filter` and cluster identity. Whether groups run concurrently or sequentially is determined by placement in the resolved `TestPlan`'s `TestMatrix` — groups in `TestMatrix.Parallel` run concurrently, while groups in `TestMatrix.Sequential` run their steps one after another on the same cluster.
-5. **dump-guests** collects diagnostic artifacts in parallel. Always exits 0.
-6. **destroy-guests** tears down all clusters in parallel. Exits non-zero if any destroy fails.
-
-For the complete end-to-end sequence — including process boundaries, inter-process communication, and Ginkgo lifecycle details — see Test Flow.
-
-!!! info "Key insight"
-    `run-tests` doesn't run tests itself — it invokes the same compiled `bin/test-e2e-v2` binary multiple times with different label filters and cluster targets.
-
-## Directory Structure
-
-```text
-test/e2e/v2/
-├── tests/           — All Ginkgo test files + suite_test.go entry point
-├── internal/        — Framework internals (TestContext, env vars, fail handler, workload registry)
-├── lifecycle/       — Platform-specific config (PlatformConfig interface + implementations)
-├── cmd/             — CI binary source (create-guests, run-tests, dump-guests, destroy-guests)
-├── util/            — Shared test utilities (pod exec, metrics)
-└── backuprestore/   — Backup/restore test helpers (Velero, prober, CLI wrappers)
-```
-
-!!! note
-    This structure may expand as the framework evolves.
-
-## Scope
-
-Azure self-managed is the reference implementation used throughout these docs. The framework is platform-agnostic — AWS, GCP HCP, and other platforms will follow the same patterns by implementing the `PlatformConfig` interface.
-
-## Framework Conventions
-
-For detailed coding standards, test patterns, and framework conventions, see the v2 framework AGENTS.md.
+A `TestPlan` selects cluster variants and arranges test groups. Platform
+implementations own how those variants are provisioned. Each group runs in a
+separate test subprocess targeting one hosted cluster, with labels selecting
+its coverage. For scheduling and cluster isolation, follow the
+selection rules.
 
 
 ---
@@ -16674,676 +16263,6 @@ platform and record intentional removals separately from ports. These observatio
 describe migration work remaining; they do not imply a percentage of semantic
 equivalence. No permanent inventory of semantic identities is required.
 
-## The Fundamental Shift
-
-The v1 and v2 test frameworks differ fundamentally in how they manage cluster lifecycle, not just in syntax or test organization.
-
-In v1, each test owns its cluster lifecycle. `e2eutil.NewHypershiftTest(...).Execute(...)` creates a fresh cluster, runs the test function, then tears down the cluster. Tests are self-contained units that manage their own infrastructure:
-
-```go
-func TestMyFeature(t *testing.T) {
-    ctx, cancel := context.WithCancel(testContext)
-    defer cancel()
-
-    clusterOpts := globalOpts.DefaultClusterOptions(t)
-
-    e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-        // Test logic here - cluster is created, live, and will be destroyed after
-    }).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "my-feature", globalOpts.ServiceAccountSigningKey)
-}
-```
-
-In v2, clusters are pre-created infrastructure shared across tests. The `create-guests` binary provisions clusters before any tests run, and tests consume them as read-only resources via `TestContext`. Tests do not create or destroy clusters:
-
-```go
-var _ = Describe("My Feature", Label("my-feature"), func() {
-    var testCtx *internal.TestContext
-
-    BeforeEach(func() {
-        testCtx = internal.GetTestContext()
-        Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-        testCtx.ValidateHostedCluster()
-    })
-
-    It("should work correctly", func() {
-        // Test logic here - cluster already exists, test is read-only
-    })
-})
-```
-
-!!! note "Simplified example"
-    This example omits the `RegisterXxxTests` + `TestContextGetter` pattern used by real tests. See the canonical test pattern for the full structure.
-
-This architectural change has several implications for migration:
-
-- **Remove all cluster creation/teardown logic** - `e2eutil.NewHypershiftTest`, `Execute()`, and `globalOpts` are v1-only constructs.
-- **Tests that customized cluster creation need new infrastructure** - If your v1 test created clusters with special NodePool configurations, specific release images, or non-default platform settings, you need to define a new `ClusterSpec` variant in the platform's `PlatformConfig` (see Adding a New ClusterSpec).
-- **Test setup shifts from imperative to declarative** - Instead of building a test object with options, you acquire a `TestContext` pointing to pre-existing infrastructure.
-
-## V1 vs V2 at a Glance
-
-| Aspect | V1 | V2 |
-|--------|----|----|
-| Framework | `testing.T` + Gomega | Ginkgo v2 + Gomega |
-| Test structure | `func TestFoo(t *testing.T)` + `e2eutil.NewHypershiftTest` | `Describe`/`It` blocks + `TestContext` |
-| Subtests | `t.Run()` | Nested `It` blocks |
-| Test selection | Separate binaries / build tags | Ginkgo labels + `--label-filter` |
-| Cluster lifecycle | Per-test creation via `e2eutil.NewHypershiftTest(...).Execute(...)` | Pre-created by `create-guests`, shared via `TestContext` |
-| CI scripts | Inline bash in release repo | Compiled Go binaries in hypershift repo |
-| Reporting | Ad-hoc (single failure → 4-5 reported failures) | Structured JUnit, one entry per `It` (Sippy/CR compatible) |
-| Build tag | `e2e` | `e2ev2` (or `e2ev2 && backuprestore`) |
-
-## Migrating Shared Helpers (Prerequisite)
-
-Before porting a test, check if it calls shared helper functions in `test/e2e/util/`. V2 code must not reference `test/e2e/util` or its subpackages: the `e2eutilallowlist` analyzer denies new references, and only a per-file, per-scope baseline in `hack/tools/hypershiftlinter/analyzers/e2eutilallowlist/allowlist.go` covers references that existed when the rule was introduced.
-
-Recommended workflow:
-
-1. Identify all shared helpers your test calls (e.g., `util.EnsureNoCrashingPods`, `util.EnsureNodeCountMatchesNodePoolReplicas`)
-2. Move the behavior into `test/e2e/v2/util`, using v2 packages and Ginkgo-native assertions
-3. Port the test against the v2 helper
-
-Do not widen a legacy helper's signature just so v2 code can call it. Remove the corresponding entry from `allowlist.go` as each caller migrates.
-
-!!! warning "Helpers that call `t.Run()` need deeper refactoring"
-    Ginkgo's `GinkgoTB()` does not implement `Run()`, so a helper that calls `t.Run()` internally cannot be reused from v2. Restructure helpers moved into `test/e2e/v2/util` to drop internal `t.Run()` calls -- for example, by having the helper return results that the caller asserts in separate `It` blocks, or by splitting the helper into smaller functions that do not need subtests.
-
-## Porting Step-by-Step
-
-Follow this checklist when migrating a test from v1 to v2:
-
-1. **Remove cluster lifecycle management** - Delete `e2eutil.NewHypershiftTest`, `Execute()`, and `globalOpts` calls. Your test no longer creates or destroys clusters.
-
-2. **Replace test function with `Describe` block** - Change from:
-    ```go
-    func TestFoo(t *testing.T) { ... }
-    ```
-    to:
-    ```go
-    var _ = Describe("Feature", Label("my-label"), func() { ... })
-    ```
-
-3. **Add `BeforeEach` setup** - Acquire and validate `TestContext`:
-    ```go
-    var testCtx *internal.TestContext
-
-    BeforeEach(func() {
-        testCtx = internal.GetTestContext()
-        Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-        testCtx.ValidateHostedCluster()
-    })
-    ```
-
-4. **Replace `t.Run()` subtests with `It` blocks** - Nested `t.Run()` calls become separate `It` specs:
-    ```go
-    // V1
-    t.Run("subtest A", func(t *testing.T) { ... })
-    t.Run("subtest B", func(t *testing.T) { ... })
-
-    // V2
-    It("should pass subtest A", func() { ... })
-    It("should pass subtest B", func() { ... })
-    ```
-
-5. **Replace `t.Fatal`/`t.Errorf` with Gomega assertions** - If your v1 test still uses raw `testing.T` assertions (not Gomega), convert to `Expect().To()` and `Eventually()`:
-    ```go
-    // V1
-    if err != nil {
-        t.Fatalf("operation failed: %v", err)
-    }
-
-    // V2
-    Expect(err).NotTo(HaveOccurred(), "operation failed")
-    ```
-
-6. **Add appropriate labels** - Every `Describe` and `It` block should have labels for filtering. See writing tests: labels for the label taxonomy.
-
-7. **Change build tag** - Update from:
-    ```go
-    //go:build e2e
-    ```
-    to:
-    ```go
-    //go:build e2ev2
-    ```
-    (or `//go:build e2ev2 && backuprestore` for backup-restore tests)
-
-8. **Add `Register*Tests()` export function** - Follow the canonical test pattern to make your test suite discoverable:
-    ```go
-    func RegisterMyFeatureTests(getTestCtx internal.TestContextGetter) {
-        It("should do something", func() {
-            tc := getTestCtx()
-            // test specs using tc
-        })
-    }
-    ```
-
-!!! tip "Real-World Examples"
-    PR openshift/hypershift#8527 demonstrates all these steps in practice, porting the lifecycle tests from v1 to v2.
-
-## Common Pitfalls
-
-### `testing.TB` lacks `Run()`
-
-The `testing.TB` interface does not include the `Run()` method, so `t.Run()` subtests cannot be called from Ginkgo tests. You must restructure subtest logic as separate `It` blocks:
-
-```go
-// WRONG - GinkgoTB() does not support Run()
-t := GinkgoTB()
-t.Run("subtest", func(t *testing.T) { ... })
-
-// RIGHT - use separate It blocks
-It("should pass subtest", func() { ... })
-```
-
-### `BeforeEach` runs per `It`
-
-`BeforeEach` hooks execute before every `It` spec. If you need one-time setup that should not repeat, use `BeforeAll` inside an `Ordered` container:
-
-```go
-var _ = Describe("Feature", Ordered, func() {
-    var expensiveResource *SomeResource
-
-    BeforeAll(func() {
-        expensiveResource = createExpensiveResource()
-    })
-
-    It("test A", func() { /* uses expensiveResource */ })
-    It("test B", func() { /* uses expensiveResource */ })
-})
-```
-
-### `Eventually` needs explicit timeouts
-
-Always pass `.WithTimeout()` and `.WithPolling()` to `Eventually` assertions. Without them, Gomega uses short defaults that may not suit cluster operations:
-
-```go
-// WRONG - relies on default 1s timeout
-Eventually(func() error { return checkCondition() }).Should(Succeed())
-
-// RIGHT - explicit timeouts for cluster ops
-Eventually(func() error { return checkCondition() }).
-    WithTimeout(5*time.Minute).
-    WithPolling(10*time.Second).
-    Should(Succeed())
-```
-
-### Build tag
-
-Do not forget to change the build tag. Tests with the wrong tag will not be compiled by the v2 test binaries:
-
-```go
-// WRONG - v1 tag
-//go:build e2e
-
-// RIGHT - v2 tag
-//go:build e2ev2
-```
-
-For backup-restore tests, use the combined tag:
-
-```go
-//go:build e2ev2 && backuprestore
-```
-
-## What Stays in V1
-
-V1 tests still exist and are actively running in CI. Not all tests have been migrated to v2, and some may remain in v1 indefinitely.
-
-Tests remain in v1 when:
-
-- **They depend heavily on `t.Run()` subtest trees** - Complex nested subtest logic that does not map cleanly to Ginkgo `It` blocks.
-- **They call helper functions that still require `*testing.T`** - Helpers that have not yet been widened to accept `testing.TB`.
-- **They require unique cluster configurations** - Tests that need custom NodePool settings, specific platform configurations, or particular release images for which no `ClusterSpec` variant has been defined yet in the platform's `PlatformConfig`.
-
-See `test/e2e/` for current v1 test locations. There is no exhaustive backlog of tests to migrate - tests are ported to v2 as platforms transition to the v2 framework and as test maintainers see value in the migration.
-
-
----
-
-## Source: docs/content/how-to/ci/v2-testing/test-flow.md
-
-# E2E v2 Test Flow
-
-This document describes the end-to-end flow of the HyperShift v2 e2e test framework,
-from CI job trigger through test execution and teardown. It covers process boundaries,
-inter-process communication, and the sequencing of mutually exclusive tests.
-
-## Contents
-
-- Ginkgo Decorators, Hooks, and Labels for Test Isolation
-    - Decorators
-    - Hooks
-    - Labels
-    - How These Layers Compose
-- High-Level Flow
-- Inside a test-e2e-v2 Process (Ginkgo Lifecycle)
-- Process Boundary Summary
-- Sequencing of Mutually Exclusive Tests
-- Inter-Process Communication
-
-## Ginkgo Decorators, Hooks, and Labels for Test Isolation
-
-The v2 framework uses Ginkgo features at two levels to keep tests from interfering
-with each other: the [**`run-tests` orchestrator**][run-tests] isolates test groups
-into separate OS processes targeting different clusters, and **within each process**,
-Ginkgo decorators and hooks manage execution order, state mutation, cleanup, and
-reporting semantics.
-
-### Decorators
-
-| Decorator | Purpose | Used by |
-|-----------|---------|---------|
-| **`Ordered`** | Specs in the container run in declaration order. If one fails, subsequent specs in the same container are skipped. Prevents dependent steps from running against corrupted state. | [BackupRestore, EtcdSnapshot][backup-restore-test], [EtcdChaos][etcd-chaos-test], [AzurePrivateLink, AzureEndpointAccess][azure-test], [PKI operator TLS modification][pki-test], [AdmissionPolicies][security-test], [ImageRegistryCapability][image-registry-test], [ExternalOIDCKeycloakAuth][external-oidc-test] |
-| **`Serial`** | Specs never run concurrently with other specs, even if Ginkgo parallel mode were enabled. Applied alongside `Ordered` when a test mutates shared cluster state that could interfere with other specs. | [BackupRestore, EtcdSnapshot][backup-restore-test] (separate binary), [PKI operator TLS modification][pki-test] |
-
-`Ordered` is the primary tool for inter-test dependencies within a single feature
-(e.g., backup must complete before restore can start). `Serial` adds the guarantee
-that no other spec in the process runs at the same time, which matters for tests
-that mutate cluster-wide resources like HostedCluster configuration or etcd state.
-In practice, since `run-tests` does not pass `--procs` to Ginkgo, all specs within
-a process already run sequentially — but `Serial` makes the constraint explicit and
-future-proof.
-
-### Hooks
-
-| Hook | Scope | Purpose |
-|------|-------|---------|
-| **`BeforeSuite`** | Once per process | Initializes the global [`TestContext`][test-context] from env vars (cluster name, namespace, artifact dir, management client). Runs before any spec. See [`suite_test.go`][suite-test]. |
-| **`BeforeAll`** | Once per `Ordered` container | Initializes shared state for an ordered sequence (e.g., resolve `TestContext`, validate platform support, capture original config for later restoration). Runs once before the first spec in the container. |
-| **`AfterAll`** | Once per `Ordered` container | Tears down shared state created by `BeforeAll` (e.g., delete backup resources, restore original HostedCluster config). |
-| **`BeforeEach`** | Before every spec | Top-level: resolves `TestContext` and validates the hosted cluster resource exists on the management cluster. (`Ordered` containers use `BeforeAll` for the same purpose.) Nested (in `Context`/`When` blocks) or inline in specs: runs platform guards (`Skip()` if wrong platform) or other precondition checks. |
-| **`DeferCleanup`** | After each spec (LIFO) | Restores mutated state or deletes created resources. Registered immediately after mutation/creation so cleanup runs even if the test panics or fails before reaching manual deletion. |
-
-The `BeforeAll`/`AfterAll` pair is critical for lifecycle tests that share expensive
-preconditions across multiple ordered specs (e.g., backup-restore creates a backup
-once, then multiple specs verify different aspects of the restore). Without `Ordered`,
-`BeforeAll`/`AfterAll` cannot be used — Ginkgo enforces this at the framework level.
-
-### Labels
-
-| Label | Effect |
-|-------|--------|
-| **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The simple [`hypershift-e2e-v2` CI chain][e2e-v2-chain] filters these out with `--ginkgo.label-filter='!lifecycle'` so that read-only compliance runs don't trigger mutations. The `run-tests` orchestrator runs lifecycle tests on dedicated clusters via specific label filters. |
-| **`Informing`** | The custom [`InformingAwareFailHandler`][fail-handler] converts failures on specs with this label into skips. The test appears as "skipped" in JUnit XML rather than "failed", so it doesn't block the CI job. Used for tests validating optional or in-progress features (e.g., metrics forwarding, custom labels/tolerations). |
-| **Feature/platform labels** (e.g., `self-managed-azure-public`, `nodepool-autoscaling`, `control-plane-upgrade`) | Control which specs run in which `test-e2e-v2` process. The [`run-tests` orchestrator][run-tests] passes `--ginkgo.label-filter` expressions from the [`TestMatrix`][azure-platform]. The default Azure plan intentionally reuses `hosted-cluster-health` and `control-plane-workloads` in the post-upgrade health step, so those specs run again after upgrade. |
-
-### How These Layers Compose
-
-```text
-run-tests orchestrator
-├── Sequential group (public cluster)
-│   ├── Process 1a: --ginkgo.label-filter="self-managed-azure-public || control-plane-workloads || ..."
-│   │   ├── Describe "Control Plane Workloads" ← read-only, no Ordered needed
-│   │   └── Context "Custom labels" [Informing] ← failure → skip, non-blocking
-│   └── Process 1b: --ginkgo.label-filter="nodepool-vm-size-rollout || ..."
-│       └── Describe "NodePool Lifecycle" ← independently labeled mutation specs
-├── Parallel process (private cluster): --ginkgo.label-filter="self-managed-azure-private || ..."
-│   └── ...
-└── Sequential group (upgrade cluster):
-        ├── Process 6a: --ginkgo.label-filter="control-plane-upgrade" ← must finish before 6b
-        │   └── Describe "Control Plane Upgrade" ← triggers version rollout
-        ├── Process 6b: --ginkgo.label-filter="hosted-cluster-health || control-plane-workloads" ← must finish before 6c
-        │   └── Describe "Post-upgrade health" ← validates recovered workloads
-        ├── Process 6c: --ginkgo.label-filter="control-plane-pki-operator" ← must finish before 6d
-        │   └── Describe "Control Plane TLS" ← validates certificate rotation
-        └── Process 6d: --ginkgo.label-filter="etcd-chaos" ← only runs if 6c passed
-            └── Describe "Etcd Chaos" [Ordered] ← specs run in order, BeforeAll snapshots etcd
-```
-
-For the default Azure `TestPlan`, cluster-level isolation (different processes target
-different clusters) prevents inter-group interference. A custom `TEST_PLAN` must keep
-each hosted-cluster variant in one top-level execution lane; the runner does not
-reject a variant used by multiple concurrent lanes. Within a process, `Ordered`/`Serial`
-prevent inter-spec interference for mutation-heavy features. `DeferCleanup` ensures
-each spec restores what it touched. `Informing` decouples experimental coverage from
-gate status. The `lifecycle` label separates mutation tests from read-only compliance
-runs at the CI job level.
-
-## High-Level Flow
-
-The diagram below shows the general v2 e2e flow. The framework is
-platform-agnostic — each platform implements the [`PlatformConfig`][platform]
-interface. Azure and AWS provide implementations; Azure serves as the reference
-for the multi-cluster lifecycle flow. The concrete examples here follow the
-[`e2e-azure-v2-self-managed`][ci-job-config] CI job and its
-[workflow][workflow]. ci-operator builds the [`hypershift-tests`][dockerfile-e2e]
-image (via [`Dockerfile.e2e`][dockerfile-e2e], which invokes several
-[`Makefile`][makefile] targets), then chains together cluster creation, test
-execution, and teardown steps.
-
-```mermaid
-sequenceDiagram
-    autonumber
-
-    box Prow Cluster
-        participant Prow
-        participant CIO as ci-operator
-    end
-
-    box CI Pod (hypershift-tests image)
-        participant CG as create-guests
-        participant RT as run-tests
-        participant T as test-e2e-v2<br/>(subprocesses)
-        participant DG as destroy-guests
-    end
-
-    participant MC as Management Cluster<br/>(nested OCP)
-
-    Note over Prow,MC: Phase 1: CI Job Setup (openshift-release workflow)
-
-    Prow->>CIO: Trigger job (PR event / periodic)
-    CIO->>CIO: Build hypershift-tests image (Dockerfile.e2e)
-
-    Note over CIO: Key v2 binaries:<br/>test-e2e-v2, test-backuprestore, create-guests,<br/>run-tests, destroy-guests, dump-guests, hypershift
-
-    CIO->>CIO: Execute workflow pre steps
-
-    Note over CIO,MC: Pre steps (sequential):<br/>1. ipi-install-rbac<br/>2. hypershift-setup-nested-management-cluster<br/>3. hypershift-azure-setup-private-link<br/>4. hypershift-install (HyperShift operator)<br/>5. hypershift-resolve-nodepool-releases<br/>6. create-selfmanaged-guests (shown below)
-
-    Note over Prow,MC: Phase 2: Guest Cluster Creation (create-guests binary, pre step 6)
-
-    CIO->>CG: Run create-selfmanaged-guests step<br/>(KUBECONFIG=management_cluster_kubeconfig)
-
-    activate CG
-    Note over CG: Single Go process, phases run sequentially.<br/>Phases 1, 3, and 5 use internal goroutines for parallelism.
-
-    par Phase 1: Create 6 clusters in parallel (goroutines + exec.Command)
-        CG->>MC: Create public-{hash}
-        CG->>MC: Create private-{hash} (Private endpoint access)
-        CG->>MC: Create oauth-lb-{hash} (OAuth via LoadBalancer)
-        CG->>MC: Create oauth-lb-private-{hash} (Private access, OAuth via LoadBalancer)
-        CG->>MC: Create upgrade-{hash} (N-1 release, HA control plane)
-        CG->>MC: Create external-oidc-{hash}
-    end
-    Note right of CG: Each calls `hypershift create cluster azure`<br/>with variant-specific flags.<br/>Hooks run between phases:<br/>PreCreate (deploy Keycloak),<br/>PostCreate (patch OperatorConfiguration),<br/>PostAvailable, PostVersionRollout (OIDC config).
-
-    CG->>MC: Watch all clusters for Available condition<br/>(controller-runtime Watch, 45m timeout)
-    MC-->>CG: All 6 clusters Available
-
-    CG->>MC: Watch for version rollout completion<br/>(VersionState=Completed on all history entries)
-    MC-->>CG: All 6 clusters rolled out
-
-    CG->>CG: Write cluster names and<br/>platform-specific config to SHARED_DIR
-    deactivate CG
-
-    Note over Prow,MC: Phase 3: Test Execution (run-tests binary)
-
-    CIO->>RT: Run run-e2e-v2-selfmanaged step<br/>(KUBECONFIG=management_cluster_kubeconfig)
-
-    activate RT
-    Note over RT: Reads HYPERSHIFT_PLATFORM → resolves the default TestPlan or TEST_PLAN<br/>Reads cluster names and platform config from SHARED_DIR
-
-    RT->>RT: PlatformConfig.SetupTestEnv()<br/>(set env vars from SHARED_DIR files)
-
-    par Test lanes (each lane is a goroutine, steps within each lane are sequential)
-        RT->>T: private-{hash} (private topology + compliance)
-        RT->>T: oauth-lb-private-{hash} (private topology with OAuth via LoadBalancer)
-        RT->>T: public-{hash} (platform, feature, then NodePool rollout tests)
-        RT->>T: oauth-lb-{hash} (OAuth/configuration, NodePool config including MachineConfig rollout, then autoscaling balancing)
-        RT->>T: external-oidc-{hash} (OIDC/pull-secret, autoscaling scale-up/down, then trust bundle tests)
-    end
-    Note right of RT: Each subprocess receives the cluster name via env vars,<br/>plus its label filter via --ginkgo.label-filter
-
-    par Sequential group: upgrade-and-chaos (single goroutine, steps run in order)
-        RT->>T: upgrade-{hash} (upgrade tests)
-        Note over T: Process 6a (upgrade)
-        T-->>RT: exit 0 (upgrade passed)
-
-        RT->>T: upgrade-{hash} (post-upgrade-health)
-        Note over T: Process 6b (post-upgrade-health)
-        T-->>RT: exit 0 (post-upgrade-health passed)
-
-        RT->>T: upgrade-{hash} (control-plane-tls)
-        Note over T: Process 6c (control-plane-tls)
-        T-->>RT: exit 0 (control-plane-tls passed)
-
-        RT->>T: upgrade-{hash} (etcd-chaos, same cluster)
-        Note over T: Process 6d (etcd-chaos)
-        T-->>RT: exit 0 or error
-    end
-
-    T-->>RT: All test lanes return exit codes
-    RT->>RT: Collect results, report pass/fail summary
-    RT-->>CIO: exit code (0 if all passed)
-    deactivate RT
-
-    Note over Prow,MC: Phase 4: Teardown (post steps, always run)
-
-    CIO->>CIO: Run dump-guests<br/>(collect artifacts from all clusters)
-
-    CIO->>DG: Run destroy-selfmanaged-guests step (best_effort: true)
-    activate DG
-    par Destroy all 6 clusters in parallel
-        DG->>MC: hypershift destroy cluster azure<br/>for each variant (--cluster-grace-period=40m)
-    end
-    DG-->>CIO: exit code
-    deactivate DG
-
-    CIO->>CIO: Destroy nested management cluster
-    CIO->>Prow: Report results (JUnit XML)
-```
-
-## Inside a test-e2e-v2 Process (Ginkgo Lifecycle)
-
-Each `test-e2e-v2` invocation is a single OS process running the Ginkgo v2 test
-framework. The process is a compiled Go test binary (`go test -c`) with the `e2ev2`
-build tag.
-
-```mermaid
-sequenceDiagram
-    autonumber
-
-    participant RT as run-tests<br/>(parent process)
-    participant G as test-e2e-v2<br/>(Ginkgo process)
-    participant MC as Management<br/>Cluster API
-    participant HCA as HostedCluster<br/>API (guest)
-
-    RT->>G: exec test-e2e-v2 with label filter,<br/>env: E2E_HOSTED_CLUSTER_NAME/NAMESPACE
-
-    activate G
-    Note over G: Go test framework calls TestE2EV2(t)<br/>which calls ginkgo.RunSpecs(t, "hypershift-e2e")
-
-    G->>G: BeforeSuite: SetupTestContextFromEnv()<br/>(management client, cluster identity, artifact dir)
-
-    Note over G: Ginkgo builds spec tree from all<br/>var _ = Describe(...) registrations
-
-    G->>G: Label filter prunes spec tree<br/>(only specs matching --ginkgo.label-filter run)
-
-    loop For each matching spec (It block)
-        G->>G: BeforeEach: get TestContext,<br/>platform guard (Skip if wrong platform)
-
-        alt First access to HostedCluster (sync.Once)
-            G->>MC: Get HostedCluster {name}/{namespace}
-            MC-->>G: HostedCluster object (cached for process lifetime)
-        end
-
-        alt First access to HostedCluster client (sync.Once)
-            G->>MC: Get kubeconfig Secret from HC status
-            MC-->>G: Secret with kubeconfig data
-            G->>G: Build REST config + controller-runtime client<br/>(cached for process lifetime)
-        end
-
-        G->>MC: Test assertions against management cluster
-        G->>HCA: Test assertions against hosted cluster
-
-        alt Test has "Informing" label and fails
-            G->>G: InformingAwareFailHandler converts<br/>Fail → Skip (test marked skipped, not failed)
-        else Test fails normally
-            G->>G: Standard Ginkgo Fail (spec marked failed)
-        end
-
-        G->>G: DeferCleanup runs (restore mutations)
-    end
-
-    G->>G: Write JUnit XML report to ARTIFACT_DIR
-    G-->>RT: exit code (0=all passed, 1=failures)
-    deactivate G
-```
-
-## Process Boundary Summary
-
-| Process | Binary | Lifecycle | Communication |
-|---------|--------|-----------|---------------|
-| **ci-operator** | CI infrastructure | Manages the entire [job][ci-job-config] | Runs [workflow steps][workflow] as pods |
-| **Step shell** | bash | One per CI step | Sets KUBECONFIG, runs Go binaries ([create][create-guests-sh], [run][run-tests-chain], [destroy][destroy-guests-chain]) |
-| **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes cluster names and platform-specific config to `SHARED_DIR` |
-| **[run-tests][]** | `/hypershift/bin/run-tests` | Runs once in test step | Forks one `test-e2e-v2` process per test group via `exec.Command`. Env vars pass cluster name + config. Collects exit codes. |
-| **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | One process per test group; sequential lanes run one group at a time | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. |
-| **[destroy-guests][]** | `/hypershift/bin/destroy-guests` | Runs once in post step | Forks `hypershift` CLI via `exec.Command` for each cluster (parallel goroutines). |
-
-## Sequencing of Mutually Exclusive Tests
-
-Mutual exclusion between test groups is achieved through **cluster isolation** and
-**sequential groups**, not through in-process locking:
-
-```mermaid
-flowchart TD
-    subgraph TestMatrix["TestMatrix (defined by PlatformConfig)"]
-        subgraph Parallel["Parallel lanes"]
-            P1["private cluster<br/>(private topology + compliance)"]
-            P2["oauth-lb-private cluster<br/>(private topology + OAuth LoadBalancer)"]
-        end
-
-        subgraph Public["Sequential lane: public cluster"]
-            direction TB
-            PUB1["platform + feature tests"]
-            PUB2["NodePool rollout tests"]
-            PUB1 --> PUB2
-        end
-
-        subgraph OAuth["Sequential lane: oauth-lb cluster"]
-            direction TB
-            OAUTH1["OAuth, health, metrics, registry"]
-            OAUTH2["NodePool configuration tests"]
-            OAUTH3["Autoscaling balancing"]
-            OAUTH1 --> OAUTH2 --> OAUTH3
-        end
-
-        subgraph OIDC["Sequential lane: external-oidc cluster"]
-            direction TB
-            OIDC1["External OIDC + global pull-secret"]
-            OIDC2["Autoscaling scale-up/down"]
-            OIDC3["Trust bundle tests"]
-            OIDC1 --> OIDC2 --> OIDC3
-        end
-
-        subgraph Sequential["Sequential lane: upgrade cluster"]
-            direction TB
-            S1["Step 1: upgrade tests<br/>label: control-plane-upgrade"]
-            S2["Step 2: post-upgrade-health tests<br/>label: hosted-cluster-health"]
-            S3["Step 3: control-plane-tls tests<br/>label: control-plane-pki-operator"]
-            S4["Step 4: etcd-chaos tests<br/>label: etcd-chaos"]
-            S1 -->|"pass → continue"| S2 -->|"pass → continue"| S3 -->|"pass → continue"| S4
-            S1 -.->|"fail → skip remaining"| SKIP["Steps skipped"]
-        end
-    end
-
-    RT["run-tests orchestrator"] --> Parallel
-    RT --> Public
-    RT --> OAuth
-    RT --> OIDC
-    RT --> Sequential
-
-```
-
-**Key mechanisms:**
-
-1. **Cluster-per-lane isolation**: The Azure matrix provisions six HostedClusters:
-   `private`, `oauth-lb-private`, `public`, `oauth-lb`, `external-oidc`, and
-   `upgrade`. Each top-level execution lane targets exactly one cluster. Tests
-   within a lane share that cluster, while different lanes never touch the same
-   cluster.
-
-2. **Label-based selection**: Ginkgo's `--ginkgo.label-filter` selects the
-   intended feature specs for each process. Some labels intentionally appear in
-   multiple lanes because those lanes target different HostedClusters; lane
-   isolation prevents their processes from interfering with each other.
-
-3. **Sequential groups for ordered dependencies**: The [Azure matrix][azure-platform]
-   runs configuration-specific tests before autoscaling tests on the `oauth-lb` and
-   `external-oidc` clusters. The `upgrade-and-chaos` lane runs upgrade first, then
-   etcd-chaos on the **same cluster**. The [`run-tests` orchestrator][run-tests]
-   enforces ordering by running steps sequentially within one goroutine. If an
-   earlier step fails, the remaining steps in that lane are skipped.
-
-4. **Matrix validation protects JUnit paths**: `TestMatrix.Validate` rejects
-   duplicate group names and names that are unsafe as JUnit filename components.
-   It does not reject a variant used by multiple top-level lanes, so custom plans
-   must keep each variant in a single lane to prevent concurrent cluster access.
-
-5. **No in-process mutex**: Each `test-e2e-v2` process targets exactly one cluster,
-   so no mutex is needed between test specs. Ginkgo runs specs within a single
-   process serially by default (no `--procs` flag is passed).
-
-## Inter-Process Communication
-
-```mermaid
-flowchart LR
-    subgraph "SHARED_DIR (filesystem)"
-        F1["cluster-name-{variant}<br/>(one per cluster)"]
-        F2["management_cluster_kubeconfig"]
-        F3["platform-specific config<br/>(OIDC bundles, subnet IDs, etc.)"]
-    end
-
-    CG["create-guests"] -->|"writes"| F1
-    CG -->|"writes"| F3
-
-    RT["run-tests"] -->|"reads"| F1
-    RT -->|"reads"| F3
-    RT -->|"env vars"| TB["test-e2e-v2<br/>(subprocess)"]
-    TB -->|"JUnit XML"| AD["ARTIFACT_DIR"]
-
-    DG["destroy-guests"] -->|"derives names from<br/>PROW_JOB_ID + sha256"| MC["Management Cluster"]
-
-```
-
-- **SHARED_DIR**: Filesystem directory shared across all CI steps within a job.
-  [`create-guests`][create-guests] writes cluster names and platform-specific
-  config; [`run-tests`][run-tests] reads them. This is the primary IPC mechanism
-  between CI steps.
-- **Environment variables**: `run-tests` passes cluster identity to each `test-e2e-v2`
-  subprocess via `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` env vars.
-- **PROW_JOB_ID + SHA256**: [`destroy-guests`][destroy-guests] does not read
-  SHARED_DIR cluster names. Instead, it re-derives cluster names deterministically
-  from `PROW_JOB_ID` using the same [`DeriveClusterName()`][platform] function as
-  `create-guests`. This makes teardown idempotent and independent of whether creation
-  succeeded.
-- **KUBECONFIG**: All processes authenticate to the management cluster via the
-  kubeconfig file at `${SHARED_DIR}/management_cluster_kubeconfig`, set up by the
-  nested management cluster provisioning step.
-- **Exit codes**: `run-tests` collects exit codes from all `test-e2e-v2` subprocesses
-  and exits non-zero if any group failed.
-- **JUnit XML**: Each `test-e2e-v2` process writes a separate JUnit report to
-  `ARTIFACT_DIR`. ci-operator collects these for Sippy/Prow reporting.
-
-<!-- HyperShift repo links (openshift/hypershift, main branch) -->
-[run-tests]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/cmd/run-tests/main.go
-[create-guests]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/cmd/create-guests/main.go
-[destroy-guests]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/cmd/destroy-guests/main.go
-[suite-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/suite_test.go
-[test-context]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/internal/test_context.go
-[fail-handler]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/internal/fail_handler.go
-[platform]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/platform.go
-[azure-platform]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/azure.go
-[backup-restore-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/backup_restore_test.go
-[etcd-chaos-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/etcd_chaos_test.go
-[azure-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/hosted_cluster_azure_test.go
-[pki-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/control_plane_pki_operator_test.go
-[security-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/hosted_cluster_security_test.go
-[image-registry-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/hosted_cluster_image_registry_test.go
-[external-oidc-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/hosted_cluster_external_oidc_test.go
-[dockerfile-e2e]: https://github.com/openshift/hypershift/blob/main/Dockerfile.e2e
-[makefile]: https://github.com/openshift/hypershift/blob/main/Makefile
-
-<!-- openshift/release repo links (main branch) -->
-[ci-job-config]: https://github.com/openshift/release/blob/main/ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml
-[workflow]: https://github.com/openshift/release/blob/main/ci-operator/step-registry/hypershift/azure/e2e/v2-self-managed/hypershift-azure-e2e-v2-self-managed-workflow.yaml
-[create-guests-sh]: https://github.com/openshift/release/blob/main/ci-operator/step-registry/hypershift/azure/create-selfmanaged-guests/hypershift-azure-create-selfmanaged-guests-commands.sh
-[run-tests-chain]: https://github.com/openshift/release/blob/main/ci-operator/step-registry/hypershift/azure/run-e2e-v2-selfmanaged/hypershift-azure-run-e2e-v2-selfmanaged-chain.yaml
-[destroy-guests-chain]: https://github.com/openshift/release/blob/main/ci-operator/step-registry/hypershift/azure/destroy-selfmanaged-guests/hypershift-azure-destroy-selfmanaged-guests-chain.yaml
-[e2e-v2-chain]: https://github.com/openshift/release/blob/main/ci-operator/step-registry/hypershift/e2e-v2/hypershift-e2e-v2-chain.yaml
-
 
 ---
 
@@ -17351,401 +16270,199 @@ flowchart LR
 
 # Writing V2 Tests
 
-This guide teaches developers how to add new v2 tests to the HyperShift test suite.
+Follow these invariants when adding or migrating v2 E2E tests. Existing tests
+that violate them are migration debt, not examples to copy.
 
-## Test file conventions
+For hooks, decorators, and filtering, consult the
+Ginkgo documentation.
 
-Every v2 test file must follow these conventions:
+## Choose the test boundary
 
-- Start with `//go:build e2ev2` build tag
-- Live in package `tests` under `test/e2e/v2/tests/`
-- Be named `feature_area_test.go` (e.g., `hosted_cluster_health_test.go`)
-- Export a `RegisterXxxTests(getTestCtx internal.TestContextGetter)` function
+Tests consume pre-created, fully operational hosted clusters. Provisioning,
+initial readiness, and teardown belong to lifecycle orchestration. Do not add
+startup polling to specs or suite setup to compensate for incomplete provisioning.
 
-!!! note "Backup-restore tests"
-    Tests that perform backup and restore operations use a combined build tag `//go:build e2ev2 && backuprestore`. These tests compile into a separate binary `bin/test-backuprestore` (via `make backuprestore-e2e`), not `bin/test-e2e-v2`. This separation allows backup-restore tests to run with different concurrency settings and lifecycle requirements.
+Non-lifecycle tests only inspect existing state. Skip when a required platform
+or configuration precondition is absent; never mutate the cluster to manufacture
+it. API failures must fail the test rather than become precondition skips.
 
-## Suite bootstrap
+Lifecycle tests may mutate state and wait for transitions they initiate. Label
+them `lifecycle` so that read-only runs can exclude them. Capture original state
+before mutation and register restoration. Register `DeferCleanup` immediately
+after creating a resource, even when the scenario later deletes it explicitly.
+Cleanup must tolerate resources already being absent while surfacing other errors.
+If a resource already exists, reconcile it to the required state or fail with a
+diagnostic; silently accepting it can invalidate the test baseline.
 
-The test suite bootstraps through `suite_test.go` in the `test/e2e/v2/tests/` package:
+## Structure coverage
 
-```go
-//go:build e2ev2
+Put feature-scoped specs in `test/e2e/v2/tests/` and shared utilities in `util/`.
+Use the registration pattern in
+`control_plane_workloads_test.go`:
+register specs during Ginkgo tree construction and obtain the runtime test
+context inside hooks or specs. Do not register specs inside `BeforeEach` or `It`.
 
-package tests
-
-import (
-    "context"
-    "testing"
-
-    . "github.com/onsi/ginkgo/v2"
-    . "github.com/onsi/gomega"
-
-    "github.com/openshift/hypershift/test/e2e/v2/internal"
-    ctrl "sigs.k8s.io/controller-runtime"
-    zap "sigs.k8s.io/controller-runtime/pkg/log/zap"
-)
-
-func TestE2EV2(t *testing.T) {
-    if internal.GetEnvVarValue("E2E_SHOW_ENV_HELP") != "" {
-        internal.PrintEnvVarHelp()
-        return
-    }
-    RegisterFailHandler(internal.InformingAwareFailHandler)
-    RunSpecs(t, "HyperShift End To End Test Suite")
-}
-
-var _ = BeforeSuite(func() {
-    ctx := context.Background()
-    ctrl.SetLogger(zap.New())
-    testCtx, err := internal.SetupTestContextFromEnv(ctx)
-    Expect(err).NotTo(HaveOccurred(), "failed to setup test context")
-    Expect(testCtx).NotTo(BeNil(), "test context should not be nil")
-    internal.SetTestContext(testCtx)
-})
-```
-
-Key points:
-
-- `RegisterFailHandler(internal.InformingAwareFailHandler)` installs the custom handler that converts `Informing`-labeled test failures to skips
-- `BeforeSuite` reads `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` from environment and creates a shared `TestContext`
-
-## Canonical test pattern
-
-Tests follow this standard pattern, based on `DeploymentGenerationTest` in `control_plane_workloads_test.go`:
-
-```go
-func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
-    Context("Deployment generation", func() {
-        BeforeEach(func() {
-            testCtx := getTestCtx()
-            hostedCluster := testCtx.GetHostedCluster()
-            if hostedCluster == nil || hostedCluster.CreationTimestamp.IsZero() ||
-                time.Since(hostedCluster.CreationTimestamp.Time) > 4*time.Hour {
-                Skip("Deployment generation test is only for recently created hosted clusters")
-            }
-        })
-
-        for _, workload := range workloads {
-            if workload.Type != "Deployment" { continue }
-            Context(workload.Name, func() {
-                It("should not indicate rapid rollouts", func() {
-                    testCtx := getTestCtx()
-                    hostedCluster := testCtx.GetHostedCluster()
-                    if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-                        Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-                    }
-                    // ... get deployment, check generation ...
-                    Expect(deployment.Generation).To(BeNumerically("<=", maxAllowedGeneration),
-                        "Deployment %s has generation %d which exceeds max allowed %d",
-                        workload.Name, deployment.Generation, maxAllowedGeneration)
-                })
-            })
-        }
-    })
-}
-
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {
-    var testCtx *internal.TestContext
-    BeforeEach(func() {
-        testCtx = internal.GetTestContext()
-        Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-        testCtx.ValidateHostedCluster()
-    })
-    RegisterControlPlaneWorkloadsTests(func() *internal.TestContext { return testCtx })
-})
-```
-
-The pattern:
-
-1. `Register*Tests` functions take a `TestContextGetter` parameter
-2. The top-level `Describe` block uses `Label(...)` for test filtering
-3. The `Describe` block calls the register function to add test cases
-4. `BeforeEach` in the top-level block validates the hosted cluster exists
-
-## Labels (two-layer model)
-
-The v2 framework uses a two-layer labeling model for test organization and filtering.
-
-### Layer 1: Labels on test blocks
-
-Labels are attached to `Describe` or `Context` blocks to categorize tests:
-
-| Category | Labels |
-|----------|--------|
-| Lifecycle | `lifecycle`, `control-plane-upgrade`, `nodepool-lifecycle`, `nodepool-autoscaling`, fine-grained NodePool shard labels, `etcd-chaos`, `backup-restore` |
-| Health/Compliance | `hosted-cluster-health`, `hosted-cluster-compliance`, `hosted-cluster-security`, `hosted-cluster-dns`, `hosted-cluster-metrics`, `hosted-cluster-image-registry`, `hosted-cluster-ccm`, `control-plane-workloads`, `routes` |
-| Platform-specific | `Azure`, `GCP`, `hosted-cluster-azure`, `self-managed-azure-public`, `self-managed-azure-private`, `self-managed-azure-oauth-lb` |
-| Meta | `Informing` |
-
-### Layer 2: Label-filter expressions
-
-The CI pipeline uses label-filter expressions in TestMatrix configurations to select which tests run for each cluster configuration. The following is a simplified example based on the Azure TestMatrix:
-
-```go
-Sequential: []SequentialGroup{
-    {
-        Name: "public",
-        Steps: []TestGroup{
-            {
-                Name:        "public",
-                Variant:     "public",
-                LabelFilter: "self-managed-azure-public || control-plane-workloads",
-            },
-            {
-                Name:        "public-nodepool-rollouts",
-                Variant:     "public",
-                LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade",
-            },
-        },
-    },
-    {
-        Name: "upgrade-and-chaos",
-        Steps: []TestGroup{
-            {
-                Name:        "upgrade",
-                Variant:     "upgrade",
-                LabelFilter: "control-plane-upgrade",
-            },
-            // additional steps run in order within this group
-        },
-    },
-},
-```
-
-`Parallel` groups all run concurrently. Each `SequentialGroup` also runs concurrently with everything else, but its internal `Steps` run one after another -- if any step fails, subsequent steps are skipped.
-
-JUnit filenames are derived from each `TestGroup.Name`; configure the group name rather than a separate filename.
-
-When multiple filters target the same hosted-cluster variant, put them in the same `SequentialGroup`. Never add separate `Parallel` groups for one variant, because that launches concurrent test processes against the same hosted cluster.
-
-!!! tip "Adding a test with an existing label"
-    If your test uses a label already in a filter expression (e.g., `hosted-cluster-health`), it runs automatically in the appropriate CI jobs. If you introduce a new label, you must add it to existing filter expressions in the TestMatrix configuration in the hypershift repository (not the release repository).
-
-## Sippy/CR test name annotations
-
-All test name strings must include annotations for Sippy Component Readiness (CR) mapping. These are parsed from the full Ginkgo test path and enable automatic Jira component assignment and per-feature regression tracking.
-
-**Required annotations:**
-
-1. **`[sig-hypershift][Jira:Hypershift]`** — on every top-level `Describe` block. Maps all tests to the Hypershift Jira component.
-2. **`[Feature:XYZ]`** — maps to a specific feature/capability. Placement depends on the file:
-    - **On the `Describe`** when the entire file tests one cohesive feature (most files).
-    - **On individual `Context`/`When` blocks** when a file covers multiple distinct capabilities.
-
-Feature names use PascalCase with no spaces (e.g., `BackupRestore`, `AzurePrivateLink`, `NodePoolLifecycle`).
-
-**Single-feature file:**
-
-```go
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Health] Hosted Cluster Health", Label("hosted-cluster-health"), func() {
-    // all tests in this file map to Feature:Health
-})
-```
-
-**Multi-feature file** (e.g., platform-specific files covering multiple capabilities):
-
-```go
-var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label("hosted-cluster-azure"), func() {
-    // Jira component set at Describe level, Feature set per Context
-})
-
-Context("[Feature:AzureWorkloadIdentity] Azure Public Cluster", Label("Azure"), func() {
-    It("should mutate pods with workload identity federated credentials", func() { ... })
-})
-
-Context("[Feature:AzurePrivateLink] Azure Private Topology", Label("Azure"), func() {
-    It("should create AzurePrivateLinkService CR with PLS alias", func() { ... })
-})
-```
-
-!!! warning "Do not rename tests after Sippy import"
-    Renaming tests after Sippy imports them loses historical data and requires manual re-mapping. Add annotations before tests are imported.
-
-Check existing Feature names before adding new ones:
-
-```bash
-grep -r '\Feature:' test/e2e/v2/tests/
-```
-
-## Platform guards
-
-Use `Skip` in `BeforeEach` to skip tests when platform preconditions are not met:
+The suite
+supplies a shared
+`TestContext`.
+Fetch the HostedCluster and assert the returned error before testing platform or
+configuration preconditions:
 
 ```go
 BeforeEach(func() {
-    testCtx := getTestCtx()
-    hostedCluster := testCtx.GetHostedCluster()
-    if hostedCluster == nil || hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
-        Skip("Azure-specific test; skipping on non-Azure cluster")
+    tc := getTestCtx()
+    hc, err := tc.GetHostedCluster()
+    Expect(err).NotTo(HaveOccurred())
+    if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
+        Skip("test requires AWS")
     }
 })
 ```
 
-### Informing skip-conversion
+Re-fetch objects when checking mutations; do not assert against stale state.
 
-The `Informing` label marks tests as informational. When an `Informing`-labeled test fails, the custom failure handler converts it to a skip instead of a failure:
+Tests iterating over control plane workloads belong in
+`control_plane_workloads_test.go`, with separate specs per workload so failures
+identify the affected component. Add new workloads to the manually maintained
+`workload_registry.go`
+to extend existing compliance coverage, using its platform filtering where needed.
+
+## Assert the intended behavior
+
+Assert current state directly. Poll only for asynchronous behavior or transitions
+the test initiates. Choose timeouts and polling intervals appropriate to the
+operation. Use `tc.Context` for API calls and polling so both use the context
+provided by the framework.
+
+Assertion helpers must preserve the caller's failure handling. A direct call
+uses Gomega's `Default`; inside a polling callback, pass that callback's Gomega
+instance through every helper. Nested callbacks use their own instance. Global
+assertions inside polling callbacks bypass retry handling and may prematurely
+fail or skip an informing spec. This applies to setup and cleanup helpers that
+assert internally, too. See
+Gomega's helper guidance.
+
+For example, an assertion helper fetches current state and uses the supplied
+Gomega instance:
 
 ```go
-func InformingAwareFailHandler(message string, callerSkip ...int) {
-    labels := CurrentSpecReport().Labels()
-    if slices.Contains(labels, "Informing") {
-        Skip("informing test failure: " + message, callerSkip...)
-    }
-    Fail(message, callerSkip...)
+func expectReplicas(g Gomega, tc *internal.TestContext, key crclient.ObjectKey, want int32) {
+    GinkgoHelper()
+    np := &hyperv1.NodePool{}
+    g.Expect(tc.MgmtClient.Get(tc.Context, key, np)).To(Succeed())
+    g.Expect(np.Status.Replicas).To(Equal(want))
 }
 ```
 
-This allows tests to run and report failures without blocking CI jobs.
-
-## TestContext
-
-The `TestContext` struct provides access to the hosted cluster and clients:
-
-| Field/Method | Description |
-|-------------|-------------|
-| `MgmtClient` | Management cluster controller-runtime client |
-| `GetHostedCluster()` | Returns `*HostedCluster`, cached via `sync.Once`. Returns nil if not configured. **Panics** on fetch failure. |
-| `GetHostedClusterClient()` | Returns hosted cluster controller-runtime client. Lazy-loaded. Returns nil if the HostedCluster is not available or its KubeConfig status is not set. **Panics** on other initialization failures. |
-| `ClusterName` / `ClusterNamespace` | HostedCluster name and namespace from environment |
-| `ControlPlaneNamespace` | Derived: `{namespace}-{name}` (e.g., `clusters-my-cluster`). Dots in the name are replaced with hyphens. |
-| `ArtifactDir` | Directory for test artifacts, from the `ARTIFACT_DIR` environment variable |
-| `ValidateHostedCluster()` | Skips if no cluster configured; panics if fetch fails |
-| `ValidateHostedClusterClient()` | Calls `ValidateHostedCluster()`, then panics if the hosted cluster client is nil (e.g., kubeconfig not ready) |
-| `HostedClusterConfigured` | `bool` — `true` when both `ClusterName` and `ClusterNamespace` are populated. This is what `ValidateHostedCluster()` checks internally to decide between skip and fetch. |
-| `GetHostedClusterRESTConfig()` | Returns `*rest.Config` for the hosted cluster, lazy-loaded via `sync.Once`. Useful when a test needs a `kubernetes.Interface` client or a custom REST client beyond what `GetHostedClusterClient()` provides. |
-| `Context` | Embedded `context.Context` — use for all API calls |
-
-!!! warning "Panic-on-failure"
-    `GetHostedCluster()`, `GetHostedClusterClient()`, and `ValidateHostedCluster()` panic on API failures (not just missing configuration). This ensures test failures are loud and visible rather than silently skipping important checks. Use `ValidateHostedCluster()` in top-level `BeforeEach` blocks to fail fast when the cluster is missing.
-
-## Environment variables
-
-The v2 framework maintains a registry of environment variables. To add a new variable:
+Inside a spec, choose a direct check or polling according to the behavior under
+test:
 
 ```go
-// In env_vars.go init()
-RegisterEnvVar("E2E_MY_NEW_VAR", "Description of what it does", false)
+// Check state that should already hold.
+expectReplicas(Default, tc, key, want)
 
-// In test code
-value := internal.GetEnvVarValue("E2E_MY_NEW_VAR")  // panics if unregistered
+// Wait for convergence after a lifecycle test changes replicas.
+Eventually(func(g Gomega) {
+    expectReplicas(g, tc, key, want)
+}).WithContext(tc.Context).
+    WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(Succeed())
 ```
 
-To see the full current list of registered environment variables:
+Derive expected values from configuration when testing relationships between
+resources. Assert the outcome the scenario promises: an updated desired release
+alone does not establish that an upgrade completed. Identify affected resources
+and failed expectations in diagnostics.
 
-```bash
-E2E_SHOW_ENV_HELP=1 bin/test-e2e-v2
-```
+Establish that the intended subjects were actually checked. Empty selections,
+unmatched searches, or early returns must not silently produce a passing test
+when they bypass the behavior it claims to verify.
 
-## Assertions and gotchas
+## Select tests and preserve their meaning
 
-### Direct Gomega assertions
+All new tests, including migrated tests, start informing. Apply
+`internal.InformingLabel` to the new spec or inherit it from a container containing
+only informing tests. When extending an existing blocking container, label the
+new coverage without changing existing tests. Promotion to blocking is a separate,
+deliberate change. The migration procedure defines the exception
+for transferring existing blocking responsibility atomically.
 
-```go
-Expect(x).To(Equal(y))
-Expect(ptr).NotTo(BeNil())
-```
+Feature labels select coverage; the informing label controls failure handling.
+Use labels on `Describe` and `It`; label `Context` only with explicit selection
+intent, including informing status. Choose feature identities that represent
+distinct capabilities and check existing names before adding one. Preserve test
+names after Sippy import because renaming loses history and requires remapping.
 
-### Eventually for async checks
+Informing assertion failures are reported without failing the process; genuine
+precondition skips remain skipped. A successful exit therefore does not mean all
+assertions passed. Use `--e2e.junit-report` for the suite's custom reporting.
+See the reporting contract
+for the downstream format.
 
-```go
-Eventually(func() bool {
-    // ... check condition ...
-    return condition
-}).WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(BeTrue())
-```
+## Supply prerequisites and CI selection
 
-For pointer safety, vacuous pass prevention, IPv6 URL construction, and the non-lifecycle vs. lifecycle mutation rule, see [AGENTS.md conventions #11, #13, #15, #16.
+Reuse an existing cluster variant when its configuration and state are compatible
+with the test. A mutating test does not automatically need its own cluster;
+isolate it when its prerequisites or effects cannot be shared safely.
 
-## Lifecycle vs non-lifecycle tests
+Define cluster variants explicitly, keeping configuration differences visible.
+Variant names are a contract with external plans: the catalog must be fixed at
+compile time and must not change with runtime conditions. Resolve runtime values
+separately where practical. Put provisioning and day-2 mutations in lifecycle
+hooks, and selection and ordering in `TestPlan`/`TestMatrix`. Consult
+`platform.go`
+for interfaces and hook timing.
 
-### Non-lifecycle tests
+A test runs wherever a plan's filter selects its labels. Update filters in the
+HyperShift repository when adding coverage that existing filters do not select.
+For job infrastructure changes, see CI Pipeline Configuration.
 
-Non-lifecycle tests are read-only and skip when preconditions are missing. They must not modify cluster state to create preconditions — see AGENTS.md Convention #13 for the full rule and examples.
+Groups targeting the same cluster must share one sequential lane; separate lanes
+run concurrently. A failed step prevents later steps in its lane from running.
+Ensure the plan selects the intended configurations and post-mutation checks.
 
-### Lifecycle tests
+Register test-suite environment variables in
+`env_vars.go`
+before reading them. Use built-in help for the current variables.
 
-Lifecycle tests may modify cluster state but must:
+## Verify and debug
 
-- Use the `lifecycle` label
-- Capture and restore original state in cleanup
-- Check `IsNotFound()` in cleanup to handle missing resources gracefully
-
-```go
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
-    var originalReplicas int32
-    BeforeEach(func() {
-        // Capture original state
-        nodePool := getNodePool()
-        Expect(nodePool.Spec.Replicas).NotTo(BeNil(),
-            "nodePool %s/%s should have replicas set", nodePool.Namespace, nodePool.Name)
-        originalReplicas = *nodePool.Spec.Replicas
-    })
-    AfterEach(func() {
-        // Restore original state
-        nodePool := getNodePool()
-        nodePool.Spec.Replicas = &originalReplicas
-        if err := mgmtClient.Update(ctx, nodePool); err != nil && !apierrors.IsNotFound(err) {
-            Fail(fmt.Sprintf("failed to restore nodepool replicas: %v", err))
-        }
-    })
-    // ... test cases ...
-})
-```
-
-### Backup-restore tests
-
-Backup-restore tests are a special case:
-
-- Use combined build tag `//go:build e2ev2 && backuprestore`
-- Use `Ordered, Serial` decorators to ensure sequential execution
-- Compile into separate binary `bin/test-backuprestore` (via `make backuprestore-e2e`)
-- Run with reduced parallelism to avoid resource contention
-
-## Adding a workload to the registry
-
-To add a new control plane workload to the compliance tests, add a `WorkloadSpec` entry to the slice returned by `GetControlPlaneWorkloads()` in `test/e2e/v2/internal/workload_registry.go`:
-
-```go
-{Name: "my-new-component", Type: "Deployment", PodSelector: map[string]string{"app": "my-new-component"}},
-```
-
-All existing compliance tests (pod security, resource requests/limits, image verification, etc.) automatically cover the new workload.
-
-For platform-specific workloads, use the `Platform` field:
-
-```go
-azurePlatform := hyperv1.AzurePlatform
-// ...
-{Name: "azure-cloud-controller-manager", Type: "Deployment", PodSelector: map[string]string{"app": "cloud-controller-manager"}, Platform: &azurePlatform},
-```
-
-## Running tests locally
-
-Set the required environment variables and run the test binary:
+Run against an already provisioned hosted cluster:
 
 ```bash
 export KUBECONFIG=/path/to/management-cluster-kubeconfig
 export E2E_HOSTED_CLUSTER_NAME=my-cluster
 export E2E_HOSTED_CLUSTER_NAMESPACE=clusters
-
 make e2ev2
-bin/test-e2e-v2 --ginkgo.label-filter="hosted-cluster-health" --ginkgo.v
-
-# For backup-restore tests
-make backuprestore-e2e
-bin/test-backuprestore --ginkgo.label-filter="backup-restore" --ginkgo.v
-
-# See all registered environment variables
 E2E_SHOW_ENV_HELP=1 bin/test-e2e-v2
+bin/test-e2e-v2 --ginkgo.label-filter="hosted-cluster-health" \
+    --ginkgo.v --e2e.junit-report=/tmp/junit.xml
 ```
 
-Use `--ginkgo.label-filter` to run specific test categories. Use `--ginkgo.v` for verbose output. Use `--ginkgo.focus` to run a single test by name:
+Use `--ginkgo.focus` to narrow execution by description. Inspect actual selection,
+skips, assertion results, and cleanup; a successful exit or skipped path is not
+evidence that the intended behavior ran.
 
-```bash
-# Run a single test by name (regex match against the full description path)
-bin/test-e2e-v2 --ginkgo.focus="should not indicate rapid rollouts" --ginkgo.v
-```
+In CI, find the group's JUnit report in `ARTIFACT_DIR`. Use the plan and
+`run-tests` log to identify its cluster. Check verbose Ginkgo output for the
+assertion and source location, and distinguish informing failures from genuine
+skips.
+
+For provisioning failures, inspect the `create-guests` log and rollout JUnit
+conditions. Use `dump-guests` logs to locate events and pod logs or diagnose
+missing artifacts. Successful teardown does not establish that collection
+succeeded.
+
+## Discuss framework changes first
+
+Before submitting changes beyond adding test cases, discuss the proposal with
+`#forum-ocp-hypershift` and agree on the approach. This includes platform
+interfaces, lifecycle orchestration, shared helpers, selection, and reporting.
+Explain why existing facilities are insufficient, consider alternatives and
+cross-platform effects, and reference the agreement in the PR.
+
+If no established pattern fits a new test area, consult
+`#wg-hypershift-e2e-v2` before establishing a convention and update this guide
+after agreement.
 
 
 ---
@@ -18439,6 +17156,540 @@ capacity before creating more HostedClusters.
 
 ---
 
+## Source: docs/content/how-to/common/deterministic-loadbalancer-ip.md
+
+# Deterministic LoadBalancer IP Assignment for the Kube API Server
+
+!!! warning "Technology Preview — Day 1 only"
+
+    Deterministic LoadBalancer IP assignment is a **Technology Preview** feature. It requires
+    the management cluster feature gate described in Prerequisites and is
+    not supported in production environments.
+
+    This documentation covers **Day 1 only**: selecting the LoadBalancer class and the
+    annotations that request a specific address **when the HostedCluster is created**. The
+    fields are immutable afterwards. Changing the kube-apiserver LoadBalancer IP on a running
+    cluster (Day 2) is **not implemented in OCP 5.1**. See
+    Day 2: Planned behaviour (not implemented)
+    before you plan any IP change.
+
+## Overview
+
+By default, when the kube-apiserver is published with the `LoadBalancer` strategy, HyperShift
+lets the load balancer controller on the management cluster choose the address. That address
+can be hard to predict before the cluster exists, which makes firewall rules, DNS records, and
+security allowlists difficult to prepare.
+
+This feature adds two provider-agnostic fields to the APIServer entry in
+`HostedCluster.spec.services`:
+
+| Field | Purpose |
+|-------|---------|
+| `loadBalancerClass` | Selects which load balancer controller provisions the kube-apiserver Service. Maps to `Service.spec.loadBalancerClass`. |
+| `serviceAnnotations` | Opaque annotation passthrough to the kube-apiserver Service. The annotations request the address and configure provider-specific behaviour. |
+
+HyperShift passes the values to the kube-apiserver Service and the load balancer controller
+assigns the requested address. HyperShift does not interpret provider-specific annotation
+values.
+
+### What Day 1 provides
+
+| Capability | Status |
+|------------|--------|
+| Set `loadBalancerClass` for the kube-apiserver Service at creation | Implemented (Technology Preview) |
+| Pass `serviceAnnotations` to the kube-apiserver Service at creation | Implemented (Technology Preview) |
+| Apply the address annotation to the primary kube-apiserver Service (public or private) | Implemented (Technology Preview) |
+| Azure-specific kube-apiserver LoadBalancer Service on port 7443 | Implemented (Technology Preview) |
+| Report CPO support through the `DeterministicLBIPSupported` condition | Implemented (Technology Preview) |
+
+### What Day 1 does not provide
+
+- **No runtime IP changes.** You cannot change `loadBalancerClass` or `serviceAnnotations`
+  after the HostedCluster is created. Day 2 is a separate, unimplemented scope.
+- **No passthrough for other services.** The API accepts the fields on any service entry, but
+  the Control Plane Operator only applies them to the `APIServer` service. Values set on
+  `OAuthServer`, `Konnectivity`, or `Ignition` are ignored.
+- **No typed per-provider API.** Annotation keys and values are not semantically validated
+  beyond the allowlist and size limits described in Validation rules.
+- **No automated DNS management.** On self-managed platforms without ExternalDNS, you must
+  update DNS records yourself.
+- **No hostname indirection.** Day 1 controls IP addresses only.
+
+### Day 1 compared with Day 2
+
+| Behaviour | Day 1 (OCP 5.1) | Day 2 (planned, not implemented) |
+|-----------|----------------------|----------------------------------|
+| Set the address at cluster creation | Supported | Supported |
+| Change the address on a running cluster | Not supported; the fields are immutable | Planned, without a worker rollout |
+| `serviceAnnotations` mutability | Immutable | Planned to be mutable |
+| Public bare-metal kubelet path | Through node-local HAProxy when `KubeletHAProxyRouting` is enabled; both gates ship in `TechPreviewNoUpgrade`, but the address is static | Through HAProxy with runtime refresh from `/kas-ip` |
+| NodePool version requirement | None | Every NodePool must support Day 2 |
+
+## How it works
+
+1. You create the HostedCluster with `loadBalancerClass` and `serviceAnnotations` on the
+   `APIServer` service entry. Both fields require the `DeterministicLBIP` management cluster
+   feature gate.
+2. The HyperShift Operator mirrors the HostedCluster spec to the HostedControlPlane.
+3. The Control Plane Operator reconciles the kube-apiserver Service:
+   - It sets `Service.spec.loadBalancerClass` when the field is present.
+   - It writes each `serviceAnnotations` entry as a per-key annotation.
+4. The load balancer controller that watches the selected class processes the annotations and
+   assigns the requested address.
+5. The existing `Service.Status.LoadBalancer.Ingress` flow propagates the address to the
+   kubeconfig and to the data plane configuration.
+
+```mermaid
+graph LR
+    HC[HostedCluster<br/>spec.services APIServer] --> HCP[HostedControlPlane]
+    HCP --> CPO[Control Plane Operator]
+    CPO --> SVC[kube-apiserver Service<br/>class + annotations]
+    SVC --> LBC[Load balancer controller]
+    LBC --> IP[Requested IP assigned]
+    IP --> STATUS[Service status / kubeconfig]
+```
+
+## Prerequisites
+
+- A management cluster where you can enable the `DeterministicLBIP` feature gate. Enabling
+  `TechPreviewNoUpgrade` at install time also enables this gate:
+
+    ```bash
+    hypershift install --tech-preview-no-upgrade
+    ```
+
+    The gate controls availability of the API fields, the HyperShift Operator, and the
+    Control Plane Operator. Without the gate, the fields are not part of the HostedCluster
+    CRD schema: values are dropped by the API server and have no effect. See
+    Feature Gates for the difference between management cluster and
+    hosted cluster feature gates.
+
+- A load balancer controller on the management cluster that can provision the addresses and
+  annotations you plan to use. For example, MetalLB with an `IPAddressPool`, the AWS load
+  balancer controller with Elastic IPs, or Cilium LB IPAM with a pool.
+- The addresses, pools, and any provider resources (Elastic IP allocations, floating network
+  IDs, and so on) planned and available **before** cluster creation.
+- DNS and firewall rules prepared for the requested address. HyperShift does not create DNS
+  records for this feature on self-managed platforms.
+- The kube-apiserver published with the `LoadBalancer` strategy. The `loadBalancer` block is
+  rejected at admission with other strategy types.
+- A HostedCluster release whose Control Plane Operator supports the feature. The
+  `loadBalancerClass` is applied only when the kube-apiserver Service is created, so the first
+  reconciliation must use a supported Control Plane Operator. See
+  Upgrade, downgrade, and version skew.
+
+## Configure the HostedCluster
+
+The `hypershift` CLI does not expose flags for these fields. Render the HostedCluster manifest,
+add the fields under `spec.services`, and apply the manifest.
+
+### Field reference
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `loadBalancerClass` | string | Optional | Kubernetes qualified name. Maximum 253 characters, name segment maximum 63 characters. Omit it when the management cluster has a single load balancer controller. |
+| `serviceAnnotations` | map[string]string | Optional | Minimum 1 and maximum 10 entries. Keys must match the allowlist and be valid qualified names of at most 317 characters. Values are limited to 253 characters. |
+
+Both fields are under:
+
+```yaml
+spec:
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+      loadBalancer:
+        loadBalancerClass: <class>
+        serviceAnnotations:
+          <key>: <value>
+```
+
+### Example: MetalLB with a fixed IP
+
+```yaml
+spec:
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+      loadBalancer:
+        loadBalancerClass: metallb.io/metallb
+        serviceAnnotations:
+          metallb.io/loadBalancerIPs: "10.1.1.100"
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+!!! important
+
+    `metallb.io/metallb` is only a valid class if MetalLB is started with a matching
+    `--lb-class=metallb.io/metallb` (or the equivalent Helm value). MetalLB versions that are
+    not configured with a class only process Services **without** a class. If you use the
+    default MetalLB configuration, omit `loadBalancerClass` and keep `serviceAnnotations`.
+
+Render the HostedCluster manifest, edit it to add the `loadBalancer` fields, and apply it to
+create the cluster:
+
+```bash
+hypershift create cluster <platform> \
+  ... \
+  --render --render-into hostedcluster.yaml
+
+# Edit hostedcluster.yaml and add the loadBalancer fields, then:
+oc apply -f hostedcluster.yaml
+```
+
+!!! warning "Secrets are not rendered by default"
+
+    `--render` omits Secret objects, including the pull secret and the default encryption key
+    referenced by the HostedCluster. Before applying the manifest, make sure the referenced
+    pull secret and any other required Secrets already exist in the target namespace, or add
+    `--render-sensitive` to include them. A file rendered with `--render-sensitive` contains
+    credentials: store it securely and delete it after use.
+
+### Provider examples
+
+The annotation allowlist accepts the following prefixes. The examples are illustrative: your
+controller must be configured to watch the selected class, and annotation keys and values must
+match what that controller expects.
+
+| Provider | `loadBalancerClass` | Example `serviceAnnotations` |
+|----------|--------------------|------------------------------|
+| MetalLB | Optional; `metallb.io/metallb` only with a matching `--lb-class` | `metallb.io/loadBalancerIPs: "10.1.1.100"` or `metallb.io/address-pool: "production"` |
+| MetalLB (legacy prefix) | Same as above | `metallb.universe.tf/loadBalancerIPs: "10.1.1.100"` |
+| AWS NLB | Omit (CCM) or set the class your controller watches | `service.beta.kubernetes.io/aws-load-balancer-eip-allocations: "eipalloc-abc123"` |
+| Azure | Omit | `service.beta.kubernetes.io/azure-load-balancer-ipv4: "20.0.0.100"` |
+| GCP | Omit, or `networking.gke.io/l4-regional-external` when the backend-service-based controller is required | `networking.gke.io/load-balancer-ip-addresses: "my-ip"` |
+| F5 BIG-IP CIS | `f5.com/f5-bigip` | `cis.f5.com/ip: "10.2.2.50"` or `cis.f5.com/ipamLabel: "production"` |
+| Cilium | `io.cilium/bgp-control-plane` or `io.cilium/l2-announcer` | `lbipam.cilium.io/ips: "10.3.3.50"` |
+| OpenStack | Omit | `loadbalancer.openstack.org/floating-network-id: "<uuid>"` selects the floating IP network, not a specific address |
+
+!!! note "AWS Elastic IPs"
+
+    The EIP example assumes the AWS cloud-controller-manager (CCM) path. If the AWS Load
+    Balancer Controller mutates Services, its default scheme is internal, and EIP allocations
+    require an internet-facing load balancer. The
+    `service.beta.kubernetes.io/aws-load-balancer-scheme` annotation is not in the allowlist,
+    so `serviceAnnotations` cannot select the scheme. Use a management cluster configuration
+    where the controller creates an internet-facing load balancer, or scope this example to
+    CCM. The number of EIP allocations must match the number of selected subnets.
+
+!!! note "GCP load balancer controller"
+
+    On GKE, `networking.gke.io/load-balancer-ip-addresses` is honored by the
+    backend-service-based L4 controller. If the management cluster still uses the legacy
+    external load balancer path, set
+    `loadBalancerClass: networking.gke.io/l4-regional-external`. Otherwise the reserved
+    address may not be honored. Check your GKE version and controller configuration.
+
+!!! note "OpenStack does not pin a specific address"
+
+    `loadbalancer.openstack.org/floating-network-id` selects the external network used to
+    allocate a floating IP; it does not pin a specific address. The OpenStack cloud provider
+    takes a specific floating IP from `Service.spec.loadBalancerIP`, which this feature does
+    not expose in Day 1. OpenStack appears here because its annotation prefix is in the
+    allowlist, not because it provides deterministic address assignment.
+
+!!! note "Multiple load balancer controllers"
+
+    Setting `loadBalancerClass` is only useful when the management cluster runs more than one
+    load balancer controller. The Service stays `Pending` until a controller that watches that
+    exact class claims it. Otherwise omit `loadBalancerClass` and let the default controller
+    provision the Service, unless your provider requires a class (for example GKE's
+    backend-service-based controller).
+
+### Which Service receives the values
+
+The kube-apiserver can be exposed through a public Service, a private Service, or both,
+depending on the endpoint access configuration:
+
+| Endpoint access | `loadBalancerClass` | `serviceAnnotations` |
+|-----------------|--------------------|---------------------|
+| `Public` | Public kube-apiserver Service | Public kube-apiserver Service |
+| `Private` | Private kube-apiserver Service | Private kube-apiserver Service |
+| `PublicAndPrivate` | Both kube-apiserver LoadBalancer Services | Public kube-apiserver Service only |
+
+The address annotation is applied to the Service that exposes the **primary endpoint** only.
+Requesting the same address on both Services can leave one of them `Pending`. The class is
+applied to every kube-apiserver Service that is of type `LoadBalancer`, because it selects the
+provisioning controller rather than an address.
+
+For Azure, HyperShift uses a dedicated kube-apiserver LoadBalancer Service on port **7443**
+instead of 6443. The deterministic fields are applied to that Service.
+
+## Validation rules
+
+The API validates the fields at admission time with CEL. Invalid values are rejected when the
+HostedCluster is created.
+
+### `serviceAnnotations`
+
+- Minimum 1 and maximum 10 annotations per service entry.
+- Keys must start with one of these prefixes:
+
+    | Prefix | Provider |
+    |--------|----------|
+    | `metallb.io/` | MetalLB (current) |
+    | `metallb.universe.tf/` | MetalLB (legacy) |
+    | `service.beta.kubernetes.io/aws-load-balancer-eip` | AWS NLB Elastic IP |
+    | `service.beta.kubernetes.io/aws-load-balancer-subnet` | AWS NLB subnet |
+    | `service.beta.kubernetes.io/aws-load-balancer-target-group` | AWS NLB target group |
+    | `service.beta.kubernetes.io/azure-load-balancer-ipv` | Azure IPv4/IPv6 address |
+    | `service.beta.kubernetes.io/azure-load-balancer-resource-group` | Azure resource group |
+    | `networking.gke.io/` | GCP, **except** `networking.gke.io/load-balancer-type` |
+    | `cis.f5.com/` | F5 BIG-IP CIS |
+    | `lbipam.cilium.io/` | Cilium LB IPAM |
+    | `loadbalancer.openstack.org/` | OpenStack |
+
+- `networking.gke.io/load-balancer-type` is explicitly rejected because it controls whether
+  the load balancer is internal or external.
+- Keys must be valid qualified names: an optional DNS subdomain prefix, `/`, and a name
+  segment that starts and ends with an alphanumeric character. Keys are limited to 317
+  characters and the name segment to 63 characters.
+- Values are limited to 253 characters.
+- The allowlist validates the provider prefix only. It does not validate that the annotation
+  key or value is correct for the provider.
+
+### `loadBalancerClass`
+
+- Optional. When set, it must be a valid Kubernetes qualified name, at most 253 characters,
+  with a name segment of at most 63 characters.
+- Kubernetes makes `Service.spec.loadBalancerClass` immutable once set. The HostedCluster
+  fields follow the same lifetime.
+
+## Verify the configuration
+
+After the cluster is created, check the HostedControlPlane namespace. The namespace is usually
+`<hostedcluster-namespace>-<hostedcluster-name>`.
+
+```bash
+# Check the class on the kube-apiserver Service.
+oc get svc kube-apiserver -n <hcp-namespace> \
+  -o jsonpath='{.spec.loadBalancerClass}{"\n"}'
+
+# Check the annotations.
+oc get svc kube-apiserver -n <hcp-namespace> \
+  -o jsonpath='{.metadata.annotations}{"\n"}'
+
+# Check the assigned address.
+oc get svc kube-apiserver -n <hcp-namespace> \
+  -o jsonpath='{.status.loadBalancer.ingress[0]}{"\n"}'
+```
+
+For clusters with `PublicAndPrivate` endpoint access, the address annotation is expected on the
+public Service, not on `kube-apiserver-private`. For `Private` endpoint access, check
+`kube-apiserver-private`.
+
+For public Azure clusters (including KubeVirt on Azure), the LoadBalancer Service is named
+`kube-apiserverlb`; use that name in the commands above. The `kube-apiserver` Service still
+exists as a ClusterIP Service on those clusters and does not carry the LoadBalancer fields.
+
+Confirm that the Control Plane Operator supports the fields:
+
+```bash
+oc get hostedcluster <name> -n <namespace> \
+  -o jsonpath='{.status.conditions[?(@.type=="DeterministicLBIPSupported")]}{"\n"}'
+```
+
+`True` means the Control Plane Operator honors the fields, or that the HostedCluster does not
+use them.
+
+## Operate the annotations
+
+- HyperShift writes `serviceAnnotations` entries individually. It does not replace the full
+  annotation map.
+- Annotations set by other controllers, such as the MetalLB pool status, are preserved across
+  reconciliation.
+- For keys that pass the allowlist and are also written by HyperShift, HyperShift's value
+  wins. On AWS, `service.beta.kubernetes.io/aws-load-balancer-type` is managed by HyperShift
+  but is not in the allowlist, so setting it in `serviceAnnotations` is rejected at admission
+  rather than silently skipped.
+- Removing an annotation from the HostedCluster is not possible in Day 1 because the fields
+  are immutable.
+
+## Upgrade, downgrade, and version skew
+
+- **Existing clusters without the fields** behave exactly as before. The fields are optional
+  and have no defaults.
+- **New HyperShift Operator with an older Control Plane Operator** can happen because the
+  Control Plane Operator version follows the HostedCluster release image. The Control Plane
+  Operator then ignores the fields. HyperShift reports this through the
+  `DeterministicLBIPSupported` condition with status `False` and reason
+  `UnsupportedControlPlaneOperator`. Upgrading the HostedCluster control plane release image
+  makes the Control Plane Operator apply `serviceAnnotations` on the next reconciliation, but
+  it does not retrofit `loadBalancerClass` onto a Service that was already created without
+  it. The class is set only when the Service is created, or when an existing Service
+  transitions to type `LoadBalancer`. If the older Control Plane Operator already reconciled
+  the kube-apiserver Service, create the HostedCluster again with the fields so the class is
+  set at creation.
+- **Downgrading the HyperShift Operator is not supported for clusters using this feature.**
+  The downgraded CRD schema does not contain the fields. Kubernetes can prune them when it
+  decodes or writes the stored HostedCluster, so the configuration may be lost, and
+  re-upgrading does not guarantee that it is restored. Depending on when pruning happens,
+  updates can be rejected or the object can be persisted without the fields, which can leave
+  the HostedCluster blocked until the operator is upgraded again. Annotations already written
+  to the kube-apiserver Service persist, and the load balancer continues to serve the assigned
+  address.
+- **Adding the fields to an existing cluster is not supported in Day 1 (Technology Preview).**
+  In Day 1, `spec.services` is immutable for all platforms except IBM Cloud, so create a new
+  HostedCluster with the fields instead. `loadBalancerClass` remains immutable after creation
+  in all phases because Kubernetes makes `Service.spec.loadBalancerClass` immutable. Changing
+  `serviceAnnotations` on an existing cluster is planned for Day 2.
+
+## Limitations
+
+- Day 1 only. No runtime address changes.
+- Only the `APIServer` service is processed. Other services accept the fields but ignore them.
+- `loadBalancer` configuration is only valid with the `LoadBalancer` publishing strategy.
+  `Route`, `NodePort`, `None`, and `S3` reject the block at admission.
+- HyperShift reads only the first entry of `Service.Status.LoadBalancer.Ingress` to determine
+  the control plane endpoint. In dual-stack environments, use an address from the Service's
+  primary IP family, which is the family of that first entry. A secondary-family address is
+  not consumed by the control plane endpoint.
+- No semantic validation of provider annotation keys or values. A misspelled key inside an
+  allowed prefix passes admission; the controller ignores it, and the Service may stay
+  `Pending` or fall back to a dynamically assigned address.
+- A `loadBalancerClass` with no matching controller leaves the Service `Pending` indefinitely.
+- No automatic DNS management on self-managed platforms.
+- No support for PowerVS or IBM Cloud. The feature targets the load balancer providers in the
+  allowlist.
+
+## Troubleshooting
+
+### Admission rejects `serviceAnnotations`
+
+Look for messages such as:
+
+- `serviceAnnotations keys must start with a known load balancer provider prefix`
+- `annotation keys must be valid qualified names`
+- `annotation keys must be at most 317 characters`
+- `annotation values must be at most 253 characters`
+- `serviceAnnotations in body should have at least 1 items` or
+  `serviceAnnotations in body should have at most 10 items`
+
+Fix the keys or values in the HostedCluster manifest and create the cluster again.
+
+### Admission rejects an update
+
+If you try to change or add the fields after creation, the API returns an error similar to:
+
+```text
+Services is immutable. Changes might result in unpredictable and disruptive behavior.
+```
+
+This is expected in Day 1. Create a new HostedCluster with the desired values. IBM Cloud is
+exempt from the `spec.services` immutability rule.
+
+### The kube-apiserver Service stays `Pending`
+
+Check the following:
+
+1. The Service has the expected class. On public Azure clusters the name is
+   `kube-apiserverlb`:
+
+    ```bash
+    oc get svc kube-apiserver -n <hcp-namespace> -o yaml
+    # Public Azure only:
+    oc get svc kube-apiserverlb -n <hcp-namespace> -o yaml
+    ```
+
+2. A load balancer controller on the management cluster watches that class. If you set a
+   class that no controller handles, the Service never gets an address. Omit the class if you
+   are unsure.
+3. The requested address or pool exists and has free addresses.
+4. The annotation key is spelled exactly as the provider expects. The allowlist checks only
+   the prefix.
+5. For private clusters, inspect `kube-apiserver-private`. For `PublicAndPrivate` clusters,
+   inspect the public Service; the address annotation should not be on the private Service.
+
+### `DeterministicLBIPSupported` is `False`
+
+The Control Plane Operator image in use predates the feature and ignores the fields. Upgrade
+the HostedCluster control plane release image so that the Control Plane Operator knows about
+the fields. Upgrading applies `serviceAnnotations` on the next reconciliation, but it does not
+add `loadBalancerClass` to a Service that was created without it. If the kube-apiserver Service
+already exists, create the HostedCluster again with the fields so the class is set at creation.
+
+### The API server is not reachable at the requested address
+
+Verify that the load balancer actually assigned the address, then check the network path:
+
+- Security groups, firewall rules, and routing allow traffic to the address.
+- DNS records point to the address, if you use DNS.
+- The load balancer controller reports a healthy backend for the kube-apiserver Service.
+
+## Support procedures
+
+- **Detect:** inspect `Service.Status.LoadBalancer.Ingress` and the HostedCluster conditions.
+  An empty ingress after the expected provisioning time indicates a load balancer problem.
+- **Diagnose:** compare the annotations on the kube-apiserver Service with the provider's
+  documentation. Check the load balancer controller logs on the management cluster.
+- **Disable:** because the fields are immutable in Day 1, you cannot remove them from an
+  existing HostedCluster. To return to dynamic address assignment, create a new HostedCluster
+  without the fields.
+
+## Day 2: Planned behaviour (not implemented)
+
+!!! warning "Not implemented — do not rely on this section"
+
+    Everything in this section describes the **intended design for Day 2**. It is **not
+    implemented in OCP 5.1** and the details are subject to change. Day 2 is tracked
+    separately in CNTRLPLANE-4796 and
+    OCPSTRAT-3926. Do not attempt to change
+    the kube-apiserver LoadBalancer IP on a running cluster today.
+
+Day 2 targets changing the kube-apiserver LoadBalancer address on a running HostedCluster
+without rolling the data plane nodes. The intended design is:
+
+1. `serviceAnnotations` is planned to become mutable after creation. You change the address
+   annotation on the HostedCluster.
+2. The HyperShift Operator mirrors the change to the HostedControlPlane, and the Control Plane
+   Operator applies the new annotations to the kube-apiserver Service.
+3. The load balancer controller assigns the new address and updates the Service status.
+4. A sidecar in the HAProxy static pod polls a new `/kas-ip` endpoint on the ignition server.
+   When the address changes, the sidecar rewrites the HAProxy configuration and sends
+   `SIGUSR2` to reload it.
+5. Kubelet reaches the API server through the node-local HAProxy instead of the LoadBalancer
+   address. This prevents kubelet from being stranded with an old address.
+
+Day 2 also introduces version-skew protection:
+
+- A HostedCluster condition, `ValidLoadBalancerIPConfiguration`, reports whether every
+  NodePool supports the runtime address change.
+- A NodePool condition, `ValidLoadBalancerIPSupport`, reports whether that NodePool supports
+  it.
+- NodePools from releases without the sidecar and the `/kas-ip` endpoint are reported as
+  unsupported. Changing the address while any NodePool is unsupported is expected to be
+  blocked or flagged by the condition.
+
+Prerequisites and implications for Day 2:
+
+- All NodePools must run a release that includes the sidecar and the `/kas-ip` endpoint.
+- On public bare-metal clusters, kubelet must route through HAProxy. That routing is
+  implemented today behind the `KubeletHAProxyRouting` management cluster feature gate
+  (`TechPreviewNoUpgrade`), but the Day 2 address-change mechanism itself is not.
+- A brief connectivity window while the new address is propagated is expected.
+
+Until Day 2 is implemented, treat the LoadBalancer address as immutable and plan cluster
+recreation if the address must change.
+
+## Related documentation
+
+- Exposing the Hosted Control Plane Services
+- Service Publishing Strategy Reference
+- Feature Gates
+- Enhancement: Deterministic LoadBalancer IP Management for Hosted Control Planes
+
+
+---
+
 ## Source: docs/content/how-to/common/exposing-services-from-hcp.md
 
 # Exposing the Hosted Control Plane Services
@@ -18538,6 +17789,8 @@ spec:
 ```
 
 If you wanna know more about how to expose the ingress service in the Data Plane side, please access the Recipes section to see how to do it with MetalLB.
+
+To request a specific load balancer address for the kube-apiserver at cluster creation time, see Deterministic LoadBalancer IP Assignment for the Kube API Server. The feature is Technology Preview and does not support changing the address on a running cluster.
 
 
 ---
@@ -19498,6 +18751,175 @@ spec:
 ```
 
 For more details on the individual identity providers: refer to upstream openshift documentation
+
+---
+
+## Source: docs/content/how-to/configure-ocp-components/kubeapi-server-event-ttl.md
+
+---
+title: Configuring the kube-apiserver Event TTL
+---
+
+# Configuring the kube-apiserver Event TTL
+
+## Overview
+
+The kube-apiserver stores Kubernetes Events in etcd and deletes them once they exceed the event
+TTL. Hosted control planes use a 3 hour TTL by default, matching standalone OpenShift.
+
+In event-heavy hosted clusters — CI/CD, GitOps, and pipeline workloads in particular — accumulated
+events consume a meaningful share of etcd storage. Lowering the TTL reduces that storage without
+affecting any other cluster behaviour.
+
+You configure the TTL per hosted cluster with the
+`spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes` field on the HostedCluster.
+
+!!! note
+
+    Hosted control planes have no kube-apiserver operator, so the standalone OpenShift
+    `eventTTLMinutes` field on the `KubeAPIServer` operator resource does not apply to hosted
+    clusters. The HostedCluster field uses the same name, units, range and default as the
+    standalone field. See the
+    event-ttl enhancement
+    for the full design.
+
+!!! important
+
+    This field is behind the `KubeAPIServerEventTTL` feature gate and is currently available only
+    in the `TechPreviewNoUpgrade` feature set.
+
+## Valid values
+
+| | |
+|---|---|
+| Type | Integer number of minutes (`int32`) |
+| Minimum | 5 minutes |
+| Maximum | 180 minutes |
+| Default | 180 minutes (3 hours), used when the field is omitted |
+
+Values below 5 minutes expire events faster than a typical troubleshooting window. The maximum is
+the existing default, because raising it would only increase etcd storage pressure.
+
+The field is optional and has no CRD-level default. Omitting it means "no opinion", and the
+platform applies the 180 minute default when it renders the kube-apiserver arguments. The
+rendered flag is always expressed in minutes, so the default appears as `--event-ttl=180m` and
+setting `eventTTLMinutes: 180` explicitly renders exactly the same value.
+
+## Setting the event TTL
+
+Patch the HostedCluster on the management cluster:
+
+```bash
+oc patch hostedcluster my-cluster -n clusters --type=merge \
+  -p '{"spec":{"operatorConfiguration":{"kubeAPIServer":{"eventTTLMinutes":60}}}}'
+```
+
+Or set it at creation time in the HostedCluster manifest:
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: my-cluster
+  namespace: clusters
+spec:
+  operatorConfiguration:
+    kubeAPIServer:
+      eventTTLMinutes: 60
+```
+
+## Reverting to the default
+
+Remove the field:
+
+```bash
+oc patch hostedcluster my-cluster -n clusters --type=merge \
+  -p '{"spec":{"operatorConfiguration":{"kubeAPIServer":{"eventTTLMinutes":null}}}}'
+```
+
+!!! warning
+
+    `kubeAPIServer` must contain at least one setting. If `eventTTLMinutes` is the only one you
+    set, the patch above leaves an empty `kubeAPIServer` object and the API server rejects it:
+
+    ```
+    The HostedCluster "my-cluster" is invalid: spec.operatorConfiguration.kubeAPIServer:
+    Invalid value: 0: spec.operatorConfiguration.kubeAPIServer in body should have at least 1 properties
+    ```
+
+    Remove the whole object instead:
+
+    ```bash
+    oc patch hostedcluster my-cluster -n clusters --type=merge \
+      -p '{"spec":{"operatorConfiguration":{"kubeAPIServer":null}}}'
+    ```
+
+    Check what else is set before choosing which patch to use:
+
+    ```bash
+    oc get hostedcluster my-cluster -n clusters \
+      -o jsonpath='{.spec.operatorConfiguration.kubeAPIServer}'
+    ```
+
+    If `operatorConfiguration` itself holds nothing but `kubeAPIServer`, you can remove it in one
+    step with `-p '{"spec":{"operatorConfiguration":null}}'`.
+
+## Behaviour
+
+The field is **day-2 mutable** — you can change it on a running hosted cluster and you do not
+need to recreate the cluster. Applying a change works as follows:
+
+1. The HyperShift Operator copies `spec.operatorConfiguration` onto the HostedControlPlane.
+2. The Control Plane Operator renders `--event-ttl` into the kube-apiserver configuration.
+3. The changed configuration rolls the kube-apiserver pods.
+
+Because the change rolls the kube-apiserver, expect a brief control plane API rollout. On a
+highly available control plane the rollout is performed one replica at a time.
+
+!!! important
+
+    The TTL applies to **events created after the change**. Events that already exist keep the TTL
+    they were written with and expire on their original schedule. Storage savings therefore appear
+    gradually, over roughly one TTL period.
+
+Existing hosted clusters are unaffected by upgrades to a HyperShift version that supports this
+field: with no value set, the kube-apiserver continues to run with the 180 minute default.
+
+## Verifying
+
+Check the rendered kube-apiserver argument in the control plane namespace:
+
+```bash
+oc get configmap kas-config -n clusters-my-cluster \
+  -o jsonpath='{.data.config\.json}' | jq '.apiServerArguments["event-ttl"]'
+```
+
+```json
+[
+  "60m"
+]
+```
+
+An unconfigured hosted cluster reports the default, `["180m"]`.
+
+## Invalid values
+
+The range is enforced by the CRD schema, so a value outside 5–180 is rejected by the management
+cluster's API server at admission time and you get an immediate error:
+
+```bash
+oc patch hostedcluster my-cluster -n clusters --type=merge \
+  -p '{"spec":{"operatorConfiguration":{"kubeAPIServer":{"eventTTLMinutes":240}}}}'
+```
+
+```
+The HostedCluster "my-cluster" is invalid: spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes:
+Invalid value: 240: spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes in body should be less than or equal to 180
+```
+
+Setting `eventTTLMinutes: 0` explicitly is rejected by the same validation, so the field cannot be
+used to disable event expiry.
+
 
 ---
 
@@ -27811,6 +27233,124 @@ It will install four priority classes in a management cluster with the following
 
 ---
 
+## Source: docs/content/how-to/etcd-sharding.md
+
+# Etcd Sharding by Resource Kind (Tech Preview)
+
+Etcd sharding splits a hosted cluster's managed etcd into several independent
+etcd clusters, each owning a set of resource kinds.
+
+For example, you can use sharding to put high-churn kinds (events, leases) into
+a dedicated etcd so they don't compete with the rest of the cluster's state for
+etcd write bandwidth, compaction, and defragmentation.
+
+!!! important
+
+    `EtcdSharding` is a **management cluster** feature gate in the
+    `TechPreviewNoUpgrade` set. Install the HyperShift Operator with
+    `hypershift install --tech-preview-no-upgrade`; without it,
+    `spec.etcd.managed.shards` is not part of the installed `HostedCluster`
+    CRD. See Feature Gates for the distinction between
+    management cluster and hosted cluster gates.
+
+## How it works
+
+Each shard becomes its own StatefulSet, client and discovery Services, serving
+and peer certificates, and — at three replicas — a PodDisruptionBudget. The
+kube-apiserver is then given one `--etcd-servers-overrides` entry per sharded
+resource, pointing at the owning shard's client Service.
+
+Because routing goes through `--etcd-servers-overrides`, only resource types
+compiled into the kube-apiserver binary are routed. CRD-backed and
+aggregated-API resources always stay in the default etcd.
+
+Sharding is a **create-time only** decision. There is no mechanism to migrate
+existing keys between etcd clusters, so the API rejects adding, removing,
+renaming, or re-pointing shards after creation.
+
+## Configuring shards
+
+Set `spec.etcd.managed.shards` on the `HostedCluster`:
+
+```yaml
+spec:
+  etcd:
+    managementType: Managed
+    managed:
+      shards:
+      - name: events
+        replicas: 3
+        storage:
+          type: EmptyDir
+        resources:
+        - apiGroup: ""
+          resource: events
+        - apiGroup: events.k8s.io
+          resource: events
+      - name: leases
+        replicas: 3
+        storage:
+          type: PersistentVolume
+        resources:
+        - apiGroup: coordination.k8s.io
+          resource: leases
+```
+
+Events are a natural fit for `EmptyDir` storage: they are already TTL'd and
+losing them on restart is acceptable, so the shard trades durability for
+throughput.
+
+Resources must not overlap across shards, and `replicas` must be 1 or 3.
+
+### From the CLI
+
+`hypershift create cluster` exposes the same thing through a repeatable
+`--etcd-shard` flag:
+
+```shell
+hypershift create cluster aws \
+  --control-plane-availability-policy=HighlyAvailable \
+  --etcd-shard "name=events,resources=/events;events.k8s.io/events,replicas=3,storage=EmptyDir" \
+  --etcd-shard "name=leases,resources=coordination.k8s.io/leases,replicas=3,storage=PersistentVolume" \
+  ...
+```
+
+The value is a comma-separated list of `key=value` fields:
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | yes | Shard name. The StatefulSet is `etcd-<name>`. |
+| `resources` | yes | Semicolon-separated `<apiGroup>/<resource>` list. Use a leading slash for the core group, e.g. `/events`. |
+| `replicas` | no | `1` or `3`. Defaults to `3`. |
+| `storage` | no | `PersistentVolume` or `EmptyDir`. |
+| `storageClassName` | no | Only valid with `PersistentVolume`; implies it when set. |
+
+Shards run three members by default, so pair them with
+`--control-plane-availability-policy=HighlyAvailable`.
+
+## Verifying
+
+Each shard gets its own StatefulSet named `etcd-<shard>` in the control plane
+namespace, alongside the default `etcd`:
+
+```shell
+oc get statefulset -n clusters-<cluster>
+```
+
+To confirm the kube-apiserver is routing to them, read the generated config.
+It carries one `etcd-servers-overrides` entry per sharded resource, in
+`<apiGroup>/<resource>#<endpoint>` form — the API group is empty for core
+resources, so core events appear as `/events#...`:
+
+```shell
+oc get configmap kas-config -n clusters-<cluster> \
+  -o jsonpath='{.data.config\.json}' \
+  | jq '.apiServerArguments["etcd-servers-overrides"]'
+```
+
+
+---
+
 ## Source: docs/content/how-to/feature-gates.md
 
 # Feature Gates
@@ -33067,6 +32607,8 @@ spec:
 ```
 
 If you wanna know more about how to expose the ingress service in the Data Plane side, please access the Recipes section to see how to do it with MetalLB.
+
+To request a specific load balancer address for the kube-apiserver at cluster creation time, see Deterministic LoadBalancer IP Assignment for the Kube API Server. The feature is Technology Preview and does not support changing the address on a running cluster.
 
 
 ---
@@ -57273,6 +56815,26 @@ ComponentLogLevelSpec
 </p>
 </td>
 </tr>
+<tr>
+<td>
+<code>eventTTLMinutes</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>eventTTLMinutes specifies the amount of time, in minutes, that events are stored
+in etcd before being deleted.
+The TTL is allowed between 5 minutes minimum up to a maximum of 180 minutes (3 hours).</p>
+<p>Lowering this value will reduce the storage required in etcd. Note that this setting
+will only apply to new events being created and will not update existing events.</p>
+<p>Changing this value causes the kube-apiserver to be rolled out with the new setting.</p>
+<p>When omitted this means no opinion, and the platform is left to choose a reasonable
+default, which is subject to change over time.
+The current default value is 180 minutes (3 hours).</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubeControllerManagerOperatorSpec { #hypershift.openshift.io/v1beta1.KubeControllerManagerOperatorSpec }
@@ -72838,7 +72400,21 @@ You can monitor rollout progress through the following NodePool conditions:
 | `UpdatingConfig` | A configuration rollout is in progress |
 | `UpdatingPlatformMachineTemplate` | A platform machine template rollout is in progress |
 
-These conditions are set to `True` while the corresponding rollout is in progress and are cleared when it completes.
+These conditions normally report `True` while the corresponding rollout is in progress and `False` when it completes. The migration exception for `UpdatingConfig` is described below.
+
+### Cluster API UpToDate Status for Replace NodePools
+
+With Cluster API (CAPI) v1.14 or later, Replace NodePools can report `UpToDate=False` on their Machines and `status.upToDateReplicas=0` on their MachineDeployment even after the rollout completes and the replacement Nodes are Ready.
+
+CAPI compares `Node.status.nodeInfo.kubeletVersion` with `Machine.spec.version` when calculating the Machine's `UpToDate` condition. HyperShift sets `Machine.spec.version` to the **OCP release version**, such as `4.20.3`, while the Node reports a **Kubernetes kubelet version**, such as `v1.33.5+<hash>`. These values differ, so the CAPI fields can continue to indicate that the Machines are not up to date.
+
+HyperShift determines Replace rollout completion from MachineDeployment and MachineSet state instead of `upToDateReplicas`: the desired replicas must be available, the current-revision MachineSet must be fully rolled out, older MachineSets must have no replicas, and the MachineDeployment must have observed its current generation. This completion check does not change CAPI's `UpToDate` condition or `upToDateReplicas` counter.
+
+Use the NodePool's `UpdatingVersion`, `UpdatingConfig`, and `UpdatingPlatformMachineTemplate` conditions above to monitor rollout progress. For a release rollout, also confirm that `NodePool.status.version` matches the target OCP version. A false Machine `UpToDate` condition or a zero `upToDateReplicas` counter alone does not mean that a NodePool rollout is incomplete.
+
+!!! note
+
+    During an operator upgrade, a NodePool without the `hypershift.openshift.io/nodePoolCurrentRolloutConfig` annotation adopts the currently requested configuration as its rollout baseline. This can include a pending configuration change, so `UpdatingConfig=False` alone does not prove that the Replace rollout has completed. First confirm that the MachineDeployment's machine template references the user-data Secret for the requested configuration, the expected OCP version, and the expected infrastructure template. Then check the MachineDeployment and MachineSet completion criteria described above.
 
 ## Summary Table
 
@@ -73078,6 +72654,25 @@ Understanding the following terms is essential for configuring service publishin
 
 1. **Unique Hostnames**: Each service must have a unique hostname if a hostname is specified in the publishing strategy
 2. **Route Publishing**: Services using the `Route` publishing strategy can be exposed either through the management cluster's ingress controller (requires OpenShift) or through HyperShift's dedicated HCP router (a router deployed in the hosted control plane namespace, scoped to the specific hosted cluster, which works on any Kubernetes cluster)
+
+## Deterministic LoadBalancer IP assignment
+
+For `APIServer` services published with the `LoadBalancer` strategy, HyperShift can pass a load
+balancer class and a set of annotations to the kube-apiserver Service. This lets you request a
+specific address before the cluster exists. The feature is Technology Preview, requires the
+`DeterministicLBIP` management cluster feature gate, and is applied at cluster creation time
+only.
+
+The fields are available under `spec.services[*].servicePublishingStrategy.loadBalancer`:
+
+| Field | Description |
+|-------|-------------|
+| `loadBalancerClass` | Maps to `Service.spec.loadBalancerClass`. Selects the controller that provisions the Service. |
+| `serviceAnnotations` | Annotation passthrough. Keys are restricted to known load balancer provider prefixes. |
+
+Only the `APIServer` service is processed. Other services accept the fields but ignore them.
+For the full procedure, validation rules, provider examples, and Day 2 limitations, see
+Deterministic LoadBalancer IP Assignment for the Kube API Server.
 
 ## Platform-Specific Configurations
 

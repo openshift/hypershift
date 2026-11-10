@@ -221,6 +221,7 @@ hostedclusters.hypershift.openshift.io:
   - IngressComponentRouteLabels
   - IngressControllerLBSecurityGroupsAWS
   - KMSEncryption
+  - KubeAPIServerEventTTL
   - NetworkObservabilityInstall
   - OpenStack
   - TLSAdherence
@@ -303,6 +304,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - IngressComponentRouteLabels
   - IngressControllerLBSecurityGroupsAWS
   - KMSEncryption
+  - KubeAPIServerEventTTL
   - NetworkObservabilityInstall
   - OpenStack
   - TLSAdherence
