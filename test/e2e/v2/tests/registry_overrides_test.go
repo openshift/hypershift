@@ -54,11 +54,12 @@ const (
 	registryOverridesFollowUpTimeout = 15 * time.Minute
 )
 
-// registryOverridesEnsure makes the workers of hc trust the job CA, mirrors the
-// release of every HostedCluster into a dedicated mirror signed by the job CA,
-// points the HyperShift operator at it with --registry-overrides and waits for
-// the operator rollout. It is idempotent: when the operator already points at
-// the mirror Route, it only reads the state back. It returns the overrides read from the operator
+// registryOverridesEnsure makes the workers of every HostedCluster trust the
+// job CA, mirrors the release of every HostedCluster into one repository of a
+// dedicated mirror signed by the job CA, points the HyperShift operator at it
+// with --registry-overrides and waits for the operator rollout. It is
+// idempotent: when the operator already points at the mirror Route, it only
+// reads the state back. It returns the overrides read from the operator
 // Deployment, which are the oracle of the specs, and the operator image.
 // budgetCtx carries the deadline of the whole Ordered container.
 func registryOverridesEnsure(g Gomega, budgetCtx context.Context, tc *internal.TestContext, hc *hyperv1.HostedCluster, ca *mirrorregistry.KeyPair) (map[string]string, string) {
@@ -81,45 +82,60 @@ func registryOverridesEnsure(g Gomega, budgetCtx context.Context, tc *internal.T
 
 	// The workers pull the HCCO image from the mirror (the HCCO runs the
 	// global pull secret syncer DaemonSet with it), so they must trust the job
-	// CA. The trust bundle is in the NodePool config hash, so the patch
-	// replaces the workers. It is applied first, so the rollout runs while the
-	// payload is copied, and the operator is patched only after the rollout,
-	// so the new workers boot from an unchanged ignition-server. No restore,
-	// for the same reason as the operator patch below.
-	By("making the workers trust the job CA through the HostedCluster additionalTrustBundle")
-	var workersBaseline map[string]string
-	needsPatch, err := registryOverridesNeedsTrustBundlePatch(hc, registryOverridesTrustBundleName)
-	g.Expect(err).NotTo(HaveOccurred(), "HC %s/%s trust bundle", hc.Namespace, hc.Name)
-	trustBundle := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: registryOverridesTrustBundleName}}
-	_, err = controllerutil.CreateOrUpdate(ctx, tc.MgmtClient, trustBundle, func() error {
-		trustBundle.Data = map[string]string{registryOverridesTrustBundleKey: string(ca.CertPEM)}
-		return nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), "write ConfigMap %s/%s", trustBundle.Namespace, trustBundle.Name)
-	if needsPatch {
+	// CA. The operator overrides apply to every HostedCluster on the
+	// management cluster, so every one of them gets the trust bundle, not only
+	// the one under test. The trust bundle is in the NodePool config hash, so
+	// the patch replaces the workers. It is applied first, so the rollout runs
+	// while the payload is copied, and the operator is patched only after the
+	// rollout, so the new workers boot from an unchanged ignition-server. No
+	// restore, for the same reason as the operator patch below.
+	By("making the workers of every HostedCluster trust the job CA through the HostedCluster additionalTrustBundle")
+	hcs := &hyperv1.HostedClusterList{}
+	g.Expect(tc.MgmtClient.List(ctx, hcs)).To(Succeed(), "list HostedClusters")
+	g.Expect(hcs.Items).NotTo(BeEmpty(), "the management cluster must have HostedClusters")
+	// workersBaseline holds, for every patched HostedCluster, the NodePool
+	// config hashes before the patch.
+	workersBaseline := map[crclient.ObjectKey]map[string]string{}
+	for i := range hcs.Items {
+		cluster := &hcs.Items[i]
+		key := crclient.ObjectKeyFromObject(cluster)
+		needsPatch, err := registryOverridesNeedsTrustBundlePatch(cluster, registryOverridesTrustBundleName)
+		g.Expect(err).NotTo(HaveOccurred(), "HC %s trust bundle", key)
+		trustBundle := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: cluster.Namespace, Name: registryOverridesTrustBundleName}}
+		_, err = controllerutil.CreateOrUpdate(ctx, tc.MgmtClient, trustBundle, func() error {
+			trustBundle.Data = map[string]string{registryOverridesTrustBundleKey: string(ca.CertPEM)}
+			return nil
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "write ConfigMap %s/%s", trustBundle.Namespace, trustBundle.Name)
+		if !needsPatch {
+			continue
+		}
 		nodePools := &hyperv1.NodePoolList{}
-		g.Expect(tc.MgmtClient.List(ctx, nodePools, crclient.InNamespace(hc.Namespace))).To(Succeed(), "list NodePools in %s", hc.Namespace)
-		workersBaseline = registryOverridesNodePoolConfigs(nodePools.Items, hc.Name)
+		g.Expect(tc.MgmtClient.List(ctx, nodePools, crclient.InNamespace(cluster.Namespace))).To(Succeed(), "list NodePools in %s", cluster.Namespace)
+		workersBaseline[key] = registryOverridesNodePoolConfigs(nodePools.Items, cluster.Name)
 		fresh := &hyperv1.HostedCluster{}
-		g.Expect(tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), fresh)).To(Succeed(), "read HC %s/%s", hc.Namespace, hc.Name)
+		g.Expect(tc.MgmtClient.Get(ctx, key, fresh)).To(Succeed(), "read HC %s", key)
 		original := fresh.DeepCopy()
 		fresh.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: registryOverridesTrustBundleName}
-		g.Expect(tc.MgmtClient.Patch(ctx, fresh, crclient.MergeFrom(original))).To(Succeed(), "set additionalTrustBundle on HC %s/%s", hc.Namespace, hc.Name)
+		g.Expect(tc.MgmtClient.Patch(ctx, fresh, crclient.MergeFrom(original))).To(Succeed(), "set additionalTrustBundle on HC %s", key)
 	}
 	waitForWorkers := func() {
-		By("waiting for the worker rollout that applies the trust bundle")
+		By("waiting for the worker rollouts that apply the trust bundle")
 		g.Eventually(func(g Gomega, ctx context.Context) {
-			nodePools := &hyperv1.NodePoolList{}
-			g.Expect(tc.MgmtClient.List(ctx, nodePools, crclient.InNamespace(hc.Namespace))).To(Succeed(), "list NodePools in %s", hc.Namespace)
-			done, reason := registryOverridesCheckNodePoolsRolledOut(nodePools.Items, hc.Name, workersBaseline)
-			g.Expect(done).To(BeTrue(), reason)
+			for i := range hcs.Items {
+				cluster := &hcs.Items[i]
+				nodePools := &hyperv1.NodePoolList{}
+				g.Expect(tc.MgmtClient.List(ctx, nodePools, crclient.InNamespace(cluster.Namespace))).To(Succeed(), "list NodePools in %s", cluster.Namespace)
+				done, reason := registryOverridesCheckNodePoolsRolledOut(nodePools.Items, cluster.Name, workersBaseline[crclient.ObjectKeyFromObject(cluster)])
+				g.Expect(done).To(BeTrue(), reason)
+			}
 		}).WithContext(ctx).WithTimeout(registryOverridesRolloutTimeout).WithPolling(15*time.Second).Should(Succeed(),
-			"HC %s/%s NodePools must complete the trust bundle rollout", hc.Namespace, hc.Name)
+			"the NodePools of every HostedCluster must complete the trust bundle rollout")
 	}
 
 	route := &routev1.Route{}
 	routeKey := crclient.ObjectKey{Namespace: registryOverridesNamespace, Name: mirrorregistry.DefaultName}
-	err = tc.MgmtClient.Get(ctx, routeKey, route)
+	err := tc.MgmtClient.Get(ctx, routeKey, route)
 	if err != nil && !apierrors.IsNotFound(err) {
 		g.Expect(err).NotTo(HaveOccurred(), "read mirror Route %s", routeKey)
 	}
@@ -127,10 +143,8 @@ func registryOverridesEnsure(g Gomega, budgetCtx context.Context, tc *internal.T
 		By("reusing the mirror and the HyperShift operator overrides from a previous run")
 		waitForWorkers()
 	} else {
-		By("mirroring the release payload of every HostedCluster")
-		hcs := &hyperv1.HostedClusterList{}
-		g.Expect(tc.MgmtClient.List(ctx, hcs)).To(Succeed(), "list HostedClusters")
-		releases, err := registryOverridesReleaseImages(hcs.Items)
+		By("mirroring the release payload of every HostedCluster and the latest release")
+		releases, err := registryOverridesReleaseImages(hcs.Items, internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE"))
 		g.Expect(err).NotTo(HaveOccurred(), "release images to mirror")
 		pullSecret, err := registryOverridesPullSecret(ctx, tc.MgmtClient, hc)
 		g.Expect(err).NotTo(HaveOccurred(), "HC %s/%s pull secret", hc.Namespace, hc.Name)
@@ -143,7 +157,14 @@ func registryOverridesEnsure(g Gomega, budgetCtx context.Context, tc *internal.T
 			Storage:     mirrorregistry.StorageOptions{Size: resource.MustParse(registryOverridesStorageSize)},
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "configure mirror in %s", registryOverridesNamespace)
-		result, err := registry.Setup(ctx, mirrorregistry.MirrorRequest{ReleaseImages: releases, SourcePullSecret: pullSecret})
+		// One mirror repository for every payload: payloads of different
+		// release repositories (N-1 and N in CI) share component
+		// repositories, and each source needs exactly one override target.
+		result, err := registry.Setup(ctx, mirrorregistry.MirrorRequest{
+			ReleaseImages:           releases,
+			ReleaseMirrorRepository: registryOverridesReleaseMirrorRepository,
+			SourcePullSecret:        pullSecret,
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "mirror releases %v into %s", releases, registryOverridesNamespace)
 		desired, err := registryOverridesFromResult(result)
 		g.Expect(err).NotTo(HaveOccurred(), "registry overrides from the mirror in %s", registryOverridesNamespace)

@@ -224,16 +224,20 @@ func TestRegistryOverridesReleaseImages(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
 		hcs       []hyperv1.HostedCluster
+		latest    string
 		want      []string
 		wantError string
 	}{
 		{name: "When there are no HostedClusters, it should fail", wantError: "no HostedClusters"},
+		{name: "When the latest release is set and no HostedCluster uses it, it should include it, sorted", hcs: []hyperv1.HostedCluster{hc("x", a)}, latest: b, want: []string{b, a}},
+		{name: "When the latest release is already used by a HostedCluster, it should return it once", hcs: []hyperv1.HostedCluster{hc("x", a)}, latest: a, want: []string{a}},
+		{name: "When the latest release is referenced by tag, it should fail", hcs: []hyperv1.HostedCluster{hc("x", a)}, latest: "quay.io/openshift-release-dev/ocp-release:4.20.0-x86_64", wantError: "latest release image"},
 		{name: "When two HostedClusters share a release, it should return it once", hcs: []hyperv1.HostedCluster{hc("x", a), hc("y", a)}, want: []string{a}},
 		{name: "When a HostedCluster has a control plane release, it should include it, sorted", hcs: []hyperv1.HostedCluster{withCP}, want: []string{b, a}},
 		{name: "When a release is referenced by tag, it should fail", hcs: []hyperv1.HostedCluster{hc("x", "quay.io/openshift-release-dev/ocp-release:4.20.0-x86_64")}, wantError: "not referenced by digest"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := registryOverridesReleaseImages(tt.hcs)
+			got, err := registryOverridesReleaseImages(tt.hcs, tt.latest)
 			if tt.wantError != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
 					t.Fatalf("want error containing %q, got %v", tt.wantError, err)

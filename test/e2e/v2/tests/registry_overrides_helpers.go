@@ -31,8 +31,15 @@ const (
 	// the CA supplied by the job is always used and the two never interfere.
 	registryOverridesNamespace = "test-mirror-registry-ho"
 
-	// registryOverridesStorageSize holds one full release payload (~22 GiB).
-	registryOverridesStorageSize = "40Gi"
+	// registryOverridesStorageSize holds two full release payloads (~22 GiB
+	// each, for example N-1 and N in the upgrade lane) with headroom; layers
+	// shared by the payloads are stored once.
+	registryOverridesStorageSize = "80Gi"
+
+	// registryOverridesReleaseMirrorRepository is the repository on the mirror
+	// host that receives every mirrored payload, so that every source
+	// repository has exactly one override target.
+	registryOverridesReleaseMirrorRepository = "e2e/release"
 
 	// The HyperShift operator Deployment and container, as created by
 	// "hypershift install" (cmd/install/assets).
@@ -166,14 +173,22 @@ func registryOverridesFromResult(result *mirrorregistry.Result) (map[string]stri
 }
 
 // registryOverridesReleaseImages returns the sorted, de-duplicated release
-// images of every HostedCluster. The overrides are global to the HO and have
+// images of every HostedCluster, plus latest when it is not empty: the
+// release an upgrade step of the lane moves a cluster to, so it is mirrored
+// before the operator is patched. The overrides are global to the HO and have
 // no fallback, so every release in use must be mirrored. The fixture mirrors
 // by digest, so tag references are rejected.
-func registryOverridesReleaseImages(hcs []hyperv1.HostedCluster) ([]string, error) {
+func registryOverridesReleaseImages(hcs []hyperv1.HostedCluster, latest string) ([]string, error) {
 	if len(hcs) == 0 {
 		return nil, fmt.Errorf("no HostedClusters on the management cluster")
 	}
 	images := sets.New[string]()
+	if latest != "" {
+		if !strings.Contains(latest, "@sha256:") {
+			return nil, fmt.Errorf("latest release image %q is not referenced by digest", latest)
+		}
+		images.Insert(latest)
+	}
 	for _, hc := range hcs {
 		refs := []string{hc.Spec.Release.Image}
 		if hc.Spec.ControlPlaneRelease != nil {
