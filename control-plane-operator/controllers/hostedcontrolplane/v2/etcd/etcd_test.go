@@ -1,7 +1,7 @@
 package etcd
 
 import (
-	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -9,14 +9,19 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	hcpconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/testutil"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
 )
@@ -279,9 +284,19 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 				},
 			}
 
+			featureGateConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hcpconfig.FeatureGateConfigMapName,
+					Namespace: tc.hcp.Namespace,
+				},
+				Data: map[string]string{hcpconfig.FeatureGateConfigKey: "{}"},
+			}
+
 			cpContext := component.WorkloadContext{
-				Context: t.Context(),
-				HCP:     tc.hcp,
+				Context:              t.Context(),
+				Client:               fake.NewClientBuilder().WithObjects(featureGateConfigMap).Build(),
+				ReleaseImageProvider: testutil.FakeImageProvider(),
+				HCP:                  tc.hcp,
 			}
 
 			err := adaptStatefulSet(cpContext, sts)
@@ -628,18 +643,30 @@ func TestAdaptStatefulSet(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			cpContext := component.WorkloadContext{
-				Context: t.Context(),
-				HCP: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Configuration: tc.configuration,
-						Networking: hyperv1.ClusterNetworking{
-							ClusterNetwork: []hyperv1.ClusterNetworkEntry{
-								{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
-							},
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: tc.configuration,
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")},
 						},
 					},
 				},
+			}
+
+			featureGateConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hcpconfig.FeatureGateConfigMapName,
+					Namespace: hcp.Namespace,
+				},
+				Data: map[string]string{hcpconfig.FeatureGateConfigKey: "{}"},
+			}
+
+			cpContext := component.WorkloadContext{
+				Context:              t.Context(),
+				Client:               fake.NewClientBuilder().WithObjects(featureGateConfigMap).Build(),
+				ReleaseImageProvider: testutil.FakeImageProvider(),
+				HCP:                  hcp,
 			}
 
 			sts := testStatefulSet.DeepCopy()
@@ -754,7 +781,21 @@ func TestAdaptStatefulSet(t *testing.T) {
 			sts.Spec.Template.Spec.InitContainers = containers
 			sts.Spec.Template.Spec.Containers = []corev1.Container{{Name: ComponentName}, {Name: "etcd-metrics"}}
 
-			err := adaptStatefulSet(component.WorkloadContext{Context: context.Background(), HCP: hcp}, sts)
+			featureGateConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hcpconfig.FeatureGateConfigMapName,
+					Namespace: hcp.Namespace,
+				},
+				Data: map[string]string{hcpconfig.FeatureGateConfigKey: "{}"},
+			}
+			cpContext := component.WorkloadContext{
+				Context:              t.Context(),
+				Client:               fake.NewClientBuilder().WithObjects(featureGateConfigMap).Build(),
+				ReleaseImageProvider: testutil.FakeImageProvider(),
+				HCP:                  hcp,
+			}
+
+			err := adaptStatefulSet(cpContext, sts)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			names := make([]string, len(sts.Spec.Template.Spec.InitContainers))
@@ -762,6 +803,241 @@ func TestAdaptStatefulSet(t *testing.T) {
 				names[i] = c.Name
 			}
 			g.Expect(names).To(Equal(tc.expectedOrder))
+		})
+	}
+
+	findEnvVar := func(envs []corev1.EnvVar, name string) *corev1.EnvVar {
+		for i := range envs {
+			if envs[i].Name == name {
+				return &envs[i]
+			}
+		}
+		return nil
+	}
+
+	findArg := func(args []string, prefix string) string {
+		for _, arg := range args {
+			if strings.HasPrefix(arg, prefix) {
+				return strings.TrimPrefix(arg, prefix)
+			}
+		}
+		return ""
+	}
+
+	curvePreferencesTestCases := []struct {
+		name          string
+		version       string
+		userVersion   string
+		gateEnabled   bool
+		noProfile     bool
+		groups        []configv1.TLSGroup
+		omitConfigMap bool
+		emptyManifest bool
+		expectError   bool
+		expectCurves  bool
+		expectedValue string
+	}{
+		{
+			name:          "When gate enabled on a supported version with supported groups, it should set ETCD_LISTEN_CURVE_PREFERENCES preserving order",
+			version:       "5.1.0",
+			gateEnabled:   true,
+			groups:        []configv1.TLSGroup{configv1.TLSGroupSecP256r1, configv1.TLSGroupX25519},
+			expectCurves:  true,
+			expectedValue: "CurveP256,X25519",
+		},
+		{
+			name:          "When gate enabled on a supported version with a hybrid group, it should set the hybrid curve",
+			version:       "5.1.0",
+			gateEnabled:   true,
+			groups:        []configv1.TLSGroup{configv1.TLSGroupX25519MLKEM768},
+			expectCurves:  true,
+			expectedValue: "X25519MLKEM768",
+		},
+		{
+			name:         "When gate disabled on a supported version, it should not set ETCD_LISTEN_CURVE_PREFERENCES",
+			version:      "5.1.0",
+			gateEnabled:  false,
+			groups:       []configv1.TLSGroup{configv1.TLSGroupSecP256r1, configv1.TLSGroupX25519},
+			expectCurves: false,
+		},
+		{
+			name:          "When the providers disagree, it should gate on the control-plane release version, not the data-plane one",
+			version:       "5.1.0",
+			userVersion:   "4.20.0",
+			gateEnabled:   true,
+			groups:        []configv1.TLSGroup{configv1.TLSGroupSecP256r1, configv1.TLSGroupX25519},
+			expectCurves:  true,
+			expectedValue: "CurveP256,X25519",
+		},
+		{
+			name:         "When gate enabled on a supported version but the profile has no groups, it should not set ETCD_LISTEN_CURVE_PREFERENCES",
+			version:      "5.1.0",
+			gateEnabled:  true,
+			groups:       nil,
+			expectCurves: false,
+		},
+		{
+			name:          "When gate enabled on a supported version but no TLS profile is set, it should fall back to the default profile curves",
+			version:       "5.1.0",
+			gateEnabled:   true,
+			noProfile:     true,
+			expectCurves:  true,
+			expectedValue: "X25519MLKEM768,X25519,CurveP256,CurveP384",
+		},
+		{
+			name:         "When gate enabled on a supported version but all groups are unrecognized, it should not set ETCD_LISTEN_CURVE_PREFERENCES",
+			version:      "5.1.0",
+			gateEnabled:  true,
+			groups:       []configv1.TLSGroup{"unknown", "other-unknown"},
+			expectCurves: false,
+		},
+		{
+			name:          "When the feature-gate ConfigMap is missing on a supported version, it should return an error",
+			version:       "5.1.0",
+			groups:        []configv1.TLSGroup{configv1.TLSGroupSecP256r1},
+			omitConfigMap: true,
+			expectError:   true,
+		},
+		{
+			name:          "When the feature-gate manifest is empty on a supported version, it should return an error",
+			version:       "5.1.0",
+			groups:        []configv1.TLSGroup{configv1.TLSGroupSecP256r1},
+			emptyManifest: true,
+			expectError:   true,
+		},
+		{
+			name:        "When the release version cannot be parsed, it should return an error",
+			version:     "not-a-semver",
+			gateEnabled: true,
+			groups:      []configv1.TLSGroup{configv1.TLSGroupSecP256r1},
+			expectError: true,
+		},
+		{
+			name:          "When the release version is unsupported and no ConfigMap exists, it should not read the ConfigMap and set no curves",
+			version:       "4.20.0",
+			groups:        []configv1.TLSGroup{configv1.TLSGroupSecP256r1},
+			omitConfigMap: true,
+			expectCurves:  false,
+		},
+	}
+
+	for _, tc := range curvePreferencesTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{
+								Type: configv1.TLSProfileCustomType,
+								Custom: &configv1.CustomTLSProfile{
+									TLSProfileSpec: configv1.TLSProfileSpec{
+										Groups: tc.groups,
+									},
+								},
+							},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{
+								CIDR: *ipnet.MustParseCIDR("10.0.0.0/8"),
+							},
+						},
+					},
+				},
+			}
+			if tc.noProfile {
+				hcp.Spec.Configuration.APIServer = nil
+			}
+
+			featureGatesStatus := configv1.FeatureGateStatus{}
+			if tc.gateEnabled {
+				featureGatesStatus.FeatureGates = []configv1.FeatureGateDetails{
+					{
+						Enabled: []configv1.FeatureGateAttributes{
+							{
+								Name: features.FeatureGateTLSGroupPreferences,
+							},
+						},
+					},
+				}
+			}
+
+			manifest, err := json.Marshal(configv1.FeatureGate{Status: featureGatesStatus})
+			g.Expect(err).ToNot(HaveOccurred())
+			if tc.emptyManifest {
+				manifest = []byte("")
+			}
+
+			featureGateConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hcpconfig.FeatureGateConfigMapName,
+					Namespace: hcp.Namespace,
+				},
+				Data: map[string]string{
+					hcpconfig.FeatureGateConfigKey: string(manifest),
+				},
+			}
+
+			clientBuilder := fake.NewClientBuilder()
+			if !tc.omitConfigMap {
+				clientBuilder = clientBuilder.WithObjects(featureGateConfigMap)
+			}
+
+			cpContext := component.WorkloadContext{
+				Context:              t.Context(),
+				Client:               clientBuilder.Build(),
+				ReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion(tc.version)),
+				HCP:                  hcp,
+			}
+			if tc.userVersion != "" {
+				cpContext.UserReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion(tc.userVersion))
+			}
+
+			sts := &appsv1.StatefulSet{
+				Spec: appsv1.StatefulSetSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: ComponentName,
+								},
+								{
+									Name: "etcd-metrics",
+								},
+								{
+									Name: "healthz",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			err = adaptStatefulSet(cpContext, sts)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			envVar := findEnvVar(sts.Spec.Template.Spec.Containers[0].Env, "ETCD_LISTEN_CURVE_PREFERENCES")
+			metricsCurveFlag := findArg(sts.Spec.Template.Spec.Containers[1].Args, "--listen-curve-preferences=")
+			healthzCurveFlag := findArg(sts.Spec.Template.Spec.Containers[2].Args, "--listen-curve-preferences=")
+			if !tc.expectCurves {
+				g.Expect(envVar).To(BeNil(), "expected ETCD_LISTEN_CURVE_PREFERENCES to be absent")
+				g.Expect(metricsCurveFlag).To(BeEmpty(), "expected --listen-curve-preferences to be absent on etcd-metrics")
+				g.Expect(healthzCurveFlag).To(BeEmpty(), "expected --listen-curve-preferences to be absent on healthz")
+				return
+			}
+
+			g.Expect(envVar).NotTo(BeNil(), "expected ETCD_LISTEN_CURVE_PREFERENCES to be set")
+			g.Expect(envVar.Value).To(Equal(tc.expectedValue))
+			g.Expect(metricsCurveFlag).To(Equal(tc.expectedValue), "expected --listen-curve-preferences to match on etcd-metrics")
+			g.Expect(healthzCurveFlag).To(Equal(tc.expectedValue), "expected --listen-curve-preferences to match on healthz")
 		})
 	}
 }

@@ -320,8 +320,8 @@ func TestNewGenericControllerConfigAdapter(t *testing.T) {
 
 	cm := &corev1.ConfigMap{}
 	ctx := WorkloadContext{
-		Client:                   client,
-		UserReleaseImageProvider: testutil.FakeImageProvider(),
+		Client:               client,
+		ReleaseImageProvider: testutil.FakeImageProvider(),
 		HCP: &hyperv1.HostedControlPlane{
 			Spec: hyperv1.HostedControlPlaneSpec{
 				Configuration: &hyperv1.ClusterConfiguration{},

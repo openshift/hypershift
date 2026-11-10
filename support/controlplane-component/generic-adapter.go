@@ -121,18 +121,19 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Ob
 // and generates the appropriate config.yaml data.
 func NewGenericControllerConfigAdapter(bindAddress, bindNetwork string) func(WorkloadContext, *corev1.ConfigMap) error {
 	return func(cpContext WorkloadContext, cm *corev1.ConfigMap) error {
-		payloadVersion, err := semver.Parse(cpContext.UserReleaseImageProvider.Version())
+		payloadVersion, err := semver.Parse(cpContext.ReleaseImageProvider.Version())
 		if err != nil {
 			return fmt.Errorf("failed to parse release image version: %w", err)
 		}
 
-		featureGates, err := config.FeatureGatesFromConfigMap(
-			cpContext.Context,
-			cpContext.Client,
-			cpContext.HCP.Namespace,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to load feature gates config map: %w", err)
+		applyTLSGroups := false
+		if config.VersionSupportsTLSGroups(payloadVersion) {
+			applyTLSGroups, err = config.TLSGroupsFeatureGateEnabled(
+				cpContext.Context, cpContext.Client, cpContext.HCP.Namespace,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to check TLS groups feature gate: %w", err)
+			}
 		}
 
 		return config.SetGenericControllerConfig(
@@ -141,8 +142,7 @@ func NewGenericControllerConfigAdapter(bindAddress, bindNetwork string) func(Wor
 			bindNetwork,
 			cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile(),
 			cm,
-			featureGates,
-			payloadVersion,
+			applyTLSGroups,
 		)
 	}
 }
