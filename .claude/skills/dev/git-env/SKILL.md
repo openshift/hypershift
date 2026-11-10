@@ -1,5 +1,5 @@
 ---
-name: Git Environment
+name: git-env
 description: "Create development environments with git worktrees, branches, commits, and push to remote. Auto-applies for git workflow tasks."
 ---
 
