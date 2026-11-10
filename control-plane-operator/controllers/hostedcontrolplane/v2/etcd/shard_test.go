@@ -255,10 +255,15 @@ func TestAdaptShardStorage(t *testing.T) {
 		}
 		adaptShardStorage(sts, shard, hcp)
 		found := false
+		// Copy the shared default before formatting: resource.Quantity caches
+		// its string form lazily, so calling String() on the shared package
+		// variable would race with adaptShardStorage's read of it in parallel
+		// tests.
+		expectedSizeLimit := hyperv1.DefaultPersistentVolumeEtcdStorageSize.DeepCopy()
 		for _, v := range sts.Spec.Template.Spec.Volumes {
 			if v.Name == "data" {
 				found = true
-				g.Expect(v.EmptyDir.SizeLimit.String()).To(Equal(hyperv1.DefaultPersistentVolumeEtcdStorageSize.String()))
+				g.Expect(v.EmptyDir.SizeLimit.String()).To(Equal(expectedSizeLimit.String()))
 			}
 		}
 		g.Expect(found).To(BeTrue())
