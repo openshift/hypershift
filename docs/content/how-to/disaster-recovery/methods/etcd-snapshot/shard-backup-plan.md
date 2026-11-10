@@ -320,13 +320,18 @@ shard StatefulSets that have a `restoreSnapshotURL` configured:
 ```go
 // For the default etcd, check RestoreSnapshotURL from managed storage spec.
 // For each shard, check RestoreSnapshotURL from the shard spec.
+// Restore is all-or-nothing: once any persistent shard has a restore URL,
+// every persistent shard must have one (MissingPersistentShards semantics);
+// an incomplete mapping fails with reason EtcdRestoreIncomplete naming the
+// missing shards.
 // EtcdSnapshotRestored is set to True only when ALL shards with restore URLs
 // have completed their etcd-init containers successfully.
 ```
 
 The `EtcdSnapshotRestored` condition remains a single boolean on the HCP — it's
 not set to True until **all** shards (default + named) with restore URLs report
-their init containers ready. This preserves the existing gate: the init container
+their init containers ready, and it is set to False (not ignored) when the
+restore mapping is incomplete. This preserves the existing gate: the init container
 is removed from all StatefulSets only once the aggregate condition is True.
 
 ##### d. EmptyDir shards: no restore

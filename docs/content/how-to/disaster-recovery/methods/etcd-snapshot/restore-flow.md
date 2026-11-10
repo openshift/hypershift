@@ -223,9 +223,10 @@ The `etcd-init` container runs the `etcd-init.sh` script, which executes the fol
 
 After the etcd pods start successfully with restored data:
 
-1. The CPO checks restore completion across **all** shard StatefulSets that have a `restoreSnapshotURL` configured. The `EtcdSnapshotRestored` condition is set to `True` only when all shards with restore URLs report their `etcd-init` containers have completed successfully.
-2. On the next reconciliation loop, the CPO detects `EtcdSnapshotRestored = True` and removes the `etcd-init` container from all StatefulSets. This prevents the init container from running on subsequent pod restarts.
-3. The `HostedCluster` controller detects the `restored-from-backup` annotation and monitors the restore completion. Once the `HostedClusterRestoredFromBackup` condition becomes `True`, the annotation is removed.
+1. Restore is **all-or-nothing**: once any persistent shard has a `restoreSnapshotURL`, every persistent shard must have one. An incomplete mapping sets `EtcdSnapshotRestored` to `False` with reason `EtcdRestoreIncomplete` and a message naming the missing shards, instead of silently starting them with empty data directories (the pre-multi-shard OADP flow injected a URL for the default shard only; the plugin is being updated to inject per-shard URLs).
+2. The CPO checks restore completion across **all** shard StatefulSets that have a `restoreSnapshotURL` configured. The `EtcdSnapshotRestored` condition is set to `True` only when all shards with restore URLs report their `etcd-init` containers have completed successfully.
+3. On the next reconciliation loop, the CPO detects `EtcdSnapshotRestored = True` and removes the `etcd-init` container from all StatefulSets. This prevents the init container from running on subsequent pod restarts.
+4. The `HostedCluster` controller detects the `restored-from-backup` annotation and monitors the restore completion. Once the `HostedClusterRestoredFromBackup` condition becomes `True`, the annotation is removed.
 
 ## Pre-Restore Checklist
 
