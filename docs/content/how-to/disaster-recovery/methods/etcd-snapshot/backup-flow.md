@@ -200,8 +200,10 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 | Setting | Value | Reason |
 | --------- | ------- | -------- |
 | `backoffLimit` | 0 | No retries on failure |
-| `activeDeadlineSeconds` | 900 (15 min) | Prevents indefinitely running Jobs |
+| `activeDeadlineSeconds` | Scales with shard count and provider: 900 s base for S3 (1200 s for Azure Blob) plus 120 s per additional shard (300 s for Azure Blob); a single-shard S3 backup keeps the original 900 s (15 min) | Prevents indefinitely running Jobs while leaving headroom for multi-shard snapshots and slower providers. The values are initial estimates to be validated and tuned through E2E runs; the OADP plugin's backup completion timeout must always be kept larger than the maximum Job deadline |
 | `ttlSecondsAfterFinished` | 600 (10 min) | Automatic Job cleanup |
+
+When the Job is created, the controller also records `HCPEtcdBackup.Status.AttemptKeyPrefix` — the object key prefix (`<keyPrefix>/<unix-timestamp>`) used by this attempt — before the Job runs. Objects written by the attempt are `<attemptKeyPrefix>.db` (single shard) or `<attemptKeyPrefix>/<shard>.db` (multi shard).
 
 **Shared volumes:**
 
@@ -213,7 +215,7 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 
 On subsequent reconcile loops, the controller checks the Job status:
 
-- **Succeeded**: Extracts the per-shard snapshot URLs from the `upload` container's termination message (JSON array). Populates `HCPEtcdBackup.Status.ShardSnapshots` with all shard entries and sets `Status.SnapshotURL` to the default shard's URL for backward compatibility. Persists the default shard URL to `HostedCluster.Status.LastSuccessfulEtcdBackupURL` using a retry-on-conflict pattern. Marks the `HCPEtcdBackup` as `BackupSucceeded`.
+- **Succeeded**: Extracts the per-shard snapshot URLs from the `upload` container's termination message (JSON array). Transient extraction failures (API errors, pod status lag) are retried with a bound before the backup is failed. The extracted results must contain exactly one valid entry per shard the Job was built to snapshot — recorded on the Job at creation — otherwise the backup fails with reason `BackupResultIncomplete` rather than reporting success with missing shards. On success, populates `HCPEtcdBackup.Status.ShardSnapshots` with all shard entries and sets `Status.SnapshotURL` to the default shard's URL for backward compatibility. Persists the default shard URL to `HostedCluster.Status.LastSuccessfulEtcdBackupURL` using a retry-on-conflict pattern. Marks the `HCPEtcdBackup` as `BackupSucceeded`.
 - **Failed**: Marks the `HCPEtcdBackup` as `BackupFailed`.
 - **Running**: Requeues reconciliation after 10 seconds.
 
@@ -250,6 +252,12 @@ graph LR
 - **HostedCluster status**: Persists across `HCPEtcdBackup` CR deletions (retention). Available for operational reference.
 - **Backup annotation**: Stored inside the Velero backup archive. This is the path used during restore, since Velero strips status fields.
 
+## Failed Backups Leave Objects Behind
+
+Multi-shard uploads are not transactional: each shard is uploaded as a separate object, and the per-shard snapshot init containers run before the upload container. A failure partway through — a later shard's upload failing, the termination message exceeding its size limit, or the Job exceeding its deadline — can leave some or all snapshot objects in cloud storage even though the backup failed.
+
+The controller does **not** delete backup objects automatically. Operators are responsible for cleaning up objects left behind by failed attempts. To identify the affected objects without handling signed URLs, read `HCPEtcdBackup.Status.AttemptKeyPrefix`: every object written by that attempt lives under that prefix (`<attemptKeyPrefix>.db` for single-shard backups, `<attemptKeyPrefix>/<shard>.db` for multi-shard).
+
 ## Error Scenarios
 
 | Scenario | Result | Recovery |
@@ -258,7 +266,9 @@ graph LR
 | Another backup already running for this HCP | `BackupCompleted` = `BackupRejected` | Wait for the active backup to complete |
 | Credential Secret not found in HO namespace | Backup fails immediately | Verify the OADP plugin correctly copied the BSL credentials |
 | Backup Job fails (etcdctl error, upload error) | `BackupCompleted` = `BackupFailed` | Check Job pod logs, verify etcd connectivity and storage permissions |
-| Backup Job exceeds 15 min deadline | Job killed, `BackupCompleted` = `BackupFailed` | Investigate network or storage latency |
+| Backup Job exceeds its deadline (base + per-shard allowance; 15 min for a single-shard S3 backup) | Job killed, `BackupCompleted` = `BackupFailed` | Investigate network or storage latency |
+| Shard snapshot results incomplete (missing, duplicate, or unexpected shard entry) | `BackupCompleted` = `BackupResultIncomplete` | Check the upload container termination message and the shard set recorded on the Job; a mismatch between the deployed CPO image and the configured shards can cause this |
+| Shard snapshot results could not be extracted (pod or termination message gone) | `BackupCompleted` = `BackupResultExtractionFailed` after bounded retries | Check whether the Job pod was deleted before the controller read its termination message |
 | Plugin verification timeout (30s) | Plugin returns error, Velero marks backup failed | Check HyperShift Operator logs for controller issues |
 | Plugin completion timeout (10 min) | Plugin returns error, Velero marks backup failed | Check backup Job status and pod logs |
 | `HCPEtcdBackup` CRD not installed | Plugin fails with explicit error | Enable the `HCPEtcdBackup` feature gate and ensure CRDs are deployed |
