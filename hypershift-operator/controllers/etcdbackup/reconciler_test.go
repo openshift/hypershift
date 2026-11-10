@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -2108,6 +2109,48 @@ func TestCreateBackupJob(t *testing.T) {
 		podLabels := jobList.Items[0].Spec.Template.Labels
 		g.Expect(podLabels).ToNot(HaveKey("azure.workload.identity/use"))
 	})
+
+	t.Run("When creating a backup Job it should record expected shards, attempt timestamp arg, and attempt key prefix", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+		r := newReconciler(backup, hcp, pullSecret, credSecret)
+		ctx := context.Background()
+
+		creds := resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"}
+		err := r.createBackupJob(ctx, backup, hcp, creds)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+		job := &jobList.Items[0]
+
+		// The expected shard set is recorded on the Job for the completion path.
+		g.Expect(job.Annotations[annotationExpectedShardSnapshots]).To(Equal("etcd"))
+
+		// The upload container receives the attempt timestamp used in object keys.
+		var uploadArgs []string
+		for _, c := range job.Spec.Template.Spec.Containers {
+			if c.Name == "upload" {
+				uploadArgs = c.Command
+			}
+		}
+		g.Expect(uploadArgs).To(ContainElement("--attempt-timestamp"))
+		ts, err := strconv.ParseInt(uploadArgs[indexOf(uploadArgs, "--attempt-timestamp")+1], 10, 64)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// The status records the exact object key prefix for the attempt.
+		g.Expect(backup.Status.AttemptKeyPrefix).To(Equal(fmt.Sprintf("backups/test/%d", ts)))
+	})
 }
 
 func TestEnsureServiceAccountWithCredentials(t *testing.T) {
@@ -2781,7 +2824,7 @@ func TestCleanupResourcesWithDeleteErrors(t *testing.T) {
 }
 
 func TestHandleJobStatusEdgeCases(t *testing.T) {
-	t.Run("When Job succeeds but getSnapshotURLFromPod fails it should still succeed with empty URL", func(t *testing.T) {
+	t.Run("When Job succeeds but result extraction fails it should requeue and retry, then fail terminally after bounded attempts", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		backup := newHCPEtcdBackup()
 		hcp := newHostedControlPlane()
@@ -2812,17 +2855,39 @@ func TestHandleJobStatusEdgeCases(t *testing.T) {
 			OperatorNamespace: testHONamespace,
 		}
 
+		// The first extraction failure requeues with the attempt recorded...
 		result, err := r.handleJobStatus(context.Background(), backup, job, hcp)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(result).To(Equal(ctrl.Result{}))
+		g.Expect(result.RequeueAfter).To(Equal(resultExtractionRetryInterval))
 
 		updated := &hyperv1.HCPEtcdBackup{}
 		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
-		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupSucceededReason))
+		g.Expect(updated.Annotations[annotationResultExtractionAttempts]).To(Equal("1"))
+		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))).To(BeNil())
+
+		// ...and repeated failures up to the bound fail the backup terminally.
+		for range maxResultExtractionAttempts - 2 {
+			_, err := r.handleJobStatus(context.Background(), updated, job, hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+		}
+		_, err = r.handleJobStatus(context.Background(), updated, job, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupResultExtractionFailedReason))
+		g.Expect(cond.Message).To(ContainSubstring("simulated pod list failure"))
 		g.Expect(updated.Status.SnapshotURL).To(BeEmpty())
+
+		// The HostedCluster must not have been updated with a URL.
+		updatedHC := &hyperv1.HostedCluster{}
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testHCName, Namespace: testHCNamespace}, updatedHC)).To(Succeed())
+		g.Expect(updatedHC.Status.LastSuccessfulEtcdBackupURL).To(BeEmpty())
 	})
 
-	t.Run("When Job succeeds with no termination message it should succeed with empty URL and not update HC", func(t *testing.T) {
+	t.Run("When Job succeeds with no termination message it should requeue and retry, never recording success", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		backup := newHCPEtcdBackup()
 		hcp := newHostedControlPlane()
@@ -2852,20 +2917,106 @@ func TestHandleJobStatusEdgeCases(t *testing.T) {
 
 		result, err := r.handleJobStatus(context.Background(), backup, job, hcp)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(result).To(Equal(ctrl.Result{}))
+		g.Expect(result.RequeueAfter).To(Equal(resultExtractionRetryInterval))
 
 		updated := &hyperv1.HCPEtcdBackup{}
 		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
-		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupSucceededReason))
+		// No success was recorded and the HC was not updated.
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).To(BeNil())
 		g.Expect(updated.Status.SnapshotURL).To(BeEmpty())
 
-		// HC should not have been updated since URL was empty
 		updatedHC := &hyperv1.HostedCluster{}
 		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testHCName, Namespace: testHCNamespace}, updatedHC)).To(Succeed())
 		g.Expect(updatedHC.Status.LastSuccessfulEtcdBackupURL).To(BeEmpty())
 	})
-}
 
+	t.Run("When results are incomplete it should fail terminally without recording success", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		// The Job was built for two shards...
+		job := newTestJob(batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			},
+		})
+		job.Annotations = map[string]string{annotationExpectedShardSnapshots: "etcd,etcd-events"}
+		// ...but the termination message only reports the default shard.
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "backup-pod", Namespace: testHONamespace,
+				Labels: map[string]string{"batch.kubernetes.io/job-name": "etcd-backup-test"},
+			},
+			Spec: corev1.PodSpec{
+				Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+				RestartPolicy: corev1.RestartPolicyNever,
+			},
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{
+					{Name: "upload", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+						ExitCode: 0,
+						Message:  `[{"name":"etcd","url":"s3://bucket/etcd.db"}]`,
+					}}},
+				},
+			},
+		}
+		r := newReconciler(backup, job, hcp, pod)
+
+		result, err := r.handleJobStatus(context.Background(), backup, job, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupResultIncompleteReason))
+		g.Expect(cond.Message).To(ContainSubstring(`missing result for shard "etcd-events"`))
+		g.Expect(updated.Status.SnapshotURL).To(BeEmpty())
+	})
+
+	t.Run("When results contain an unexpected shard it should fail terminally", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		job := newTestJob(batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			},
+		})
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "backup-pod", Namespace: testHONamespace,
+				Labels: map[string]string{"batch.kubernetes.io/job-name": "etcd-backup-test"},
+			},
+			Spec: corev1.PodSpec{
+				Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+				RestartPolicy: corev1.RestartPolicyNever,
+			},
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{
+					{Name: "upload", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+						ExitCode: 0,
+						Message:  `[{"name":"etcd","url":"s3://bucket/etcd.db"},{"name":"etcd-unknown","url":"s3://bucket/other.db"}]`,
+					}}},
+				},
+			},
+		}
+		r := newReconciler(backup, job, hcp, pod)
+
+		_, err := r.handleJobStatus(context.Background(), backup, job, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupResultIncompleteReason))
+		g.Expect(cond.Message).To(ContainSubstring(`unexpected result for shard "etcd-unknown"`))
+	})
+}
 func TestReconcileTerminalCleansUpAndEnforcesRetention(t *testing.T) {
 	t.Run("When backup is terminal it should cleanup RBAC and NetworkPolicy and enforce retention", func(t *testing.T) {
 		g := NewGomegaWithT(t)
@@ -3248,10 +3399,11 @@ func TestEnforceRetentionDeleteRace(t *testing.T) {
 
 func TestGetShardSnapshotsFromPod(t *testing.T) {
 	tests := []struct {
-		name     string
-		pods     []client.Object
-		jobName  string
-		expected []hyperv1.HCPEtcdShardSnapshot
+		name        string
+		pods        []client.Object
+		jobName     string
+		expected    []hyperv1.HCPEtcdShardSnapshot
+		expectError string
 	}{
 		{
 			name: "When upload container has JSON termination message, it should return shard snapshots",
@@ -3319,13 +3471,13 @@ func TestGetShardSnapshotsFromPod(t *testing.T) {
 			},
 		},
 		{
-			name:     "When no pods exist for the job, it should return nil",
-			pods:     []client.Object{},
-			jobName:  "my-job",
-			expected: nil,
+			name:        "When no pods exist for the job, it should return an extraction error",
+			pods:        []client.Object{},
+			jobName:     "my-job",
+			expectError: "no terminated upload container termination message found",
 		},
 		{
-			name: "When upload container has no termination message, it should return nil",
+			name: "When upload container has no termination message, it should return an extraction error",
 			pods: []client.Object{
 				&corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -3351,8 +3503,8 @@ func TestGetShardSnapshotsFromPod(t *testing.T) {
 					},
 				},
 			},
-			jobName:  "my-job",
-			expected: nil,
+			jobName:     "my-job",
+			expectError: "no terminated upload container termination message found",
 		},
 	}
 
@@ -3369,6 +3521,12 @@ func TestGetShardSnapshotsFromPod(t *testing.T) {
 			}
 
 			snapshots, err := r.getShardSnapshotsFromPod(t.Context(), job)
+			if tt.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectError))
+				g.Expect(snapshots).To(BeNil())
+				return
+			}
 			g.Expect(err).ToNot(HaveOccurred())
 			if tt.expected == nil {
 				g.Expect(snapshots).To(BeNil())
@@ -3616,4 +3774,151 @@ func TestParseShardSnapshots(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(snapshots).To(BeNil())
 	})
+}
+
+func TestBackupJobDeadlineSeconds(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		shards  int
+		storage hyperv1.HCPEtcdBackupStorageType
+		want    int64
+	}{
+		{"single shard S3 keeps the legacy 900s deadline", 1, hyperv1.S3BackupStorage, 900},
+		{"11 shards S3 scale per shard", 11, hyperv1.S3BackupStorage, 900 + 120*10},
+		{"single shard Azure gets the larger Azure base", 1, hyperv1.AzureBlobBackupStorage, 1200},
+		{"3 shards Azure scale per shard", 3, hyperv1.AzureBlobBackupStorage, 1200 + 300*2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			shards := make([]etcdShardInfo, tt.shards)
+			for i := range shards {
+				shards[i] = etcdShardInfo{name: fmt.Sprintf("etcd-%d", i)}
+			}
+			backup := newHCPEtcdBackup()
+			backup.Spec.Storage.StorageType = tt.storage
+			g.Expect(backupJobDeadlineSeconds(shards, backup)).To(Equal(tt.want))
+		})
+	}
+}
+
+func TestAttemptKeyPrefix(t *testing.T) {
+	t.Parallel()
+	t.Run("S3 with trailing slash in key prefix", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		backup.Spec.Storage.S3.KeyPrefix = "backups/"
+		g.Expect(attemptKeyPrefix(backup, 1700000000)).To(Equal("backups/1700000000"))
+	})
+	t.Run("Azure key prefix", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		backup.Spec.Storage.StorageType = hyperv1.AzureBlobBackupStorage
+		backup.Spec.Storage.AzureBlob.KeyPrefix = "backups"
+		g.Expect(attemptKeyPrefix(backup, 1700000000)).To(Equal("backups/1700000000"))
+	})
+	t.Run("empty key prefix matches etcd-upload key construction", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		backup.Spec.Storage.S3.KeyPrefix = ""
+		g.Expect(attemptKeyPrefix(backup, 1700000000)).To(Equal("/1700000000"))
+	})
+}
+
+func TestValidateShardSnapshotResults(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		snapshots []hyperv1.HCPEtcdShardSnapshot
+		expected  []string
+		want      []string // substrings expected in the problems
+	}{
+		{
+			name: "When the result set is complete, it should report no problems",
+			snapshots: []hyperv1.HCPEtcdShardSnapshot{
+				{Name: "etcd", SnapshotURL: "s3://b/etcd.db"},
+				{Name: "etcd-events", SnapshotURL: "s3://b/etcd-events.db"},
+			},
+			expected: []string{"etcd", "etcd-events"},
+		},
+		{
+			name: "When a shard result is missing, it should be reported",
+			snapshots: []hyperv1.HCPEtcdShardSnapshot{
+				{Name: "etcd", SnapshotURL: "s3://b/etcd.db"},
+			},
+			expected: []string{"etcd", "etcd-events"},
+			want:     []string{`missing result for shard "etcd-events"`},
+		},
+		{
+			name: "When shard results are duplicated, it should be reported",
+			snapshots: []hyperv1.HCPEtcdShardSnapshot{
+				{Name: "etcd", SnapshotURL: "s3://b/etcd.db"},
+				{Name: "etcd", SnapshotURL: "s3://b/etcd-2.db"},
+			},
+			expected: []string{"etcd"},
+			want:     []string{`duplicate results for shard "etcd"`},
+		},
+		{
+			name: "When a shard result is unexpected, it should be reported",
+			snapshots: []hyperv1.HCPEtcdShardSnapshot{
+				{Name: "etcd", SnapshotURL: "s3://b/etcd.db"},
+				{Name: "etcd-unknown", SnapshotURL: "s3://b/other.db"},
+			},
+			expected: []string{"etcd"},
+			want:     []string{`unexpected result for shard "etcd-unknown"`},
+		},
+		{
+			name:      "When the result set is empty, it should report every expected shard missing",
+			snapshots: nil,
+			expected:  []string{"etcd"},
+			want:      []string{`missing result for shard "etcd"`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			problems := validateShardSnapshotResults(tt.snapshots, tt.expected)
+			if len(tt.want) == 0 {
+				g.Expect(problems).To(BeEmpty())
+				return
+			}
+			for _, want := range tt.want {
+				g.Expect(problems).To(ContainElement(ContainSubstring(want)))
+			}
+		})
+	}
+}
+
+func TestExpectedShardNames(t *testing.T) {
+	t.Parallel()
+	t.Run("annotation on the Job wins", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{annotationExpectedShardSnapshots: "etcd,etcd-events"},
+		}}
+		hcp := newHostedControlPlane()
+		g.Expect(expectedShardNames(job, hcp)).To(Equal([]string{"etcd", "etcd-events"}))
+	})
+	t.Run("missing annotation falls back to the HCP shard list", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		job := &batchv1.Job{}
+		hcp := newHostedControlPlane()
+		g.Expect(expectedShardNames(job, hcp)).To(Equal(shardNames(etcdShards(hcp))))
+	})
+}
+func indexOf(slice []string, value string) int {
+	for i, v := range slice {
+		if v == value {
+			return i
+		}
+	}
+	return -1
 }

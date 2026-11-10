@@ -91,6 +91,36 @@ const (
 	// race is absorbed, while an orphaned waiter that will never resolve is
 	// eventually failed and cleaned up.
 	credentialWaitTimeout = 2 * time.Minute
+
+	// annotationExpectedShardSnapshots records, on the backup Job, the
+	// comma-separated shard names the Job was built to snapshot. The
+	// completion path requires exactly one snapshot result per recorded shard.
+	annotationExpectedShardSnapshots = "hypershift.openshift.io/expected-shard-snapshots"
+
+	// annotationResultExtractionAttempts counts, on the HCPEtcdBackup, how
+	// many times the completion path has tried to extract the shard snapshot
+	// results from the finished Job's pod. Bounded by maxResultExtractionAttempts.
+	annotationResultExtractionAttempts = "hypershift.openshift.io/result-extraction-attempts"
+
+	// maxResultExtractionAttempts bounds retries of transient failures while
+	// extracting shard snapshot results from the completed Job's pod (API
+	// errors, pod status lag). Once exceeded, the backup fails terminally.
+	maxResultExtractionAttempts = 5
+
+	// resultExtractionRetryInterval is the requeue delay between shard
+	// snapshot result extraction attempts.
+	resultExtractionRetryInterval = 30 * time.Second
+
+	// Backup Job deadline scaling. The single-shard S3 values preserve the
+	// previous fixed 900-second deadline; each additional shard adds time for
+	// its snapshot init container and upload. Azure Blob uploads get a larger
+	// base and per-shard allowance. These are initial values to be validated
+	// and tuned through E2E runs; the OADP orchestration timeout must be kept
+	// larger than the maximum Job deadline.
+	backupJobBaseDeadlineSeconds          int64 = 900
+	backupJobPerShardDeadlineSeconds      int64 = 120
+	azureBackupJobBaseDeadlineSeconds     int64 = 1200
+	azureBackupJobPerShardDeadlineSeconds int64 = 300
 )
 
 // HCPEtcdBackupReconciler reconciles HCPEtcdBackup resources by orchestrating
@@ -630,7 +660,17 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 			// The etcd-upload command writes JSON to /dev/termination-log.
 			shardSnapshots, err := r.getShardSnapshotsFromPod(ctx, job)
 			if err != nil {
-				logger.Error(err, "failed to read shard snapshots from pod termination message")
+				// Retry transient extraction failures (API errors, pod status
+				// lag) before failing the backup terminally. Success is never
+				// recorded without the per-shard results.
+				return r.retryShardSnapshotExtraction(ctx, backup, hcp, err)
+			}
+
+			// Require exactly one valid result per expected shard before
+			// recording terminal success: a partial or unexpected result set
+			// must not report BackupSucceeded.
+			if problems := validateShardSnapshotResults(shardSnapshots, expectedShardNames(job, hcp)); len(problems) > 0 {
+				return r.failIncompleteResults(ctx, backup, hcp, problems)
 			}
 
 			// Cleanup temporary RBAC and NetworkPolicy as soon as the Job completes.
@@ -641,14 +681,14 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 			}
 
 			// Populate status with shard snapshots and backward-compat SnapshotURL.
-			if len(shardSnapshots) > 0 {
-				backup.Status.ShardSnapshots = shardSnapshots
-				// Set the default shard's URL for backward compatibility.
-				for _, ss := range shardSnapshots {
-					if ss.Name == "etcd" {
-						backup.Status.SnapshotURL = ss.SnapshotURL
-						break
-					}
+			// The completeness check above guarantees exactly one result per
+			// expected shard, so the list is never empty here.
+			backup.Status.ShardSnapshots = shardSnapshots
+			// Set the default shard's URL for backward compatibility.
+			for _, ss := range shardSnapshots {
+				if ss.Name == "etcd" {
+					backup.Status.SnapshotURL = ss.SnapshotURL
+					break
 				}
 			}
 
@@ -665,16 +705,11 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 			// Propagate encryption metadata based on storage config
 			r.setEncryptionMetadata(backup)
 
-			successMessage := "Backup completed successfully"
-			if len(backup.Status.ShardSnapshots) == 0 {
-				successMessage = "Backup completed but snapshot URLs could not be extracted from the upload container termination message"
-			}
-
 			r.setCondition(backup, metav1.Condition{
 				Type:    string(hyperv1.BackupCompleted),
 				Status:  metav1.ConditionTrue,
 				Reason:  hyperv1.BackupSucceededReason,
-				Message: successMessage,
+				Message: "Backup completed successfully",
 			})
 
 			if err := r.Status().Update(ctx, backup); err != nil {
@@ -731,6 +766,90 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 	return ctrl.Result{RequeueAfter: requeueInterval}, nil
 }
 
+// retryShardSnapshotExtraction handles a failed attempt to extract the shard
+// snapshot results from a completed backup Job. Transient failures (API
+// errors, pod status lag) are retried up to maxResultExtractionAttempts times
+// before the backup is failed terminally, so a completed backup never records
+// success without its per-shard results.
+func (r *HCPEtcdBackupReconciler) retryShardSnapshotExtraction(ctx context.Context, backup *hyperv1.HCPEtcdBackup, hcp *hyperv1.HostedControlPlane, extractionErr error) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	attempts := 1
+	if v, ok := backup.Annotations[annotationResultExtractionAttempts]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			attempts = n + 1
+		}
+	}
+
+	if attempts >= maxResultExtractionAttempts {
+		message := fmt.Sprintf("failed to extract shard snapshot results from the completed backup Job after %d attempts: %v", attempts, extractionErr)
+		if err := r.cleanupResources(ctx, backup); err != nil {
+			logger.Error(err, "failed to cleanup resources after failed result extraction")
+		}
+		r.setCondition(backup, metav1.Condition{
+			Type:    string(hyperv1.BackupCompleted),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.BackupResultExtractionFailedReason,
+			Message: message,
+		})
+		if err := r.Status().Update(ctx, backup); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+		}
+		if err := r.updateHCPBackupCondition(ctx, hcp, metav1.Condition{
+			Type:    string(hyperv1.EtcdBackupSucceeded),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.BackupResultExtractionFailedReason,
+			Message: fmt.Sprintf("Backup %q failed: %s", backup.Name, message),
+		}); err != nil {
+			logger.Error(err, "failed to update HCP backup condition")
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Record the attempt on the backup and requeue; the next reconcile
+	// re-runs handleJobStatus against the completed Job.
+	base := backup.DeepCopy()
+	if backup.Annotations == nil {
+		backup.Annotations = map[string]string{}
+	}
+	backup.Annotations[annotationResultExtractionAttempts] = strconv.Itoa(attempts)
+	if err := r.Patch(ctx, backup, client.MergeFrom(base)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to record result extraction attempt: %w", err)
+	}
+	logger.Error(extractionErr, "failed to read shard snapshots from pod termination message; retrying", "attempt", attempts)
+	return ctrl.Result{RequeueAfter: resultExtractionRetryInterval}, nil
+}
+
+// failIncompleteResults marks the backup terminally failed because the
+// completed Job's shard snapshot results do not contain exactly one valid
+// entry per expected shard.
+func (r *HCPEtcdBackupReconciler) failIncompleteResults(ctx context.Context, backup *hyperv1.HCPEtcdBackup, hcp *hyperv1.HostedControlPlane, problems []string) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	message := fmt.Sprintf("backup Job completed but shard snapshot results are incomplete: %s", strings.Join(problems, "; "))
+	if err := r.cleanupResources(ctx, backup); err != nil {
+		logger.Error(err, "failed to cleanup resources after incomplete backup results")
+	}
+	r.setCondition(backup, metav1.Condition{
+		Type:    string(hyperv1.BackupCompleted),
+		Status:  metav1.ConditionFalse,
+		Reason:  hyperv1.BackupResultIncompleteReason,
+		Message: message,
+	})
+	if err := r.Status().Update(ctx, backup); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+	if err := r.updateHCPBackupCondition(ctx, hcp, metav1.Condition{
+		Type:    string(hyperv1.EtcdBackupSucceeded),
+		Status:  metav1.ConditionFalse,
+		Reason:  hyperv1.BackupResultIncompleteReason,
+		Message: fmt.Sprintf("Backup %q failed: %s", backup.Name, message),
+	}); err != nil {
+		logger.Error(err, "failed to update HCP backup condition")
+	}
+	return ctrl.Result{}, nil
+}
+
 // getShardSnapshotsFromPod reads the per-shard snapshot URLs from the upload
 // container's termination message in the Pod controlled by the given Job.
 // The termination message is a JSON array of {"name":"...","url":"..."}.
@@ -754,7 +873,11 @@ func (r *HCPEtcdBackupReconciler) getShardSnapshotsFromPod(ctx context.Context, 
 			}
 		}
 	}
-	return nil, nil
+	// The Job is complete, so the upload container must have terminated and
+	// written its results. An absent pod or empty message is an extraction
+	// failure the caller retries (and eventually fails the backup on), not a
+	// silent success with missing results.
+	return nil, fmt.Errorf("no terminated upload container termination message found for job %q", job.Name)
 }
 
 // shardSnapshotJSON is the JSON format written by the etcd-upload command.
@@ -1063,6 +1186,15 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 		return fmt.Errorf("failed to build upload args: %w", err)
 	}
 
+	// Generate the attempt timestamp here so the exact object key prefix is
+	// known before the Job runs, and pass it to etcd-upload: the controller
+	// records it in the backup status (attemptKeyPrefix) so operators can
+	// identify, and clean up, objects left behind by failed attempts without
+	// needing signed URLs.
+	attemptTimestamp := time.Now().Unix()
+	uploadArgs = append(uploadArgs, "--attempt-timestamp", strconv.FormatInt(attemptTimestamp, 10))
+	backup.Status.AttemptKeyPrefix = attemptKeyPrefix(backup, attemptTimestamp)
+
 	jobLabels := map[string]string{
 		LabelApp:          LabelName,
 		labelHCP:          hcp.Name,
@@ -1083,10 +1215,16 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 			GenerateName: fmt.Sprintf("etcd-backup-%s-", backup.Name),
 			Namespace:    r.OperatorNamespace,
 			Labels:       jobLabels,
+			Annotations: map[string]string{
+				// Record the shard set this Job was built to snapshot so the
+				// completion path can require exactly one result per shard,
+				// even if the HCP spec changes while the Job runs.
+				annotationExpectedShardSnapshots: strings.Join(shardNames(shards), ","),
+			},
 		},
 		Spec: batchv1.JobSpec{
 			TTLSecondsAfterFinished: ptr.To[int32](600),
-			ActiveDeadlineSeconds:   ptr.To[int64](900),
+			ActiveDeadlineSeconds:   ptr.To[int64](backupJobDeadlineSeconds(shards, backup)),
 			BackoffLimit:            ptr.To[int32](0),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1106,6 +1244,84 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 	}
 
 	return r.Create(ctx, job)
+}
+
+// shardNames returns the names of the given shards.
+func shardNames(shards []etcdShardInfo) []string {
+	names := make([]string, 0, len(shards))
+	for _, s := range shards {
+		names = append(names, s.name)
+	}
+	return names
+}
+
+// expectedShardNames returns the shard names a completed backup Job is
+// expected to have snapshotted. It prefers the annotation recorded when the
+// Job was created; Jobs created before the annotation existed fall back to
+// the shards currently configured on the HCP.
+func expectedShardNames(job *batchv1.Job, hcp *hyperv1.HostedControlPlane) []string {
+	if v, ok := job.Annotations[annotationExpectedShardSnapshots]; ok && v != "" {
+		return strings.Split(v, ",")
+	}
+	return shardNames(etcdShards(hcp))
+}
+
+// validateShardSnapshotResults requires exactly one result per expected
+// shard and reports any missing, duplicate, or unexpected entries. Entries
+// the parser dropped as invalid (unsupported scheme, unnamed) surface here
+// as missing shards rather than being silently ignored.
+func validateShardSnapshotResults(snapshots []hyperv1.HCPEtcdShardSnapshot, expected []string) []string {
+	counts := make(map[string]int, len(snapshots))
+	for _, s := range snapshots {
+		counts[s.Name]++
+	}
+	expectedSet := make(map[string]struct{}, len(expected))
+	for _, name := range expected {
+		expectedSet[name] = struct{}{}
+	}
+	var problems []string
+	for _, name := range expected {
+		switch counts[name] {
+		case 0:
+			problems = append(problems, fmt.Sprintf("missing result for shard %q", name))
+		case 1:
+		default:
+			problems = append(problems, fmt.Sprintf("duplicate results for shard %q", name))
+		}
+	}
+	for name, n := range counts {
+		if _, ok := expectedSet[name]; !ok && n > 0 {
+			problems = append(problems, fmt.Sprintf("unexpected result for shard %q", name))
+		}
+	}
+	return problems
+}
+
+// backupJobDeadlineSeconds returns the backup Job's active deadline. The
+// deadline scales with the shard count and storage provider: see the
+// backupJob*DeadlineSeconds constants.
+func backupJobDeadlineSeconds(shards []etcdShardInfo, backup *hyperv1.HCPEtcdBackup) int64 {
+	base, perShard := backupJobBaseDeadlineSeconds, backupJobPerShardDeadlineSeconds
+	if backup.Spec.Storage.StorageType == hyperv1.AzureBlobBackupStorage {
+		base, perShard = azureBackupJobBaseDeadlineSeconds, azureBackupJobPerShardDeadlineSeconds
+	}
+	return base + perShard*int64(len(shards)-1)
+}
+
+// attemptKeyPrefix returns the object key prefix for a backup attempt: the
+// storage keyPrefix from the spec joined with the attempt timestamp. Objects
+// written by the attempt are <prefix>.db (single shard) or <prefix>/<shard>.db
+// (multi shard).
+func attemptKeyPrefix(backup *hyperv1.HCPEtcdBackup, timestamp int64) string {
+	var keyPrefix string
+	switch backup.Spec.Storage.StorageType {
+	case hyperv1.S3BackupStorage:
+		keyPrefix = backup.Spec.Storage.S3.KeyPrefix
+	case hyperv1.AzureBlobBackupStorage:
+		keyPrefix = backup.Spec.Storage.AzureBlob.KeyPrefix
+	}
+	keyPrefix = strings.TrimSuffix(keyPrefix, "/")
+	return fmt.Sprintf("%s/%d", keyPrefix, timestamp)
 }
 
 // resolveControlPlaneOperatorImage resolves the CPO image for the given HCP,
