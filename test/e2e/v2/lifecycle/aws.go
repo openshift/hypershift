@@ -267,7 +267,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			// the rotation tests skip themselves via applies().
 			Variant:     "kms-reencryption",
 			DestroyArgs: destroyArgs,
-			CreateArgs:  clusterArgs(kmsKeyARNArgs...),
+			CreateArgs:  clusterArgs(slices.Concat([]string{"--public-only"}, kmsKeyARNArgs)...),
 		},
 	}
 

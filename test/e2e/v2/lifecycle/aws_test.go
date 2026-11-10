@@ -32,10 +32,10 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 		t.Setenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS", "")
 		g := NewWithT(t)
 		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
-		g.Expect(specs).To(HaveLen(10))
+		g.Expect(specs).To(HaveLen(11))
 		for _, spec := range specs {
 			switch spec.Variant {
-			case "public", "public-rollouts", "managed-dns", "upgrade", "autoscaling", "external-oidc", "image-mirroring", "etcd-sharded":
+			case "public", "public-rollouts", "managed-dns", "upgrade", "autoscaling", "external-oidc", "image-mirroring", "etcd-sharded", "kms-reencryption":
 				g.Expect(spec.CreateArgs).To(ContainElement("--public-only"), "variant %s", spec.Variant)
 			case "karpenter", "karpenter-upgrade":
 				g.Expect(spec.CreateArgs).NotTo(ContainElement("--public-only"), "variant %s", spec.Variant)
@@ -102,8 +102,8 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 		// separate shells, so any env-var-conditional variant would produce different
 		// plans in the two steps and cause a mismatch.
 		wantVariants := []string{
-			"autoscaling", "external-oidc", "image-mirroring", "karpenter",
-			"karpenter-upgrade", "kms-reencryption", "managed-dns", "public", "upgrade",
+			"autoscaling", "etcd-sharded", "external-oidc", "image-mirroring", "karpenter",
+			"karpenter-upgrade", "kms-reencryption", "managed-dns", "public", "public-rollouts", "upgrade",
 		}
 		for _, arn := range []string{"", "arn:aws:kms:us-east-1:123456789012:key/test-key"} {
 			t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", arn)
