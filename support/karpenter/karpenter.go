@@ -68,6 +68,19 @@ func KarpenterBaseTaintMap() map[string]interface{} {
 	}
 }
 
+// KarpenterBaseTaintTolerations returns tolerations for KarpenterBaseTaints.
+func KarpenterBaseTaintTolerations() []corev1.Toleration {
+	tolerations := make([]corev1.Toleration, 0, len(KarpenterBaseTaints))
+	for _, taint := range KarpenterBaseTaints {
+		tolerations = append(tolerations, corev1.Toleration{
+			Key:      taint.Key,
+			Operator: corev1.TolerationOpExists,
+			Effect:   taint.Effect,
+		})
+	}
+	return tolerations
+}
+
 // KarpenterTaintConfigManifest returns the KubeletConfig CR YAML for the set-karpenter-taint ConfigMap.
 func KarpenterTaintConfigManifest() (string, error) {
 	cr := map[string]interface{}{
