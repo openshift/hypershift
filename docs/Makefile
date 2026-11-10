@@ -1,5 +1,5 @@
 RUNTIME ?= $(shell sh ../hack/utils.sh get_container_engine)
-IMG ?= docker.io/zensical/zensical:0.0.51
+IMG ?= docker.io/zensical/zensical:0.0.74
 
 .PHONY: build
 build:
