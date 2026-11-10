@@ -255,7 +255,9 @@ type HCPEtcdBackupStatus struct {
 
 // HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.
 type HCPEtcdShardSnapshot struct {
-	// name is the shard name (e.g., "etcd" for the default, "etcd-events" for a named shard).
+	// name is the public shard identity: "default" for the default shard,
+	// or the exact ManagedEtcdShardSpec.name for a named shard
+	// (e.g., "events").
 	// It must be between 1 and 63 characters.
 	// +required
 	// +kubebuilder:validation:MinLength=1

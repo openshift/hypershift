@@ -10354,7 +10354,9 @@ string
 </em>
 </td>
 <td>
-<p>name is the shard name (e.g., &ldquo;etcd&rdquo; for the default, &ldquo;etcd-events&rdquo; for a named shard).
+<p>name is the public shard identity: &ldquo;default&rdquo; for the default shard,
+or the exact ManagedEtcdShardSpec.name for a named shard
+(e.g., &ldquo;events&rdquo;).
 It must be between 1 and 63 characters.</p>
 </td>
 </tr>
@@ -14351,9 +14353,12 @@ string
 <td>
 <p>name is a unique identifier for this shard. It is used to derive
 resource names (e.g., StatefulSet &ldquo;etcd-{name}&rdquo;, Service
-&ldquo;etcd-client-{name}&rdquo;).
+&ldquo;etcd-client-{name}&rdquo;), and it is the identity reported for the shard in
+HCPEtcdBackup.status.shardSnapshots (the default shard is reported as
+&ldquo;default&rdquo; instead).
 Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
 starting and ending with an alphanumeric character), max 48 characters.
+Must not be &ldquo;default&rdquo;, which is reserved for the default shard.
 Immutable once set.</p>
 </td>
 </tr>

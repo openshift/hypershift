@@ -2359,14 +2359,18 @@ type EtcdShardResource struct {
 type ManagedEtcdShardSpec struct {
 	// name is a unique identifier for this shard. It is used to derive
 	// resource names (e.g., StatefulSet "etcd-{name}", Service
-	// "etcd-client-{name}").
+	// "etcd-client-{name}"), and it is the identity reported for the shard in
+	// HCPEtcdBackup.status.shardSnapshots (the default shard is reported as
+	// "default" instead).
 	// Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
 	// starting and ending with an alphanumeric character), max 48 characters.
+	// Must not be "default", which is reserved for the default shard.
 	// Immutable once set.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=48
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="name must be a valid DNS1123 label: lowercase alphanumeric with hyphens, starting and ending with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule="self != 'default'",message="name 'default' is reserved for the default shard"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="name is immutable"
 	Name string `json:"name,omitempty"`
 

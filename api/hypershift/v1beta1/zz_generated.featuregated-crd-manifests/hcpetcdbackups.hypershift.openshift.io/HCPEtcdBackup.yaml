@@ -413,7 +413,9 @@ spec:
                   properties:
                     name:
                       description: |-
-                        name is the shard name (e.g., "etcd" for the default, "etcd-events" for a named shard).
+                        name is the public shard identity: "default" for the default shard,
+                        or the exact ManagedEtcdShardSpec.name for a named shard
+                        (e.g., "events").
                         It must be between 1 and 63 characters.
                       maxLength: 63
                       minLength: 1

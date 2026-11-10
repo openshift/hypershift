@@ -509,10 +509,10 @@ tests:
           lastTransitionTime: "2024-01-01T00:00:00Z"
         snapshotURL: "s3://my-backup-bucket/backups/etcd/snapshot.db"
         shardSnapshots:
-        - name: etcd
-          snapshotURL: "s3://my-backup-bucket/backups/etcd/etcd.db"
-        - name: etcd-events
-          snapshotURL: "s3://my-backup-bucket/backups/etcd/etcd-events.db"
+        - name: default
+          snapshotURL: "s3://my-backup-bucket/backups/etcd/default.db"
+        - name: events
+          snapshotURL: "s3://my-backup-bucket/backups/etcd/events.db"
     expected: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HCPEtcdBackup
@@ -534,10 +534,10 @@ tests:
           lastTransitionTime: "2024-01-01T00:00:00Z"
         snapshotURL: "s3://my-backup-bucket/backups/etcd/snapshot.db"
         shardSnapshots:
-        - name: etcd
-          snapshotURL: "s3://my-backup-bucket/backups/etcd/etcd.db"
-        - name: etcd-events
-          snapshotURL: "s3://my-backup-bucket/backups/etcd/etcd-events.db"
+        - name: default
+          snapshotURL: "s3://my-backup-bucket/backups/etcd/default.db"
+        - name: events
+          snapshotURL: "s3://my-backup-bucket/backups/etcd/events.db"
 
   - name: When shardSnapshots entry has invalid snapshotURL scheme it should fail
     initial: |
@@ -572,6 +572,6 @@ tests:
           message: Backup completed
           lastTransitionTime: "2024-01-01T00:00:00Z"
         shardSnapshots:
-        - name: etcd
+        - name: default
           snapshotURL: "http://invalid-scheme/snapshot.db"
     expectedStatusError: "snapshotURL must be a valid URL with scheme https or s3"
