@@ -291,9 +291,17 @@ func runRotationTest(g Gomega, tc *internal.TestContext, rc rotationCase) {
 		})
 	})
 
+	mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
+
 	kasBaseline := captureKASRestartCounts(g, ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 	rotateAndWait(g, ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
 		rc.setActiveKey(hc, alternate)
+	}, func(g Gomega) {
+		// Mid-rotation: check stage-1 KAS pod logs while they still exist. The
+		// write-promotion rollout (stage 2) will replace these pods before the
+		// rotation completes, so post-rotation checks cannot see their logs.
+		verifyKASLogsNoDecryptionErrors(g, ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 	})
 
 	g.Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
@@ -301,8 +309,6 @@ func runRotationTest(g Gomega, tc *internal.TestContext, rc rotationCase) {
 	rc.verifyProviderField(hc, alternate)
 
 	verifyKASHealth(g, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kasBaseline)
-	mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
 	verifyKASLogsNoDecryptionErrors(g, ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 
 	g.Eventually(func(g Gomega) {
@@ -315,7 +321,11 @@ func runRotationTest(g Gomega, tc *internal.TestContext, rc rotationCase) {
 // If the mutation produces no diff (spec already at the desired key), rotateAndWait
 // skips the patch but still waits for any in-progress rotation to complete before
 // returning — the spec can already match the target while a rotation is still running.
-func rotateAndWait(g Gomega, ctx context.Context, tc *internal.TestContext, hcKey crclient.ObjectKey, mutate func(*hyperv1.HostedCluster)) {
+//
+// midRotation callbacks, if provided, are called after waitForReEncryptionStarted and
+// before waitForReEncryptionComplete. This window captures stage-1 KAS pods (read-only
+// rollout) before the write-promotion rollout replaces them.
+func rotateAndWait(g Gomega, ctx context.Context, tc *internal.TestContext, hcKey crclient.ObjectKey, mutate func(*hyperv1.HostedCluster), midRotation ...func(Gomega)) {
 	GinkgoHelper()
 	hc := &hyperv1.HostedCluster{}
 	g.Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
@@ -344,6 +354,9 @@ func rotateAndWait(g Gomega, ctx context.Context, tc *internal.TestContext, hcKe
 	mutate(hc)
 	g.Expect(tc.MgmtClient.Patch(ctx, hc, crclient.MergeFrom(base))).To(Succeed())
 	waitForReEncryptionStarted(g, ctx, tc.MgmtClient, hcKey, 5*time.Minute)
+	for _, fn := range midRotation {
+		fn(g)
+	}
 	waitForReEncryptionComplete(g, ctx, tc.MgmtClient, hcKey, 25*time.Minute)
 }
 
@@ -488,10 +501,15 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				preRotation1Time = hc.Status.SecretEncryption.History[0].CompletionTime
 			}
 
+			mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
+			Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
+
 			By("Performing first key rotation: original -> alternate")
 			kas1Baseline := captureKASRestartCounts(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			rotateAndWait(Default, ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
 				hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion = alternateVersion
+			}, func(g Gomega) {
+				verifyKASLogsNoDecryptionErrors(g, ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 			})
 
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
@@ -502,8 +520,6 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				"first rotation must produce a new history entry with a later CompletionTime than the pre-rotation baseline")
 
 			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas1Baseline)
-			mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
-			Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
 			verifyKASLogsNoDecryptionErrors(Default, ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 			Eventually(func(g Gomega) {
 				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
@@ -516,6 +532,8 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			kas2Baseline := captureKASRestartCounts(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			rotateAndWait(Default, ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
 				hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion = originalVersion
+			}, func(g Gomega) {
+				verifyKASLogsNoDecryptionErrors(g, ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 			})
 
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
