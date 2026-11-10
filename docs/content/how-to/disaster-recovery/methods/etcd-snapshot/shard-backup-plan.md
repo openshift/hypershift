@@ -270,7 +270,9 @@ type ManagedEtcdShardSpec struct {
     // When set, it must be between 1 and 1024 characters.
     // When omitted, the shard starts with an empty data directory and no
     // snapshot is restored.
-    // It must be a URL with scheme https or s3.
+    // It must be a URL with scheme https: s3:// URLs must be presigned to
+    // https before being injected (the OADP plugin does this automatically),
+    // because the restore init container fetches the snapshot with curl.
     // It is not allowed when storage.type is EmptyDir, because EmptyDir shards
     // are ephemeral and a restored snapshot would be lost on pod restart.
     // It cannot be added or removed after creation.
@@ -278,7 +280,7 @@ type ManagedEtcdShardSpec struct {
     // +kubebuilder:validation:MinLength=1
     // +kubebuilder:validation:MaxLength=1024
     // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="restoreSnapshotURL is immutable"
-    // +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="restoreSnapshotURL must be a valid URL with scheme https or s3"
+    // +kubebuilder:validation:XValidation:rule="self.matches('^https://.*')",message="restoreSnapshotURL must be a valid URL with scheme https"
     RestoreSnapshotURL string `json:"restoreSnapshotURL,omitempty"`
 }
 ```

@@ -14468,7 +14468,9 @@ length of a snapshot URL recorded in HCPEtcdBackup status (presigned URLs
 with signature query parameters can be long).
 When omitted, the shard starts with an empty data directory and no
 snapshot is restored.
-It must be a URL with scheme https or s3.
+It must be a URL with scheme https: s3:// URLs must be presigned to
+https before being injected (the OADP plugin does this automatically),
+because the restore init container fetches the snapshot with curl.
 It is not allowed when storage.type is EmptyDir, because EmptyDir shards
 are ephemeral and a restored snapshot would be lost on pod restart.
 It cannot be added or removed after creation.</p>
@@ -14702,7 +14704,10 @@ availability configuration).</p>
 an etcd snapshot can be downloaded, for example a pre-signed URL
 referencing a storage service.
 This snapshot will be restored on initial startup, only when the etcd PV
-is empty.</p>
+is empty.
+The URL must use the https scheme: s3:// URLs must be presigned to https
+before being injected (the OADP plugin does this automatically), because
+the restore init container fetches the snapshot with curl.</p>
 </td>
 </tr>
 </tbody>
