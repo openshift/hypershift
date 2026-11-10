@@ -24,6 +24,13 @@ const (
 	defaultMaxRequestsInflight         = 3000
 	defaultMaxMutatingRequestsInflight = 1000
 	defaultGoAwayChance                = 0.001
+
+	// defaultEventTTL is the --event-ttl the kube-apiserver runs with when
+	// spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes is unset. It is expressed in
+	// minutes rather than the equivalent "3h" so that it is lexically identical to the value
+	// rendered for eventTTLMinutes: 180; otherwise explicitly requesting the default value
+	// would rewrite the rendered config and roll the kube-apiserver for no semantic change.
+	defaultEventTTL = "180m"
 )
 
 type KubeAPIServerConfigParams struct {
@@ -55,6 +62,7 @@ type KubeAPIServerConfigParams struct {
 	MaxRequestsInflight              string
 	MaxMutatingRequestsInflight      string
 	GoAwayChance                     string
+	EventTTL                         string
 }
 
 func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
@@ -148,6 +156,8 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 		kasConfig.GoAwayChance = hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]
 	}
 
+	kasConfig.EventTTL = resolveEventTTL(hcp)
+
 	if maxTokenExpiration := hcp.Annotations[hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration]; maxTokenExpiration != "" {
 		kasConfig.ServiceAccountMaxTokenExpiration = maxTokenExpiration
 	}
@@ -157,6 +167,18 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 	}
 
 	return kasConfig
+}
+
+// resolveEventTTL returns the --event-ttl value for the kube-apiserver, always as a whole number
+// of minutes ("30m", "180m"), matching the unit of the API field. The platform owns the default,
+// so spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes carries no CRD default and its zero
+// value means "no opinion". The field is bounded to [5, 180] by the CRD schema, so an
+// out-of-range value is rejected at admission and never reaches this code.
+func resolveEventTTL(hcp *hyperv1.HostedControlPlane) string {
+	if hcp.Spec.OperatorConfiguration != nil && hcp.Spec.OperatorConfiguration.KubeAPIServer.EventTTLMinutes > 0 {
+		return fmt.Sprintf("%dm", hcp.Spec.OperatorConfiguration.KubeAPIServer.EventTTLMinutes)
+	}
+	return defaultEventTTL
 }
 
 func tlsSecurityProfile(configuration *hyperv1.ClusterConfiguration) *configv1.TLSSecurityProfile {
