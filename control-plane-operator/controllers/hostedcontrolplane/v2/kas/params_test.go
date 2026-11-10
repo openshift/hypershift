@@ -9,12 +9,14 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/support/config"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fgtesting "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
 )
 
@@ -137,7 +139,10 @@ func TestNewConfigParams(t *testing.T) {
 		name         string
 		hcp          *hyperv1.HostedControlPlane
 		featureGates []string
-		expected     func(*hyperv1.HostedControlPlane, []string) KubeAPIServerConfigParams
+		// etcdPerMemberEndpoints explicitly sets the process-global CPO feature
+		// gate for this case. It must only be used in this non-parallel test.
+		etcdPerMemberEndpoints *bool
+		expected               func(*hyperv1.HostedControlPlane, []string) KubeAPIServerConfigParams
 	}{
 		{
 			name: "When no custom configuration is provided, it should use defaults",
@@ -193,10 +198,96 @@ func TestNewConfigParams(t *testing.T) {
 				hcp.Namespace = "test-namespace"
 				return hcp
 			}(),
+			etcdPerMemberEndpoints: ptr.To(false),
 			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
 				params := defaultKubeAPIServerConfigParams()
 				params.FeatureGates = featureGates
 				params.EtcdURL = "https://etcd-client.test-namespace.svc:2379"
+				return params
+			},
+		},
+		{
+			name: "When etcd is managed and per-member endpoints are enabled, it should set etcd URL to all member endpoints",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Etcd.ManagementType = hyperv1.Managed
+				hcp.Namespace = "test-namespace"
+				return hcp
+			}(),
+			etcdPerMemberEndpoints: ptr.To(true),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.EtcdURL = "https://etcd-0.etcd-discovery.test-namespace.svc:2379,https://etcd-1.etcd-discovery.test-namespace.svc:2379,https://etcd-2.etcd-discovery.test-namespace.svc:2379"
+				return params
+			},
+		},
+		{
+			name: "When etcd is managed with SingleReplica and per-member endpoints are enabled, it should set the single member endpoint",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Etcd.ManagementType = hyperv1.Managed
+				hcp.Spec.ControllerAvailabilityPolicy = hyperv1.SingleReplica
+				hcp.Namespace = "test-namespace"
+				return hcp
+			}(),
+			etcdPerMemberEndpoints: ptr.To(true),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.EtcdURL = "https://etcd-0.etcd-discovery.test-namespace.svc:2379"
+				params.GoAwayChance = "0"
+				return params
+			},
+		},
+		{
+			name: "When etcd is unmanaged and per-member endpoints are enabled, it should use the external endpoint unchanged",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Etcd.ManagementType = hyperv1.Unmanaged
+				hcp.Spec.Etcd.Unmanaged = &hyperv1.UnmanagedEtcdSpec{
+					Endpoint: "https://external-etcd:2379",
+				}
+				return hcp
+			}(),
+			etcdPerMemberEndpoints: ptr.To(true),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.EtcdURL = "https://external-etcd:2379"
+				return params
+			},
+		},
+		{
+			name: "When managed etcd has shards and per-member endpoints are enabled, it should configure member endpoints and server overrides",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Etcd.ManagementType = hyperv1.Managed
+				hcp.Namespace = "test-namespace"
+				hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+					Storage: hyperv1.ManagedEtcdStorageSpec{
+						Type: hyperv1.PersistentVolumeEtcdStorage,
+					},
+					Shards: []hyperv1.ManagedEtcdShardSpec{
+						{
+							Name: "events",
+							Resources: []hyperv1.EtcdShardResource{
+								{APIGroup: ptr.To(""), Resource: "events"},
+							},
+							Replicas: 1,
+						},
+					},
+				}
+				return hcp
+			}(),
+			etcdPerMemberEndpoints: ptr.To(true),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.EtcdURL = "https://etcd-0.etcd-discovery.test-namespace.svc:2379,https://etcd-1.etcd-discovery.test-namespace.svc:2379,https://etcd-2.etcd-discovery.test-namespace.svc:2379"
+				params.EtcdServersOverrides = []string{
+					"/events#https://etcd-client-events.test-namespace.svc:2379",
+				}
 				return params
 			},
 		},
@@ -574,6 +665,10 @@ func TestNewConfigParams(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+
+			if tc.etcdPerMemberEndpoints != nil {
+				fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), featuregates.EtcdPerMemberEndpoints, *tc.etcdPerMemberEndpoints)
+			}
 
 			actual := NewConfigParams(tc.hcp, tc.featureGates)
 			expected := tc.expected(tc.hcp, tc.featureGates)

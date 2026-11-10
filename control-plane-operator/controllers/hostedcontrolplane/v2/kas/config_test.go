@@ -739,6 +739,22 @@ func TestGenerateConfig(t *testing.T) {
 		require.NotContains(t, kasConfig.APIServerArguments, "authentication-config")
 		require.Empty(t, kasConfig.AuthConfig.OAuthMetadataFile)
 	})
+
+	t.Run("When per-member etcd endpoints are enabled, it should render all member endpoints as etcd-servers", func(t *testing.T) {
+		fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), featuregates.EtcdPerMemberEndpoints, true)
+
+		hcp := createDefaultHostedControlPlane()
+		hcp.Spec.Etcd.ManagementType = hyperv1.Managed
+		hcp.Namespace = "test-namespace"
+
+		params := NewConfigParams(hcp, nil)
+		kasConfig, err := generateConfig(params)
+		require.NoError(t, err)
+
+		require.Equal(t, kcpv1.Arguments{
+			"https://etcd-0.etcd-discovery.test-namespace.svc:2379,https://etcd-1.etcd-discovery.test-namespace.svc:2379,https://etcd-2.etcd-discovery.test-namespace.svc:2379",
+		}, kasConfig.APIServerArguments["etcd-servers"])
+	})
 }
 
 func TestKubernetesVersionForFeatureGates(t *testing.T) {

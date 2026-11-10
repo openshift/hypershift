@@ -14,6 +14,7 @@ const (
 	ExternalOIDCWithUpstreamParity           featuregate.Feature = "ExternalOIDCWithUpstreamParity"
 	KubeletHAProxyRouting                    featuregate.Feature = "KubeletHAProxyRouting"
 	ExternalOIDCAsWebhook                    featuregate.Feature = "ExternalOIDCAsWebhook"
+	EtcdPerMemberEndpoints                   featuregate.Feature = "EtcdPerMemberEndpoints"
 )
 
 // Initialize new features here
@@ -24,6 +25,7 @@ var (
 	externalOIDCWithUpstreamParityFeature           = featuregates.NewFeature(ExternalOIDCWithUpstreamParity, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	kubeletHAProxyRoutingFeature                    = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	externalOIDCAsWebhook                           = featuregates.NewFeature(ExternalOIDCAsWebhook, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	etcdPerMemberEndpointsFeature                   = featuregates.NewFeature(EtcdPerMemberEndpoints, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -32,6 +34,7 @@ func init() {
 	allFeatures.AddFeature(externalOIDCWithUpstreamParityFeature)
 	allFeatures.AddFeature(kubeletHAProxyRoutingFeature)
 	allFeatures.AddFeature(externalOIDCAsWebhook)
+	allFeatures.AddFeature(etcdPerMemberEndpointsFeature)
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
 }
