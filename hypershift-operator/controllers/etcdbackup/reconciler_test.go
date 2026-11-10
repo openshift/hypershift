@@ -1261,7 +1261,7 @@ func TestBuildUploadArgs(t *testing.T) {
 	}
 
 	// Default single shard for backward-compat tests
-	singleShard := []etcdShardInfo{{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"}}
+	singleShard := []etcdShardInfo{{name: "etcd", identity: "default", endpoint: "https://etcd-client.test-ns.svc:2379"}}
 
 	// Verify single-shard uses --snapshot-path for backward compat
 	t.Run("When single shard it should use --snapshot-path for backward compatibility", func(t *testing.T) {
@@ -1278,8 +1278,8 @@ func TestBuildUploadArgs(t *testing.T) {
 		g := NewGomegaWithT(t)
 		r := newReconciler()
 		multiShards := []etcdShardInfo{
-			{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"},
-			{name: "etcd-events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
+			{name: "etcd", identity: "default", endpoint: "https://etcd-client.test-ns.svc:2379"},
+			{name: "etcd-events", identity: "events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
 		}
 		args, err := r.buildUploadArgs(newHCPEtcdBackup(), multiShards, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
 		g.Expect(err).ToNot(HaveOccurred())
@@ -1294,7 +1294,7 @@ func TestBuildUploadArgs(t *testing.T) {
 	t.Run("When 11 shards it should pass the pod-level effective termination message limit", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		r := newReconciler()
-		shards := []etcdShardInfo{{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"}}
+		shards := []etcdShardInfo{{name: "etcd", identity: "default", endpoint: "https://etcd-client.test-ns.svc:2379"}}
 		for i := 0; i < 10; i++ {
 			shards = append(shards, etcdShardInfo{
 				name:     fmt.Sprintf("etcd-shard-%d", i),
@@ -1310,8 +1310,8 @@ func TestBuildUploadArgs(t *testing.T) {
 		g := NewGomegaWithT(t)
 		r := newReconciler()
 		shards := []etcdShardInfo{
-			{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"},
-			{name: "etcd-events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
+			{name: "etcd", identity: "default", endpoint: "https://etcd-client.test-ns.svc:2379"},
+			{name: "etcd-events", identity: "events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
 		}
 		args, err := r.buildUploadArgs(newHCPEtcdBackup(), shards, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
 		g.Expect(err).ToNot(HaveOccurred())
@@ -1784,7 +1784,7 @@ func TestCreateBackupJob(t *testing.T) {
 		g.Expect(fetchCerts.Command).To(ContainElements("fetch-etcd-certs", "--hcp-namespace", testHCPNamespace))
 
 		snapshot := podSpec.InitContainers[1]
-		g.Expect(snapshot.Name).To(Equal("snapshot-etcd"))
+		g.Expect(snapshot.Name).To(Equal("snapshot-default"))
 		g.Expect(snapshot.Image).To(Equal(testEtcdImage))
 		g.Expect(snapshot.Command).To(ContainElement("/usr/bin/etcdctl"))
 		g.Expect(snapshot.Command).To(ContainElement("snapshot"))
@@ -2135,7 +2135,7 @@ func TestCreateBackupJob(t *testing.T) {
 		job := &jobList.Items[0]
 
 		// The expected shard set is recorded on the Job for the completion path.
-		g.Expect(job.Annotations[annotationExpectedShardSnapshots]).To(Equal("etcd"))
+		g.Expect(job.Annotations[annotationExpectedShardSnapshots]).To(Equal("default"))
 
 		// The upload container receives the attempt timestamp used in object keys.
 		var uploadArgs []string
@@ -2941,7 +2941,7 @@ func TestHandleJobStatusEdgeCases(t *testing.T) {
 				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
 			},
 		})
-		job.Annotations = map[string]string{annotationExpectedShardSnapshots: "etcd,etcd-events"}
+		job.Annotations = map[string]string{annotationExpectedShardSnapshots: "default,events"}
 		// ...but the termination message only reports the default shard.
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2956,7 +2956,7 @@ func TestHandleJobStatusEdgeCases(t *testing.T) {
 				ContainerStatuses: []corev1.ContainerStatus{
 					{Name: "upload", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
 						ExitCode: 0,
-						Message:  `[{"name":"etcd","url":"s3://bucket/etcd.db"}]`,
+						Message:  `[{"name":"default","url":"s3://bucket/default.db"}]`,
 					}}},
 				},
 			},
@@ -2973,7 +2973,7 @@ func TestHandleJobStatusEdgeCases(t *testing.T) {
 		g.Expect(cond).ToNot(BeNil())
 		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 		g.Expect(cond.Reason).To(Equal(hyperv1.BackupResultIncompleteReason))
-		g.Expect(cond.Message).To(ContainSubstring(`missing result for shard "etcd-events"`))
+		g.Expect(cond.Message).To(ContainSubstring(`missing result for shard "events"`))
 		g.Expect(updated.Status.SnapshotURL).To(BeEmpty())
 	})
 
@@ -2999,7 +2999,7 @@ func TestHandleJobStatusEdgeCases(t *testing.T) {
 				ContainerStatuses: []corev1.ContainerStatus{
 					{Name: "upload", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
 						ExitCode: 0,
-						Message:  `[{"name":"etcd","url":"s3://bucket/etcd.db"},{"name":"etcd-unknown","url":"s3://bucket/other.db"}]`,
+						Message:  `[{"name":"default","url":"s3://bucket/default.db"},{"name":"unknown","url":"s3://bucket/other.db"}]`,
 					}}},
 				},
 			},
@@ -3014,7 +3014,7 @@ func TestHandleJobStatusEdgeCases(t *testing.T) {
 		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
 		g.Expect(cond).ToNot(BeNil())
 		g.Expect(cond.Reason).To(Equal(hyperv1.BackupResultIncompleteReason))
-		g.Expect(cond.Message).To(ContainSubstring(`unexpected result for shard "etcd-unknown"`))
+		g.Expect(cond.Message).To(ContainSubstring(`unexpected result for shard "unknown"`))
 	})
 }
 func TestReconcileTerminalCleansUpAndEnforcesRetention(t *testing.T) {
@@ -3424,7 +3424,7 @@ func TestGetShardSnapshotsFromPod(t *testing.T) {
 								Name: "upload",
 								State: corev1.ContainerState{
 									Terminated: &corev1.ContainerStateTerminated{
-										Message: `[{"name":"etcd","url":"s3://bucket/path/etcd.db"},{"name":"etcd-events","url":"s3://bucket/path/etcd-events.db"}]`,
+										Message: `[{"name":"default","url":"s3://bucket/path/default.db"},{"name":"events","url":"s3://bucket/path/events.db"}]`,
 									},
 								},
 							},
@@ -3434,8 +3434,8 @@ func TestGetShardSnapshotsFromPod(t *testing.T) {
 			},
 			jobName: "my-job",
 			expected: []hyperv1.HCPEtcdShardSnapshot{
-				{Name: "etcd", SnapshotURL: "s3://bucket/path/etcd.db"},
-				{Name: "etcd-events", SnapshotURL: "s3://bucket/path/etcd-events.db"},
+				{Name: "default", SnapshotURL: "s3://bucket/path/default.db"},
+				{Name: "events", SnapshotURL: "s3://bucket/path/events.db"},
 			},
 		},
 		{
@@ -3467,7 +3467,7 @@ func TestGetShardSnapshotsFromPod(t *testing.T) {
 			},
 			jobName: "my-job",
 			expected: []hyperv1.HCPEtcdShardSnapshot{
-				{Name: "etcd", SnapshotURL: "s3://bucket/path/snapshot.db"},
+				{Name: "default", SnapshotURL: "s3://bucket/path/snapshot.db"},
 			},
 		},
 		{
@@ -3622,6 +3622,7 @@ func TestEtcdShards(t *testing.T) {
 		shards := etcdShards(hcp)
 		g.Expect(shards).To(HaveLen(1))
 		g.Expect(shards[0].name).To(Equal("etcd"))
+		g.Expect(shards[0].identity).To(Equal("default"))
 		g.Expect(shards[0].endpoint).To(ContainSubstring("etcd-client."))
 	})
 
@@ -3643,7 +3644,9 @@ func TestEtcdShards(t *testing.T) {
 		shards := etcdShards(hcp)
 		g.Expect(shards).To(HaveLen(2))
 		g.Expect(shards[0].name).To(Equal("etcd"))
+		g.Expect(shards[0].identity).To(Equal("default"))
 		g.Expect(shards[1].name).To(Equal("etcd-events"))
+		g.Expect(shards[1].identity).To(Equal("events"))
 		g.Expect(shards[1].endpoint).To(ContainSubstring("etcd-client-events."))
 	})
 
@@ -3672,7 +3675,9 @@ func TestEtcdShards(t *testing.T) {
 		shards := etcdShards(hcp)
 		g.Expect(shards).To(HaveLen(2))
 		g.Expect(shards[0].name).To(Equal("etcd"))
+		g.Expect(shards[0].identity).To(Equal("default"))
 		g.Expect(shards[1].name).To(Equal("etcd-leases"))
+		g.Expect(shards[1].identity).To(Equal("leases"))
 	})
 }
 
@@ -3685,15 +3690,16 @@ func TestBuildSnapshotInitContainers(t *testing.T) {
 		r := newReconciler()
 		shards := []etcdShardInfo{{
 			name:     "etcd",
+			identity: "default",
 			endpoint: "https://etcd-client.test-ns.svc:2379",
 		}}
 
 		containers := r.buildSnapshotInitContainers("cpo:latest", "etcd:latest", "test-ns", shards)
 		g.Expect(containers).To(HaveLen(2))
 		g.Expect(containers[0].Name).To(Equal("fetch-certs"))
-		g.Expect(containers[1].Name).To(Equal("snapshot-etcd"))
+		g.Expect(containers[1].Name).To(Equal("snapshot-default"))
 		g.Expect(containers[1].Command).To(ContainElement(ContainSubstring("etcd-client.test-ns.svc")))
-		g.Expect(containers[1].Command).To(ContainElement(ContainSubstring("/etcd.db")))
+		g.Expect(containers[1].Command).To(ContainElement(ContainSubstring("/default.db")))
 	})
 
 	t.Run("When multiple shards it should create fetch-certs + N snapshot containers", func(t *testing.T) {
@@ -3701,17 +3707,17 @@ func TestBuildSnapshotInitContainers(t *testing.T) {
 		g := NewWithT(t)
 		r := newReconciler()
 		shards := []etcdShardInfo{
-			{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"},
-			{name: "etcd-events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
+			{name: "etcd", identity: "default", endpoint: "https://etcd-client.test-ns.svc:2379"},
+			{name: "etcd-events", identity: "events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
 		}
 
 		containers := r.buildSnapshotInitContainers("cpo:latest", "etcd:latest", "test-ns", shards)
 		g.Expect(containers).To(HaveLen(3))
 		g.Expect(containers[0].Name).To(Equal("fetch-certs"))
-		g.Expect(containers[1].Name).To(Equal("snapshot-etcd"))
-		g.Expect(containers[2].Name).To(Equal("snapshot-etcd-events"))
+		g.Expect(containers[1].Name).To(Equal("snapshot-default"))
+		g.Expect(containers[2].Name).To(Equal("snapshot-events"))
 		g.Expect(containers[2].Command).To(ContainElement(ContainSubstring("etcd-client-events.test-ns.svc")))
-		g.Expect(containers[2].Command).To(ContainElement(ContainSubstring("/etcd-events.db")))
+		g.Expect(containers[2].Command).To(ContainElement(ContainSubstring("/events.db")))
 	})
 }
 
@@ -3721,14 +3727,14 @@ func TestParseShardSnapshots(t *testing.T) {
 	t.Run("When JSON array is provided it should parse all shard snapshots", func(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
-		msg := `[{"name":"etcd","url":"s3://b/etcd.db"},{"name":"etcd-events","url":"s3://b/etcd-events.db"}]`
+		msg := `[{"name":"default","url":"s3://b/default.db"},{"name":"events","url":"s3://b/events.db"}]`
 		snapshots, err := parseShardSnapshots(msg)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(snapshots).To(HaveLen(2))
-		g.Expect(snapshots[0].Name).To(Equal("etcd"))
-		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/etcd.db"))
-		g.Expect(snapshots[1].Name).To(Equal("etcd-events"))
-		g.Expect(snapshots[1].SnapshotURL).To(Equal("s3://b/etcd-events.db"))
+		g.Expect(snapshots[0].Name).To(Equal("default"))
+		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/default.db"))
+		g.Expect(snapshots[1].Name).To(Equal("events"))
+		g.Expect(snapshots[1].SnapshotURL).To(Equal("s3://b/events.db"))
 	})
 
 	t.Run("When plain URL is provided it should return single default shard", func(t *testing.T) {
@@ -3737,7 +3743,7 @@ func TestParseShardSnapshots(t *testing.T) {
 		snapshots, err := parseShardSnapshots("s3://b/snapshot.db")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(snapshots).To(HaveLen(1))
-		g.Expect(snapshots[0].Name).To(Equal("etcd"))
+		g.Expect(snapshots[0].Name).To(Equal("default"))
 		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/snapshot.db"))
 	})
 
@@ -3759,12 +3765,12 @@ func TestParseShardSnapshots(t *testing.T) {
 	t.Run("When JSON entries have invalid URLs they should be skipped", func(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
-		msg := `[{"name":"etcd","url":"s3://b/etcd.db"},{"name":"etcd-events","url":"ftp://b/etcd-events.db"},{"name":"etcd-logs","url":"not-a-url"},{"name":"","url":"s3://b/unnamed.db"}]`
+		msg := `[{"name":"default","url":"s3://b/default.db"},{"name":"events","url":"ftp://b/events.db"},{"name":"logs","url":"not-a-url"},{"name":"","url":"s3://b/unnamed.db"}]`
 		snapshots, err := parseShardSnapshots(msg)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(snapshots).To(HaveLen(1))
-		g.Expect(snapshots[0].Name).To(Equal("etcd"))
-		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/etcd.db"))
+		g.Expect(snapshots[0].Name).To(Equal("default"))
+		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/default.db"))
 	})
 
 	t.Run("When plain URL has an unsupported scheme it should return nil", func(t *testing.T) {
@@ -3795,7 +3801,7 @@ func TestBackupJobDeadlineSeconds(t *testing.T) {
 			g := NewGomegaWithT(t)
 			shards := make([]etcdShardInfo, tt.shards)
 			for i := range shards {
-				shards[i] = etcdShardInfo{name: fmt.Sprintf("etcd-%d", i)}
+				shards[i] = etcdShardInfo{name: fmt.Sprintf("etcd-%d", i), identity: fmt.Sprintf("shard-%d", i)}
 			}
 			backup := newHCPEtcdBackup()
 			backup.Spec.Storage.StorageType = tt.storage
@@ -3901,17 +3907,17 @@ func TestExpectedShardNames(t *testing.T) {
 		t.Parallel()
 		g := NewGomegaWithT(t)
 		job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{annotationExpectedShardSnapshots: "etcd,etcd-events"},
+			Annotations: map[string]string{annotationExpectedShardSnapshots: "default,events"},
 		}}
 		hcp := newHostedControlPlane()
-		g.Expect(expectedShardNames(job, hcp)).To(Equal([]string{"etcd", "etcd-events"}))
+		g.Expect(expectedShardNames(job, hcp)).To(Equal([]string{"default", "events"}))
 	})
 	t.Run("missing annotation falls back to the HCP shard list", func(t *testing.T) {
 		t.Parallel()
 		g := NewGomegaWithT(t)
 		job := &batchv1.Job{}
 		hcp := newHostedControlPlane()
-		g.Expect(expectedShardNames(job, hcp)).To(Equal(shardNames(etcdShards(hcp))))
+		g.Expect(expectedShardNames(job, hcp)).To(Equal(shardIdentities(etcdShards(hcp))))
 	})
 }
 func indexOf(slice []string, value string) int {

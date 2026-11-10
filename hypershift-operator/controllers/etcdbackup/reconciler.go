@@ -497,17 +497,28 @@ func (r *HCPEtcdBackupReconciler) getHostedControlPlane(ctx context.Context, nam
 	return &hcpList.Items[0], nil
 }
 
-// etcdShardInfo contains the name and endpoint for a single etcd shard to be backed up.
+// etcdShardInfo contains the internal name, public identity, and client
+// endpoint for a single etcd shard to be backed up. The internal name is the
+// CPO resource naming convention ("etcd" for the default shard,
+// "etcd-{spec.name}" for named shards) used for StatefulSets, Services, and
+// pod labels. The identity is the public shard identity reported in
+// HCPEtcdBackup.status.shardSnapshots: "default" for the default shard and
+// the exact ManagedEtcdShardSpec.name for named shards.
 type etcdShardInfo struct {
 	name     string
+	identity string
 	endpoint string
 }
+
+// defaultShardIdentity is the public identity of the default etcd shard.
+const defaultShardIdentity = "default"
 
 // etcdShards returns the list of etcd shards to back up for the given HCP.
 // EmptyDir-backed shards are skipped since they hold ephemeral data.
 func etcdShards(hcp *hyperv1.HostedControlPlane) []etcdShardInfo {
 	shards := []etcdShardInfo{{
-		name: "etcd",
+		name:     "etcd",
+		identity: defaultShardIdentity,
 		endpoint: fmt.Sprintf("https://%s.%s.svc:%d",
 			etcdutil.ClientServiceName("etcd"), hcp.Namespace, supportconfig.EtcdClientPort),
 	}}
@@ -518,7 +529,8 @@ func etcdShards(hcp *hyperv1.HostedControlPlane) []etcdShardInfo {
 			}
 			shardName := fmt.Sprintf("etcd-%s", s.Name)
 			shards = append(shards, etcdShardInfo{
-				name: shardName,
+				name:     shardName,
+				identity: s.Name,
 				endpoint: fmt.Sprintf("https://%s.%s.svc:%d",
 					etcdutil.ClientServiceName(shardName), hcp.Namespace, supportconfig.EtcdClientPort),
 			})
@@ -684,9 +696,11 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 			// The completeness check above guarantees exactly one result per
 			// expected shard, so the list is never empty here.
 			backup.Status.ShardSnapshots = shardSnapshots
-			// Set the default shard's URL for backward compatibility.
+			// Set the default shard's URL for backward compatibility. Messages
+			// from images built before the public shard identity was introduced
+			// report the default shard as "etcd"; accept both.
 			for _, ss := range shardSnapshots {
-				if ss.Name == "etcd" {
+				if ss.Name == defaultShardIdentity || ss.Name == "etcd" {
 					backup.Status.SnapshotURL = ss.SnapshotURL
 					break
 				}
@@ -909,7 +923,7 @@ func parseShardSnapshots(msg string) ([]hyperv1.HCPEtcdShardSnapshot, error) {
 	// Backward compat: plain URL from older CPO images.
 	if isSupportedSnapshotURL(msg) {
 		return []hyperv1.HCPEtcdShardSnapshot{{
-			Name:        "etcd",
+			Name:        defaultShardIdentity,
 			SnapshotURL: msg,
 		}}, nil
 	}
@@ -1216,10 +1230,10 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 			Namespace:    r.OperatorNamespace,
 			Labels:       jobLabels,
 			Annotations: map[string]string{
-				// Record the shard set this Job was built to snapshot so the
-				// completion path can require exactly one result per shard,
+				// Record the shard identities this Job was built to snapshot so
+				// the completion path can require exactly one result per shard,
 				// even if the HCP spec changes while the Job runs.
-				annotationExpectedShardSnapshots: strings.Join(shardNames(shards), ","),
+				annotationExpectedShardSnapshots: strings.Join(shardIdentities(shards), ","),
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -1246,16 +1260,18 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 	return r.Create(ctx, job)
 }
 
-// shardNames returns the names of the given shards.
-func shardNames(shards []etcdShardInfo) []string {
-	names := make([]string, 0, len(shards))
+// shardIdentities returns the public identities of the given shards: "default"
+// for the default shard and the exact ManagedEtcdShardSpec.name for named
+// shards. This is the identity reported in shardSnapshots.
+func shardIdentities(shards []etcdShardInfo) []string {
+	identities := make([]string, 0, len(shards))
 	for _, s := range shards {
-		names = append(names, s.name)
+		identities = append(identities, s.identity)
 	}
-	return names
+	return identities
 }
 
-// expectedShardNames returns the shard names a completed backup Job is
+// expectedShardNames returns the shard identities a completed backup Job is
 // expected to have snapshotted. It prefers the annotation recorded when the
 // Job was created; Jobs created before the annotation existed fall back to
 // the shards currently configured on the HCP.
@@ -1263,7 +1279,7 @@ func expectedShardNames(job *batchv1.Job, hcp *hyperv1.HostedControlPlane) []str
 	if v, ok := job.Annotations[annotationExpectedShardSnapshots]; ok && v != "" {
 		return strings.Split(v, ",")
 	}
-	return shardNames(etcdShards(hcp))
+	return shardIdentities(etcdShards(hcp))
 }
 
 // validateShardSnapshotResults requires exactly one result per expected
@@ -1384,7 +1400,7 @@ func (r *HCPEtcdBackupReconciler) buildSnapshotInitContainers(cpoImage, etcdImag
 
 	for _, shard := range shards {
 		initContainers = append(initContainers, corev1.Container{
-			Name:  fmt.Sprintf("snapshot-%s", shard.name),
+			Name:  fmt.Sprintf("snapshot-%s", shard.identity),
 			Image: etcdImage,
 			Env: []corev1.EnvVar{
 				{Name: "ETCDCTL_API", Value: "3"},
@@ -1396,7 +1412,7 @@ func (r *HCPEtcdBackupReconciler) buildSnapshotInitContainers(cpoImage, etcdImag
 				"--cert", mountPathEtcdCerts + "/etcd-client.crt",
 				"--key", mountPathEtcdCerts + "/etcd-client.key",
 				"snapshot", "save",
-				fmt.Sprintf("%s/%s.db", mountPathEtcdBackup, shard.name),
+				fmt.Sprintf("%s/%s.db", mountPathEtcdBackup, shard.identity),
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{
@@ -1519,7 +1535,7 @@ func (r *HCPEtcdBackupReconciler) buildUploadContainer(image string, args []stri
 func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup, shards []etcdShardInfo, creds resolvedCredentials) ([]string, error) {
 	args := []string{"control-plane-operator", "etcd-upload"}
 	if len(shards) == 1 {
-		args = append(args, "--snapshot-path", fmt.Sprintf("%s/%s.db", mountPathEtcdBackup, shards[0].name))
+		args = append(args, "--snapshot-path", fmt.Sprintf("%s/%s.db", mountPathEtcdBackup, shards[0].identity))
 	} else {
 		args = append(args, "--snapshot-dir", mountPathEtcdBackup)
 		// Kubelet divides a pod-level 12288-byte termination-message budget
