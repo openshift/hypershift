@@ -274,6 +274,7 @@ The controller does **not** delete backup objects automatically. Operators are r
 | Plugin verification timeout (30s) | Plugin returns error, Velero marks backup failed | Check HyperShift Operator logs for controller issues |
 | Plugin completion timeout (10 min) | Plugin returns error, Velero marks backup failed | Check backup Job status and pod logs |
 | `HCPEtcdBackup` CRD not installed | Plugin fails with explicit error | Enable the `HCPEtcdBackup` feature gate and ensure CRDs are deployed |
+| Multi-shard backup on a CPO image without multi-shard support (capability label absent on the HCP) | `BackupCompleted` = `BackupWaitingForCPOCapability` (non-terminal) | Upgrade the control plane operator; the backup proceeds automatically once the label appears |
 
 ## Platform-specific Notes
 

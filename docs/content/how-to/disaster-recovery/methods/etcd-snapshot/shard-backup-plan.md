@@ -172,9 +172,19 @@ Main container:
 The upload command changes from `--snapshot-path` (single file) to `--snapshot-dir`
 (directory of shard-named files), uploading each as a separate object with the
 shard name in the key. Because older CPO images only support `--snapshot-path`,
-multi-shard backup Jobs require a CPO image with `--snapshot-dir` support:
-clusters must not enable multi-shard backup until the management cluster's CPO
-image is synchronized to a version that has it.
+multi-shard backup Jobs require a CPO image with `--snapshot-dir` support.
+
+This is enforced rather than assumed: the CPO sets a capability label
+(`hypershift.openshift.io/control-plane-operator-supports-multishard-etcd-backup`)
+on the HostedControlPlane when the deployed image supports the multi-shard
+backup flags, and the backup controller gates multi-shard Job creation on it.
+While the label is absent the backup waits in a non-terminal
+`BackupWaitingForCPOCapability` condition (feature gates control API exposure,
+but do not prove the deployed image supports the flags) and proceeds once a
+capable CPO is deployed. The backup controller also resolves the CPO image for
+the backup Job with the same override chain as the CPO deployment itself
+(annotation, platform/version overrides, release payload), so the Job always
+runs the image actually deployed for the control plane.
 
 ##### d. NetworkPolicy (`ensureNetworkPolicy`)
 
