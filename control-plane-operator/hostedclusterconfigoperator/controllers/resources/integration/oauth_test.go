@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/internal/testtrace"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 
@@ -60,7 +61,7 @@ func TestReconcileOAuthProjections(t *testing.T) {
 			params.OAuthAddress, params.OAuthPort = tc.address, tc.port
 
 			errs := reconcileOAuthProjections(t.Context(), run.hosted, run.controlPlane, params)
-			operations := run.trace.operations()
+			operations := run.trace.Operations()
 
 			g.Expect(errs).To(BeEmpty())
 			caBundle := manifests.OAuthCABundle()
@@ -87,14 +88,14 @@ func TestReconcileOAuthProjections(t *testing.T) {
 				}
 			}
 			g.Expect(creates).To(Equal([]string{
-				fmt.Sprintf("create hosted %s", objectKey(manifests.OAuthCABundle())),
-				fmt.Sprintf("create hosted %s", objectKey(manifests.OAuthServerBrowserClient())),
-				fmt.Sprintf("create hosted %s", objectKey(hccomanifests.OAuthServerChallengingClient())),
-				fmt.Sprintf("create hosted %s", objectKey(manifests.OAuthServerCLIClient())),
-				fmt.Sprintf("create hosted %s", objectKey(manifests.OAuthServingCertRole())),
-				fmt.Sprintf("create hosted %s", objectKey(manifests.OAuthServingCertRoleBinding())),
+				fmt.Sprintf("create hosted %s", testtrace.ObjectKey(manifests.OAuthCABundle())),
+				fmt.Sprintf("create hosted %s", testtrace.ObjectKey(manifests.OAuthServerBrowserClient())),
+				fmt.Sprintf("create hosted %s", testtrace.ObjectKey(hccomanifests.OAuthServerChallengingClient())),
+				fmt.Sprintf("create hosted %s", testtrace.ObjectKey(manifests.OAuthServerCLIClient())),
+				fmt.Sprintf("create hosted %s", testtrace.ObjectKey(manifests.OAuthServingCertRole())),
+				fmt.Sprintf("create hosted %s", testtrace.ObjectKey(manifests.OAuthServingCertRoleBinding())),
 			}))
-			g.Expect(run.trace.cluster("control-plane")).To(Equal([]string{"get control-plane " + objectKey(oauthMasterCABundle())}))
+			g.Expect(run.trace.Cluster("control-plane")).To(Equal([]string{"get control-plane " + testtrace.ObjectKey(oauthMasterCABundle())}))
 		})
 	}
 
@@ -105,7 +106,7 @@ func TestReconcileOAuthProjections(t *testing.T) {
 		errs := reconcileOAuthProjections(t.Context(), run.hosted, run.controlPlane, disabledParams())
 
 		g.Expect(errs).To(BeNil())
-		g.Expect(run.trace.operations()).To(BeEmpty())
+		g.Expect(run.trace.Operations()).To(BeEmpty())
 	})
 
 	t.Run("When the control-plane OAuth master CA is missing, it should report it and still project clients and RBAC", func(t *testing.T) {
@@ -127,7 +128,7 @@ func TestReconcileOAuthProjections(t *testing.T) {
 		g := NewWithT(t)
 		failures := map[string]error{}
 		for _, object := range oauthProjectionObjects() {
-			failures[objectKey(object)] = fmt.Errorf("%s failure", object.GetName())
+			failures[testtrace.ObjectKey(object)] = fmt.Errorf("%s failure", object.GetName())
 		}
 		run := newProjectionRun(projectionFixture{controlPlane: controlPlaneInputs(), upsertFailures: failures})
 
@@ -169,13 +170,13 @@ func TestReconcileOAuthServingCertCABundle(t *testing.T) {
 
 		g.Expect(err).To(MatchError(`cannot get oauth master ca bundle: configmaps "oauth-master-ca-bundle" not found`))
 		g.Expect(apierrors.IsNotFound(errors.Unwrap(err))).To(BeTrue())
-		g.Expect(run.trace.cluster("hosted")).To(BeEmpty())
+		g.Expect(run.trace.Cluster("hosted")).To(BeEmpty())
 	})
 
 	t.Run("When the hosted write fails, it should wrap the write error", func(t *testing.T) {
 		g := NewWithT(t)
 		failure := errors.New("write failure")
-		run := newProjectionRun(projectionFixture{controlPlane: []client.Object{oauthMasterCABundle()}, upsertFailures: map[string]error{objectKey(manifests.OAuthCABundle()): failure}})
+		run := newProjectionRun(projectionFixture{controlPlane: []client.Object{oauthMasterCABundle()}, upsertFailures: map[string]error{testtrace.ObjectKey(manifests.OAuthCABundle()): failure}})
 
 		err := reconcileOAuthServingCertCABundle(t.Context(), run.hosted, run.controlPlane, testNamespace)
 

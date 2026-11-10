@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/internal/testtrace"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	pkgoauth "github.com/openshift/hypershift/pkg/oauth"
@@ -72,7 +73,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 		"When reading kubeadminPasswordSecret fails, it should return the wrapped error and keep the hash secret": {
 			controlPlane:       []client.Object{passwordSecret("adminpass"), oauthDeployment()},
 			existingHashSecret: hashSecret([]byte("existing-hash")),
-			cpGetFailures:      map[string]error{objectKey(passwordSecret("")): errors.New("cp unavailable")},
+			cpGetFailures:      map[string]error{testtrace.ObjectKey(passwordSecret("")): errors.New("cp unavailable")},
 			expectedErr:        "failed to get kubeadmin password secret: cp unavailable",
 			expectHashSecret:   true,
 			expectHashKept:     true,
@@ -89,7 +90,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			run := newProjectionRun(projectionFixture{controlPlane: test.controlPlane, hosted: hosted, cpGetFailures: test.cpGetFailures})
 
 			err := reconcileKubeadminPasswordHashSecret(t.Context(), run.hosted, run.controlPlane, testNamespace)
-			controlPlaneOperations := run.trace.cluster("control-plane")
+			controlPlaneOperations := run.trace.Cluster("control-plane")
 
 			if test.expectedErr != "" {
 				g.Expect(err).To(MatchError(test.expectedErr))
@@ -138,6 +139,6 @@ func TestDeleteKubeadminPasswordHashSecret(t *testing.T) {
 
 		g.Expect(deleteKubeadminPasswordHashSecret(t.Context(), run.hosted)).To(Succeed())
 
-		g.Expect(run.trace.operations()).NotTo(ContainElement(HavePrefix("delete ")))
+		g.Expect(run.trace.Operations()).NotTo(ContainElement(HavePrefix("delete ")))
 	})
 }

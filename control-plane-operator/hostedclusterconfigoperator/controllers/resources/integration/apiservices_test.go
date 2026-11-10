@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/internal/testtrace"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	pkgoauth "github.com/openshift/hypershift/pkg/oauth"
 
@@ -50,7 +51,7 @@ func expectEndpoints(g Gomega, hosted client.Client, endpoints *corev1.Endpoints
 func expectAbsent(g Gomega, hosted client.Client, objects ...client.Object) {
 	for _, object := range objects {
 		err := hosted.Get(context.Background(), client.ObjectKeyFromObject(object), object)
-		g.Expect(apierrors.IsNotFound(err)).WithOffset(1).To(BeTrue(), "%s should not exist, got %v", objectKey(object), err)
+		g.Expect(apierrors.IsNotFound(err)).WithOffset(1).To(BeTrue(), "%s should not exist, got %v", testtrace.ObjectKey(object), err)
 	}
 }
 
@@ -64,7 +65,7 @@ func oauthAPIServerObjects() []client.Object {
 
 func TestReconcileAPIServiceProjections(t *testing.T) {
 	rootCAGet := fmt.Sprintf("get control-plane *v1.Secret %s/root-ca", testNamespace)
-	kubeadminKey := objectKey(kubeadminPasswordSecret())
+	kubeadminKey := testtrace.ObjectKey(kubeadminPasswordSecret())
 	kubeadminWrite := []string{"get control-plane " + kubeadminKey, "update control-plane " + kubeadminKey}
 
 	t.Run("When all control-plane inputs are present and OAuth is enabled, it should project every API server resource and read only the declared control-plane inputs", func(t *testing.T) {
@@ -75,7 +76,7 @@ func TestReconcileAPIServiceProjections(t *testing.T) {
 		run := newProjectionRun(projectionFixture{controlPlane: controlPlaneInputs(), hosted: []client.Object{staleEndpoints}})
 
 		errs := reconcileAPIServiceProjections(t.Context(), run.hosted, run.controlPlane, enabledParams())
-		controlPlaneOperations := run.trace.cluster("control-plane")
+		controlPlaneOperations := run.trace.Cluster("control-plane")
 
 		g.Expect(errs).To(BeEmpty())
 		expectAPIServices(g, run.hostedClient, openshiftAPIServer, "root-ca-bundle")
@@ -107,7 +108,7 @@ func TestReconcileAPIServiceProjections(t *testing.T) {
 		run := newProjectionRun(projectionFixture{controlPlane: controlPlaneInputs(), hosted: []client.Object{existingHash}})
 
 		errs := reconcileAPIServiceProjections(t.Context(), run.hosted, run.controlPlane, disabledParams())
-		controlPlaneOperations := run.trace.cluster("control-plane")
+		controlPlaneOperations := run.trace.Cluster("control-plane")
 
 		g.Expect(errs).To(BeEmpty())
 		expectAPIServices(g, run.hostedClient, openshiftAPIServer, "root-ca-bundle")
@@ -185,10 +186,10 @@ func TestReconcileAPIServiceProjections(t *testing.T) {
 		g := NewWithT(t)
 		apiServiceFailure, serviceFailure, endpointsFailure, hashFailure := errors.New("apiservice failure"), errors.New("service failure"), errors.New("endpoints failure"), errors.New("hash failure")
 		run := newProjectionRun(projectionFixture{controlPlane: controlPlaneInputs(), upsertFailures: map[string]error{
-			objectKey(manifests.OpenShiftOAuthAPIServerAPIService("user")): apiServiceFailure,
-			objectKey(manifests.OpenShiftAPIServerClusterService()):        serviceFailure,
-			objectKey(manifests.OpenShiftOAuthAPIServerClusterEndpoints()): endpointsFailure,
-			objectKey(manifests.KubeadminPasswordHashSecret()):             hashFailure,
+			testtrace.ObjectKey(manifests.OpenShiftOAuthAPIServerAPIService("user")): apiServiceFailure,
+			testtrace.ObjectKey(manifests.OpenShiftAPIServerClusterService()):        serviceFailure,
+			testtrace.ObjectKey(manifests.OpenShiftOAuthAPIServerClusterEndpoints()): endpointsFailure,
+			testtrace.ObjectKey(manifests.KubeadminPasswordHashSecret()):             hashFailure,
 		}})
 
 		errs := reconcileAPIServiceProjections(t.Context(), run.hosted, run.controlPlane, enabledParams())
@@ -203,7 +204,7 @@ func TestReconcileAPIServiceProjections(t *testing.T) {
 			g.Expect(errors.Is(errs[index], failure)).To(BeTrue())
 		}
 		expectAPIServices(g, run.hostedClient, openshiftAPIServer, "root-ca-bundle")
-		g.Expect(run.trace.cluster("control-plane")).NotTo(ContainElement(HavePrefix("update ")))
+		g.Expect(run.trace.Cluster("control-plane")).NotTo(ContainElement(HavePrefix("update ")))
 	})
 }
 
@@ -216,15 +217,15 @@ func TestReconcileAPIServices(t *testing.T) {
 
 		g.Expect(err).To(MatchError(`failed to get root ca from control plane: secrets "root-ca" not found`))
 		g.Expect(apierrors.IsNotFound(errors.Unwrap(err))).To(BeTrue())
-		g.Expect(run.trace.cluster("hosted")).To(BeEmpty())
+		g.Expect(run.trace.Cluster("hosted")).To(BeEmpty())
 	})
 
 	t.Run("When some groups fail, it should still project the other groups and aggregate one entry per failed group", func(t *testing.T) {
 		g := NewWithT(t)
 		appsFailure, routeFailure := errors.New("apps failure"), errors.New("route failure")
 		run := newProjectionRun(projectionFixture{controlPlane: []client.Object{rootCASecret()}, upsertFailures: map[string]error{
-			objectKey(manifests.OpenShiftAPIServerAPIService("apps")):  appsFailure,
-			objectKey(manifests.OpenShiftAPIServerAPIService("route")): routeFailure,
+			testtrace.ObjectKey(manifests.OpenShiftAPIServerAPIService("apps")):  appsFailure,
+			testtrace.ObjectKey(manifests.OpenShiftAPIServerAPIService("route")): routeFailure,
 		}})
 
 		err := reconcileAPIServices(t.Context(), run.hosted, run.controlPlane, testNamespace, openshiftAPIServer)
@@ -256,7 +257,7 @@ func TestReconcileClusterService(t *testing.T) {
 	t.Run("When the hosted write fails, it should return the error unwrapped", func(t *testing.T) {
 		g := NewWithT(t)
 		failure := errors.New("write failure")
-		run := newProjectionRun(projectionFixture{upsertFailures: map[string]error{objectKey(manifests.OpenShiftAPIServerClusterService()): failure}})
+		run := newProjectionRun(projectionFixture{upsertFailures: map[string]error{testtrace.ObjectKey(manifests.OpenShiftAPIServerClusterService()): failure}})
 
 		g.Expect(reconcileClusterService(t.Context(), run.hosted, openshiftAPIServer)).To(BeIdenticalTo(failure))
 	})
@@ -283,7 +284,7 @@ func TestReconcileEndpoints(t *testing.T) {
 		run := newProjectionRun(projectionFixture{controlPlane: []client.Object{oauthAPIServerControlPlaneService("")}, hosted: []client.Object{existing}})
 
 		err := reconcileEndpoints(t.Context(), run.hosted, run.controlPlane, testNamespace, openshiftOAuthAPIServer)
-		hostedOperations := run.trace.cluster("hosted")
+		hostedOperations := run.trace.Cluster("hosted")
 
 		g.Expect(err).To(MatchError("openshift oauth apiserver service in control plane does not yet have a cluster IP"))
 		g.Expect(hostedOperations).To(BeEmpty())
@@ -305,7 +306,7 @@ func TestReconcileEndpoints(t *testing.T) {
 		failure := errors.New("write failure")
 		run := newProjectionRun(projectionFixture{
 			controlPlane:   []client.Object{openshiftAPIServerControlPlaneService("172.30.0.10")},
-			upsertFailures: map[string]error{objectKey(manifests.OpenShiftAPIServerClusterEndpoints()): failure},
+			upsertFailures: map[string]error{testtrace.ObjectKey(manifests.OpenShiftAPIServerClusterEndpoints()): failure},
 		})
 
 		g.Expect(reconcileEndpoints(t.Context(), run.hosted, run.controlPlane, testNamespace, openshiftAPIServer)).To(BeIdenticalTo(failure))
