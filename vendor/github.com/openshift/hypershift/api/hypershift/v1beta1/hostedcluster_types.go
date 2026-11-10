@@ -2877,6 +2877,24 @@ type HostedClusterStatus struct {
 	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="lastSuccessfulEtcdBackupURL must be a valid URL with scheme https or s3"
 	LastSuccessfulEtcdBackupURL string `json:"lastSuccessfulEtcdBackupURL,omitempty"`
 
+	// lastSuccessfulEtcdShardBackupURLs is the versioned per-shard snapshot
+	// URL mapping (mapping format v1) from the most recent successful etcd
+	// backup: one entry per persistent shard, keyed by the public shard
+	// identity ("default" for the default shard, or the
+	// ManagedEtcdShardSpec.name for named shards). This is the multi-shard
+	// equivalent of lastSuccessfulEtcdBackupURL and, like it, is persisted on
+	// the HostedCluster because HCPEtcdBackup CRs are ephemeral and may be
+	// deleted by retention policies. Restores must validate the mapping
+	// against spec.etcd.managed.shards and fail when a persistent shard has
+	// no entry (see MissingPersistentShards).
+	// +openshift:enable:FeatureGate=HCPEtcdBackup
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=11
+	LastSuccessfulEtcdShardBackupURLs []HCPEtcdShardSnapshot `json:"lastSuccessfulEtcdShardBackupURLs,omitempty"`
+
 	// secretEncryption tracks the state of secret encryption key rotation and re-encryption.
 	// +optional
 	SecretEncryption SecretEncryptionStatus `json:"secretEncryption,omitzero"`

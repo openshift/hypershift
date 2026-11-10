@@ -484,18 +484,21 @@ func (r *HCPEtcdBackupReconciler) updateHCPBackupCondition(ctx context.Context, 
 	return r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{}))
 }
 
-// updateHostedClusterBackupURL persists the snapshot URL in the HostedCluster
-// status so it survives HCPEtcdBackup CR retention/deletion.
-// Uses RetryOnConflict because the HC is updated by multiple controllers,
-// and a requeue-based retry risks losing the URL if the Pod is cleaned up
-// (TTLSecondsAfterFinished) before the next reconcile extracts it.
-func (r *HCPEtcdBackupReconciler) updateHostedClusterBackupURL(ctx context.Context, hcp *hyperv1.HostedControlPlane, snapshotURL string) error {
+// updateHostedClusterBackupURLs persists the snapshot URLs in the
+// HostedCluster status so they survive HCPEtcdBackup CR retention/deletion:
+// the single backward-compatibility URL, and the versioned per-shard mapping
+// used for multi-shard restores. Uses RetryOnConflict because the HC is
+// updated by multiple controllers, and a requeue-based retry risks losing
+// the URLs if the Pod is cleaned up (TTLSecondsAfterFinished) before the
+// next reconcile extracts them.
+func (r *HCPEtcdBackupReconciler) updateHostedClusterBackupURLs(ctx context.Context, hcp *hyperv1.HostedControlPlane, backup *hyperv1.HCPEtcdBackup) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		hc, err := k8sutil.HostedClusterFromAnnotation(ctx, r.Client, hcp)
 		if err != nil {
 			return err
 		}
-		hc.Status.LastSuccessfulEtcdBackupURL = snapshotURL
+		hc.Status.LastSuccessfulEtcdBackupURL = backup.Status.SnapshotURL
+		hc.Status.LastSuccessfulEtcdShardBackupURLs = backup.Status.ShardSnapshots
 		return r.Status().Update(ctx, hc)
 	})
 }
@@ -723,13 +726,14 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 				}
 			}
 
-			// Persist the snapshot URL in the HostedCluster status BEFORE marking
-			// the backup as terminal so the controller retries on requeue.
-			// This is idempotent: if it succeeds but the backup status update below
-			// fails, the next reconcile re-extracts the URL and writes the same value.
+			// Persist the snapshot URLs in the HostedCluster status BEFORE
+			// marking the backup as terminal so the controller retries on
+			// requeue. This is idempotent: if it succeeds but the backup
+			// status update below fails, the next reconcile re-extracts the
+			// URLs and writes the same values.
 			if backup.Status.SnapshotURL != "" {
-				if err := r.updateHostedClusterBackupURL(ctx, hcp, backup.Status.SnapshotURL); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to update HostedCluster LastSuccessfulEtcdBackupURL: %w", err)
+				if err := r.updateHostedClusterBackupURLs(ctx, hcp, backup); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to update HostedCluster backup URLs: %w", err)
 				}
 			}
 

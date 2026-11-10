@@ -258,6 +258,36 @@ type HCPEtcdBackupStatus struct {
 	AttemptKeyPrefix string `json:"attemptKeyPrefix,omitempty"`
 }
 
+// MissingPersistentShards returns the public shard identities of the
+// persistent (non-EmptyDir) shards in the given ManagedEtcdSpec that have no
+// entry in the per-shard backup mapping; the default shard is always
+// expected. An empty result means every persistent shard is represented.
+// Consumers of the mapping during restore (the OADP HyperShift plugin, and
+// the restore validation in the control plane operator) use this to fail a
+// restore whose archived mapping does not cover every persistent shard,
+// instead of silently starting those shards with empty data directories.
+func MissingPersistentShards(mapping []HCPEtcdShardSnapshot, managed *ManagedEtcdSpec) []string {
+	covered := make(map[string]struct{}, len(mapping))
+	for _, entry := range mapping {
+		covered[entry.Name] = struct{}{}
+	}
+	var missing []string
+	if _, ok := covered["default"]; !ok {
+		missing = append(missing, "default")
+	}
+	if managed != nil {
+		for _, shard := range managed.Shards {
+			if shard.Storage.Type == EmptyDirEtcdShardStorage {
+				continue
+			}
+			if _, ok := covered[shard.Name]; !ok {
+				missing = append(missing, shard.Name)
+			}
+		}
+	}
+	return missing
+}
+
 // HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.
 type HCPEtcdShardSnapshot struct {
 	// name is the public shard identity: "default" for the default shard,

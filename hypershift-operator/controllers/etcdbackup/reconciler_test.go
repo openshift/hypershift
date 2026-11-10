@@ -2485,19 +2485,33 @@ func TestReconcileHappyPath(t *testing.T) {
 	})
 }
 
-func TestUpdateHostedClusterBackupURL(t *testing.T) {
-	t.Run("When HCP has HostedClusterAnnotation it should update HC status with snapshot URL", func(t *testing.T) {
+func TestHCPEtcdBackupReconciler_UpdateHostedClusterBackupURLs(t *testing.T) {
+	newCompletedBackup := func() *hyperv1.HCPEtcdBackup {
+		backup := newHCPEtcdBackup()
+		backup.Status.SnapshotURL = "s3://bucket/default.db"
+		backup.Status.ShardSnapshots = []hyperv1.HCPEtcdShardSnapshot{
+			{Name: "default", SnapshotURL: "s3://bucket/default.db"},
+			{Name: "events", SnapshotURL: "s3://bucket/events.db"},
+		}
+		return backup
+	}
+
+	t.Run("When HCP has HostedClusterAnnotation it should update HC status with the snapshot URL and the per-shard mapping", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		hcp := newHostedControlPlane()
 		hc := newHostedCluster()
 		r := newReconciler(hcp, hc)
 
-		err := r.updateHostedClusterBackupURL(context.Background(), hcp, "s3://bucket/snapshot.db")
+		err := r.updateHostedClusterBackupURLs(context.Background(), hcp, newCompletedBackup())
 		g.Expect(err).ToNot(HaveOccurred())
 
 		updatedHC := &hyperv1.HostedCluster{}
 		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testHCName, Namespace: testHCNamespace}, updatedHC)).To(Succeed())
-		g.Expect(updatedHC.Status.LastSuccessfulEtcdBackupURL).To(Equal("s3://bucket/snapshot.db"))
+		g.Expect(updatedHC.Status.LastSuccessfulEtcdBackupURL).To(Equal("s3://bucket/default.db"))
+		g.Expect(updatedHC.Status.LastSuccessfulEtcdShardBackupURLs).To(ConsistOf(
+			hyperv1.HCPEtcdShardSnapshot{Name: "default", SnapshotURL: "s3://bucket/default.db"},
+			hyperv1.HCPEtcdShardSnapshot{Name: "events", SnapshotURL: "s3://bucket/events.db"},
+		))
 	})
 
 	t.Run("When HCP is missing HostedClusterAnnotation it should return an error", func(t *testing.T) {
@@ -2506,7 +2520,7 @@ func TestUpdateHostedClusterBackupURL(t *testing.T) {
 		hcp.Annotations = nil
 		r := newReconciler(hcp)
 
-		err := r.updateHostedClusterBackupURL(context.Background(), hcp, "s3://bucket/snapshot.db")
+		err := r.updateHostedClusterBackupURLs(context.Background(), hcp, newCompletedBackup())
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("missing"))
 	})
@@ -2516,7 +2530,7 @@ func TestUpdateHostedClusterBackupURL(t *testing.T) {
 		hcp := newHostedControlPlane()
 		r := newReconciler(hcp) // no HC in the fake client
 
-		err := r.updateHostedClusterBackupURL(context.Background(), hcp, "s3://bucket/snapshot.db")
+		err := r.updateHostedClusterBackupURLs(context.Background(), hcp, newCompletedBackup())
 		g.Expect(err).To(HaveOccurred())
 	})
 
@@ -2553,13 +2567,14 @@ func TestUpdateHostedClusterBackupURL(t *testing.T) {
 			OperatorNamespace: testHONamespace,
 		}
 
-		err := r.updateHostedClusterBackupURL(context.Background(), hcp, "s3://bucket/snapshot.db")
+		err := r.updateHostedClusterBackupURLs(context.Background(), hcp, newCompletedBackup())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(callCount).To(Equal(2))
 
 		updatedHC := &hyperv1.HostedCluster{}
 		g.Expect(r.Get(context.Background(), types.NamespacedName{Name: testHCName, Namespace: testHCNamespace}, updatedHC)).To(Succeed())
-		g.Expect(updatedHC.Status.LastSuccessfulEtcdBackupURL).To(Equal("s3://bucket/snapshot.db"))
+		g.Expect(updatedHC.Status.LastSuccessfulEtcdBackupURL).To(Equal("s3://bucket/default.db"))
+		g.Expect(updatedHC.Status.LastSuccessfulEtcdShardBackupURLs).To(HaveLen(2))
 	})
 }
 

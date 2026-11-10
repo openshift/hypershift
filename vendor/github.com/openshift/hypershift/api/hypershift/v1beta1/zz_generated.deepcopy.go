@@ -2821,6 +2821,11 @@ func (in *HostedClusterStatus) DeepCopyInto(out *HostedClusterStatus) {
 		*out = new(ConfigurationStatus)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.LastSuccessfulEtcdShardBackupURLs != nil {
+		in, out := &in.LastSuccessfulEtcdShardBackupURLs, &out.LastSuccessfulEtcdShardBackupURLs
+		*out = make([]HCPEtcdShardSnapshot, len(*in))
+		copy(*out, *in)
+	}
 	in.SecretEncryption.DeepCopyInto(&out.SecretEncryption)
 }
 
