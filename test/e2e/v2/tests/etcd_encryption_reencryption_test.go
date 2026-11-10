@@ -87,7 +87,7 @@ func waitForReEncryptionStarted(g Gomega, ctx context.Context, mgmtClient crclie
 		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse),
 			"EtcdDataEncryptionUpToDate should be False while rotation is in progress, got reason=%s message=%s",
 			cond.Reason, cond.Message)
-	}, timeout, 5*time.Second).Should(Succeed())
+	}, timeout, 5*time.Second).WithContext(ctx).Should(Succeed())
 }
 
 func waitForReEncryptionComplete(g Gomega, ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, timeout time.Duration) {
@@ -99,7 +99,7 @@ func waitForReEncryptionComplete(g Gomega, ctx context.Context, mgmtClient crcli
 		g.Expect(cond).NotTo(BeNil(), "EtcdDataEncryptionUpToDate condition should exist")
 		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue),
 			"EtcdDataEncryptionUpToDate should be True, got reason=%s message=%s", cond.Reason, cond.Message)
-	}, timeout, 15*time.Second).Should(Succeed())
+	}, timeout, 15*time.Second).WithContext(ctx).Should(Succeed())
 }
 
 func verifyReEncryptionStatus(g Gomega, hc *hyperv1.HostedCluster, expectedProvider hyperv1.SecretEncryptionProvider) {
@@ -197,7 +197,7 @@ func verifyKASHealth(g Gomega, ctx context.Context, mgmtClient crclient.Client, 
 					pod.Name, cs.Name, delta, baseline, cs.RestartCount)
 			}
 		}
-	}, 5*time.Minute, 15*time.Second).Should(Succeed())
+	}, 5*time.Minute, 15*time.Second).WithContext(ctx).Should(Succeed())
 }
 
 // verifyKASLogsNoDecryptionErrors checks both the current and previous container logs
@@ -307,7 +307,7 @@ func runRotationTest(g Gomega, tc *internal.TestContext, rc rotationCase) {
 
 	g.Eventually(func(g Gomega) {
 		verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
-	}, 2*time.Minute, 10*time.Second).Should(Succeed())
+	}, 2*time.Minute, 10*time.Second).WithContext(ctx).Should(Succeed())
 }
 
 // rotateAndWait applies mutate to the HostedCluster spec, then waits for re-encryption
@@ -502,7 +502,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			verifyKASLogsNoDecryptionErrors(Default, ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 			Eventually(func(g Gomega) {
 				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
-			}, 2*time.Minute, 10*time.Second).Should(Succeed())
+			}, 2*time.Minute, 10*time.Second).WithContext(ctx).Should(Succeed())
 
 			// Capture CompletionTime of the entry just written as the baseline for the second rotation.
 			preRotation2Time := hc.Status.SecretEncryption.History[0].CompletionTime
@@ -525,7 +525,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 
 			Eventually(func(g Gomega) {
 				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
-			}, 2*time.Minute, 10*time.Second).Should(Succeed())
+			}, 2*time.Minute, 10*time.Second).WithContext(ctx).Should(Succeed())
 		})
 	})
 }
@@ -566,7 +566,7 @@ func ConditionBubbleUpTest(getTestCtx internal.TestContextGetter) {
 			hcKey := crclient.ObjectKey{Namespace: tc.ClusterNamespace, Name: tc.ClusterName}
 			Eventually(func(g Gomega) {
 				verifyConditionBubbleUp(g, tc.Context, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
-			}, 2*time.Minute, 10*time.Second).Should(Succeed())
+			}, 2*time.Minute, 10*time.Second).WithContext(tc.Context).Should(Succeed())
 		})
 	})
 }
