@@ -24562,7 +24562,8 @@ Job rather than emit a payload the kubelet would truncate.
 
 ```go
 type HCPEtcdShardSnapshot struct {
-    // name is the shard name (e.g., "etcd" for the default, "etcd-events" for a named shard).
+    // name is the public shard identity: "default" for the default shard,
+    // or the exact ManagedEtcdShardSpec.name for a named shard (e.g., "events").
     // +required
     Name string `json:"name"`
 
@@ -24587,8 +24588,11 @@ an excluded shard:
 
 ```go
 func etcdShards(hcp *hyperv1.HostedControlPlane) []etcdShardInfo {
+    // name is the internal CPO resource name (StatefulSet/Service);
+    // identity is the public shard identity reported in shardSnapshots.
     shards := []etcdShardInfo{{
         name: "etcd",
+        identity: "default",
         endpoint: fmt.Sprintf("https://%s.%s.svc:%d",
             etcdutil.ClientServiceName("etcd"), hcp.Namespace, supportconfig.EtcdClientPort),
     }}
@@ -24641,8 +24645,8 @@ each writing to a shard-named snapshot file:
 ```text
 Init containers:
   fetch-certs          (unchanged — shared client TLS works for all shards)
-  snapshot-etcd        etcdctl --endpoints=etcd-client.<ns>:2379 snapshot save /backup/etcd.db
-  snapshot-etcd-events etcdctl --endpoints=etcd-client-events.<ns>:2379 snapshot save /backup/etcd-events.db
+  snapshot-default     etcdctl --endpoints=etcd-client.<ns>:2379 snapshot save /backup/default.db
+  snapshot-events      etcdctl --endpoints=etcd-client-events.<ns>:2379 snapshot save /backup/events.db
 
 Main container:
   upload               control-plane-operator etcd-upload --snapshot-dir /backup/ ...
@@ -24694,7 +24698,7 @@ Extend the `etcd-upload` subcommand:
 - Add `--snapshot-dir` flag (mutually exclusive with existing `--snapshot-path`)
 - When `--snapshot-dir` is set, iterate over `*.db` files in the directory
 - Upload each with key `<prefix>/<timestamp>/<shard-name>.db`
-- Write JSON to termination log: `[{"name":"etcd","url":"s3://..."},{"name":"etcd-events","url":"s3://..."}]`
+- Write JSON to termination log: `[{"name":"default","url":"s3://..."},{"name":"events","url":"s3://..."}]`
 
 The existing `--snapshot-path` continues to work for the single-shard case so
 older CPO images remain compatible.
@@ -54484,7 +54488,9 @@ string
 </em>
 </td>
 <td>
-<p>name is the shard name (e.g., &ldquo;etcd&rdquo; for the default, &ldquo;etcd-events&rdquo; for a named shard).
+<p>name is the public shard identity: &ldquo;default&rdquo; for the default shard,
+or the exact ManagedEtcdShardSpec.name for a named shard
+(e.g., &ldquo;events&rdquo;).
 It must be between 1 and 63 characters.</p>
 </td>
 </tr>
@@ -58481,9 +58487,12 @@ string
 <td>
 <p>name is a unique identifier for this shard. It is used to derive
 resource names (e.g., StatefulSet &ldquo;etcd-{name}&rdquo;, Service
-&ldquo;etcd-client-{name}&rdquo;).
+&ldquo;etcd-client-{name}&rdquo;), and it is the identity reported for the shard in
+HCPEtcdBackup.status.shardSnapshots (the default shard is reported as
+&ldquo;default&rdquo; instead).
 Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
 starting and ending with an alphanumeric character), max 48 characters.
+Must not be &ldquo;default&rdquo;, which is reserved for the default shard.
 Immutable once set.</p>
 </td>
 </tr>
