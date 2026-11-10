@@ -14,6 +14,10 @@ import (
 
 var sha256DigestPattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
+// repositoryPathPattern is the path grammar of an image reference (one or more
+// path components separated by "/"), as in the distribution reference grammar.
+var repositoryPathPattern = regexp.MustCompile(`^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$`)
+
 func (o Options) withDefaults() Options {
 	if o.Namespace == "" {
 		o.Namespace = DefaultNamespace
@@ -102,6 +106,26 @@ func mirrorRepository(host, sourceRepository string) (string, error) {
 		}
 	}
 	return host + "/" + registryHost + "/" + strings.Join(parts[1:], "/"), nil
+}
+
+// releaseMirrorRepository returns the mirror repository on host that receives
+// release: req.ReleaseMirrorRepository when set, otherwise the mirror of the
+// release repository.
+func releaseMirrorRepository(host string, req MirrorRequest, release string) (string, error) {
+	repo, _, err := splitDigestRef(release)
+	if err != nil {
+		return "", err
+	}
+	if req.ReleaseMirrorRepository == "" {
+		return mirrorRepository(host, repo)
+	}
+	if host == "" {
+		return "", errors.New("mirror host must not be empty")
+	}
+	if !repositoryPathPattern.MatchString(req.ReleaseMirrorRepository) {
+		return "", fmt.Errorf("release mirror repository %q must be a lowercase repository path without a tag or digest", req.ReleaseMirrorRepository)
+	}
+	return host + "/" + req.ReleaseMirrorRepository, nil
 }
 
 func splitDigestRef(ref string) (repository, digest string, err error) {

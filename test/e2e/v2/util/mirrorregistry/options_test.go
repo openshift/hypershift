@@ -210,6 +210,44 @@ func TestMirrorRepository(t *testing.T) {
 	}
 }
 
+func TestReleaseMirrorRepository(t *testing.T) {
+	const host = "mirror-registry-test-mirror-registry.apps.example.com"
+	release := "registry.build09.ci.openshift.org/ci-op-abc/release@sha256:" + strings.Repeat("a", 64)
+	tests := []struct {
+		name        string
+		host        string
+		req         MirrorRequest
+		release     string
+		want        string
+		wantErrText string
+	}{
+		{name: "When no release mirror repository is set, it should mirror the release repository", host: host, release: release, want: host + "/registry.build09.ci.openshift.org/ci-op-abc/release"},
+		{name: "When a release mirror repository is set, it should use it on the mirror host", host: host, req: MirrorRequest{ReleaseMirrorRepository: "openshift/release"}, release: release, want: host + "/openshift/release"},
+		{name: "When the release mirror repository has separators inside components, it should accept it", host: host, req: MirrorRequest{ReleaseMirrorRepository: "e2e_v2/release-payloads.all"}, release: release, want: host + "/e2e_v2/release-payloads.all"},
+		{name: "When the release mirror repository has a tag, it should return an error", host: host, req: MirrorRequest{ReleaseMirrorRepository: "openshift/release:4.22"}, release: release, wantErrText: "release mirror repository"},
+		{name: "When the release mirror repository has a digest, it should return an error", host: host, req: MirrorRequest{ReleaseMirrorRepository: "openshift/release@sha256:abc"}, release: release, wantErrText: "release mirror repository"},
+		{name: "When the release mirror repository has uppercase letters, it should return an error", host: host, req: MirrorRequest{ReleaseMirrorRepository: "OpenShift/release"}, release: release, wantErrText: "release mirror repository"},
+		{name: "When the release mirror repository has an empty component, it should return an error", host: host, req: MirrorRequest{ReleaseMirrorRepository: "openshift//release"}, release: release, wantErrText: "release mirror repository"},
+		{name: "When the release mirror repository starts with a slash, it should return an error", host: host, req: MirrorRequest{ReleaseMirrorRepository: "/openshift/release"}, release: release, wantErrText: "release mirror repository"},
+		{name: "When the release is not by digest, it should return an error even with a release mirror repository", host: host, req: MirrorRequest{ReleaseMirrorRepository: "openshift/release"}, release: "quay.io/openshift/release:4.22", wantErrText: "digest"},
+		{name: "When the mirror host is empty, it should return an error", req: MirrorRequest{ReleaseMirrorRepository: "openshift/release"}, release: release, wantErrText: "host"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := releaseMirrorRepository(tt.host, tt.req, tt.release)
+			if tt.wantErrText != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErrText) {
+					t.Fatalf("releaseMirrorRepository() error = %v, want text %q", err, tt.wantErrText)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("releaseMirrorRepository() = %q, %v; want %q, nil", got, err, tt.want)
+			}
+		})
+	}
+}
+
 func TestSplitDigestRef(t *testing.T) {
 	digest := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	tests := []struct {
