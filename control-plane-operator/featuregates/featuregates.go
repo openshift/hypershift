@@ -14,6 +14,11 @@ const (
 	ExternalOIDCWithUpstreamParity           featuregate.Feature = "ExternalOIDCWithUpstreamParity"
 	KubeletHAProxyRouting                    featuregate.Feature = "KubeletHAProxyRouting"
 	ExternalOIDCAsWebhook                    featuregate.Feature = "ExternalOIDCAsWebhook"
+
+	// HostedClusterAutoscalerConfiguration enables additional HostedCluster.spec.autoscaling
+	// fields for configuring the per-hosted-cluster cluster-autoscaler, including node/pod
+	// behavior, resource limits, cordoning, and new-pod scale-up delay.
+	HostedClusterAutoscalerConfiguration featuregate.Feature = "HostedClusterAutoscalerConfiguration"
 )
 
 // Initialize new features here
@@ -24,6 +29,7 @@ var (
 	externalOIDCWithUpstreamParityFeature           = featuregates.NewFeature(ExternalOIDCWithUpstreamParity, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	kubeletHAProxyRoutingFeature                    = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	externalOIDCAsWebhook                           = featuregates.NewFeature(ExternalOIDCAsWebhook, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	hostedClusterAutoscalerConfigurationFeature     = featuregates.NewFeature(HostedClusterAutoscalerConfiguration, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -32,6 +38,7 @@ func init() {
 	allFeatures.AddFeature(externalOIDCWithUpstreamParityFeature)
 	allFeatures.AddFeature(kubeletHAProxyRoutingFeature)
 	allFeatures.AddFeature(externalOIDCAsWebhook)
+	allFeatures.AddFeature(hostedClusterAutoscalerConfigurationFeature)
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
 }
