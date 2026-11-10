@@ -50,7 +50,7 @@ func RegisterHostedClusterHealthTests(getTestCtx internal.TestContextGetter) {
 
 func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster is operational", func() {
-		It("should have all expected conditions with correct status", func() {
+		It("should have all expected conditions with correct status", Label("hosted-cluster-conditions"), func() {
 			tc := getTestCtx()
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
