@@ -313,8 +313,8 @@ func runRotationTest(g Gomega, tc *internal.TestContext, rc rotationCase) {
 // rotateAndWait applies mutate to the HostedCluster spec, then waits for re-encryption
 // to start and complete. mutate must set the new active key value in-place.
 // If the mutation produces no diff (spec already at the desired key), rotateAndWait
-// returns immediately without patching or waiting — the controller treats spec==activeKey
-// as steady state and will not start a rotation.
+// skips the patch but still waits for any in-progress rotation to complete before
+// returning — the spec can already match the target while a rotation is still running.
 func rotateAndWait(g Gomega, ctx context.Context, tc *internal.TestContext, hcKey crclient.ObjectKey, mutate func(*hyperv1.HostedCluster)) {
 	GinkgoHelper()
 	hc := &hyperv1.HostedCluster{}
@@ -324,6 +324,11 @@ func rotateAndWait(g Gomega, ctx context.Context, tc *internal.TestContext, hcKe
 	patchData, err := crclient.MergeFrom(base).Data(hc)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to compute patch data")
 	if string(patchData) == "{}" {
+		// Spec is already at the desired key, but a rotation may still be in
+		// progress (e.g. the test timed out mid-rotation and the spec was already
+		// patched). Wait for completion so the caller doesn't return success while
+		// EtcdDataEncryptionUpToDate=False.
+		waitForReEncryptionComplete(g, ctx, tc.MgmtClient, hcKey, 30*time.Minute)
 		return
 	}
 	// The admission policy rejects spec.secretEncryption changes while
