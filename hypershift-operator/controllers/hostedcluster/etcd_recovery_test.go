@@ -1,12 +1,14 @@
 package hostedcluster
 
 import (
+	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/upsert"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -16,6 +18,7 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func TestEtcdRecoveryJobStatus(t *testing.T) {
@@ -300,6 +303,217 @@ func TestReconcileETCDMemberRecovery_ClearStaleCondition(t *testing.T) {
 				g.Expect(cond).ToNot(BeNil())
 				g.Expect(cond.Reason).To(Equal(tt.existingCondition.Reason))
 				g.Expect(cond.Status).To(Equal(tt.existingCondition.Status))
+			}
+		})
+	}
+}
+
+func TestReconcileETCDMemberRecovery_UnreachableNodeDetection(t *testing.T) {
+	tests := []struct {
+		name        string
+		namespace   string
+		pods        []crclient.Object
+		expectFound bool
+		expectedPod string
+	}{
+		{
+			name:      "When etcd pod has DisruptionTarget with DeletionByTaintManager, it should detect it as failing",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+						Conditions: []corev1.PodCondition{
+							{
+								Type:   corev1.DisruptionTarget,
+								Status: corev1.ConditionTrue,
+								Reason: "DeletionByTaintManager",
+							},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound: true,
+			expectedPod: "etcd-1",
+		},
+		{
+			name:      "When etcd pod has DisruptionTarget with different reason, it should not detect it as failing",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+						Conditions: []corev1.PodCondition{
+							{
+								Type:   corev1.DisruptionTarget,
+								Status: corev1.ConditionTrue,
+								Reason: "PreemptionByScheduler",
+							},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound: false,
+		},
+		{
+			name:      "When etcd pod is terminating without DisruptionTarget, it should not detect it as failing",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels:            map[string]string{"app": "etcd"},
+						DeletionTimestamp: &metav1.Time{},
+						Finalizers:        []string{"test-finalizer"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "clusters",
+				},
+			}
+
+			hcpNS := "clusters-test"
+
+			etcdSts := &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: hcpNS,
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas:     2,
+					AvailableReplicas: 2,
+				},
+			}
+
+			objects := []crclient.Object{hcluster, etcdSts}
+			objects = append(objects, tt.pods...)
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				WithStatusSubresource(&hyperv1.HostedCluster{}).
+				Build()
+
+			r := &HostedClusterReconciler{
+				Client: fakeClient,
+				now:    metav1.Now,
+			}
+
+			// We test the detection logic indirectly. When a failing pod is
+			// found, the reconciler attempts to create recovery resources
+			// (role, SA, etc.) via createOrUpdate. We pass a simple stub that
+			// tracks whether createOrUpdate was called.
+			createOrUpdateCalled := false
+			stubCreateOrUpdate := upsert.CreateOrUpdateFN(func(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				createOrUpdateCalled = true
+				return controllerutil.OperationResultNone, nil
+			})
+
+			_, err := r.reconcileETCDMemberRecovery(t.Context(), hcluster, stubCreateOrUpdate)
+
+			if tt.expectFound {
+				// When a failing pod is found, the reconciler proceeds to
+				// create recovery resources. If createOrUpdate was called, it
+				// means the failing pod was detected.
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(createOrUpdateCalled).To(BeTrue(), "expected createOrUpdate to be called (failing pod detected)")
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(createOrUpdateCalled).To(BeFalse(), "expected createOrUpdate NOT to be called (no failing pod)")
 			}
 		})
 	}
