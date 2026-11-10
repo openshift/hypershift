@@ -17280,8 +17280,20 @@ graph LR
 
 ## Configure the HostedCluster
 
-The `hypershift` CLI does not expose flags for these fields. Render the HostedCluster manifest,
-add the fields under `spec.services`, and apply the manifest.
+The `hypershift` CLI sets these fields at creation time:
+
+- `--kas-service-annotations key=value` is repeatable and populates
+  `spec.services[APIServer].servicePublishingStrategy.loadBalancer.serviceAnnotations`.
+- `--kas-load-balancer-class <class>` populates
+  `spec.services[APIServer].servicePublishingStrategy.loadBalancer.loadBalancerClass`.
+
+Both flags require the `LoadBalancer` APIServer publishing strategy. They cannot be combined
+with `--external-dns-domain`, which selects the `Route` strategy. Malformed annotations are
+rejected before provisioning, and after creation the CLI verifies that the API server
+persisted the fields. If the management cluster HostedCluster CRD lacks the `DeterministicLBIP`
+schema, the API server drops the fields and the command fails after the HostedCluster is
+created. Delete that HostedCluster, install the HyperShift Operator with
+`--tech-preview-no-upgrade`, and create the cluster again.
 
 ### Field reference
 
@@ -17334,8 +17346,17 @@ spec:
     not configured with a class only process Services **without** a class. If you use the
     default MetalLB configuration, omit `loadBalancerClass` and keep `serviceAnnotations`.
 
-Render the HostedCluster manifest, edit it to add the `loadBalancer` fields, and apply it to
-create the cluster:
+Create the cluster directly with the flags:
+
+```bash
+hypershift create cluster <platform> \
+  ... \
+  --kas-load-balancer-class=metallb.io/metallb \
+  --kas-service-annotations=metallb.io/loadBalancerIPs=10.1.1.100
+```
+
+Alternatively, render the HostedCluster manifest, add the fields under `spec.services`, and
+apply the manifest:
 
 ```bash
 hypershift create cluster <platform> \
