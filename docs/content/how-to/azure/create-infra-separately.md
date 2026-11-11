@@ -119,6 +119,14 @@ where:
 * `--assign-identity-roles` enables automatic RBAC role assignment for workload identities
 * `DNS_ZONE_RG` is the name of the resource group containing your public DNS zone
 
+When `ImageRegistry` is disabled, also pass `--disable-cluster-capabilities ImageRegistry`.
+This skips registry role assignment for self-managed workload identities and for both the
+control-plane and data-plane identities used by managed Azure. Only when the capability is
+disabled, the file passed to `--workload-identities-file` may omit its top-level `imageRegistry`
+key, the file passed to `--managed-identities-file` may omit its top-level `imageRegistry` key,
+and the file passed to `--data-plane-identities-file` may omit its top-level
+`imageRegistryMSIClientID` key.
+
 ## Creating Infrastructure for Private Clusters
 
 The `create infra azure` command creates the same infrastructure resources regardless of
