@@ -42170,6 +42170,7 @@ The metrics-proxy dynamically discovers all ServiceMonitors and PodMonitors in t
 
 | Component | Metrics port |
 |---|---|
+| cluster-api | 8080 |
 | cluster-autoscaler | 8085 |
 | control-plane-operator | 8080 |
 | hosted-cluster-config-operator | 8080 |
