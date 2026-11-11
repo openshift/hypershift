@@ -28,6 +28,8 @@ spec:
         - --leader-elect-lease-duration=137s
         - --leader-elect-retry-period=26s
         - --leader-elect-renew-deadline=107s
+        - --diagnostics-address=:8080
+        - --insecure-diagnostics
         env:
         - name: MY_NAMESPACE
           valueFrom:
@@ -47,6 +49,10 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: manager
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
         readinessProbe:
           failureThreshold: 3
           httpGet:
