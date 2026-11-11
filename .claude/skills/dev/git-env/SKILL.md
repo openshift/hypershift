@@ -83,7 +83,6 @@ Use conventional prefixes:
 
    [optional body]
 
-   Signed-off-by: <name> <email>
    Commit-Message-Assisted-by: Claude (via Claude Code)
    EOF
    )"
@@ -190,7 +189,6 @@ Implement subnet discovery from Karpenter EC2NodeClass resources
 to ensure PrivateLink VPC Endpoints have ENIs in all required
 availability zones.
 
-Signed-off-by: Alberto Garcia <agarcia@redhat.com>
 Commit-Message-Assisted-by: Claude (via Claude Code)
 EOF
 )"
