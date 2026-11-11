@@ -45,6 +45,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
 	cmd.Flags().BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, util.EnableKMSDescription)
 	cmd.Flags().BoolVar(&opts.EnableKarpenter, "enable-karpenter", opts.EnableKarpenter, util.EnableKarpenterDescription)
+	cmd.Flags().StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, util.DisableClusterCapabilitiesDescription)
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("infra-id")
@@ -89,6 +90,7 @@ func BindCreateIAMProductFlags(opts *CreateIAMOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
 	flags.BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, util.EnableKMSDescription)
 	flags.BoolVar(&opts.EnableKarpenter, "enable-karpenter", opts.EnableKarpenter, util.EnableKarpenterDescription)
+	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, util.DisableClusterCapabilitiesDescription)
 }
 
 // Validate validates the CreateIAMOptions
@@ -110,6 +112,9 @@ func (o *CreateIAMOptions) Validate() error {
 	}
 	if o.OutputFile == "" {
 		return fmt.Errorf("output-file is required")
+	}
+	if err := validateDisabledClusterCapabilities(o.DisableClusterCapabilities); err != nil {
+		return err
 	}
 	return nil
 }

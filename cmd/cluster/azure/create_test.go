@@ -184,7 +184,14 @@ func setupAzureTestFixtures(t *testing.T) (credentialsFile, infraFile, pullSecre
 		BootImageID:       "fakeBootImageID",
 		InfraID:           "fakeInfraID",
 		SecurityGroupID:   "fakeSecurityGroupID",
-		ControlPlaneMIs:   &hyperv1.AzureResourceManagedIdentities{},
+		ControlPlaneMIs: &hyperv1.AzureResourceManagedIdentities{
+			ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+				ImageRegistry: hyperv1.ManagedIdentity{ObjectEncoding: ObjectEncoding},
+			},
+		},
+		DataPlaneIdentities: hyperv1.DataPlaneManagedIdentities{
+			ImageRegistryMSIClientID: "12345678-1234-1234-1234-123456789012",
+		},
 		KarpenterClientID: "12345678-1234-1234-1234-123456789012",
 	})
 	if err != nil {
@@ -287,6 +294,34 @@ func TestCreateCluster(t *testing.T) {
 
 	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
+	selfManagedInfra, err := json.Marshal(&azureinfra.CreateInfraOutput{
+		BaseDomain:        "fakeBaseDomain",
+		PublicZoneID:      "fakePublicZoneID",
+		PrivateZoneID:     "fakePrivateZoneID",
+		Location:          "fakeLocation",
+		ResourceGroupName: "fakeResourceGroupName",
+		VNetID:            "fakeVNetID",
+		SubnetID:          "fakeSubnetID",
+		BootImageID:       "fakeBootImageID",
+		InfraID:           "fakeInfraID",
+		SecurityGroupID:   "fakeSecurityGroupID",
+		WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+			Ingress:              hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000001"},
+			File:                 hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000002"},
+			Disk:                 hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000003"},
+			NodePoolManagement:   hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000004"},
+			CloudProvider:        hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000005"},
+			Network:              hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000006"},
+			ControlPlaneOperator: hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000007"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal self-managed infra: %v", err)
+	}
+	selfManagedInfraFile := filepath.Join(tempDir, "self-managed-infra.json")
+	if err := os.WriteFile(selfManagedInfraFile, selfManagedInfra, 0600); err != nil {
+		t.Fatalf("failed to write self-managed infra: %v", err)
+	}
 
 	for _, testCase := range []struct {
 		name string
@@ -474,6 +509,18 @@ func TestCreateCluster(t *testing.T) {
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 				"--auto-node",
+			},
+		},
+		{
+			name: "When self-managed Azure disables ImageRegistry, it should omit the workload identity",
+			args: []string{
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + selfManagedInfraFile,
+				"--render-sensitive",
+				"--oidc-issuer-url=https://issuer.example.com",
+				"--disable-cluster-capabilities=ImageRegistry",
 			},
 		},
 	} {
@@ -676,4 +723,59 @@ func TestServiceAccountTokenIssuerSecret(t *testing.T) {
 	g := NewGomegaWithT(t)
 	secret := serviceAccountTokenIssuerSecret("test-ns", "test")
 	g.Expect(secret.Labels).To(HaveKeyWithValue(util.DeleteWithClusterLabelName, "true"))
+}
+
+// TestApplyAzureAuthenticationConfigDisabledRegistry verifies that disabling the ImageRegistry
+// capability clears the registry workload identity from the rendered HostedCluster while leaving
+// the supplied infrastructure input unchanged, and that an enabled capability retains it.
+func TestCreateOptions_ApplyAzureAuthenticationConfig(t *testing.T) {
+	t.Parallel()
+
+	const registryClientID = "00000000-0000-0000-0000-0000000000ff"
+	populated := func() *hyperv1.AzureWorkloadIdentities {
+		return &hyperv1.AzureWorkloadIdentities{
+			ImageRegistry: hyperv1.WorkloadIdentity{ClientID: registryClientID},
+			Ingress:       hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000001"},
+			Disk:          hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000003"},
+		}
+	}
+
+	t.Run("When ImageRegistry is disabled, it should clear the rendered identity without mutating the input", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		input := populated()
+		o := &CreateOptions{completedCreateOptions: &completedCreateOptions{infra: &azureinfra.CreateInfraOutput{WorkloadIdentities: input}}}
+		cluster := &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Capabilities: &hyperv1.Capabilities{Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}},
+				Platform:     hyperv1.PlatformSpec{Azure: &hyperv1.AzurePlatformSpec{}},
+			},
+		}
+
+		o.applyAzureAuthenticationConfig(cluster)
+
+		rendered := cluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
+		g.Expect(rendered).ToNot(BeNil())
+		g.Expect(rendered.ImageRegistry).To(Equal(hyperv1.WorkloadIdentity{}), "rendered registry identity must be cleared when ImageRegistry is disabled")
+		g.Expect(rendered.Ingress.ClientID).To(BeEquivalentTo("00000000-0000-0000-0000-000000000001"), "other identities must be retained")
+		g.Expect(o.infra.WorkloadIdentities.ImageRegistry.ClientID).To(BeEquivalentTo(registryClientID), "the supplied input identity must not be mutated")
+	})
+
+	t.Run("When ImageRegistry is enabled, it should retain the rendered identity", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		o := &CreateOptions{completedCreateOptions: &completedCreateOptions{infra: &azureinfra.CreateInfraOutput{WorkloadIdentities: populated()}}}
+		cluster := &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{Azure: &hyperv1.AzurePlatformSpec{}},
+			},
+		}
+
+		o.applyAzureAuthenticationConfig(cluster)
+
+		rendered := cluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
+		g.Expect(rendered.ImageRegistry.ClientID).To(BeEquivalentTo(registryClientID))
+	})
 }
