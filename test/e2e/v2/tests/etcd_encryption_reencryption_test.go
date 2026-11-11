@@ -136,6 +136,53 @@ func verifyReEncryptionStatus(g Gomega, hc *hyperv1.HostedCluster, expectedProvi
 		"history[0].from.fingerprint should differ from to.fingerprint — rotation must change the key")
 }
 
+// captureKASPodUIDs returns the UID set of all current kube-apiserver pods. Used as a
+// baseline before a rotation so waitForStage1KASPodsRunning can distinguish pre-rotation
+// pods from newly-created stage-1 rollout pods.
+func captureKASPodUIDs(g Gomega, ctx context.Context, mgmtClient crclient.Client, controlPlaneNamespace string) map[string]bool {
+	GinkgoHelper()
+	podList := &corev1.PodList{}
+	g.Expect(mgmtClient.List(ctx, podList,
+		crclient.InNamespace(controlPlaneNamespace),
+		crclient.MatchingLabels{"app": "kube-apiserver"},
+	)).To(Succeed())
+	uids := make(map[string]bool, len(podList.Items))
+	for _, pod := range podList.Items {
+		uids[string(pod.UID)] = true
+	}
+	return uids
+}
+
+// waitForStage1KASPodsRunning blocks until at least one KAS pod whose UID is NOT in
+// preRotationUIDs has its kube-apiserver container in Running state. This ensures
+// midRotation callbacks fire against actual stage-1 pods — waitForReEncryptionStarted
+// returns as soon as the controller flips EtcdDataEncryptionUpToDate=False, which
+// happens before the stage-1 rollout starts, so without this wait the callback would
+// read pre-rotation pod logs instead of stage-1 logs.
+func waitForStage1KASPodsRunning(g Gomega, ctx context.Context, mgmtClient crclient.Client, controlPlaneNamespace string, preRotationUIDs map[string]bool, timeout time.Duration) {
+	GinkgoHelper()
+	g.Eventually(func(g Gomega) {
+		podList := &corev1.PodList{}
+		g.Expect(mgmtClient.List(ctx, podList,
+			crclient.InNamespace(controlPlaneNamespace),
+			crclient.MatchingLabels{"app": "kube-apiserver"},
+		)).To(Succeed())
+		var newRunning int
+		for _, pod := range podList.Items {
+			if preRotationUIDs[string(pod.UID)] {
+				continue
+			}
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.Name == "kube-apiserver" && cs.State.Running != nil {
+					newRunning++
+				}
+			}
+		}
+		g.Expect(newRunning).To(BeNumerically(">=", 1),
+			"waiting for at least one stage-1 KAS pod with a running kube-apiserver container")
+	}, timeout, 15*time.Second).WithContext(ctx).Should(Succeed())
+}
+
 // captureKASRestartCounts snapshots the current restart count of every KAS pod container.
 // Pass the result to verifyKASHealth to measure only the delta introduced by the rotation,
 // avoiding false failures from restarts that already occurred on the shared cluster.
@@ -322,9 +369,9 @@ func runRotationTest(g Gomega, tc *internal.TestContext, rc rotationCase) {
 // skips the patch but still waits for any in-progress rotation to complete before
 // returning — the spec can already match the target while a rotation is still running.
 //
-// midRotation callbacks, if provided, are called after waitForReEncryptionStarted and
-// before waitForReEncryptionComplete. This window captures stage-1 KAS pods (read-only
-// rollout) before the write-promotion rollout replaces them.
+// midRotation callbacks, if provided, are called after stage-1 KAS pods (read-only
+// rollout) are Running and before waitForReEncryptionComplete. The callback fires
+// against actual stage-1 pods rather than pre-rotation pods.
 func rotateAndWait(g Gomega, ctx context.Context, tc *internal.TestContext, hcKey crclient.ObjectKey, mutate func(*hyperv1.HostedCluster), midRotation ...func(Gomega)) {
 	GinkgoHelper()
 	hc := &hyperv1.HostedCluster{}
@@ -352,10 +399,23 @@ func rotateAndWait(g Gomega, ctx context.Context, tc *internal.TestContext, hcKe
 	g.Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 	base = hc.DeepCopy()
 	mutate(hc)
+	// Capture pre-rotation pod UIDs so waitForStage1KASPodsRunning can identify
+	// newly-created stage-1 pods by exclusion.
+	var preRotationUIDs map[string]bool
+	if len(midRotation) > 0 {
+		preRotationUIDs = captureKASPodUIDs(g, ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
+	}
 	g.Expect(tc.MgmtClient.Patch(ctx, hc, crclient.MergeFrom(base))).To(Succeed())
 	waitForReEncryptionStarted(g, ctx, tc.MgmtClient, hcKey, 5*time.Minute)
-	for _, fn := range midRotation {
-		fn(g)
+	if len(midRotation) > 0 {
+		// waitForReEncryptionStarted returns as soon as EtcdDataEncryptionUpToDate
+		// flips to False — before the stage-1 rollout starts. Wait for at least one
+		// new KAS pod to be Running so the callbacks read stage-1 logs, not
+		// pre-rotation logs.
+		waitForStage1KASPodsRunning(g, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, preRotationUIDs, 10*time.Minute)
+		for _, fn := range midRotation {
+			fn(g)
+		}
 	}
 	waitForReEncryptionComplete(g, ctx, tc.MgmtClient, hcKey, 25*time.Minute)
 }
