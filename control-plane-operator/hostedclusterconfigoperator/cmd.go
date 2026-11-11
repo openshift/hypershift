@@ -292,12 +292,11 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 			},
 			RegistryOverrides: nil,
 		},
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
+	releaseProvider.SetOpenShiftImageRegistryOverrides(imageRegistryOverrides)
 
-	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-	}
+	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{}
+	imageMetaDataProvider.SetOpenShiftImageRegistryOverrides(imageRegistryOverrides)
 
 	apiReadingClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
