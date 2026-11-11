@@ -426,6 +426,9 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 					}
 				} else if !endpointCase.ready {
 					assertions.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				} else {
+					assertions.Expect(err).NotTo(HaveOccurred())
+					assertions.Expect(after.Spec.ControlPlaneEndpoint).To(Equal(agentcapicore.APIEndpoint{Host: APIEndpoint.Host, Port: APIEndpoint.Port}))
 				}
 			})
 		}
