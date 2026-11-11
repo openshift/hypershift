@@ -70,6 +70,7 @@ type shardedE2E struct {
 	baseDomain   string
 	releaseImage string
 	pullSecret   string // path to a pull secret file
+	awsCreds     string // path to the AWS credentials file
 
 	sourceCluster string
 	targetCluster string
@@ -107,6 +108,7 @@ func (s *shardedE2E) commonCreateArgs(name string) []string {
 		"--generate-ssh",
 		"--region=" + s.region,
 		"--zones=" + s.zones,
+		"--aws-creds=" + s.awsCreds,
 		"--public-only",
 		"--infra-availability-policy=SingleReplica",
 		"--feature-set=TechPreviewNoUpgrade",
@@ -231,6 +233,7 @@ func (s *shardedE2E) destroyCluster(ctx context.Context, name string) {
 		"--name=" + name,
 		"--region=" + s.region,
 		"--base-domain=" + s.baseDomain,
+		"--aws-creds=" + s.awsCreds,
 	}
 	if err := s.runCLI(ctx, fmt.Sprintf("destroy-%s.log", name), args...); err != nil {
 		GinkgoWriter.Printf("WARNING: failed to destroy cluster %s: %v\n", name, err)
@@ -312,6 +315,12 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 		cliPath, err := exec.LookPath("hypershift")
 		Expect(err).NotTo(HaveOccurred(), "the hypershift CLI must be on PATH")
 		e.cliPath = cliPath
+
+		By("Checking for AWS credentials")
+		e.awsCreds = internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+		if _, err := os.Stat(e.awsCreds); err != nil {
+			Skip(fmt.Sprintf("AWS credentials file %s not available in the test pod", e.awsCreds))
+		}
 
 		e.region = os.Getenv("HYPERSHIFT_AWS_REGION")
 		if e.region == "" {
@@ -502,6 +511,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 				"--region="+e.region,
 				"--base-domain="+e.baseDomain,
 				"--zones="+e.zones,
+				"--aws-creds="+e.awsCreds,
 				"--public-only",
 				"--output-file="+infraJSON,
 			)).To(Succeed())
