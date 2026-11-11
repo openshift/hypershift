@@ -8,7 +8,6 @@ import (
 	"html/template"
 	"net"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -37,6 +36,7 @@ import (
 	"github.com/clarketm/json"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/vincent-petithory/dataurl"
+	"golang.org/x/net/http/httpproxy"
 )
 
 const (
@@ -275,10 +275,11 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 		},
 	}
 
-	// Check if no proxy contains any address that should result in skipping the system proxy
-	skipProxyForKAS := slices.ContainsFunc([]string{externalAPIAddress, internalAPIAddress, "kubernetes", serviceNetwork, clusterNetwork}, func(s string) bool {
-		return strings.Contains(noProxy, s)
-	})
+	// Check if no proxy contains any address that should result in skipping the system proxy.
+	// This uses standard NO_PROXY matching semantics (domain suffix, CIDR containment)
+	// instead of naive substring matching, so that entries like ".example.com" correctly
+	// match "api.test.example.com".
+	skipProxyForKAS := shouldSkipProxyForKAS(noProxy, externalAPIAddress, externalAPIPort, internalAPIAddress, internalAPIPort, serviceNetwork, clusterNetwork)
 
 	if proxyAddr == "" || skipProxyForKAS {
 		filesToAdd = append(filesToAdd, []fileToAdd{
@@ -334,6 +335,76 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 		apiServerIPUnit(),
 	}
 	return json.Marshal(config)
+}
+
+// shouldSkipProxyForKAS determines whether KAS traffic should bypass the HTTP proxy
+// and use the HAProxy direct-TCP path instead. It uses standard NO_PROXY matching
+// semantics from golang.org/x/net/http/httpproxy, which handles:
+//   - domain suffix matching (".example.com" matches "api.test.example.com")
+//   - bare domain matching ("example.com" matches "example.com" and "sub.example.com")
+//   - CIDR containment ("10.0.0.0/8" matches IP "10.1.2.3")
+//   - exact IP matching
+//   - wildcard "*"
+//
+// Additionally, it preserves backward-compatible heuristics:
+//   - any noProxy entry containing the substring "kubernetes" triggers a skip
+//   - explicit serviceNetwork or clusterNetwork CIDRs in noProxy trigger a skip,
+//     even when the KAS addresses are in a different IP range
+func shouldSkipProxyForKAS(noProxy, externalAPIAddress string, externalAPIPort int32, internalAPIAddress string, internalAPIPort int32, serviceNetwork, clusterNetwork string) bool {
+	if noProxy == "" {
+		return false
+	}
+
+	// Use httpproxy to check if the KAS addresses are exempted under standard NO_PROXY rules.
+	cfg := &httpproxy.Config{
+		HTTPSProxy: "http://dummy-proxy:8080",
+		NoProxy:    noProxy,
+	}
+	proxyFunc := cfg.ProxyFunc()
+	for _, target := range []struct {
+		host string
+		port int32
+	}{
+		{host: externalAPIAddress, port: externalAPIPort},
+		{host: internalAPIAddress, port: internalAPIPort},
+	} {
+		if target.host == "" {
+			continue
+		}
+		host := target.host
+		if target.port != 0 {
+			host = net.JoinHostPort(target.host, strconv.Itoa(int(target.port)))
+		}
+		testURL := &url.URL{Scheme: "https", Host: host}
+		if proxyURL, _ := proxyFunc(testURL); proxyURL == nil {
+			return true
+		}
+	}
+
+	// Backward-compatible entry-level checks: walk the comma-separated noProxy list
+	// and look for the "kubernetes" keyword or explicit service/cluster network CIDRs.
+	// The internal API address (e.g. 172.20.0.1) is in a different IP range than the
+	// service/cluster networks (e.g. 10.x.x.x), so httpproxy CIDR containment does
+	// not cover this heuristic.
+	trimmedServiceNetwork := strings.TrimSpace(serviceNetwork)
+	trimmedClusterNetwork := strings.TrimSpace(clusterNetwork)
+	for _, entry := range strings.Split(noProxy, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if strings.Contains(entry, "kubernetes") {
+			return true
+		}
+		if trimmedServiceNetwork != "" && entry == trimmedServiceNetwork {
+			return true
+		}
+		if trimmedClusterNetwork != "" && entry == trimmedClusterNetwork {
+			return true
+		}
+	}
+
+	return false
 }
 
 func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string, internalAPIPort int32, livenessProbeEndpoint string) func() ([]byte, error) {
