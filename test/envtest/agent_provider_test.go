@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/cluster-api/util/conditions"
 	legacyconditions "sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	runtimeenvtest "sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -69,6 +70,16 @@ func agentProviderTestSuites(testDir string) []SuiteSpec {
 					legacyconditions.MarkFalse(writer, "Ready", "", clusterv1.ConditionSeverityWarning, "")
 				}
 				legacy := withConditions(writer.GetV1Beta1Conditions())
+				var legacyObject map[string]any
+				Expect(json.Unmarshal([]byte(legacy), &legacyObject)).To(Succeed())
+				legacyPayload, found, err := unstructured.NestedSlice(legacyObject, "status", "conditions")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(found).To(BeTrue())
+				Expect(legacyPayload).To(HaveLen(2))
+				for _, condition := range legacyPayload {
+					Expect(condition).NotTo(HaveKey("reason"))
+					Expect(condition).NotTo(HaveKey("message"))
+				}
 				suite.Tests.OnUpdate = append(suite.Tests.OnUpdate, OnUpdateTestSpec{
 					Name:              fmt.Sprintf("When a retained legacy writer sets %s, it should expose required condition fields after upgrade", status),
 					InitialCRDPatches: patches, Initial: initial, Updated: legacy,
@@ -79,6 +90,23 @@ func agentProviderTestSuites(testDir string) []SuiteSpec {
 				Name:              "When the new writer serializes an empty message, it should admit status after upgrade",
 				InitialCRDPatches: patches, Initial: agentProviderJSON(base), Updated: withConditions(newCondition), Expected: withConditions(newCondition),
 			})
+			if kind == "AgentMachine" {
+				legacyWriter := &clusterv1.Machine{}
+				legacyconditions.MarkTrue(legacyWriter, "Existing")
+				initial := withConditions(legacyWriter.GetV1Beta1Conditions())
+				var writer conditions.Setter = &agentbeta.AgentMachine{}
+				if version == "v1alpha1" {
+					writer = &agentalpha.AgentMachine{}
+				}
+				Expect(json.Unmarshal([]byte(initial), writer)).To(Succeed())
+				retained := writer.GetConditions()[0]
+				conditions.Set(writer, newCondition[0])
+				Expect(writer.GetConditions()).To(ConsistOf(retained, newCondition[0]))
+				suite.Tests.OnUpdate = append(suite.Tests.OnUpdate, OnUpdateTestSpec{
+					Name:              "When a new writer retains an unrelated reason-less legacy condition, it should reject status after upgrade",
+					InitialCRDPatches: patches, Initial: initial, Updated: withConditions(writer.GetConditions()), ExpectedStatusError: "reason",
+				})
+			}
 			for _, field := range []string{"reason", "message"} {
 				conditionWire, err := json.Marshal(newCondition)
 				Expect(err).NotTo(HaveOccurred())
