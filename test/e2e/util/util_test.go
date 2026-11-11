@@ -372,3 +372,62 @@ func TestMatchesLeaderElectionFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchesControlPlaneUnavailable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		line  string
+		match bool
+	}{
+		{
+			name:  "When a component cannot dial the kube-apiserver service, it should match",
+			line:  `F1111 15:23:29.927335       1 main.go:106] failed to apply cluster TLS profile: failed to create CNO client: Get "https://kube-apiserver:6443/api?timeout=32s": dial tcp 172.30.77.66:6443: connect: connection refused`,
+			match: true,
+		},
+		{
+			name:  "When a sidecar cannot dial the kube-apiserver over localhost, it should match",
+			line:  `{"level":"error","msg":"failed to apply file: failed to get server groups: Get \"https://localhost:6443/api\": dial tcp [::1]:6443: connect: connection refused"}`,
+			match: true,
+		},
+		{
+			name:  "When the kube-apiserver cannot reach etcd, it should match",
+			line:  `E1111 15:23:13.993104       1 run.go:72] "command failed" err="etcd grpc connection not ready: context deadline exceeded"`,
+			match: true,
+		},
+		{
+			name:  "When a client times out dialing etcd, it should match",
+			line:  `W1111 15:22:53.990365       1 logging.go:55] grpc: addrConn.createTransport failed to connect to {Addr: "etcd-client.ns.svc:2379"}. Err: connection error: desc = "transport: Error while dialing: dial tcp 172.30.68.82:2379: connect: connection refused"`,
+			match: true,
+		},
+		{
+			name:  "When a transport failure names no control plane endpoint, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] failed to reach https://registry.example.com/v2/: dial tcp 10.0.0.1:443: connect: connection refused`,
+			match: false,
+		},
+		{
+			name:  "When a control plane endpoint is reached successfully, it should not match",
+			line:  `I1111 15:23:29.927335       1 main.go:106] connected to https://kube-apiserver:6443`,
+			match: false,
+		},
+		{
+			name:  "When the kube-apiserver rejects a request, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] Get "https://kube-apiserver:6443/api": forbidden`,
+			match: false,
+		},
+		{
+			name:  "When log is empty, it should not match",
+			line:  "",
+			match: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(MatchesControlPlaneUnavailable(tc.line)).To(Equal(tc.match))
+		})
+	}
+}
