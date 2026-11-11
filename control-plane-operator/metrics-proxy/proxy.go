@@ -2,6 +2,7 @@ package metricsproxy
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"net/http"
 	"strings"
@@ -110,8 +111,39 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", string(format))
+
+	// Prometheus requests gzip by default on scrapes (scrape config
+	// enable_compression, default true since v2.49). The guest-side
+	// control-plane-metrics-forwarder is a TCP (TLS passthrough) proxy, so gzip is
+	// negotiated end to end between Prometheus and this handler and shrinks the
+	// on-the-wire bytes on both the cross-AZ and PrivateLink legs. The exposition
+	// text compresses by roughly 30-45x. See OCPBUGS-132731.
+	if acceptsGzip(r) {
+		// Content-Encoding must be set before WriteHeader; the gzip writer streams
+		// the body, so no (now-stale) Content-Length is set.
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusOK)
+		gz := gzip.NewWriter(w)
+		if _, err := gz.Write(buf.Bytes()); err != nil {
+			h.log.Error(err, "failed to write gzip response body")
+		}
+		// Close flushes any buffered data and writes the gzip trailer.
+		if err := gz.Close(); err != nil {
+			h.log.Error(err, "failed to close gzip writer")
+		}
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(buf.Bytes())
+}
+
+// acceptsGzip reports whether the request advertises gzip in its Accept-Encoding
+// header. It uses a case-insensitive substring match, mirroring how net/http
+// negotiates gzip; q-value parsing is intentionally omitted since Prometheus
+// always sends a plain "gzip".
+func acceptsGzip(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(r.Header.Get("Accept-Encoding")), "gzip")
 }
 
 // buildScrapeErrorMetric creates a synthetic metrics_aggregator_pod_scrape_errors_total
