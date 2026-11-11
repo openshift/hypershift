@@ -126,6 +126,18 @@ type MirrorRequest struct {
 	// each referenced by digest.
 	ReleaseImages []string
 
+	// ReleaseMirrorRepository is a repository path on the registry host, for
+	// example "openshift/release", that receives every payload in
+	// ReleaseImages. Empty means each payload goes to the mirror repository
+	// derived from its own release repository. Set it when payloads share
+	// component repositories but come from different release repositories:
+	// with one destination per payload a shared source repository would map to
+	// several mirrors, which a one-to-one mapping (for example the HyperShift
+	// operator --registry-overrides) cannot express. Payloads are tagged by
+	// version in the shared repository, so payloads with the same version
+	// overwrite each other's tags; pulls by digest are not affected.
+	ReleaseMirrorRepository string
+
 	// SourcePullSecret is a .dockerconfigjson document used to read source
 	// images. Nil means sources are read anonymously.
 	SourcePullSecret []byte

@@ -231,4 +231,15 @@ func init() {
 		"Comma-separated list of test users in user:password format for External OIDC testing. Written by the lifecycle PostCreate.",
 		false,
 	)
+	// Registry overrides test environment variables
+	RegisterEnvVar(
+		"E2E_REGISTRY_OVERRIDES_CA_CERT_FILE",
+		"Path to the PEM CA certificate for the registry overrides mirror. The CI workflow creates it before the management cluster, which trusts it. Set by SetupTestEnv from SHARED_DIR.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_REGISTRY_OVERRIDES_CA_KEY_FILE",
+		"Path to the PEM private key of E2E_REGISTRY_OVERRIDES_CA_CERT_FILE. Set by SetupTestEnv from SHARED_DIR.",
+		false,
+	)
 }

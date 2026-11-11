@@ -38,6 +38,9 @@ const (
 	registryTestRelease = "quay.io/openshift-release-dev/ocp-release@" + registryTestDigest
 	registryTestVirtual = "mirror-source.hypershift-e2e.invalid/libpod/registry"
 	registryTestHost    = "mirror-registry-test-mirror-registry.apps.alesross-mc.alesross.hypershift.devcluster.openshift.com"
+	// registryTestOtherRelease is a second payload from another release
+	// repository, as N-1 and N are in CI.
+	registryTestOtherRelease = "quay-proxy.ci.openshift.org/openshift/ci@sha256:8788e8604d305a3b82c8c1807b5df7a1a84cc650d57a60f9c5c2b78efec54b3f"
 )
 
 func TestBuildCopyRequest(t *testing.T) {
@@ -57,6 +60,13 @@ func TestBuildCopyRequest(t *testing.T) {
 				Images:   []ImageCopy{{From: registryTestImage, To: internal + "/" + registryTestVirtual}, {From: registryTestRelease, To: internal + "/" + registryTestVirtual}, {From: registryTestImage, To: internal + "/quay.io/libpod/registry"}},
 				Releases: []ReleaseCopy{{From: registryTestRelease, ToRepository: internal + "/quay.io/openshift-release-dev/ocp-release"}}},
 		},
+		{
+			name: "When a release mirror repository is set, it should copy every release into it",
+			req:  MirrorRequest{ReleaseImages: []string{registryTestRelease, registryTestOtherRelease}, ReleaseMirrorRepository: "openshift/release"},
+			want: CopyRequest{Namespace: DefaultNamespace, CABundlePEM: ca,
+				Releases: []ReleaseCopy{{From: registryTestRelease, ToRepository: internal + "/openshift/release"}, {From: registryTestOtherRelease, ToRepository: internal + "/openshift/release"}}},
+		},
+		{name: "When the release mirror repository is invalid, it should return an error", req: MirrorRequest{ReleaseImages: []string{registryTestRelease}, ReleaseMirrorRepository: "openshift/release:latest"}, wantErr: true},
 		{name: "When the request is empty, it should preserve namespace and CA", want: CopyRequest{Namespace: DefaultNamespace, CABundlePEM: ca}},
 		{name: "When an image has a tag instead of a digest, it should return an error", req: MirrorRequest{Images: []ImageMapping{{From: "quay.io/libpod/registry:2.8.2"}}}, wantErr: true},
 		{name: "When a release has a tag instead of a digest, it should return an error", req: MirrorRequest{ReleaseImages: []string{"quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64"}}, wantErr: true},
@@ -101,6 +111,34 @@ func TestBuildResult(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "When images and release sources overlap, it should merge deduplicated sorted public mirrors and preserve image order", req: req, copyRes: copyRes, want: want},
+		{
+			name: "When releases share a component repository and a release mirror repository is set, it should map every source to that one mirror",
+			req:  MirrorRequest{ReleaseImages: []string{registryTestRelease, registryTestOtherRelease}, ReleaseMirrorRepository: "openshift/release"},
+			copyRes: &CopyResult{ReleaseSourceRepositories: map[string][]string{
+				registryTestRelease:      {"quay-proxy.ci.openshift.org/openshift/ci", "quay.io/openshift-release-dev/ocp-release"},
+				registryTestOtherRelease: {"quay-proxy.ci.openshift.org/openshift/ci"},
+			}},
+			want: &Result{Host: registryTestHost, InternalHost: want.InternalHost, CABundlePEM: ca,
+				ImageContentSources: []hyperv1.ImageContentSource{
+					{Source: "quay-proxy.ci.openshift.org/openshift/ci", Mirrors: []string{registryTestHost + "/openshift/release"}},
+					{Source: "quay.io/openshift-release-dev/ocp-release", Mirrors: []string{registryTestHost + "/openshift/release"}},
+				},
+			},
+		},
+		{
+			name: "When releases share a component repository without a release mirror repository, it should map the shared source to both mirrors",
+			req:  MirrorRequest{ReleaseImages: []string{registryTestRelease, registryTestOtherRelease}},
+			copyRes: &CopyResult{ReleaseSourceRepositories: map[string][]string{
+				registryTestRelease:      {"quay-proxy.ci.openshift.org/openshift/ci", "quay.io/openshift-release-dev/ocp-release"},
+				registryTestOtherRelease: {"quay-proxy.ci.openshift.org/openshift/ci"},
+			}},
+			want: &Result{Host: registryTestHost, InternalHost: want.InternalHost, CABundlePEM: ca,
+				ImageContentSources: []hyperv1.ImageContentSource{
+					{Source: "quay-proxy.ci.openshift.org/openshift/ci", Mirrors: []string{registryTestHost + "/quay-proxy.ci.openshift.org/openshift/ci", registryTestHost + "/quay.io/openshift-release-dev/ocp-release"}},
+					{Source: "quay.io/openshift-release-dev/ocp-release", Mirrors: []string{registryTestHost + "/quay.io/openshift-release-dev/ocp-release"}},
+				},
+			},
+		},
 		{name: "When no content is requested, it should return endpoint metadata without a copy result", want: &Result{Host: registryTestHost, InternalHost: want.InternalHost, CABundlePEM: ca}},
 		{name: "When a requested release is missing from the copy result, it should return an error", req: req, copyRes: &CopyResult{}, wantErr: true},
 		{name: "When releases are requested and the copy result is nil, it should return an error", req: req, wantErr: true},

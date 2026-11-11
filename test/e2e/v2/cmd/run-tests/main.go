@@ -96,7 +96,7 @@ func main() {
 		go func() {
 			defer wg.Done()
 			log.Printf("Running %s tests against %s...", g.Name, entry.Name)
-			err := runTestBinary(testBinary, entry.Name, entry.Namespace, g.LabelFilter, g.Skip,
+			err := runTestBinary(testBinary, entry.Name, entry.Namespace, g,
 				filepath.Join(artifactDir, g.JUnitFile()))
 			mu.Lock()
 			results = append(results, testResult{name: g.Name, err: err})
@@ -119,7 +119,7 @@ func main() {
 			for i, step := range sg.Steps {
 				entry := clustersByVariant[step.Variant]
 				log.Printf("Running %s tests against %s...", step.Name, entry.Name)
-				err := runTestBinary(testBinary, entry.Name, entry.Namespace, step.LabelFilter, step.Skip,
+				err := runTestBinary(testBinary, entry.Name, entry.Namespace, step,
 					filepath.Join(artifactDir, step.JUnitFile()))
 				mu.Lock()
 				results = append(results, testResult{name: step.Name, err: err})
@@ -155,20 +155,23 @@ func main() {
 	log.Println("All test groups passed")
 }
 
-func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitPath string) error {
+func runTestBinary(testBinary, clusterName, namespace string, group lifecycle.TestGroup, junitPath string) error {
 	ginkgoTimeout := os.Getenv("GINKGO_TIMEOUT")
 	if ginkgoTimeout == "" {
 		ginkgoTimeout = defaultGinkgoTimeout
 	}
 
 	args := []string{
-		fmt.Sprintf("--ginkgo.label-filter=%s", labelFilter),
+		fmt.Sprintf("--ginkgo.label-filter=%s", group.LabelFilter),
 		fmt.Sprintf("--e2e.junit-report=%s", junitPath),
 		fmt.Sprintf("--ginkgo.timeout=%s", ginkgoTimeout),
 		"--ginkgo.v",
 	}
-	if skip != "" {
-		args = append(args, fmt.Sprintf("--ginkgo.skip=%s", skip))
+	if group.Skip != "" {
+		args = append(args, fmt.Sprintf("--ginkgo.skip=%s", group.Skip))
+	}
+	if group.FailOnEmpty {
+		args = append(args, "--ginkgo.fail-on-empty")
 	}
 
 	cmd := exec.Command(testBinary, args...)

@@ -406,11 +406,7 @@ func buildCopyRequest(opts Options, req MirrorRequest, caPEM []byte) (CopyReques
 		result.Images = append(result.Images, ImageCopy{From: image.From, To: mirror})
 	}
 	for _, release := range req.ReleaseImages {
-		repo, _, err := splitDigestRef(release)
-		if err != nil {
-			return CopyRequest{}, err
-		}
-		mirror, err := mirrorRepository(host, repo)
+		mirror, err := releaseMirrorRepository(host, req, release)
 		if err != nil {
 			return CopyRequest{}, err
 		}
@@ -444,11 +440,7 @@ func buildResult(opts Options, host string, caPEM []byte, req MirrorRequest, cop
 		addSource(repo, mirror)
 	}
 	for _, release := range req.ReleaseImages {
-		repo, _, err := splitDigestRef(release)
-		if err != nil {
-			return nil, err
-		}
-		mirror, err := mirrorRepository(host, repo)
+		mirror, err := releaseMirrorRepository(host, req, release)
 		if err != nil {
 			return nil, err
 		}
