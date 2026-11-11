@@ -3,6 +3,7 @@ package cvo
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -12,12 +13,14 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -244,15 +247,24 @@ func extractResourceNames(objects []client.Object) []string {
 	return names
 }
 
-func createTestContext(hcp *hyperv1.HostedControlPlane) component.WorkloadContext {
+func createTestContext(hcp *hyperv1.HostedControlPlane, enableTLSGroups bool) component.WorkloadContext {
 	pullSecret := common.PullSecret(hcp.Namespace)
 	pullSecret.Data = map[string][]byte{
 		corev1.DockerConfigJsonKey: []byte(`{"auths":{"test.registry":{"auth":"dGVzdDp0ZXN0"}}}`),
 	}
 
+	featureGateManifest := `{"apiVersion":"config.openshift.io/v1","kind":"FeatureGate","spec":{},"status":{"featureGates":[]}}`
+	if enableTLSGroups {
+		featureGateManifest = fmt.Sprintf(`{"apiVersion":"config.openshift.io/v1","kind":"FeatureGate","status":{"featureGates":[{"enabled":[{"name":%q}]}]}}`, string(features.FeatureGateTLSGroupPreferences))
+	}
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(api.Scheme).
-		WithObjects(pullSecret).
+		WithObjects(pullSecret, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: config.FeatureGateConfigMapName, Namespace: hcp.Namespace},
+			Data: map[string]string{
+				config.FeatureGateConfigKey: featureGateManifest,
+			},
+		}).
 		Build()
 
 	fakeImageProvider := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
@@ -302,7 +314,7 @@ func TestAdaptDeploymentClusterVersionCapabilities(t *testing.T) {
 					}},
 				},
 			}
-			cpContext := createTestContext(hcp)
+			cpContext := createTestContext(hcp, false)
 			cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion(test.releaseVersion))
 
 			err = (&clusterVersionOperator{}).adaptDeployment(cpContext, deployment)
@@ -331,11 +343,30 @@ func TestAdaptDeploymentClusterVersionCapabilities(t *testing.T) {
 func TestAdaptDeployment(t *testing.T) {
 	t.Parallel()
 
+	hcpWithCustomGroups := func(groups []configv1.TLSGroup) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				Configuration: &hyperv1.ClusterConfiguration{APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+						Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+							Groups: groups,
+						}},
+					},
+				}},
+			},
+		}
+	}
+
 	testCases := []struct {
 		name                  string
 		hcp                   *hyperv1.HostedControlPlane
 		expectedTLSMinVersion string
 		expectedCipherSuites  string
+		enableTLSGroups       bool
+		expectedTLSGroups     string
 	}{
 		{
 			name: "When TLS profile has empty cipher suites list, it should not add tls-cipher-suites flag",
@@ -461,6 +492,40 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
 		},
 		{
+			name:            "When TLS group preferences are enabled with zero groups, it should omit the curve preferences flag",
+			hcp:             hcpWithCustomGroups([]configv1.TLSGroup{}),
+			enableTLSGroups: true,
+		},
+		{
+			name: "When TLS group preferences are disabled with configured groups, it should omit the curve preferences flag",
+			hcp: hcpWithCustomGroups([]configv1.TLSGroup{
+				configv1.TLSGroupX25519,
+			}),
+		},
+		{
+			name: "When TLS group preferences are enabled with only unrecognized groups, it should omit the curve preferences flag",
+			hcp: hcpWithCustomGroups([]configv1.TLSGroup{
+				"unrecognized-group",
+			}),
+			enableTLSGroups: true,
+		},
+		{
+			name: "When TLS group preferences include unrecognized and supported groups, it should pass only supported curve IDs",
+			hcp: hcpWithCustomGroups([]configv1.TLSGroup{
+				"unrecognized-group", configv1.TLSGroupX25519,
+			}),
+			enableTLSGroups:   true,
+			expectedTLSGroups: "--tls-curve-preferences=29",
+		},
+		{
+			name: "When TLS group preferences are enabled, it should pass the profile groups as numeric curve IDs",
+			hcp: hcpWithCustomGroups([]configv1.TLSGroup{
+				configv1.TLSGroupX25519, configv1.TLSGroupSecP256r1,
+			}),
+			enableTLSGroups:   true,
+			expectedTLSGroups: "--tls-curve-preferences=29,23",
+		},
+		{
 			name: "When TLS profile type is Modern, it should set min version to TLS 1.3 and not add cipher suites flag",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
@@ -489,7 +554,7 @@ func TestAdaptDeployment(t *testing.T) {
 			deployment, err := assets.LoadDeploymentManifest(ComponentName)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			cpContext := createTestContext(tc.hcp)
+			cpContext := createTestContext(tc.hcp, tc.enableTLSGroups)
 
 			cvo := &clusterVersionOperator{}
 			err = cvo.adaptDeployment(cpContext, deployment)
@@ -508,6 +573,11 @@ func TestAdaptDeployment(t *testing.T) {
 				g.Expect(container.Args).To(ContainElement(tc.expectedCipherSuites))
 			} else {
 				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-cipher-suites")))
+			}
+			if tc.expectedTLSGroups != "" {
+				g.Expect(container.Args).To(ContainElement(tc.expectedTLSGroups))
+			} else {
+				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-curve-preferences")))
 			}
 		})
 	}
