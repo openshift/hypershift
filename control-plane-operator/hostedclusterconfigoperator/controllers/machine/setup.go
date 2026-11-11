@@ -148,6 +148,28 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	if err := c.Watch(source.Kind[client.Object](kubevirtInfraCache, &corev1.Service{}, handler.EnqueueRequestsFromMapFunc(allNodes), isKCCMService)); err != nil {
 		return fmt.Errorf("failed to watch kubevirt services: %w", err)
 	}
+	vmiToMachine := func(watchContext context.Context, obj client.Object) []reconcile.Request {
+		machineList := &capiv1.MachineList{}
+		if err := r.client.List(watchContext, machineList); err != nil {
+			log.Error(err, "failed listing machines at VMI watch function")
+			return nil
+		}
+		var requests []reconcile.Request
+		for _, machine := range machineList.Items {
+			if machine.Spec.InfrastructureRef.Name == obj.GetName() {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: machine.Namespace,
+						Name:      machine.Name,
+					},
+				})
+			}
+		}
+		return requests
+	}
+	if err := c.Watch(source.Kind[client.Object](kubevirtInfraCache, &kubevirtv1.VirtualMachineInstance{}, handler.EnqueueRequestsFromMapFunc(vmiToMachine))); err != nil {
+		return fmt.Errorf("failed to watch VirtualMachineInstances: %w", err)
+	}
 
 	return nil
 }
