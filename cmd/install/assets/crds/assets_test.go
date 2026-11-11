@@ -119,6 +119,20 @@ func TestCapiResources(t *testing.T) {
 }
 
 func TestGetCustomResourceDefinition(t *testing.T) {
+	for _, resource := range []string{"agentclusters", "agentmachines", "agentmachinetemplates"} {
+		t.Run("When loading "+resource+", it should preserve Agent versions and metadata", func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			crd := getCustomResourceDefinition(CRDS, "cluster-api-provider-agent/capi-provider.agent-install.openshift.io_"+resource+".yaml", CAPICRDOverrides())
+			g.Expect(crd.Labels).To(HaveKeyWithValue(capiLabel, "v1beta1"))
+			g.Expect(crd.Spec.Versions).To(HaveLen(2))
+			for _, version := range crd.Spec.Versions {
+				g.Expect(version.Name).To(BeElementOf("v1alpha1", "v1beta1"))
+				g.Expect(version.Served).To(BeTrue())
+				g.Expect(version.Storage).To(Equal(version.Name == "v1beta1"))
+			}
+		})
+	}
+
 	tests := []struct {
 		name       string
 		file       string
