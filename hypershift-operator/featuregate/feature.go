@@ -79,6 +79,19 @@ const (
 	// owner: @jparrill
 	// alpha: v0.1.84
 	KubeletHAProxyRouting featuregate.Feature = "KubeletHAProxyRouting"
+
+	// EtcdPerMemberEndpoints gates configuring the hosted kube-apiserver with one
+	// --etcd-servers endpoint per etcd member (the stable StatefulSet pod DNS names on
+	// the etcd-discovery headless service) instead of the single etcd-client ClusterIP
+	// service URL. With a single URL, the etcd client pins its one long-lived connection
+	// to a single member, so a member that stays reachable on the client port but loses
+	// quorum contact takes the tenant API down while etcd quorum remains intact.
+	// Per-member endpoints let the client fail over to another member, matching the
+	// standalone OCP kube-apiserver behavior. Registered here for HYPERSHIFT_FEATURESET
+	// propagation; the runtime gate check is in CPO's KAS config params
+	// (OCPBUGS-139923).
+	// alpha: v0.1.84
+	EtcdPerMemberEndpoints featuregate.Feature = "EtcdPerMemberEndpoints"
 )
 
 // Initialize new features here
@@ -95,6 +108,7 @@ var (
 	deterministicLBIPFeature       = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	awsManagedDNSFeature           = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	kubeletHAProxyRoutingFeature   = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	etcdPerMemberEndpointsFeature  = featuregates.NewFeature(EtcdPerMemberEndpoints, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -109,6 +123,7 @@ func init() {
 	allFeatures.AddFeature(deterministicLBIPFeature)
 	allFeatures.AddFeature(awsManagedDNSFeature)
 	allFeatures.AddFeature(kubeletHAProxyRoutingFeature)
+	allFeatures.AddFeature(etcdPerMemberEndpointsFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))

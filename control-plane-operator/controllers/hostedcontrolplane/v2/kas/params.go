@@ -2,10 +2,13 @@ package kas
 
 import (
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	etcdutil "github.com/openshift/hypershift/support/etcd"
@@ -107,6 +110,12 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 		}
 	case hyperv1.Managed:
 		kasConfig.EtcdURL = fmt.Sprintf("https://etcd-client.%s.svc:2379", hcp.Namespace)
+		// With a single service URL the etcd client pins its connection to one
+		// member; per-member endpoints allow failover to a healthy member when
+		// the pinned one cannot serve quorum (OCPBUGS-139923).
+		if featuregates.Gate().Enabled(featuregates.EtcdPerMemberEndpoints) {
+			kasConfig.EtcdURL = strings.Join(etcd.MemberClientEndpoints(hcp), ",")
+		}
 		if hcp.Spec.Etcd.Managed != nil {
 			for _, shard := range etcdutil.EffectiveShards(hcp.Spec.Etcd.Managed) {
 				if shard.IsDefault {
