@@ -15,10 +15,10 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/util"
@@ -246,7 +246,7 @@ func run(ctx context.Context, opts Options) error {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("User Agent: %s. Requested: %s", r.Header.Get("User-Agent"), r.URL.Path)
 
-		tokenSecret := nodepool.TokenSecret(os.Getenv(namespaceEnvVariableName),
+		tokenSecret := manifests.TokenSecret(os.Getenv(namespaceEnvVariableName),
 			util.ParseNamespacedName(r.Header.Get("NodePool")).Name,
 			r.Header.Get("TargetConfigVersionHash"))
 

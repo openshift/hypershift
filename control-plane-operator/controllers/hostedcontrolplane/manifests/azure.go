@@ -1,19 +1,16 @@
 package manifests
 
 import (
+	supportmanifests "github.com/openshift/hypershift/support/manifests"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// AzureProviderConfig is a configMap for Azure cloud config. This is needed for ignition configuration by the
-// machine-config-operator (MCO). https://github.com/openshift/machine-config-operator/blob/fe8353e4ea7e72dfd69105069b870a37a87478ec/pkg/operator/bootstrap.go#L124
+// AzureProviderConfig delegates to support/manifests for backward compatibility.
+// New code should import from support/manifests directly.
 func AzureProviderConfig(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "azure-cloud-config",
-			Namespace: ns,
-		},
-	}
+	return supportmanifests.AzureProviderConfig(ns)
 }
 
 func AzureKMSWithCredentials(ns string) *corev1.Secret {

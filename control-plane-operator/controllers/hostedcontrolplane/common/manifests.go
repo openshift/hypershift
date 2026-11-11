@@ -2,18 +2,16 @@ package common
 
 import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	supportmanifests "github.com/openshift/hypershift/support/manifests"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// PullSecret delegates to support/manifests for backward compatibility.
+// New code should import from support/manifests directly.
 func PullSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pull-secret",
-			Namespace: ns,
-		},
-	}
+	return supportmanifests.PullSecret(ns)
 }
 
 func CombinedPullSecret(ns string) *corev1.Secret {
