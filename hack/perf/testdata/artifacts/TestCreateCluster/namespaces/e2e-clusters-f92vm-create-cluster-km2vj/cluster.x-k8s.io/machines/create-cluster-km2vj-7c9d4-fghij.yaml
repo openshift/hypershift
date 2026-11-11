@@ -1,0 +1,35 @@
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Machine
+metadata:
+  creationTimestamp: "2026-09-11T14:51:44Z"
+  labels:
+    cluster.x-k8s.io/cluster-name: create-cluster-km2vj
+    hypershift.openshift.io/nodePool: create-cluster-km2vj
+  name: create-cluster-km2vj-7c9d4-fghij
+  namespace: e2e-clusters-f92vm-create-cluster-km2vj
+spec:
+  clusterName: create-cluster-km2vj
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: AWSMachine
+    name: create-cluster-km2vj-7c9d4-fghij
+  providerID: aws:///us-east-1b/i-0f1e2d3c4b5a69788
+status:
+  nodeRef:
+    apiVersion: v1
+    kind: Node
+    name: ip-10-0-135-201.ec2.internal
+  phase: Running
+  conditions:
+  - lastTransitionTime: "2026-09-11T14:51:47Z"
+    status: "True"
+    type: BootstrapReady
+  - lastTransitionTime: "2026-09-11T14:55:04Z"
+    status: "True"
+    type: InfrastructureReady
+  - lastTransitionTime: "2026-09-11T15:01:20Z"
+    status: "True"
+    type: NodeHealthy
+  - lastTransitionTime: "2026-09-11T15:01:22Z"
+    status: "True"
+    type: Ready
