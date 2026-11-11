@@ -7,8 +7,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/dns/v1"
 	"google.golang.org/api/googleapi"
 )
 
@@ -556,6 +559,290 @@ func TestGenerateZoneNamesValidationErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := generateZoneNames(tt.clusterName, tt.baseDomain)
 			require.Error(t, err, "generateZoneNames should return error")
+			assert.Contains(t, err.Error(), tt.errorContains)
+		})
+	}
+}
+
+const testProjectID = "my-gcp-project"
+
+func TestEnsureZone(t *testing.T) {
+	desiredLabels := map[string]string{
+		"goog-partner-solution": "openshift",
+		ownershipLabelKey:       realClusterID,
+	}
+	spec := zoneSpec{
+		name:          "my-cluster-hypershift-local",
+		dnsName:       "my-cluster.hypershift.local",
+		visibility:    "private",
+		vpcNetworkURL: "https://www.googleapis.com/compute/v1/projects/my-gcp-project/global/networks/my-vpc",
+		labels:        desiredLabels,
+	}
+
+	t.Run("When the zone does not exist, it should create it with the ownership and resource labels", func(t *testing.T) {
+		server := newFakeZoneServer()
+
+		zone, err := ensureZone(t.Context(), server.service(t), testProjectID, spec, realClusterID)
+		require.NoError(t, err)
+		assert.Equal(t, spec.name, zone.Name)
+
+		require.Len(t, server.created, 1, "exactly one zone should be created")
+		assert.Equal(t, desiredLabels, server.created[0].Labels)
+		assert.Equal(t, "my-cluster.hypershift.local.", server.created[0].DnsName, "DNS name should be dot-terminated")
+		require.NotNil(t, server.created[0].PrivateVisibilityConfig)
+		assert.Empty(t, server.patched, "a newly created zone should not be patched")
+	})
+
+	t.Run("When the zone is owned by this cluster and labels match, it should not issue a patch", func(t *testing.T) {
+		server := newFakeZoneServer(&dns.ManagedZone{Name: spec.name, Labels: desiredLabels})
+
+		zone, err := ensureZone(t.Context(), server.service(t), testProjectID, spec, realClusterID)
+		require.NoError(t, err)
+		assert.Equal(t, spec.name, zone.Name)
+		assert.Empty(t, server.created, "an existing zone should not be re-created")
+		assert.Empty(t, server.patched, "an up-to-date zone should not be patched")
+	})
+
+	t.Run("When the zone is owned by this cluster and a label drifted, it should patch and preserve unrelated labels", func(t *testing.T) {
+		server := newFakeZoneServer(&dns.ManagedZone{
+			Name: spec.name,
+			Labels: map[string]string{
+				ownershipLabelKey: realClusterID,
+				"customer-label":  "keep",
+			},
+		})
+
+		_, err := ensureZone(t.Context(), server.service(t), testProjectID, spec, realClusterID)
+		require.NoError(t, err)
+		assert.Empty(t, server.created)
+		require.Contains(t, server.patched, spec.name)
+		assert.Equal(t, map[string]string{
+			"goog-partner-solution": "openshift",
+			ownershipLabelKey:       realClusterID,
+			"customer-label":        "keep",
+		}, server.patched[spec.name], "the unrelated customer label must survive the patch")
+	})
+
+	t.Run("When the zone exists but has no ownership label, it should not adopt or mutate it", func(t *testing.T) {
+		server := newFakeZoneServer(&dns.ManagedZone{Name: spec.name, Labels: map[string]string{"customer-label": "keep"}})
+
+		_, err := ensureZone(t.Context(), server.service(t), testProjectID, spec, realClusterID)
+		require.ErrorIs(t, err, errZoneUnowned)
+		assert.Empty(t, server.created)
+		assert.Empty(t, server.patched, "an unlabeled zone must never be labeled")
+	})
+
+	t.Run("When the zone is owned by another cluster, it should return a conflict without mutating it", func(t *testing.T) {
+		server := newFakeZoneServer(&dns.ManagedZone{
+			Name:   spec.name,
+			Labels: map[string]string{ownershipLabelKey: "8c7d6e5f-4a3b-4c2d-9e1f-0a1b2c3d4e5f"},
+		})
+
+		_, err := ensureZone(t.Context(), server.service(t), testProjectID, spec, realClusterID)
+		require.ErrorIs(t, err, errZoneOwnedByOther)
+		assert.Empty(t, server.created)
+		assert.Empty(t, server.patched, "another cluster's ownership label must never be overwritten")
+	})
+
+	t.Run("When the zone lookup fails for a reason other than not found, it should not create a zone", func(t *testing.T) {
+		server := newFakeZoneServer()
+		server.getErrorCode = 403
+
+		_, err := ensureZone(t.Context(), server.service(t), testProjectID, spec, realClusterID)
+		require.Error(t, err)
+		assert.Empty(t, server.created, "a failed lookup must not be treated as an absent zone")
+	})
+}
+
+func TestReconcileZoneLabels(t *testing.T) {
+	desired := map[string]string{ownershipLabelKey: realClusterID}
+
+	t.Run("When the zone already carries the desired labels, it should return without an API call", func(t *testing.T) {
+		zone := &dns.ManagedZone{Name: "zone-a", Labels: desired}
+		server := newFakeZoneServer(zone)
+
+		got, err := reconcileZoneLabels(t.Context(), server.service(t), testProjectID, zone, desired)
+		require.NoError(t, err)
+		assert.Equal(t, desired, got.Labels)
+		assert.Empty(t, server.patched)
+	})
+
+	t.Run("When a desired label is missing, it should patch the zone and return the merged labels", func(t *testing.T) {
+		zone := &dns.ManagedZone{Name: "zone-a", Labels: map[string]string{"customer-label": "keep"}}
+		server := newFakeZoneServer(zone)
+
+		got, err := reconcileZoneLabels(t.Context(), server.service(t), testProjectID, zone, desired)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{"customer-label": "keep", ownershipLabelKey: realClusterID}, got.Labels)
+		assert.Equal(t, got.Labels, server.patched["zone-a"])
+	})
+}
+
+func TestCreateZonesIfNeeded(t *testing.T) {
+	t.Run("When no zones exist, it should create all three carrying the ownership label", func(t *testing.T) {
+		server := newFakeZoneServer()
+		labels := zoneLabels(map[string]string{"goog-partner-solution": "openshift"}, realClusterID)
+
+		local, public, private, err := createZonesIfNeeded(
+			t.Context(), server.service(t), testProjectID,
+			"my-cluster-hypershift-local", "in-my-cluster-public", "in-my-cluster-private",
+			"my-cluster.hypershift.local", "in.my-cluster.example.com",
+			"https://www.googleapis.com/compute/v1/projects/my-gcp-project/global/networks/my-vpc",
+			labels, realClusterID,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, "my-cluster-hypershift-local", local.Name)
+		assert.Equal(t, "in-my-cluster-public", public.Name)
+		assert.Equal(t, "in-my-cluster-private", private.Name)
+
+		require.Len(t, server.created, 3, "all three zones should be created")
+		for _, zone := range server.created {
+			assert.Equal(t, realClusterID, zone.Labels[ownershipLabelKey],
+				"zone %q should carry the ownership label", zone.Name)
+			assert.Equal(t, "openshift", zone.Labels["goog-partner-solution"],
+				"zone %q should carry the attribution label", zone.Name)
+		}
+	})
+
+	t.Run("When an ingress zone is owned by another cluster, it should fail without creating the remaining zone", func(t *testing.T) {
+		server := newFakeZoneServer(&dns.ManagedZone{
+			Name:   "in-my-cluster-public",
+			Labels: map[string]string{ownershipLabelKey: "8c7d6e5f-4a3b-4c2d-9e1f-0a1b2c3d4e5f"},
+		})
+		labels := zoneLabels(nil, realClusterID)
+
+		_, _, _, err := createZonesIfNeeded(
+			t.Context(), server.service(t), testProjectID,
+			"my-cluster-hypershift-local", "in-my-cluster-public", "in-my-cluster-private",
+			"my-cluster.hypershift.local", "in.my-cluster.example.com", "",
+			labels, realClusterID,
+		)
+		require.ErrorIs(t, err, errZoneOwnedByOther)
+
+		created := make([]string, 0, len(server.created))
+		for _, zone := range server.created {
+			created = append(created, zone.Name)
+		}
+		assert.Equal(t, []string{"my-cluster-hypershift-local"}, created,
+			"reconciliation should stop at the conflicting zone")
+	})
+}
+
+func TestDeleteZoneIfOwned(t *testing.T) {
+	// fakeDNSService (psc_endpoint_controller_test.go) is used here rather than
+	// fakeZoneServer because it also serves the record-list and change calls that
+	// deleting a zone makes.
+	const otherOwner = "8c7d6e5f-4a3b-4c2d-9e1f-0a1b2c3d4e5f"
+
+	tests := []struct {
+		name            string
+		existing        *dns.ManagedZone
+		expectedErr     error
+		expectedDeletes []string
+	}{
+		{
+			name: "When the zone is owned by this cluster, it should delete it",
+			existing: &dns.ManagedZone{
+				Name:   "my-zone",
+				Labels: map[string]string{ownershipLabelKey: realClusterID},
+			},
+			expectedDeletes: []string{"my-zone"},
+		},
+		{
+			name: "When the zone reports a numeric ID, it should delete by ID rather than by name",
+			existing: &dns.ManagedZone{
+				Name:   "my-zone",
+				Id:     8675309,
+				Labels: map[string]string{ownershipLabelKey: realClusterID},
+			},
+			expectedDeletes: []string{"8675309"},
+		},
+		{
+			name: "When the zone is owned by another cluster, it should return a conflict and delete nothing",
+			existing: &dns.ManagedZone{
+				Name:   "my-zone",
+				Labels: map[string]string{ownershipLabelKey: otherOwner},
+			},
+			expectedErr: errZoneOwnedByOther,
+		},
+		{
+			name:        "When the zone has no ownership label, it should refuse to delete it",
+			existing:    &dns.ManagedZone{Name: "my-zone"},
+			expectedErr: errZoneUnowned,
+		},
+		{
+			name:     "When the zone does not exist, it should be a no-op",
+			existing: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			existing := map[string]*dns.ManagedZone{}
+			if tt.existing != nil {
+				existing[tt.existing.Name] = tt.existing
+			}
+			var deletes []string
+
+			err := deleteZoneIfOwned(t.Context(), fakeDNSService(t, existing, &deletes),
+				testProjectID, "my-zone", realClusterID)
+
+			if tt.expectedErr != nil {
+				require.ErrorIs(t, err, tt.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.ElementsMatch(t, tt.expectedDeletes, deletes)
+		})
+	}
+}
+
+func TestReconcileDNS(t *testing.T) {
+	// ReconcileDNS resolves zone ownership before constructing a DNS client, so the
+	// fail-closed paths are reachable without GCP credentials.
+	validHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-cluster"},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				ClusterID: realClusterID,
+				DNS:       hyperv1.DNSSpec{BaseDomain: "in.my-cluster.example.com"},
+				Platform: hyperv1.PlatformSpec{
+					GCP: &hyperv1.GCPPlatformSpec{
+						Project: testProjectID,
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network: hyperv1.GCPResourceReference{Name: "my-vpc"},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name          string
+		mutate        func(*hyperv1.HostedControlPlane)
+		errorContains string
+	}{
+		{
+			name:          "When clusterID is empty, it should fail before contacting GCP",
+			mutate:        func(hcp *hyperv1.HostedControlPlane) { hcp.Spec.ClusterID = "" },
+			errorContains: "has no clusterID",
+		},
+		{
+			name:          "When clusterID is not a UUID, it should fail before contacting GCP",
+			mutate:        func(hcp *hyperv1.HostedControlPlane) { hcp.Spec.ClusterID = "not-a-uuid" },
+			errorContains: "is not a valid UUID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hcp := validHCP()
+			tt.mutate(hcp)
+
+			result, err := ReconcileDNS(t.Context(), hcp, "10.0.0.5")
+			require.Error(t, err)
+			assert.Nil(t, result)
 			assert.Contains(t, err.Error(), tt.errorContains)
 		})
 	}

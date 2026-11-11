@@ -21,10 +21,12 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/gcputil"
 
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/dns/v1"
@@ -90,43 +92,69 @@ type zoneNames struct {
 	ingressDNSName          string
 }
 
-// createZone is the unified zone creation function supporting both private and public zones.
-// Uses "get first, create if not exists" pattern for idempotency.
+// zoneSpec describes a Cloud DNS managed zone this controller reconciles.
+type zoneSpec struct {
+	// name is the zone resource name (lowercase, hyphens, max 63 chars).
+	name string
+	// dnsName is the zone's DNS domain (normalized to end with a dot).
+	dnsName string
+	// visibility is "private" or "public".
+	visibility string
+	// vpcNetworkURL is the full GCP VPC network URL. Required for private zones,
+	// ignored for public ones.
+	vpcNetworkURL string
+	// labels are applied on creation and reconciled onto an owned zone. They must
+	// include the ownership label.
+	labels map[string]string
+}
+
+// ensureZone creates the zone described by spec, or returns the existing zone when this
+// cluster already owns it. Repeated calls converge on the same result.
 //
-// Parameters:
-//   - svc: DNS service client
-//   - projectID: GCP project ID where the zone will be created
-//   - zoneName: DNS zone resource name (must match GCP naming: lowercase, hyphens, max 63 chars)
-//   - dnsName: DNS domain name for the zone (will be normalized to end with a dot)
-//   - visibility: "private" or "public"
-//   - vpcNetworkURL: Full GCP VPC network URL (required for private zones, ignored for public)
-func createZone(ctx context.Context, svc *dns.Service, projectID, zoneName, dnsName, visibility, vpcNetworkURL string) (*dns.ManagedZone, error) {
-	dnsName = ensureDNSDot(dnsName)
+// Cloud DNS requires managed-zone names to be unique per project, and a name derived from
+// the HostedControlPlane name or the base domain is not guaranteed unique. An existing
+// zone is therefore only reconciled when it carries this cluster's ownership label:
+//
+//   - absent: created with spec.labels, including the ownership label
+//   - owned by this cluster: labels reconciled if they have drifted, zone returned
+//   - unlabeled: errZoneUnowned, with no mutation. It is never adopted, because a
+//     matching name is not proof that this cluster created it, and claiming it would let
+//     one cluster take over another cluster's (or the customer's) zone
+//   - owned by another cluster: errZoneOwnedByOther, with no mutation
+//
+// An existing ownership value is never overwritten.
+func ensureZone(ctx context.Context, svc *dns.Service, projectID string, spec zoneSpec, ownerID string) (*dns.ManagedZone, error) {
+	dnsName := ensureDNSDot(spec.dnsName)
 
 	// Check if zone already exists
-	existing, err := getZone(ctx, svc, projectID, zoneName)
+	existing, err := getZone(ctx, svc, projectID, spec.name)
 	if err != nil {
 		if !isNotFound(err) {
 			return nil, err
 		}
 		// Zone doesn't exist, proceed to create it
 	} else {
-		return existing, nil // Zone already exists
+		// Verify ownership before touching an existing zone.
+		if err := verifyZoneOwnership(existing, ownerID); err != nil {
+			return nil, err
+		}
+		return reconcileZoneLabels(ctx, svc, projectID, existing, spec.labels)
 	}
 
 	// Build zone configuration
 	zone := &dns.ManagedZone{
-		Name:        zoneName,
+		Name:        spec.name,
 		DnsName:     dnsName,
-		Description: fmt.Sprintf("%s DNS zone for %s", visibility, dnsName),
-		Visibility:  visibility,
+		Description: fmt.Sprintf("%s DNS zone for %s", spec.visibility, dnsName),
+		Visibility:  spec.visibility,
+		Labels:      spec.labels,
 	}
 
 	// Add private visibility config if needed
-	if visibility == "private" && vpcNetworkURL != "" {
+	if spec.visibility == "private" && spec.vpcNetworkURL != "" {
 		zone.PrivateVisibilityConfig = &dns.ManagedZonePrivateVisibilityConfig{
 			Networks: []*dns.ManagedZonePrivateVisibilityConfigNetwork{
-				{NetworkUrl: vpcNetworkURL},
+				{NetworkUrl: spec.vpcNetworkURL},
 			},
 		}
 	}
@@ -135,10 +163,39 @@ func createZone(ctx context.Context, svc *dns.Service, projectID, zoneName, dnsN
 	defer cancel()
 	created, err := svc.ManagedZones.Create(projectID, zone).Context(apiCtx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create %s DNS zone %s in project %s: %w", visibility, zoneName, projectID, err)
+		return nil, fmt.Errorf("failed to create %s DNS zone %s in project %s: %w", spec.visibility, spec.name, projectID, err)
 	}
 
 	return created, nil
+}
+
+// reconcileZoneLabels applies desired onto a zone this cluster already owns, preserving
+// labels it does not manage. It issues no API call when the zone is already up to date.
+//
+// Callers must verify ownership first: patching a zone whose ownership cannot be
+// established is how one cluster would claim another's zone.
+func reconcileZoneLabels(ctx context.Context, svc *dns.Service, projectID string, zone *dns.ManagedZone, desired map[string]string) (*dns.ManagedZone, error) {
+	if missingZoneLabels(zone, desired) == nil {
+		return zone, nil
+	}
+
+	merged := mergedZoneLabels(zone, desired)
+
+	apiCtx, cancel := context.WithTimeout(ctx, dnsAPITimeout)
+	defer cancel()
+	// Patch returns a long-running Operation rather than the updated zone. Labels are not
+	// read back by callers, which use the zone's name and name servers, so the patch is
+	// not awaited; the next reconcile re-reads the zone and re-patches if it has not
+	// converged.
+	if _, err := svc.ManagedZones.Patch(projectID, zone.Name, &dns.ManagedZone{
+		Labels: merged,
+	}).Context(apiCtx).Do(); err != nil {
+		return nil, fmt.Errorf("failed to reconcile labels on DNS zone %s in project %s: %w", zone.Name, projectID, err)
+	}
+
+	updated := *zone
+	updated.Labels = merged
+	return &updated, nil
 }
 
 // getZone retrieves a Cloud DNS zone by name.
@@ -192,8 +249,49 @@ func deleteAllRecordsFromZone(ctx context.Context, svc *dns.Service, projectID, 
 	return nil
 }
 
+// deleteZoneIfOwned deletes a zone only when it carries this cluster's ownership label.
+//
+// Ownership is verified on the fetched zone before any record is touched. A zone that
+// cannot be proven to belong to this cluster is left completely intact, records included,
+// and the sentinel error is returned so the caller can report it and move on. Removing
+// records first and checking afterwards would already have destroyed another cluster's
+// DNS by the time the mismatch was noticed.
+//
+// A missing zone is a no-op: there is nothing to delete and nothing to protect.
+//
+// Deletion targets the numeric managed-zone ID from the fetch rather than the name. The
+// Cloud DNS managed-zone path parameter accepts either, so using the ID means a zone that
+// was deleted and recreated under the same name between the fetch and the delete is not
+// mistaken for the one whose ownership was verified.
+func deleteZoneIfOwned(ctx context.Context, svc *dns.Service, projectID, zoneName, ownerID string) error {
+	zone, err := getZone(ctx, svc, projectID, zoneName)
+	if err != nil {
+		if isNotFound(err) {
+			return nil // Already deleted
+		}
+		return err
+	}
+
+	if err := verifyZoneOwnership(zone, ownerID); err != nil {
+		return err
+	}
+
+	// Target the fetched zone by ID so a same-name replacement cannot be hit.
+	zoneRef := strconv.FormatUint(zone.Id, 10)
+	if zone.Id == 0 {
+		// Cloud DNS always populates Id. Fall back to the name rather than addressing
+		// zone "0" should a future API version omit it.
+		zoneRef = zone.Name
+	}
+
+	return deleteZone(ctx, svc, projectID, zoneRef)
+}
+
 // deleteZone deletes a Cloud DNS zone.
 // It first removes all custom records, then deletes the zone.
+//
+// Callers on the cluster-deletion path must use deleteZoneIfOwned instead: this function
+// performs no ownership check and will empty and remove whichever zone it is given.
 func deleteZone(ctx context.Context, svc *dns.Service, projectID, zoneName string) error {
 	// First, try to delete all custom records from the zone
 	if err := deleteAllRecordsFromZone(ctx, svc, projectID, zoneName); err != nil {
@@ -397,18 +495,39 @@ type DNSSetupResult struct {
 }
 
 // createZonesIfNeeded creates the required DNS zones for GCP HCP clusters.
-func createZonesIfNeeded(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, error) {
-	hypershiftLocalZone, err := createZone(ctx, svc, projectID, hypershiftZone, hypershiftDNSName, "private", vpcNetworkURL)
+//
+// All three zones are per-cluster and all three carry the ownership label: the
+// hypershift.local zone is named after the HostedControlPlane, and the ingress zones are
+// named after spec.dns.baseDomain, which callers derive per cluster.
+func createZonesIfNeeded(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string, labels map[string]string, ownerID string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, error) {
+	hypershiftLocalZone, err := ensureZone(ctx, svc, projectID, zoneSpec{
+		name:          hypershiftZone,
+		dnsName:       hypershiftDNSName,
+		visibility:    "private",
+		vpcNetworkURL: vpcNetworkURL,
+		labels:        labels,
+	}, ownerID)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to ensure hypershift.local zone: %w", err)
 	}
 
-	publicIngressZone, err := createZone(ctx, svc, projectID, publicZone, ingressDNS, "public", "")
+	publicIngressZone, err := ensureZone(ctx, svc, projectID, zoneSpec{
+		name:       publicZone,
+		dnsName:    ingressDNS,
+		visibility: "public",
+		labels:     labels,
+	}, ownerID)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to ensure public ingress zone: %w", err)
 	}
 
-	privateIngressZone, err := createZone(ctx, svc, projectID, privateZone, ingressDNS, "private", vpcNetworkURL)
+	privateIngressZone, err := ensureZone(ctx, svc, projectID, zoneSpec{
+		name:          privateZone,
+		dnsName:       ingressDNS,
+		visibility:    "private",
+		vpcNetworkURL: vpcNetworkURL,
+		labels:        labels,
+	}, ownerID)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to ensure private ingress zone: %w", err)
 	}
@@ -440,12 +559,12 @@ func retrieveExistingZones(ctx context.Context, svc *dns.Service, projectID, hyp
 
 // ensureZones creates or retrieves DNS zones based on the createZones flag.
 // Currently always called with createZones=true as self-managed scenarios are not yet supported.
-func ensureZones(ctx context.Context, svc *dns.Service, createZones bool, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, []string, error) {
+func ensureZones(ctx context.Context, svc *dns.Service, createZones bool, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string, labels map[string]string, ownerID string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, []string, error) {
 	var hypershiftLocalZone, publicIngressZone, privateIngressZone *dns.ManagedZone
 	var err error
 
 	if createZones {
-		hypershiftLocalZone, publicIngressZone, privateIngressZone, err = createZonesIfNeeded(ctx, svc, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL)
+		hypershiftLocalZone, publicIngressZone, privateIngressZone, err = createZonesIfNeeded(ctx, svc, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL, labels, ownerID)
 	} else {
 		hypershiftLocalZone, publicIngressZone, privateIngressZone, err = retrieveExistingZones(ctx, svc, projectID, hypershiftZone, publicZone, privateZone)
 	}
@@ -540,6 +659,14 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 
 	gcpSpec := hcp.Spec.Platform.GCP
 
+	// Resolve the zone owner before any GCP call so an unusable cluster ID cannot result
+	// in an unlabeled zone being created, adopted or mutated.
+	ownerID, err := clusterOwnerID(hcp)
+	if err != nil {
+		return nil, err
+	}
+	labels := zoneLabels(gcputil.ResourceLabels(hcp), ownerID)
+
 	// Extract configuration
 	clusterName := hcp.Name
 	baseDomain := hcp.Spec.DNS.BaseDomain
@@ -570,7 +697,7 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 	hypershiftLocalZone, publicIngressZone, privateIngressZone, publicNSRecords, err := ensureZones(
 		ctx, svc, true, projectID,
 		names.hypershiftLocalZoneName, names.publicIngressZoneName, names.privateIngressZoneName,
-		hypershiftDNSName, names.ingressDNSName, vpcNetworkURL,
+		hypershiftDNSName, names.ingressDNSName, vpcNetworkURL, labels, ownerID,
 	)
 	if err != nil {
 		return nil, err
