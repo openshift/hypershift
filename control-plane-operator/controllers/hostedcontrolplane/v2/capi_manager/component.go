@@ -55,6 +55,10 @@ func NewComponent(imageOverride string) component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptWebhookTLSSecret),
 			component.ReconcileExisting(),
 		).
+		WithManifestAdapter(
+			"podmonitor.yaml",
+			component.WithAdaptFunction(adaptPodMonitor),
+		).
 		Build()
 }
 
