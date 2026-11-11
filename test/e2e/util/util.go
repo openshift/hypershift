@@ -823,8 +823,8 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 						}
 					}
 
-					if isLeaderElectionFailure(ctx, k8sClient, &pod, containerStatus.Name, t) {
-						t.Logf("Leader election failure detected in container %s in pod %s", containerStatus.Name, pod.Name)
+					if cause, ok := toleratedRestartCause(ctx, k8sClient, &pod, containerStatus.Name, t); ok {
+						t.Logf("%s detected in container %s in pod %s", cause, containerStatus.Name, pod.Name)
 						continue
 					}
 					t.Errorf("Container %s in pod %s has a restartCount > %d (%d)", containerStatus.Name, pod.Name, crashToleration, containerStatus.RestartCount)
@@ -840,17 +840,128 @@ var LeaderElectionFailurePatterns = []string{
 	"stopped leading",
 }
 
-func MatchesLeaderElectionFailure(line string) bool {
-	lower := strings.ToLower(line)
-	for _, pattern := range LeaderElectionFailurePatterns {
-		if strings.Contains(lower, pattern) {
+// ControlPlaneEndpointPatterns identify a hosted control plane endpoint that components talk
+// to while starting up. The bootstrap sidecar reaches the kube-apiserver over localhost
+// because it shares the pod with it.
+var ControlPlaneEndpointPatterns = []string{
+	"https://kube-apiserver:6443",
+	"https://localhost:6443",
+	"etcd-client",
+	"etcd grpc connection not ready",
+}
+
+// TransportFailurePatterns identify a failure to reach an endpoint at all, as opposed to a
+// response the caller could have acted on.
+var TransportFailurePatterns = []string{
+	"connection refused",
+	"no route to host",
+	"i/o timeout",
+	"context deadline exceeded",
+}
+
+func containsAny(lowercaseLine string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if strings.Contains(lowercaseLine, pattern) {
 			return true
 		}
 	}
 	return false
 }
 
-func isLeaderElectionFailure(ctx context.Context, client kubeclient.Interface, pod *corev1.Pod, containerName string, t *testing.T) bool {
+func MatchesLeaderElectionFailure(line string) bool {
+	return containsAny(strings.ToLower(line), LeaderElectionFailurePatterns)
+}
+
+// MatchesControlPlaneUnavailable reports whether a log line records a component giving up
+// because the hosted control plane's own kube-apiserver or etcd was unreachable. etcd is
+// rescheduled onto another node during bring-up, and detaching and reattaching its volume
+// keeps the kube-apiserver down for minutes. Every component that contacts the kube-apiserver
+// on startup exits during that window and is restarted several times, so these restarts
+// describe the environment rather than a defect in the component that restarted.
+//
+// Both halves are required: an endpoint on its own says nothing, and a transport failure on
+// its own would excuse a component failing to reach anything at all.
+func MatchesControlPlaneUnavailable(line string) bool {
+	lower := strings.ToLower(line)
+	return containsAny(lower, ControlPlaneEndpointPatterns) && containsAny(lower, TransportFailurePatterns)
+}
+
+// CrashPatterns identify a container ending on a defect of its own: a Go panic or a runtime
+// fault. Most lines a tolerated cause matches are warnings a component logs while it retries,
+// so they do not establish why the container exited; a crash logged after one of them does.
+var CrashPatterns = []string{
+	"panic:",
+	"fatal error:",
+	"runtime error:",
+	"sigsegv",
+	"sigabrt",
+}
+
+// MatchesCrash reports whether a log line records the container ending on a defect of its own.
+func MatchesCrash(line string) bool {
+	return containsAny(strings.ToLower(line), CrashPatterns)
+}
+
+// toleratedRestartCauses are restart causes that reflect the test environment rather than a
+// defect in the container that restarted.
+var toleratedRestartCauses = []struct {
+	description string
+	matches     func(line string) bool
+}{
+	{description: "Leader election failure", matches: MatchesLeaderElectionFailure},
+	{description: "Control plane unavailability", matches: MatchesControlPlaneUnavailable},
+}
+
+// matchToleratedRestartCause returns the description of the first tolerated restart cause the
+// line matches, and whether it matched one at all.
+func matchToleratedRestartCause(line string) (string, bool) {
+	for _, cause := range toleratedRestartCauses {
+		if cause.matches(line) {
+			return cause.description, true
+		}
+	}
+	return "", false
+}
+
+// toleratedRestartCauseInLog returns the tolerated cause that explains the end of the given
+// container log, and whether the log is explained by one at all.
+//
+// The whole log is read and the last cause wins, because only the end of the log says why the
+// container exited. A crash logged after a tolerated cause discards it: the tolerated cause
+// was a warning the component logged while retrying, and the component went on to fail for a
+// reason of its own. A line is tested against the tolerated causes first, so a component
+// panicking on a control plane that is unavailable stays tolerated.
+func toleratedRestartCauseInLog(log io.Reader) (string, bool, error) {
+	scanner := bufio.NewScanner(log)
+	const (
+		bufSize          = 256 * 1024
+		maxScanTokenSize = 512 * 1024
+	)
+
+	buf := make([]byte, bufSize)
+	scanner.Buffer(buf, maxScanTokenSize)
+
+	var (
+		description string
+		tolerated   bool
+	)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if cause, ok := matchToleratedRestartCause(line); ok {
+			description, tolerated = cause, true
+			continue
+		}
+		if MatchesCrash(line) {
+			description, tolerated = "", false
+		}
+	}
+
+	return description, tolerated, scanner.Err()
+}
+
+// toleratedRestartCause returns the description of the tolerated restart cause that explains
+// the container's previous log, and whether one explains it at all.
+func toleratedRestartCause(ctx context.Context, client kubeclient.Interface, pod *corev1.Pod, containerName string, t *testing.T) (string, bool) {
 	podLogOpts := corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
@@ -860,30 +971,19 @@ func isLeaderElectionFailure(ctx context.Context, client kubeclient.Interface, p
 	podLogs, err := req.Stream(ctx)
 	if err != nil {
 		t.Logf("couldn't stream pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
-		return false
+		return "", false
 	}
 	defer podLogs.Close()
 
-	scanner := bufio.NewScanner(podLogs)
-	const (
-		bufSize          = 256 * 1024
-		maxScanTokenSize = 512 * 1024
-	)
-
-	buf := make([]byte, bufSize)
-	scanner.Buffer(buf, maxScanTokenSize)
-	for scanner.Scan() {
-		if MatchesLeaderElectionFailure(scanner.Text()) {
-			return true
-		}
-	}
-
-	_, _ = io.Copy(io.Discard, podLogs)
-	if err = scanner.Err(); err != nil {
+	description, tolerated, err := toleratedRestartCauseInLog(podLogs)
+	if err != nil {
+		// The log was only read in part, so its end is unknown and no match in what was
+		// read establishes why the container exited.
 		t.Logf("failed to read pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
+		return "", false
 	}
 
-	return false
+	return description, tolerated
 }
 
 func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
