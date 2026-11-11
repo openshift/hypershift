@@ -13,12 +13,15 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 )
 
 type fakeComponentProvider struct {
@@ -307,11 +310,14 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 	// and response bodies can be compared. Use t.Cleanup rather than defer: the
 	// parallel subtests run after this function returns, so a deferred Close would
 	// shut the server down before they execute.
+	const metricsFixture = "# HELP test_metric A test metric\n" +
+		"# TYPE test_metric gauge\n" +
+		"test_metric 42\n"
 	fakeMetrics := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintln(w, `# HELP test_metric A test metric`)
-		fmt.Fprintln(w, `# TYPE test_metric gauge`)
-		fmt.Fprintln(w, `test_metric 42`)
+		if _, err := io.WriteString(w, metricsFixture); err != nil {
+			t.Errorf("failed to write fake metrics fixture: %v", err)
+		}
 	}))
 	t.Cleanup(fakeMetrics.Close)
 
@@ -371,7 +377,7 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(gr.Close()).To(Succeed())
 
-		g.Expect(sortedBytes(decoded)).To(Equal(sortedBytes(plainBody)))
+		g.Expect(canonicalizeExposition(t, decoded)).To(Equal(canonicalizeExposition(t, plainBody)))
 		g.Expect(decoded).To(ContainSubstring("test_metric"))
 	})
 
@@ -394,7 +400,7 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 		g.Expect(rec.Code).To(Equal(http.StatusOK))
 		g.Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
 		g.Expect(rec.Body.String()).To(ContainSubstring("test_metric"))
-		g.Expect(sortedBytes(rec.Body.Bytes())).To(Equal(sortedBytes(plainBody)))
+		g.Expect(canonicalizeExposition(t, rec.Body.Bytes())).To(Equal(canonicalizeExposition(t, plainBody)))
 	})
 
 	t.Run("When Accept-Encoding does not include gzip, it should return plain text", func(t *testing.T) {
@@ -405,7 +411,28 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 
 		g.Expect(rec.Code).To(Equal(http.StatusOK))
 		g.Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
-		g.Expect(sortedBytes(rec.Body.Bytes())).To(Equal(sortedBytes(plainBody)))
+		g.Expect(canonicalizeExposition(t, rec.Body.Bytes())).To(Equal(canonicalizeExposition(t, plainBody)))
+	})
+
+	t.Run("When Accept-Encoding sets gzip;q=0, it should not gzip (explicitly rejected)", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rec := serve(t, "gzip;q=0")
+
+		g.Expect(rec.Code).To(Equal(http.StatusOK))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		g.Expect(canonicalizeExposition(t, rec.Body.Bytes())).To(Equal(canonicalizeExposition(t, plainBody)))
+	})
+
+	t.Run("When Accept-Encoding sets gzip with a non-zero q-value, it should gzip", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rec := serve(t, "gzip;q=0.5")
+
+		g.Expect(rec.Code).To(Equal(http.StatusOK))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(Equal("gzip"))
 	})
 
 	t.Run("When a target error path is hit with Accept-Encoding gzip, the error response is not gzipped", func(t *testing.T) {
@@ -455,15 +482,37 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 	})
 }
 
-// sortedBytes returns a copy of b with its bytes sorted. Labeler.Inject appends
-// labels by ranging over a Go map, so the label order within a series is
-// randomized per request (Prometheus does not require a stable order). Comparing
-// sorted bytes makes response-body equality insensitive to that ordering while
-// still detecting any difference in content.
-func sortedBytes(b []byte) []byte {
-	out := bytes.Clone(b)
-	slices.Sort(out)
-	return out
+// canonicalizeExposition parses Prometheus exposition text and re-encodes it with
+// the labels of each series sorted by name. Labeler.Inject appends labels by
+// ranging over a Go map, so the proxy emits them in a nondeterministic order;
+// canonicalizing makes response comparisons insensitive to that ordering while
+// still detecting any change to metric names, sample values, or labels.
+func canonicalizeExposition(t *testing.T, body []byte) string {
+	t.Helper()
+	g := NewWithT(t)
+
+	parser := expfmt.NewTextParser(model.LegacyValidation)
+	families, err := parser.TextToMetricFamilies(bytes.NewReader(body))
+	g.Expect(err).NotTo(HaveOccurred())
+
+	names := make([]string, 0, len(families))
+	for name := range families {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	var buf bytes.Buffer
+	enc := expfmt.NewEncoder(&buf, expfmt.NewFormat(expfmt.TypeTextPlain))
+	for _, name := range names {
+		mf := families[name]
+		for _, m := range mf.Metric {
+			slices.SortFunc(m.Label, func(a, b *dto.LabelPair) int {
+				return strings.Compare(a.GetName(), b.GetName())
+			})
+		}
+		g.Expect(enc.Encode(mf)).To(Succeed())
+	}
+	return buf.String()
 }
 
 func TestBuildScrapeErrorMetric(t *testing.T) {
