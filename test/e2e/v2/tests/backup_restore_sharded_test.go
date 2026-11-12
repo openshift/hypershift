@@ -43,6 +43,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery"
@@ -244,6 +245,7 @@ func (s *shardedE2E) destroyCluster(ctx context.Context, name string) {
 // and credentials for the direct HCPEtcdBackup.
 func (s *shardedE2E) resolveBSL() (bucket, region string, credsSecret *corev1.Secret, err error) {
 	bsl := &unstructured.Unstructured{}
+	bsl.SetGroupVersionKind(schema.GroupVersionKind{Group: "velero.io", Version: "v1", Kind: "BackupStorageLocation"})
 	err = s.testCtx.MgmtClient.Get(s.testCtx.Context, crclient.ObjectKey{
 		Namespace: "openshift-adp",
 		Name:      s.testCtx.ClusterName,
@@ -315,6 +317,17 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 		cliPath, err := exec.LookPath("hypershift")
 		Expect(err).NotTo(HaveOccurred(), "the hypershift CLI must be on PATH")
 		e.cliPath = cliPath
+
+		By("Checking that a BackupStorageLocation exists for the primary cluster")
+		probe := &unstructured.Unstructured{}
+		probe.SetGroupVersionKind(schema.GroupVersionKind{Group: "velero.io", Version: "v1", Kind: "BackupStorageLocation"})
+		probeErr := e.testCtx.MgmtClient.Get(e.testCtx.Context, crclient.ObjectKey{
+			Namespace: "openshift-adp",
+			Name:      e.testCtx.ClusterName,
+		}, probe)
+		if probeErr != nil {
+			Skip(fmt.Sprintf("no BackupStorageLocation %s in openshift-adp (OADP not set up on this lane): %v", e.testCtx.ClusterName, probeErr))
+		}
 
 		By("Checking for AWS credentials")
 		e.awsCreds = internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
@@ -449,6 +462,18 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 			Expect(byIdentity).To(HaveKeyWithValue("default", Not(BeEmpty())))
 			Expect(byIdentity).To(HaveKeyWithValue(shardedE2EShardName, Not(BeEmpty())))
 			Expect(byIdentity["default"]).ToNot(Equal(byIdentity[shardedE2EShardName]), "each shard must have its own object")
+
+			By("Verifying the per-shard mapping is persisted on the source HostedCluster")
+			Eventually(func(g Gomega) {
+				updated := &hyperv1.HostedCluster{}
+				g.Expect(e.testCtx.MgmtClient.Get(e.testCtx.Context, types.NamespacedName{Namespace: "clusters", Name: e.sourceCluster}, updated)).To(Succeed())
+				mapping := map[string]string{}
+				for _, ss := range updated.Status.LastSuccessfulEtcdShardBackupURLs {
+					mapping[ss.Name] = ss.SnapshotURL
+				}
+				g.Expect(mapping).To(HaveKeyWithValue("default", byIdentity["default"]), "the archived mapping must survive HCPEtcdBackup retention")
+				g.Expect(mapping).To(HaveKeyWithValue(shardedE2EShardName, byIdentity[shardedE2EShardName]))
+			}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
 			By("Verifying the S3 objects exist and are distinct")
 			cfg, err := awsConfigFromSecret(e.testCtx.Context, credsSecret, bslRegion)
@@ -604,6 +629,12 @@ func applyRestoredShardedCluster(testCtx *internal.TestContext, rendered []byte,
 			}
 			Expect(unstructured.SetNestedSlice(obj.Object, shards, "spec", "etcd", "managed", "shards")).To(Succeed())
 		}
-		Expect(testCtx.MgmtClient.Create(testCtx.Context, obj)).To(Succeed(), "failed to create %s %s/%s", obj.GetKind(), obj.GetNamespace(), obj.GetName())
+		err := testCtx.MgmtClient.Create(testCtx.Context, obj)
+		if apierrors.IsAlreadyExists(err) {
+			// The rendered manifests include the cluster namespace and other
+			// pre-existing objects; patch them instead.
+			err = testCtx.MgmtClient.Patch(testCtx.Context, obj, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("sharded-e2e"))
+		}
+		Expect(err).To(Succeed(), "failed to create %s %s/%s", obj.GetKind(), obj.GetNamespace(), obj.GetName())
 	}
 }
