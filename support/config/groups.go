@@ -25,7 +25,11 @@ func CurvePreferences(ctx context.Context, profile *configv1.TLSSecurityProfile)
 		}
 		groups = profile.Custom.Groups
 	} else {
-		groups = configv1.TLSProfiles[profile.Type].Groups
+		profileDef := configv1.TLSProfiles[profile.Type]
+		if profileDef == nil {
+			return nil, fmt.Errorf("unknown TLS profile type %q", profile.Type)
+		}
+		groups = profileDef.Groups
 	}
 
 	if libgocrypto.IsFIPSEnabled() {
