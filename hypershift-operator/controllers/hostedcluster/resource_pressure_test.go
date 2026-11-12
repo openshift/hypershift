@@ -97,7 +97,7 @@ func TestReconcileManagementClusterResourcePressure(t *testing.T) {
 				schedulingFailedCPC("etcd", "Pod etcd-0 is unschedulable: Insufficient cpu, Insufficient memory"),
 			},
 			expectedStatus: metav1.ConditionTrue,
-			expectedReason: hyperv1.ReasonFailedScheduling,
+			expectedReason: hyperv1.ReasonPodSchedulingFailed,
 			expectedMsg:    "1 component with scheduling failures (etcd): Insufficient cpu, Insufficient memory",
 		},
 		{
@@ -108,7 +108,7 @@ func TestReconcileManagementClusterResourcePressure(t *testing.T) {
 				availableCPC("kube-scheduler"),
 			},
 			expectedStatus: metav1.ConditionTrue,
-			expectedReason: hyperv1.ReasonFailedScheduling,
+			expectedReason: hyperv1.ReasonPodSchedulingFailed,
 			expectedMsg:    "2 components with scheduling failures (etcd, kube-apiserver)",
 		},
 		{
@@ -137,7 +137,7 @@ func TestReconcileManagementClusterResourcePressure(t *testing.T) {
 				schedulingFailedCPC("etcd", "Pod etcd-0 is unschedulable"),
 			},
 			expectedStatus: metav1.ConditionTrue,
-			expectedReason: hyperv1.ReasonFailedScheduling,
+			expectedReason: hyperv1.ReasonPodSchedulingFailed,
 			expectedMsg:    "1 component with scheduling failures (etcd)",
 		},
 		{
@@ -149,7 +149,7 @@ func TestReconcileManagementClusterResourcePressure(t *testing.T) {
 				schedulingFailedCPC("etcd", "Pod etcd-0 is unschedulable: Insufficient cpu"),
 			},
 			expectedStatus: metav1.ConditionTrue,
-			expectedReason: hyperv1.ReasonFailedScheduling,
+			expectedReason: hyperv1.ReasonPodSchedulingFailed,
 			notExpectedMsg: "ip-10-0-1-42",
 		},
 		{
@@ -160,7 +160,7 @@ func TestReconcileManagementClusterResourcePressure(t *testing.T) {
 				schedulingFailedCPC("kube-apiserver", "Pod kube-apiserver-0 is unschedulable: Insufficient cpu"),
 			},
 			expectedStatus: metav1.ConditionTrue,
-			expectedReason: hyperv1.ReasonFailedScheduling,
+			expectedReason: hyperv1.ReasonPodSchedulingFailed,
 			expectedMsg:    "3 components with scheduling failures (etcd, kube-apiserver, kube-scheduler)",
 		},
 	}

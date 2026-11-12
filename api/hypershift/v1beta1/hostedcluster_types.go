@@ -2853,7 +2853,7 @@ type HostedClusterStatus struct {
 
 	// installation tracks the progress of initial cluster provisioning.
 	// An empty value means installation stage tracking is not yet available
-	// (e.g. CPO version skew during upgrade).
+	// (e.g. HO version skew during upgrade).
 	// +optional
 	Installation InstallationStatus `json:"installation,omitzero,omitempty"`
 }

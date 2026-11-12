@@ -200,6 +200,7 @@ var (
 		hyperv1.ReasonCrashLoopBackOff,
 		hyperv1.ReasonImagePullBackOff,
 		hyperv1.ReasonRouteNotAdmitted,
+		string(hyperv1.ClusterVersionFailing),
 	}
 )
 
@@ -267,19 +268,6 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	// List all CPCs across all namespaces for failure reason gauge evaluation.
-	allCPCs := &hyperv1.ControlPlaneComponentList{}
-	if err := c.List(context.Background(), allCPCs); err != nil {
-		log.Error(err, "failed to list control plane components while collecting metrics")
-		// Non-fatal: per-cluster metrics still work, failure reason tracking degrades gracefully.
-		allCPCs = &hyperv1.ControlPlaneComponentList{}
-	}
-	cpcsByNamespace := make(map[string][]hyperv1.ControlPlaneComponent, len(allCPCs.Items))
-	for i := range allCPCs.Items {
-		ns := allCPCs.Items[i].Namespace
-		cpcsByNamespace[ns] = append(cpcsByNamespace[ns], allCPCs.Items[i])
-	}
-
 	for k := range hclusters.Items {
 		hcluster := &hclusters.Items[k]
 
@@ -291,7 +279,14 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 		hclusterLabelValues := []string{hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID}
 		cpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		c.collectPerClusterMetrics(ch, hcluster, hclusterLabelValues, cpcsByNamespace[cpNamespace])
+		// List CPCs scoped to this HC's control plane namespace instead of
+		// using a cluster-wide list, to avoid creating a global CPC informer.
+		cpcs := &hyperv1.ControlPlaneComponentList{}
+		if err := c.List(context.Background(), cpcs, client.InNamespace(cpNamespace)); err != nil {
+			log.Error(err, "failed to list control plane components", "namespace", cpNamespace)
+			cpcs = &hyperv1.ControlPlaneComponentList{}
+		}
+		c.collectPerClusterMetrics(ch, hcluster, hclusterLabelValues, cpcs.Items)
 	}
 
 	emitAggregatedMetrics(ch, identityProviderToHClustersCount, platformToHClustersCount, platformToFailureConditionToHClustersCount)
@@ -695,10 +690,13 @@ func collectInstallationStageMetric(ch chan<- prometheus.Metric, hcluster *hyper
 // for the given HostedCluster: 1 if the reason is currently active, 0 if not.
 // Active reasons are derived from CPC Available conditions and HC-level conditions.
 func collectInstallationFailureReasonMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string, cpcs []hyperv1.ControlPlaneComponent) {
-	// Collect active reasons from CPC Available conditions.
+	// Collect active reasons from CPC RolloutComplete conditions.
+	// RolloutComplete is used instead of Available to catch partial scheduling
+	// pressure (e.g., etcd with 1/3 replicas) — consistent with
+	// reconcileManagementClusterResourcePressure in resource_pressure.go.
 	activeReasons := make(map[string]bool, len(knownFailureReasons))
 	for i := range cpcs {
-		cond := meta.FindStatusCondition(cpcs[i].Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
+		cond := meta.FindStatusCondition(cpcs[i].Status.Conditions, string(hyperv1.ControlPlaneComponentRolloutComplete))
 		if cond != nil && cond.Status == metav1.ConditionFalse && cond.Reason != "" {
 			activeReasons[cond.Reason] = true
 		}
@@ -709,6 +707,11 @@ func collectInstallationFailureReasonMetric(ch chan<- prometheus.Metric, hcluste
 	infraCond := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.InfrastructureReady))
 	if infraCond != nil && infraCond.Status == metav1.ConditionFalse && infraCond.Reason != "" {
 		activeReasons[infraCond.Reason] = true
+	}
+	// ClusterVersionFailing=True → CVO reports a failure.
+	cvFailingCond := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ClusterVersionFailing))
+	if cvFailingCond != nil && cvFailingCond.Status == metav1.ConditionTrue {
+		activeReasons[string(hyperv1.ClusterVersionFailing)] = true
 	}
 
 	// Emit a gauge per known reason: 1 if active, 0 if not.

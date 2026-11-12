@@ -489,7 +489,6 @@ const (
 	ReasonRouteNotAdmitted                 = "RouteNotAdmitted"
 	ReasonControlPlanePodStatusUnavailable = "ControlPlanePodStatusUnavailable"
 	ReasonNoPressure                       = "NoPressure"
-	ReasonFailedScheduling                 = "FailedScheduling"
 )
 
 // Messages.

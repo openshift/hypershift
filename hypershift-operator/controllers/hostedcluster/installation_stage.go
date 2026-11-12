@@ -76,9 +76,18 @@ func reconcileInstallationStage(ctx context.Context, c client.Client,
 		hyperv1.SetInstallationStage(install, hyperv1.InstallationStageWorkerAvailable, now)
 	}
 
-	// Ordinal 5: WaitingForOperators — KubeConfig is available.
+	// Ordinal 5: WaitingForOperators — KubeConfig is available AND the API
+	// server is reachable. The KubeConfig Secret is created during PKI
+	// generation (before KAS is running), so checking it alone would skip
+	// ordinals 3 (APIServerAvailable) and 4 (WorkerAvailable). Requiring
+	// KubeAPIServerAvailable=True ensures we only advance to this stage
+	// once the kubeconfig is usable, while still allowing zero-worker
+	// flows to progress without a healthy worker.
 	if hcp != nil && hcp.Status.KubeConfig != nil {
-		hyperv1.SetInstallationStage(install, hyperv1.InstallationStageWaitingForOperators, now)
+		kasCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
+		if kasCondition != nil && kasCondition.Status == metav1.ConditionTrue {
+			hyperv1.SetInstallationStage(install, hyperv1.InstallationStageWaitingForOperators, now)
+		}
 	}
 }
 

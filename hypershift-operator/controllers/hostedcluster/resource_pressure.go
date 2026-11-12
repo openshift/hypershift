@@ -21,9 +21,11 @@ const maxResourcePressureMessageLen = 256
 // "Insufficient memory", "Insufficient ephemeral-storage", etc. Only the resource
 // type name is captured — node names, counts, and other scheduler internals are
 // excluded to prevent leaking management cluster topology.
-// The resource name is restricted to word characters and hyphens to avoid capturing
-// trailing punctuation (commas, periods) from the scheduler message format.
-var insufficientResourcePattern = regexp.MustCompile(`Insufficient\s+([\w][\w-]*)`)
+// The resource name allows word characters, hyphens, dots, and slashes to cover
+// extended resources like "example.com/gpu" or "hugepages-2Mi". The pattern
+// requires the name to end with a word character so that trailing punctuation
+// (periods, commas) from the scheduler message is excluded.
+var insufficientResourcePattern = regexp.MustCompile(`Insufficient\s+([\w]+(?:[.\-/][\w]+)*)`)
 
 // reconcileManagementClusterResourcePressure detects scheduling pressure in the
 // control plane namespace by reading ControlPlaneComponent conditions that the
@@ -97,7 +99,7 @@ func reconcileManagementClusterResourcePressure(ctx context.Context, c client.Cl
 	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 		Type:    string(hyperv1.ManagementClusterResourcePressure),
 		Status:  metav1.ConditionTrue,
-		Reason:  hyperv1.ReasonFailedScheduling,
+		Reason:  hyperv1.ReasonPodSchedulingFailed,
 		Message: msg,
 	})
 }

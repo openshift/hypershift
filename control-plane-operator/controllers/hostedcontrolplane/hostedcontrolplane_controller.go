@@ -1251,15 +1251,13 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 		if len(notAvailable) == 1 {
 			noun = "component"
 		}
-		msg := fmt.Sprintf("%d %s unavailable", len(notAvailable), noun)
+		msg := fmt.Sprintf("%d %s unavailable: %s", len(notAvailable), noun, strings.Join(notAvailable, ", "))
 		if firstFailureName != "" {
 			detail := firstFailureReason
 			if firstFailureMessage != "" {
 				detail += ": " + firstFailureMessage
 			}
 			msg += fmt.Sprintf(". First failure: %s — %s", firstFailureName, detail)
-		} else {
-			msg += fmt.Sprintf(": %s", strings.Join(notAvailable, ", "))
 		}
 		return msg, nil
 	}

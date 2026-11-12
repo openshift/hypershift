@@ -422,7 +422,11 @@ func truncateMessage(msg string) string {
 }
 
 // insufficientResourcePattern matches "Insufficient <resource>" in scheduler messages.
-var insufficientResourcePattern = regexp.MustCompile(`Insufficient\s+([\w][\w-]*)`)
+// The resource name allows word characters, hyphens, dots, and slashes to cover
+// extended resources like "example.com/gpu" or "hugepages-2Mi". The pattern
+// requires the name to end with a word character so that trailing punctuation
+// (periods, commas) from the scheduler message is excluded.
+var insufficientResourcePattern = regexp.MustCompile(`Insufficient\s+([\w]+(?:[.\-/][\w]+)*)`)
 
 // sanitizeSchedulerMessage extracts only resource-type information from a raw
 // scheduler message to avoid leaking management cluster details (node names,

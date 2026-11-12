@@ -334,7 +334,35 @@ func TestReconcileInstallationStage(t *testing.T) {
 			expectedStage: hyperv1.InstallationStageWaitingForOperators,
 		},
 		{
-			name: "Multiple triggers should pick highest stage",
+			name: "KubeConfig available without KAS should not skip to WaitingForOperators",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: cpNamespace},
+				Status: hyperv1.HostedControlPlaneStatus{
+					KubeConfig: &hyperv1.KubeconfigSecretRef{
+						Name: "admin-kubeconfig",
+						Key:  "kubeconfig",
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.InfrastructureReady),
+							Status: metav1.ConditionTrue,
+							Reason: "AsExpected",
+						},
+					},
+				},
+			},
+			cpcs: []client.Object{
+				&hyperv1.ControlPlaneComponent{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: cpNamespace},
+				},
+			},
+			expectedStage: hyperv1.InstallationStageControlPlaneProvisioning,
+		},
+		{
+			name: "KubeConfig and KAS available without workers should set WaitingForOperators (zero-worker flow)",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
 			},

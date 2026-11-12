@@ -11178,7 +11178,7 @@ InstallationStatus
 <em>(Optional)</em>
 <p>installation tracks the progress of initial cluster provisioning.
 An empty value means installation stage tracking is not yet available
-(e.g. CPO version skew during upgrade).</p>
+(e.g. HO version skew during upgrade).</p>
 </td>
 </tr>
 </tbody>

@@ -93,10 +93,13 @@ func ValidateManagementClusterResourcePressureTest(getTestCtx internal.TestConte
 	})
 }
 
-// SchedulingFailureInjectionTest injects a scheduling failure by tainting all
-// management cluster nodes with NoSchedule and deleting a control plane pod.
-// It verifies that ManagementClusterResourcePressure becomes True on the
-// HostedCluster, then removes the taints and verifies self-clearing.
+// SchedulingFailureInjectionTest injects a scheduling failure by tainting only
+// the nodes where this hosted cluster's control plane pods run, then deleting
+// a control plane pod so its replacement cannot schedule.
+//
+// Only nodes hosting pods from this HC's control plane namespace are tainted,
+// limiting blast radius to this cluster. Pods already running on those nodes
+// are unaffected by NoSchedule — only new scheduling attempts are blocked.
 //
 // The full detection chain exercised:
 //  1. Pod pending with PodScheduled=False, Reason=Unschedulable
@@ -116,31 +119,7 @@ func SchedulingFailureInjectionTest(getTestCtx internal.TestContextGetter) {
 		Expect(cond).NotTo(BeNil(), "ManagementClusterResourcePressure should exist before injection")
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse), "ManagementClusterResourcePressure should be False before injection")
 
-		By("tainting all management cluster nodes with NoSchedule")
-		taintKey := "installation-diagnostics-e2e/block-scheduling"
-		taint := corev1.Taint{
-			Key:    taintKey,
-			Value:  "true",
-			Effect: corev1.TaintEffectNoSchedule,
-		}
-
-		nodeList := &corev1.NodeList{}
-		Expect(tc.MgmtClient.List(ctx, nodeList)).To(Succeed())
-		Expect(nodeList.Items).NotTo(BeEmpty(), "expected at least one management cluster node")
-
-		// Register cleanup before tainting so partial failures still get cleaned up.
-		DeferCleanup(func(ctx context.Context) {
-			removeTaintFromAllNodes(ctx, tc.MgmtClient, taintKey)
-		})
-
-		for i := range nodeList.Items {
-			node := &nodeList.Items[i]
-			patch := crclient.MergeFrom(node.DeepCopy())
-			node.Spec.Taints = append(node.Spec.Taints, taint)
-			Expect(tc.MgmtClient.Patch(ctx, node, patch)).To(Succeed())
-		}
-
-		By("deleting a control plane pod to trigger rescheduling failure")
+		By("listing control plane pods to find target and node set")
 		podList := &corev1.PodList{}
 		Expect(tc.MgmtClient.List(ctx, podList, crclient.InNamespace(cpNamespace))).To(Succeed())
 		Expect(podList.Items).NotTo(BeEmpty(), "expected pods in control plane namespace %s", cpNamespace)
@@ -162,15 +141,52 @@ func SchedulingFailureInjectionTest(getTestCtx internal.TestContextGetter) {
 			return false
 		}
 
+		// Collect the set of nodes running this HC's control plane pods
+		// and find a target pod for deletion.
+		cpNodeNames := make(map[string]struct{})
 		var targetPod *corev1.Pod
 		for i := range podList.Items {
 			p := &podList.Items[i]
-			if p.Status.Phase == corev1.PodRunning && isTargetComponentPod(p.Name) {
+			if p.Spec.NodeName != "" {
+				cpNodeNames[p.Spec.NodeName] = struct{}{}
+			}
+			if targetPod == nil && p.Status.Phase == corev1.PodRunning && isTargetComponentPod(p.Name) {
 				targetPod = p
-				break
 			}
 		}
 		Expect(targetPod).NotTo(BeNil(), "expected at least one running CPC-owned pod in %s", cpNamespace)
+		Expect(cpNodeNames).NotTo(BeEmpty(), "expected at least one node running control plane pods")
+
+		By("tainting only nodes hosting this cluster's control plane pods")
+		taintKey := "installation-diagnostics-e2e/block-scheduling"
+		taint := corev1.Taint{
+			Key:    taintKey,
+			Value:  "true",
+			Effect: corev1.TaintEffectNoSchedule,
+		}
+
+		// Register cleanup before tainting so partial failures still get cleaned up.
+		DeferCleanup(func(ctx context.Context) {
+			removeTaintFromNodes(ctx, tc.MgmtClient, taintKey)
+		})
+
+		nodeList := &corev1.NodeList{}
+		Expect(tc.MgmtClient.List(ctx, nodeList)).To(Succeed())
+		Expect(nodeList.Items).NotTo(BeEmpty(), "expected at least one node in the management cluster")
+		var taintedCount int
+		for i := range nodeList.Items {
+			node := &nodeList.Items[i]
+			if _, ok := cpNodeNames[node.Name]; !ok {
+				continue
+			}
+			patch := crclient.MergeFrom(node.DeepCopy())
+			node.Spec.Taints = append(node.Spec.Taints, taint)
+			Expect(tc.MgmtClient.Patch(ctx, node, patch)).To(Succeed())
+			taintedCount++
+		}
+		Expect(taintedCount).To(BeNumerically(">", 0), "expected to taint at least one node")
+
+		By("deleting a control plane pod to trigger rescheduling failure")
 		Expect(tc.MgmtClient.Delete(ctx, targetPod)).To(Succeed())
 
 		By("waiting for ManagementClusterResourcePressure to become True")
@@ -184,8 +200,8 @@ func SchedulingFailureInjectionTest(getTestCtx internal.TestContextGetter) {
 				"ManagementClusterResourcePressure should be True after scheduling failure injection")
 		}).WithContext(ctx).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
-		By("removing taints from all nodes to allow recovery")
-		removeTaintFromAllNodes(ctx, tc.MgmtClient, taintKey)
+		By("removing taints to allow recovery")
+		removeTaintFromNodes(ctx, tc.MgmtClient, taintKey)
 
 		By("waiting for ManagementClusterResourcePressure to self-clear to False")
 		Eventually(func(g Gomega) {
@@ -202,9 +218,9 @@ func SchedulingFailureInjectionTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// removeTaintFromAllNodes removes a taint with the given key from all nodes.
-// It is idempotent: nodes that do not have the taint are skipped.
-func removeTaintFromAllNodes(ctx context.Context, c crclient.Client, taintKey string) {
+// removeTaintFromNodes removes a taint with the given key from all nodes that
+// have it. It is idempotent: nodes without the taint are skipped.
+func removeTaintFromNodes(ctx context.Context, c crclient.Client, taintKey string) {
 	nodeList := &corev1.NodeList{}
 	ExpectWithOffset(1, c.List(ctx, nodeList)).To(Succeed())
 	for i := range nodeList.Items {
@@ -247,7 +263,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:InstallationDiagnost
 	})
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:InstallationDiagnostics] Installation Diagnostics Failure Injection",
-	Label("installation-diagnostics", internal.InformingLabel), Serial, func() {
+	Label("installation-diagnostics", "lifecycle", internal.InformingLabel), Serial, func() {
 		var testCtx *internal.TestContext
 
 		BeforeEach(func() {

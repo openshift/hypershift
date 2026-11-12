@@ -2409,10 +2409,17 @@ func TestCheckRouteAdmission(t *testing.T) {
 		},
 	}
 
+	// unlabeledUnadmittedRoute simulates a default-router CP route (e.g.
+	// konnectivity-server) that is owned by the HCP but does not carry
+	// HCPRouteLabel because it is served by the management cluster's default
+	// router rather than the HCP-specific router.
 	unlabeledUnadmittedRoute := &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "konnectivity-server",
 			Namespace: testNamespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{Kind: "HostedControlPlane", Name: testClusterName},
+			},
 		},
 		Status: routev1.RouteStatus{
 			Ingress: []routev1.RouteIngress{
@@ -2429,9 +2436,32 @@ func TestCheckRouteAdmission(t *testing.T) {
 		},
 	}
 
+	// nonCPRoute simulates a route in the HCP namespace that is NOT part of
+	// the control plane (e.g. the KubeVirt default-ingress-passthrough-route
+	// created by HCCO). It has neither HCPRouteLabel nor an HCP ownerReference
+	// and must be excluded from the CheckRouteAdmission check.
+	nonCPRoute := &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default-ingress-passthrough",
+			Namespace: testNamespace,
+		},
+	}
+
+	unadmittedInternalRoute := &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver-internal",
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				netutil.HCPRouteLabel:      testNamespace,
+				netutil.InternalRouteLabel: "true",
+			},
+		},
+	}
+
 	testCases := []struct {
 		name               string
 		hcp                *hyperv1.HostedControlPlane
+		needInternalRouter bool
 		objects            []client.Object
 		scheme             *runtime.Scheme
 		interceptorFuncs   interceptor.Funcs
@@ -2441,18 +2471,21 @@ func TestCheckRouteAdmission(t *testing.T) {
 		{
 			name:               "When all routes are admitted, it should return no unadmitted routes",
 			hcp:                withServices(baseAWSHCP(), allServicesRouteWithHostnames()),
+			needInternalRouter: true,
 			objects:            []client.Object{admittedRoute},
 			expectedUnadmitted: nil,
 		},
 		{
 			name:               "When an HCP-managed route has no ingress status, it should return the route name",
 			hcp:                withServices(baseAWSHCP(), allServicesRouteWithHostnames()),
+			needInternalRouter: true,
 			objects:            []client.Object{admittedRoute, unadmittedRoute},
 			expectedUnadmitted: []string{"oauth"},
 		},
 		{
 			name:               "When a default-router route without HCPRouteLabel is rejected, it should return the route name in sorted order",
 			hcp:                withServices(baseAWSHCP(), kasServiceLoadBalancerOthersRoute()),
+			needInternalRouter: true,
 			objects:            []client.Object{unadmittedRoute, unlabeledUnadmittedRoute},
 			expectedUnadmitted: []string{"konnectivity-server", "oauth"},
 		},
@@ -2476,12 +2509,14 @@ func TestCheckRouteAdmission(t *testing.T) {
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort},
 				},
 			}),
+			needInternalRouter: true,
 			scheme:             runtime.NewScheme(),
 			expectedUnadmitted: nil,
 		},
 		{
-			name: "When the management cluster does not have the Route CRD installed, it should return nil without error",
-			hcp:  withServices(baseAWSHCP(), allServicesRouteWithHostnames()),
+			name:               "When the management cluster does not have the Route CRD installed, it should return nil without error",
+			hcp:                withServices(baseAWSHCP(), allServicesRouteWithHostnames()),
+			needInternalRouter: true,
 			interceptorFuncs: interceptor.Funcs{
 				List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
 					return &meta.NoKindMatchError{
@@ -2493,14 +2528,36 @@ func TestCheckRouteAdmission(t *testing.T) {
 			expectedUnadmitted: nil,
 		},
 		{
-			name: "When listing routes fails with a transient API error, it should return the error",
-			hcp:  withServices(baseAWSHCP(), allServicesRouteWithHostnames()),
+			name:               "When listing routes fails with a transient API error, it should return the error",
+			hcp:                withServices(baseAWSHCP(), allServicesRouteWithHostnames()),
+			needInternalRouter: true,
 			interceptorFuncs: interceptor.Funcs{
 				List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
 					return fmt.Errorf("apiserver unavailable")
 				},
 			},
 			expectError: true,
+		},
+		{
+			name:               "When no internal router is needed, unadmitted internal routes should be skipped",
+			hcp:                withServices(withAWSEndpointAccess(baseAWSHCP(), hyperv1.Public), allServicesRouteWithHostnames()),
+			needInternalRouter: false,
+			objects:            []client.Object{admittedRoute, unadmittedInternalRoute},
+			expectedUnadmitted: nil,
+		},
+		{
+			name:               "When internal router is needed, unadmitted internal routes should be reported",
+			hcp:                withServices(withAWSEndpointAccess(baseAWSHCP(), hyperv1.PublicAndPrivate), allServicesRouteWithHostnames()),
+			needInternalRouter: true,
+			objects:            []client.Object{admittedRoute, unadmittedInternalRoute},
+			expectedUnadmitted: []string{"kube-apiserver-internal"},
+		},
+		{
+			name:               "When a non-control-plane route in the namespace is not admitted, it should be excluded",
+			hcp:                withServices(baseAWSHCP(), allServicesRouteWithHostnames()),
+			needInternalRouter: true,
+			objects:            []client.Object{admittedRoute, nonCPRoute},
+			expectedUnadmitted: nil,
 		},
 	}
 
@@ -2521,7 +2578,7 @@ func TestCheckRouteAdmission(t *testing.T) {
 			}
 			r := NewReconciler(builder.Build(), testIngressDomain)
 
-			notAdmitted, err := r.CheckRouteAdmission(t.Context(), tc.hcp)
+			notAdmitted, err := r.CheckRouteAdmission(t.Context(), tc.hcp, tc.needInternalRouter)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				return

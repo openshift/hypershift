@@ -2461,7 +2461,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "1 component unavailable. First failure: kube-apiserver — Deploying",
+			expectedMsg: "1 component unavailable: kube-apiserver. First failure: kube-apiserver — Deploying",
 		},
 		{
 			name: "When multiple components are not available, it should list all unavailable components",
@@ -2505,7 +2505,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "2 components unavailable. First failure: kube-apiserver — ",
+			expectedMsg: "2 components unavailable: kube-apiserver, kube-scheduler. First failure: kube-apiserver — ",
 		},
 		{
 			name: "When some components are available and others are not, it should list only unavailable components",
@@ -2540,7 +2540,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "1 component unavailable. First failure: oauth-server — ",
+			expectedMsg: "1 component unavailable: oauth-server. First failure: oauth-server — ",
 		},
 		{
 			name:           "When client fails to list components, it should return error",
