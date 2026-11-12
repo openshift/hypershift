@@ -2303,6 +2303,29 @@ To revert to default behavior after setting cpuOptions, remove the entire
 cpuOptions field rather than clearing individual sub-fields.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>sourceDestCheck</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SourceDestCheck">
+SourceDestCheck
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>sourceDestCheck configures the source/destination check on the EC2
+instance&rsquo;s network interfaces.
+When set to &ldquo;Disabled&rdquo;, the instance can forward traffic for which it is
+not the source or destination. This is required for workloads that forward
+or route traffic, such as advertising routes to an AWS VPC Route Server
+with OVN-Kubernetes BGP and user-defined networking (UDN).
+When omitted or set to &ldquo;Enabled&rdquo;, AWS enforces its default
+source/destination check, dropping any packet whose source or destination
+is not the instance itself.
+Changing this value triggers a replacement of the NodePool&rsquo;s instances.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSNodePoolResourceTag { #hypershift.openshift.io/v1beta1.AWSNodePoolResourceTag }
@@ -19142,6 +19165,33 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###SourceDestCheck { #hypershift.openshift.io/v1beta1.SourceDestCheck }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>SourceDestCheck describes whether the source/destination check is enabled on an
+EC2 instance&rsquo;s network interfaces.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
+<td><p>SourceDestCheckDisabled disables the source/destination check, allowing the
+instance to forward traffic for which it is not the source or destination.</p>
+</td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
+<td><p>SourceDestCheckEnabled enables the source/destination check, which is the AWS
+default. Packets whose source or destination is not the instance itself are
+dropped.</p>
+</td>
+</tr></tbody>
+</table>
 ###SpotOptions { #hypershift.openshift.io/v1beta1.SpotOptions }
 <p>
 (<em>Appears on:</em>
