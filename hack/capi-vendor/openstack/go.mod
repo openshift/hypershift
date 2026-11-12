@@ -2,7 +2,7 @@ module github.com/openshift/hypershift/hack/capi-vendor/openstack
 
 go 1.26.0
 
-require sigs.k8s.io/cluster-api-provider-openstack v0.15.1
+require sigs.k8s.io/cluster-api-provider-openstack v0.15.2-0.20261110103409-1781dc07413e
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -45,10 +45,10 @@ require (
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	k8s.io/api v0.36.5 // indirect
-	k8s.io/apiextensions-apiserver v0.36.5 // indirect
-	k8s.io/apimachinery v0.36.5 // indirect
-	k8s.io/client-go v0.36.5 // indirect
+	k8s.io/api v0.36.6 // indirect
+	k8s.io/apiextensions-apiserver v0.36.6 // indirect
+	k8s.io/apimachinery v0.36.6 // indirect
+	k8s.io/client-go v0.36.6 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a // indirect
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 // indirect
