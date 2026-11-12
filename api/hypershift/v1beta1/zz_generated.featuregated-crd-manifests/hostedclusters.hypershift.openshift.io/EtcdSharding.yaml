@@ -3138,7 +3138,7 @@ spec:
                               before being injected (the OADP plugin does this automatically), because
                               the restore init container fetches the snapshot with curl.
                             items:
-                              maxLength: 1024
+                              maxLength: 2048
                               type: string
                             maxItems: 1
                             type: array
@@ -3172,6 +3172,14 @@ spec:
                     x-kubernetes-validations:
                     - message: shards cannot be added or removed after creation
                       rule: has(oldSelf.shards) == has(self.shards)
+                    - message: 'when shards are configured, restoreSnapshotURL must
+                        be set on every persistent shard (or none of them): an incomplete
+                        restore mapping is rejected so a control plane cannot boot
+                        with partial data'
+                      rule: '!has(self.shards) || (has(self.storage.restoreSnapshotURL)
+                        ? self.shards.all(s, !has(s.storage) || s.storage.type ==
+                        ''EmptyDir'' || has(s.restoreSnapshotURL)) : self.shards.all(s,
+                        !has(s.restoreSnapshotURL)))'
                   managementType:
                     description: |-
                       managementType defines how the etcd cluster is managed.

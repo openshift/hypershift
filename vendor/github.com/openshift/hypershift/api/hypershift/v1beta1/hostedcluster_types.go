@@ -2162,6 +2162,7 @@ type EtcdSpec struct {
 // ManagedEtcdSpec specifies the behavior of an etcd cluster managed by
 // HyperShift.
 // +openshift:validation:FeatureGateAwareXValidation:featureGate=EtcdSharding,rule="has(oldSelf.shards) == has(self.shards)",message="shards cannot be added or removed after creation"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=EtcdSharding,rule="!has(self.shards) || (has(self.storage.restoreSnapshotURL) ? self.shards.all(s, !has(s.storage) || s.storage.type == 'EmptyDir' || has(s.restoreSnapshotURL)) : self.shards.all(s, !has(s.restoreSnapshotURL)))",message="when shards are configured, restoreSnapshotURL must be set on every persistent shard (or none of them): an incomplete restore mapping is rejected so a control plane cannot boot with partial data"
 type ManagedEtcdSpec struct {
 	// storage specifies how etcd data is persisted.
 	// +required
@@ -2243,7 +2244,7 @@ type ManagedEtcdStorageSpec struct {
 	// +immutable
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=1
-	// +kubebuilder:validation:items:MaxLength=1024
+	// +kubebuilder:validation:items:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="self.size() <= 1", message="RestoreSnapshotURL shouldn't contain more than 1 entry"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="restoreSnapshotURL is immutable"
 	// +kubebuilder:validation:XValidation:rule="self.size() == 0 || self[0].matches('^https://.*')", message="restoreSnapshotURL must be a valid URL with scheme https"

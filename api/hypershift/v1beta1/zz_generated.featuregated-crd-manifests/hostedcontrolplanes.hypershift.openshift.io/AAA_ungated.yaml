@@ -2702,7 +2702,7 @@ spec:
                               before being injected (the OADP plugin does this automatically), because
                               the restore init container fetches the snapshot with curl.
                             items:
-                              maxLength: 1024
+                              maxLength: 2048
                               type: string
                             maxItems: 1
                             type: array
