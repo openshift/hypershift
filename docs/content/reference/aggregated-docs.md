@@ -23950,12 +23950,15 @@ shard. No RBAC changes are needed.
 
 ## Design
 
-### Approach: Sequential snapshot per shard in a single Job
+### Approach: Concurrent snapshots per shard in a single Job
 
 Rather than spawning parallel Jobs (which adds complexity around serial execution
 guards, partial failure semantics, and credential/NetworkPolicy lifecycle), the
-backup Job will snapshot each etcd endpoint **sequentially** within a single Pod.
-This preserves the existing single-Job-per-backup model.
+backup Job snapshots every etcd endpoint **concurrently** within a single Pod —
+one background `etcdctl snapshot save` process per shard, so cross-shard skew is
+bounded by the slowest snapshot instead of the sum of all snapshot durations.
+This preserves the existing single-Job-per-backup model (see the snapshot
+consistency model under Job construction).
 
 ### Changes by layer
 
@@ -24229,14 +24232,18 @@ rejects `restoreSnapshotURL` when `storage.type` is `EmptyDir`:
 ```go
 if shard.RestoreSnapshotURL != "" && !snapshotRestored {
     sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers,
-        buildEtcdInitContainer(shard.RestoreSnapshotURL),
+        buildEtcdInitContainer(shard.RestoreSnapshotURL, hcp.Namespace,
+            initialCluster, discoveryService),
     )
 }
 ```
 
-The existing `buildEtcdInitContainer` and `etcd-init.sh` script work unchanged —
-the script is shard-agnostic (it just curls a URL and restores into
-`/var/lib/data`, which is the volume mount point for every shard's PVC).
+`buildEtcdInitContainer` takes the namespace, the initial cluster string, and
+the shard's discovery service name (`ETCD_DISCOVERY_SERVICE`), so each pod
+restores a uniquely identified member of the correct default or named shard.
+`etcd-init.sh` is otherwise shard-agnostic: it rejects `s3://` restore URLs
+(they must be presigned to https), curls the URL, and restores into
+`/var/lib/data`, which is the volume mount point for every shard's PVC.
 
 ##### c. Restore condition: extend `etcdRestoredCondition`
 
