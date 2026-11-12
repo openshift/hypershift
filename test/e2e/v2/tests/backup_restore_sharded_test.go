@@ -258,7 +258,7 @@ func (s *shardedE2E) resolveBSL() (bucket, region string, credsSecret *corev1.Se
 	// storageType-based structure as well.
 	bucket, _, _ = unstructured.NestedString(bsl.Object, "spec", "storageType", "s3", "bucket")
 	region, _, _ = unstructured.NestedString(bsl.Object, "spec", "storageType", "s3", "region")
-	credName, _, _ = unstructured.NestedString(bsl.Object, "spec", "storageType", "s3", "credential", "name")
+	credName, _, _ := unstructured.NestedString(bsl.Object, "spec", "storageType", "s3", "credential", "name")
 	if bucket == "" {
 		bucket, _, _ = unstructured.NestedString(bsl.Object, "spec", "objectStorage", "bucket")
 		region, _, _ = unstructured.NestedString(bsl.Object, "spec", "config", "region")
