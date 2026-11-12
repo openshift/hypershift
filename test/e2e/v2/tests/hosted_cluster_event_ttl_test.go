@@ -27,6 +27,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -78,6 +79,21 @@ func kasEventTTL(tc *internal.TestContext) (string, error) {
 	}
 
 	return values[0], nil
+}
+
+// eventTTLMatches reports whether two --event-ttl values represent the same duration.
+// The kube-apiserver accepts any Go duration spelling, so equivalent values such as
+// "3h" and "180m" compare equal, while a genuinely different duration compares false.
+func eventTTLMatches(got, want string) (bool, error) {
+	gotDuration, err := time.ParseDuration(got)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse event-ttl %q: %w", got, err)
+	}
+	wantDuration, err := time.ParseDuration(want)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse expected event-ttl %q: %w", want, err)
+	}
+	return gotDuration == wantDuration, nil
 }
 
 // eventTTLMinutesInCRDSchema reports whether the installed HostedCluster CRD exposes
@@ -134,6 +150,12 @@ func EventTTLPropagationTest(getTestCtx internal.TestContextGetter) {
 		BeforeEach(func() {
 			tc = getTestCtx()
 
+			// eventTTLMinutes and its rendering into the kube-apiserver only exist from 5.1
+			// onwards. This test image is also consumed by release-branch presubmits (5.0,
+			// 4.22) whose CPO hard-codes --event-ttl to 3h and ignores the field, so running
+			// there would only time out waiting for a propagation that can never happen.
+			tc.SkipIfVersionBelow(v2util.Version51)
+
 			var err error
 			hc, err = tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -159,7 +181,9 @@ func EventTTLPropagationTest(getTestCtx internal.TestContextGetter) {
 				Eventually(func(g Gomega) {
 					ttl, err := kasEventTTL(tc)
 					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(ttl).To(Equal(defaultEventTTL))
+					matched, err := eventTTLMatches(ttl, defaultEventTTL)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(matched).To(BeTrue(), "expected the default event-ttl %q, got %q", defaultEventTTL, ttl)
 				}, 10*time.Minute, 10*time.Second).Should(Succeed(), "kube-apiserver should return to the default event-ttl")
 			})
 		})
@@ -168,7 +192,9 @@ func EventTTLPropagationTest(getTestCtx internal.TestContextGetter) {
 			By("confirming the kube-apiserver starts on the 180m default")
 			ttl, err := kasEventTTL(tc)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ttl).To(Equal(defaultEventTTL), "an unconfigured HostedCluster should use the default event-ttl")
+			matched, err := eventTTLMatches(ttl, defaultEventTTL)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(matched).To(BeTrue(), "an unconfigured HostedCluster should use the default event-ttl, got %q", ttl)
 
 			By("setting eventTTLMinutes on the HostedCluster")
 			patch := []byte(fmt.Sprintf(`{"spec":{"operatorConfiguration":{"kubeAPIServer":{"eventTTLMinutes":%d}}}}`, eventTTLTestMinutes))
