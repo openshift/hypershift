@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"time"
 )
 
@@ -52,6 +51,12 @@ type CreateCapacityReservationFleetInput struct {
 	// [Allocation strategy]: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/crfleet-concepts.html#allocation-strategy
 	AllocationStrategy *string
 
+	// Reserved for internal use.
+	AvailabilityZone *string
+
+	// Reserved for internal use.
+	AvailabilityZoneId *string
+
 	// Unique, case-sensitive identifier that you provide to ensure the idempotency of
 	// the request. For more information, see [Ensure Idempotency].
 	//
@@ -83,6 +88,9 @@ type CreateCapacityReservationFleetInput struct {
 	// Instances do not need to explicitly target a Capacity Reservation Fleet to use
 	// its reserved capacity.
 	InstanceMatchCriteria types.FleetInstanceMatchCriteria
+
+	// Reserved for internal use.
+	InstanceRequirements *types.InstanceRequirementsRequest
 
 	// Information about the instance types for which to reserve the capacity.
 	InstanceTypeSpecifications []types.ReservationFleetInstanceSpecification
@@ -158,12 +166,6 @@ func (c *Client) addOperationCreateCapacityReservationFleetMiddlewares(stack *mi
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -173,12 +175,6 @@ func (c *Client) addOperationCreateCapacityReservationFleetMiddlewares(stack *mi
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
@@ -186,9 +182,6 @@ func (c *Client) addOperationCreateCapacityReservationFleetMiddlewares(stack *mi
 		return err
 	}
 	if err = addOpCreateCapacityReservationFleetValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateCapacityReservationFleet"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -5,9 +5,10 @@ package ram
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/ram/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Retrieves a list of available RAM permissions that you can use for the
@@ -51,6 +52,12 @@ type ListPermissionsInput struct {
 	// previous call's NextToken response to request the next page of results.
 	NextToken *string
 
+	// Specifies that you want to filter the results to include only permissions with
+	// the specified status. For example, use ATTACHABLE to list only permissions that
+	// can be associated with resource shares, or DEPRECATED to list only deprecated
+	// permissions.
+	PermissionStatus types.PermissionStatus
+
 	// Specifies that you want to list only permissions of this type:
 	//
 	//   - AWS – returns only Amazon Web Services managed permissions.
@@ -63,6 +70,14 @@ type ListPermissionsInput struct {
 	// If you don't specify this parameter, the default is All .
 	PermissionType types.PermissionTypeFilter
 
+	// Specifies that you want to list only permissions owned by a specific entity:
+	//
+	//   - SELF – returns only permissions owned by the calling account.
+	//
+	//   - OTHER-ACCOUNTS – returns only permissions shared with the calling account by
+	//   other accounts.
+	ResourceOwner types.ResourceOwner
+
 	// Specifies that you want to list only those permissions that apply to the
 	// specified resource type. This parameter is not case sensitive.
 	//
@@ -71,6 +86,33 @@ type ListPermissionsInput struct {
 	ResourceType *string
 
 	noSmithyDocumentSerde
+}
+
+func (v *ListPermissionsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListPermissionsRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListPermissionsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.MaxResults != nil {
+		s.WriteInt32(schemas.ListPermissionsRequest_maxResults, *v.MaxResults)
+	}
+	if v.NextToken != nil {
+		s.WriteString(schemas.ListPermissionsRequest_nextToken, *v.NextToken)
+	}
+	if v.PermissionStatus != "" {
+		s.WriteString(schemas.ListPermissionsRequest_permissionStatus, string(v.PermissionStatus))
+	}
+	if v.PermissionType != "" {
+		s.WriteString(schemas.ListPermissionsRequest_permissionType, string(v.PermissionType))
+	}
+	if v.ResourceOwner != "" {
+		s.WriteString(schemas.ListPermissionsRequest_resourceOwner, string(v.ResourceOwner))
+	}
+	if v.ResourceType != nil {
+		s.WriteString(schemas.ListPermissionsRequest_resourceType, *v.ResourceType)
+	}
 }
 
 type ListPermissionsOutput struct {
@@ -91,22 +133,40 @@ type ListPermissionsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListPermissionsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListPermissionsResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListPermissionsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.NextToken != nil {
+		s.WriteString(schemas.ListPermissionsResponse_nextToken, *v.NextToken)
+	}
+	if v.Permissions != nil {
+		serializeResourceSharePermissionList(s, schemas.ListPermissionsResponse_permissions, v.Permissions)
+	}
+}
+func (v *ListPermissionsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ListPermissionsResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ListPermissionsResponse_nextToken:
+			v.NextToken = new(string)
+			return d.ReadString(schemas.ListPermissionsResponse_nextToken, v.NextToken)
+		case schemas.ListPermissionsResponse_permissions:
+			return deserializeResourceSharePermissionList(d, schemas.ListPermissionsResponse_permissions, &v.Permissions)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationListPermissionsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpListPermissions{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListPermissions, schemas.ListPermissionsRequest, schemas.ListPermissionsResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpListPermissions{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListPermissions, schemas.ListPermissionsRequest, schemas.ListPermissionsResponse), output: &ListPermissionsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -116,16 +176,7 @@ func (c *Client) addOperationListPermissionsMiddlewares(stack *middleware.Stack,
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ListPermissions"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

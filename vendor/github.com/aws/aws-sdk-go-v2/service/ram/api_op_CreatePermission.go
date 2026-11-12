@@ -4,9 +4,10 @@ package ram
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/ram/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a customer managed permission for a specified resource type that you
@@ -88,11 +89,46 @@ type CreatePermissionInput struct {
 	// [UUID type of value.]: https://wikipedia.org/wiki/Universally_unique_identifier
 	ClientToken *string
 
+	// Specifies a list of template parameter declarations for this permission. Each
+	// declaration defines a named placeholder that can be used in the policy template
+	// using the syntax @{parameterName} . Template parameters can only appear in
+	// Condition Key and Condition Value fields of the policy. When you associate this
+	// permission with a resource share, you must provide values for all declared
+	// parameters.
+	PermissionTemplateParameters []types.PermissionTemplateParameterDeclaration
+
 	// Specifies a list of one or more tag key and value pairs to attach to the
 	// permission.
 	Tags []types.Tag
 
 	noSmithyDocumentSerde
+}
+
+func (v *CreatePermissionInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreatePermissionRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreatePermissionInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.CreatePermissionRequest_clientToken, *v.ClientToken)
+	}
+	if v.Name != nil {
+		s.WriteString(schemas.CreatePermissionRequest_name, *v.Name)
+	}
+	if v.PermissionTemplateParameters != nil {
+		serializePermissionTemplateParameterDeclarationList(s, schemas.CreatePermissionRequest_permissionTemplateParameters, v.PermissionTemplateParameters)
+	}
+	if v.PolicyTemplate != nil {
+		s.WriteString(schemas.CreatePermissionRequest_policyTemplate, *v.PolicyTemplate)
+	}
+	if v.ResourceType != nil {
+		s.WriteString(schemas.CreatePermissionRequest_resourceType, *v.ResourceType)
+	}
+	if v.Tags != nil {
+		serializeTagList(s, schemas.CreatePermissionRequest_tags, v.Tags)
+	}
 }
 
 type CreatePermissionOutput struct {
@@ -112,22 +148,43 @@ type CreatePermissionOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreatePermissionOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreatePermissionResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreatePermissionOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.CreatePermissionResponse_clientToken, *v.ClientToken)
+	}
+	if v.Permission != nil {
+		s.WriteStruct(schemas.CreatePermissionResponse_permission)
+		v.Permission.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *CreatePermissionOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreatePermissionResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreatePermissionResponse_clientToken:
+			v.ClientToken = new(string)
+			return d.ReadString(schemas.CreatePermissionResponse_clientToken, v.ClientToken)
+		case schemas.CreatePermissionResponse_permission:
+			v.Permission = &types.ResourceSharePermissionSummary{}
+			return v.Permission.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreatePermissionMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpCreatePermission{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreatePermission, schemas.CreatePermissionRequest, schemas.CreatePermissionResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpCreatePermission{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreatePermission, schemas.CreatePermissionRequest, schemas.CreatePermissionResponse), output: &CreatePermissionOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -137,19 +194,10 @@ func (c *Client) addOperationCreatePermissionMiddlewares(stack *middleware.Stack
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreatePermissionValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreatePermission"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

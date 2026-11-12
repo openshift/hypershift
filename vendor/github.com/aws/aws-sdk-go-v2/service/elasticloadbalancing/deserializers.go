@@ -34,6 +34,18 @@ func (m *awsAwsquery_deserializeOpAddTags) HandleDeserialize(ctx context.Context
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -42,10 +54,6 @@ func (m *awsAwsquery_deserializeOpAddTags) HandleDeserialize(ctx context.Context
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorAddTags(response, &metadata)
@@ -152,6 +160,18 @@ func (m *awsAwsquery_deserializeOpApplySecurityGroupsToLoadBalancer) HandleDeser
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -160,10 +180,6 @@ func (m *awsAwsquery_deserializeOpApplySecurityGroupsToLoadBalancer) HandleDeser
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorApplySecurityGroupsToLoadBalancer(response, &metadata)
@@ -270,6 +286,18 @@ func (m *awsAwsquery_deserializeOpAttachLoadBalancerToSubnets) HandleDeserialize
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -278,10 +306,6 @@ func (m *awsAwsquery_deserializeOpAttachLoadBalancerToSubnets) HandleDeserialize
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorAttachLoadBalancerToSubnets(response, &metadata)
@@ -391,6 +415,18 @@ func (m *awsAwsquery_deserializeOpConfigureHealthCheck) HandleDeserialize(ctx co
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -399,10 +435,6 @@ func (m *awsAwsquery_deserializeOpConfigureHealthCheck) HandleDeserialize(ctx co
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorConfigureHealthCheck(response, &metadata)
@@ -503,6 +535,18 @@ func (m *awsAwsquery_deserializeOpCreateAppCookieStickinessPolicy) HandleDeseria
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -511,10 +555,6 @@ func (m *awsAwsquery_deserializeOpCreateAppCookieStickinessPolicy) HandleDeseria
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorCreateAppCookieStickinessPolicy(response, &metadata)
@@ -624,6 +664,18 @@ func (m *awsAwsquery_deserializeOpCreateLBCookieStickinessPolicy) HandleDeserial
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -632,10 +684,6 @@ func (m *awsAwsquery_deserializeOpCreateLBCookieStickinessPolicy) HandleDeserial
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorCreateLBCookieStickinessPolicy(response, &metadata)
@@ -745,6 +793,18 @@ func (m *awsAwsquery_deserializeOpCreateLoadBalancer) HandleDeserialize(ctx cont
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -753,10 +813,6 @@ func (m *awsAwsquery_deserializeOpCreateLoadBalancer) HandleDeserialize(ctx cont
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorCreateLoadBalancer(response, &metadata)
@@ -890,6 +946,18 @@ func (m *awsAwsquery_deserializeOpCreateLoadBalancerListeners) HandleDeserialize
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -898,10 +966,6 @@ func (m *awsAwsquery_deserializeOpCreateLoadBalancerListeners) HandleDeserialize
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorCreateLoadBalancerListeners(response, &metadata)
@@ -1014,6 +1078,18 @@ func (m *awsAwsquery_deserializeOpCreateLoadBalancerPolicy) HandleDeserialize(ct
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -1022,10 +1098,6 @@ func (m *awsAwsquery_deserializeOpCreateLoadBalancerPolicy) HandleDeserialize(ct
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorCreateLoadBalancerPolicy(response, &metadata)
@@ -1138,6 +1210,18 @@ func (m *awsAwsquery_deserializeOpDeleteLoadBalancer) HandleDeserialize(ctx cont
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -1146,10 +1230,6 @@ func (m *awsAwsquery_deserializeOpDeleteLoadBalancer) HandleDeserialize(ctx cont
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDeleteLoadBalancer(response, &metadata)
@@ -1247,6 +1327,18 @@ func (m *awsAwsquery_deserializeOpDeleteLoadBalancerListeners) HandleDeserialize
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -1255,10 +1347,6 @@ func (m *awsAwsquery_deserializeOpDeleteLoadBalancerListeners) HandleDeserialize
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDeleteLoadBalancerListeners(response, &metadata)
@@ -1359,6 +1447,18 @@ func (m *awsAwsquery_deserializeOpDeleteLoadBalancerPolicy) HandleDeserialize(ct
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -1367,10 +1467,6 @@ func (m *awsAwsquery_deserializeOpDeleteLoadBalancerPolicy) HandleDeserialize(ct
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDeleteLoadBalancerPolicy(response, &metadata)
@@ -1474,6 +1570,18 @@ func (m *awsAwsquery_deserializeOpDeregisterInstancesFromLoadBalancer) HandleDes
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -1482,10 +1590,6 @@ func (m *awsAwsquery_deserializeOpDeregisterInstancesFromLoadBalancer) HandleDes
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDeregisterInstancesFromLoadBalancer(response, &metadata)
@@ -1589,6 +1693,18 @@ func (m *awsAwsquery_deserializeOpDescribeAccountLimits) HandleDeserialize(ctx c
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -1597,10 +1713,6 @@ func (m *awsAwsquery_deserializeOpDescribeAccountLimits) HandleDeserialize(ctx c
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDescribeAccountLimits(response, &metadata)
@@ -1698,6 +1810,18 @@ func (m *awsAwsquery_deserializeOpDescribeInstanceHealth) HandleDeserialize(ctx 
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -1706,10 +1830,6 @@ func (m *awsAwsquery_deserializeOpDescribeInstanceHealth) HandleDeserialize(ctx 
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDescribeInstanceHealth(response, &metadata)
@@ -1813,6 +1933,18 @@ func (m *awsAwsquery_deserializeOpDescribeLoadBalancerAttributes) HandleDeserial
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -1821,10 +1953,6 @@ func (m *awsAwsquery_deserializeOpDescribeLoadBalancerAttributes) HandleDeserial
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDescribeLoadBalancerAttributes(response, &metadata)
@@ -1928,6 +2056,18 @@ func (m *awsAwsquery_deserializeOpDescribeLoadBalancerPolicies) HandleDeserializ
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -1936,10 +2076,6 @@ func (m *awsAwsquery_deserializeOpDescribeLoadBalancerPolicies) HandleDeserializ
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDescribeLoadBalancerPolicies(response, &metadata)
@@ -2043,6 +2179,18 @@ func (m *awsAwsquery_deserializeOpDescribeLoadBalancerPolicyTypes) HandleDeseria
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -2051,10 +2199,6 @@ func (m *awsAwsquery_deserializeOpDescribeLoadBalancerPolicyTypes) HandleDeseria
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDescribeLoadBalancerPolicyTypes(response, &metadata)
@@ -2155,6 +2299,18 @@ func (m *awsAwsquery_deserializeOpDescribeLoadBalancers) HandleDeserialize(ctx c
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -2163,10 +2319,6 @@ func (m *awsAwsquery_deserializeOpDescribeLoadBalancers) HandleDeserialize(ctx c
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDescribeLoadBalancers(response, &metadata)
@@ -2270,6 +2422,18 @@ func (m *awsAwsquery_deserializeOpDescribeTags) HandleDeserialize(ctx context.Co
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -2278,10 +2442,6 @@ func (m *awsAwsquery_deserializeOpDescribeTags) HandleDeserialize(ctx context.Co
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDescribeTags(response, &metadata)
@@ -2382,6 +2542,18 @@ func (m *awsAwsquery_deserializeOpDetachLoadBalancerFromSubnets) HandleDeseriali
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -2390,10 +2562,6 @@ func (m *awsAwsquery_deserializeOpDetachLoadBalancerFromSubnets) HandleDeseriali
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDetachLoadBalancerFromSubnets(response, &metadata)
@@ -2497,6 +2665,18 @@ func (m *awsAwsquery_deserializeOpDisableAvailabilityZonesForLoadBalancer) Handl
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -2505,10 +2685,6 @@ func (m *awsAwsquery_deserializeOpDisableAvailabilityZonesForLoadBalancer) Handl
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorDisableAvailabilityZonesForLoadBalancer(response, &metadata)
@@ -2612,6 +2788,18 @@ func (m *awsAwsquery_deserializeOpEnableAvailabilityZonesForLoadBalancer) Handle
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -2620,10 +2808,6 @@ func (m *awsAwsquery_deserializeOpEnableAvailabilityZonesForLoadBalancer) Handle
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorEnableAvailabilityZonesForLoadBalancer(response, &metadata)
@@ -2724,6 +2908,18 @@ func (m *awsAwsquery_deserializeOpModifyLoadBalancerAttributes) HandleDeserializ
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -2732,10 +2928,6 @@ func (m *awsAwsquery_deserializeOpModifyLoadBalancerAttributes) HandleDeserializ
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorModifyLoadBalancerAttributes(response, &metadata)
@@ -2842,6 +3034,18 @@ func (m *awsAwsquery_deserializeOpRegisterInstancesWithLoadBalancer) HandleDeser
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -2850,10 +3054,6 @@ func (m *awsAwsquery_deserializeOpRegisterInstancesWithLoadBalancer) HandleDeser
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorRegisterInstancesWithLoadBalancer(response, &metadata)
@@ -2957,6 +3157,18 @@ func (m *awsAwsquery_deserializeOpRemoveTags) HandleDeserialize(ctx context.Cont
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -2965,10 +3177,6 @@ func (m *awsAwsquery_deserializeOpRemoveTags) HandleDeserialize(ctx context.Cont
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorRemoveTags(response, &metadata)
@@ -3069,6 +3277,18 @@ func (m *awsAwsquery_deserializeOpSetLoadBalancerListenerSSLCertificate) HandleD
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -3077,10 +3297,6 @@ func (m *awsAwsquery_deserializeOpSetLoadBalancerListenerSSLCertificate) HandleD
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorSetLoadBalancerListenerSSLCertificate(response, &metadata)
@@ -3193,6 +3409,18 @@ func (m *awsAwsquery_deserializeOpSetLoadBalancerPoliciesForBackendServer) Handl
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -3201,10 +3429,6 @@ func (m *awsAwsquery_deserializeOpSetLoadBalancerPoliciesForBackendServer) Handl
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorSetLoadBalancerPoliciesForBackendServer(response, &metadata)
@@ -3311,6 +3535,18 @@ func (m *awsAwsquery_deserializeOpSetLoadBalancerPoliciesOfListener) HandleDeser
 	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 ) {
 	out, metadata, err = next.HandleDeserialize(ctx, in)
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		if err != nil {
+			// Transport-level failure with no HTTP response to close.
+			return out, metadata, err
+		}
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	defer func() { smithyhttp.CloseResponseBody(ctx, response, false, err) }()
+
 	if err != nil {
 		return out, metadata, err
 	}
@@ -3319,10 +3555,6 @@ func (m *awsAwsquery_deserializeOpSetLoadBalancerPoliciesOfListener) HandleDeser
 	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
 	defer endTimer()
 	defer span.End()
-	response, ok := out.RawResponse.(*smithyhttp.Response)
-	if !ok {
-		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
-	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return out, metadata, awsAwsquery_deserializeOpErrorSetLoadBalancerPoliciesOfListener(response, &metadata)

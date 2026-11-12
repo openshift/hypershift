@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 //	Modifies the number of instances allocated to an interruptible reservation,
@@ -36,16 +35,22 @@ type UpdateInterruptibleCapacityReservationAllocationInput struct {
 	// This member is required.
 	CapacityReservationId *string
 
-	//  The new number of instances to allocate. Enter a higher number to add more
-	// capacity to share, or a lower number to reclaim capacity to your source Capacity
-	// Reservation.
-	//
-	// This member is required.
-	TargetInstanceCount *int32
-
 	//  Checks whether you have the required permissions for the action, without
 	// actually making the request, and provides an error response.
 	DryRun *bool
+
+	//  The new number of instances to allocate. Enter a higher number to add more
+	// capacity to share, or a lower number to reclaim capacity to your source Capacity
+	// Reservation.
+	TargetInstanceCount *int32
+
+	//  Specifies the updated behavior for the interruptible Capacity Reservation when
+	// you reduce its allocation to zero instances. Specify retain to keep the
+	// interruptible Capacity Reservation active at zero capacity so that you can
+	// allocate instances to it again later. Specify default to cancel the
+	// interruptible Capacity Reservation and return the capacity to your source
+	// Capacity Reservation.
+	ZeroSizePreference types.ZeroSizePreference
 
 	noSmithyDocumentSerde
 }
@@ -88,12 +93,6 @@ func (c *Client) addOperationUpdateInterruptibleCapacityReservationAllocationMid
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -103,19 +102,10 @@ func (c *Client) addOperationUpdateInterruptibleCapacityReservationAllocationMid
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpUpdateInterruptibleCapacityReservationAllocationValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "UpdateInterruptibleCapacityReservationAllocation"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

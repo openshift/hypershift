@@ -38,7 +38,7 @@ type Image struct {
 
 // ImportModeType describes how to import an image manifest.
 // +enum
-// +kubebuilder:validation:Enum:="";Legacy;PreserveOriginal
+// +kubebuilder:validation:Enum:=Legacy;PreserveOriginal
 type ImportModeType string
 
 const (
@@ -87,19 +87,18 @@ type ImageSpec struct {
 	RegistrySources RegistrySources `json:"registrySources"`
 
 	// imageStreamImportMode controls the import mode behaviour of imagestreams.
-	// It can be set to `Legacy` or `PreserveOriginal` or the empty string. If this value
+	// Allowed values are `Legacy` and `PreserveOriginal`. If this value
 	// is specified, this setting is applied to all newly created imagestreams which do not have the
 	// value set. `Legacy` indicates that the legacy behaviour should be used.
 	// For manifest lists, the legacy behaviour will discard the manifest list and import a single
 	// sub-manifest. In this case, the platform is chosen in the following order of priority:
 	// 1. tag annotations; 2. control plane arch/os; 3. linux/amd64; 4. the first manifest in the list.
 	// `PreserveOriginal` indicates that the original manifest will be preserved. For manifest lists,
-	// the manifest list and all its sub-manifests will be imported. When empty, the behaviour will be
+	// the manifest list and all its sub-manifests will be imported. When omitted, the behaviour will be
 	// decided based on the payload type advertised by the ClusterVersion status, i.e single arch payload
 	// implies the import mode is Legacy and multi payload implies PreserveOriginal.
-	// +openshift:enable:FeatureGate=ImageStreamImportMode
 	// +optional
-	ImageStreamImportMode ImportModeType `json:"imageStreamImportMode"`
+	ImageStreamImportMode ImportModeType `json:"imageStreamImportMode,omitempty"`
 }
 
 type ImageStatus struct {
@@ -128,7 +127,6 @@ type ImageStatus struct {
 	// on either the spec value or if no spec value is specified, the image registry operator would look
 	// at the ClusterVersion status to determine the payload type and set the import mode accordingly,
 	// i.e single arch payload implies the import mode is Legacy and multi payload implies PreserveOriginal.
-	// +openshift:enable:FeatureGate=ImageStreamImportMode
 	// +optional
 	ImageStreamImportMode ImportModeType `json:"imageStreamImportMode,omitempty"`
 }

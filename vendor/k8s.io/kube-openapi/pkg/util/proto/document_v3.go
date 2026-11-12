@@ -136,8 +136,48 @@ func (d *Definitions) ParseSchemaV3(s *openapi_v3.Schema, path *Path) (Schema, e
 	case String, Number, Integer, Boolean:
 		return d.parseV3Primitive(s, path)
 	default:
+		if allOfRefSchema, ok := d.parseAllOfRefSchema(s, path); ok {
+			return allOfRefSchema, nil
+		}
 		return d.parseV3Arbitrary(s, path)
 	}
+}
+
+// parseAllOfRefSchema handles allOf-wrapped $ref: when a schema has no type
+// but a single-element allOf containing a $ref to a known component schema,
+// treat it as a reference. This is the OpenAPI 3.0 compliant way to add sibling
+// properties (description, default, extensions) alongside a $ref, since per the
+// spec $ref siblings are ignored. We build the Ref from the outer schema so that
+// description, default, and extensions are preserved.
+func (d *Definitions) parseAllOfRefSchema(s *openapi_v3.Schema, path *Path) (Schema, bool) {
+	if s.GetType() != "" {
+		return nil, false
+	}
+	allOf := s.GetAllOf()
+	if len(allOf) != 1 {
+		return nil, false
+	}
+	reference, isReference := allOf[0].GetOneof().(*openapi_v3.SchemaOrReference_Reference)
+	if !isReference {
+		return nil, false
+	}
+	xref, hasSchemaXRef := strings.CutPrefix(reference.Reference.GetXRef(), "#/components/schemas/")
+	if !hasSchemaXRef {
+		return nil, false
+	}
+	_, hasModel := d.models[xref]
+	if !hasModel {
+		return nil, false
+	}
+	base, err := d.parseV3BaseSchema(s, path)
+	if err != nil {
+		return nil, false
+	}
+	return &Ref{
+		BaseSchema:  *base,
+		reference:   xref,
+		definitions: d,
+	}, true
 }
 
 func (d *Definitions) parseV3Kind(s *openapi_v3.Schema, path *Path) (Schema, error) {

@@ -4,8 +4,9 @@ package sqs
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Cancels a specified message movement task. A message movement can only be
@@ -47,6 +48,18 @@ type CancelMessageMoveTaskInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CancelMessageMoveTaskInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CancelMessageMoveTaskRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CancelMessageMoveTaskInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.TaskHandle != nil {
+		s.WriteString(schemas.CancelMessageMoveTaskRequest_TaskHandle, *v.TaskHandle)
+	}
+}
+
 type CancelMessageMoveTaskOutput struct {
 
 	// The approximate number of messages already moved to the destination queue.
@@ -58,22 +71,34 @@ type CancelMessageMoveTaskOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CancelMessageMoveTaskOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CancelMessageMoveTaskResult)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CancelMessageMoveTaskOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ApproximateNumberOfMessagesMoved != 0 {
+		s.WriteInt64(schemas.CancelMessageMoveTaskResult_ApproximateNumberOfMessagesMoved, v.ApproximateNumberOfMessagesMoved)
+	}
+}
+func (v *CancelMessageMoveTaskOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CancelMessageMoveTaskResult, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CancelMessageMoveTaskResult_ApproximateNumberOfMessagesMoved:
+			return d.ReadInt64(schemas.CancelMessageMoveTaskResult_ApproximateNumberOfMessagesMoved, &v.ApproximateNumberOfMessagesMoved)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCancelMessageMoveTaskMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson10_serializeOpCancelMessageMoveTask{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CancelMessageMoveTask, schemas.CancelMessageMoveTaskRequest, schemas.CancelMessageMoveTaskResult)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson10_deserializeOpCancelMessageMoveTask{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CancelMessageMoveTask, schemas.CancelMessageMoveTaskRequest, schemas.CancelMessageMoveTaskResult), output: &CancelMessageMoveTaskOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -83,19 +108,10 @@ func (c *Client) addOperationCancelMessageMoveTaskMiddlewares(stack *middleware.
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCancelMessageMoveTaskValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CancelMessageMoveTask"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -4,8 +4,9 @@ package ram
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Enables resource sharing within your organization in Organizations. This
@@ -40,6 +41,15 @@ type EnableSharingWithAwsOrganizationInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *EnableSharingWithAwsOrganizationInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.EnableSharingWithAwsOrganizationRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *EnableSharingWithAwsOrganizationInput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+
 type EnableSharingWithAwsOrganizationOutput struct {
 
 	// A return value of true indicates that the request succeeded. A value of false
@@ -52,22 +62,35 @@ type EnableSharingWithAwsOrganizationOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *EnableSharingWithAwsOrganizationOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.EnableSharingWithAwsOrganizationResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *EnableSharingWithAwsOrganizationOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ReturnValue != nil {
+		s.WriteBool(schemas.EnableSharingWithAwsOrganizationResponse_returnValue, *v.ReturnValue)
+	}
+}
+func (v *EnableSharingWithAwsOrganizationOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.EnableSharingWithAwsOrganizationResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.EnableSharingWithAwsOrganizationResponse_returnValue:
+			v.ReturnValue = new(bool)
+			return d.ReadBool(schemas.EnableSharingWithAwsOrganizationResponse_returnValue, v.ReturnValue)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationEnableSharingWithAwsOrganizationMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpEnableSharingWithAwsOrganization{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.EnableSharingWithAwsOrganization, schemas.EnableSharingWithAwsOrganizationRequest, schemas.EnableSharingWithAwsOrganizationResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpEnableSharingWithAwsOrganization{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.EnableSharingWithAwsOrganization, schemas.EnableSharingWithAwsOrganizationRequest, schemas.EnableSharingWithAwsOrganizationResponse), output: &EnableSharingWithAwsOrganizationOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -77,16 +100,7 @@ func (c *Client) addOperationEnableSharingWithAwsOrganizationMiddlewares(stack *
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "EnableSharingWithAwsOrganization"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

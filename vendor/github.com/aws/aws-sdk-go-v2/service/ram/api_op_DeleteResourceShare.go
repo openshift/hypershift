@@ -4,8 +4,9 @@ package ram
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Deletes the specified resource share.
@@ -54,6 +55,21 @@ type DeleteResourceShareInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteResourceShareInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeleteResourceShareRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteResourceShareInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.DeleteResourceShareRequest_clientToken, *v.ClientToken)
+	}
+	if v.ResourceShareArn != nil {
+		s.WriteString(schemas.DeleteResourceShareRequest_resourceShareArn, *v.ResourceShareArn)
+	}
+}
+
 type DeleteResourceShareOutput struct {
 
 	// The idempotency identifier associated with this request. If you want to repeat
@@ -72,22 +88,41 @@ type DeleteResourceShareOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteResourceShareOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeleteResourceShareResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteResourceShareOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.DeleteResourceShareResponse_clientToken, *v.ClientToken)
+	}
+	if v.ReturnValue != nil {
+		s.WriteBool(schemas.DeleteResourceShareResponse_returnValue, *v.ReturnValue)
+	}
+}
+func (v *DeleteResourceShareOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DeleteResourceShareResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.DeleteResourceShareResponse_clientToken:
+			v.ClientToken = new(string)
+			return d.ReadString(schemas.DeleteResourceShareResponse_clientToken, v.ClientToken)
+		case schemas.DeleteResourceShareResponse_returnValue:
+			v.ReturnValue = new(bool)
+			return d.ReadBool(schemas.DeleteResourceShareResponse_returnValue, v.ReturnValue)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDeleteResourceShareMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpDeleteResourceShare{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteResourceShare, schemas.DeleteResourceShareRequest, schemas.DeleteResourceShareResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpDeleteResourceShare{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteResourceShare, schemas.DeleteResourceShareRequest, schemas.DeleteResourceShareResponse), output: &DeleteResourceShareOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -97,19 +132,10 @@ func (c *Client) addOperationDeleteResourceShareMiddlewares(stack *middleware.St
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDeleteResourceShareValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DeleteResourceShare"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

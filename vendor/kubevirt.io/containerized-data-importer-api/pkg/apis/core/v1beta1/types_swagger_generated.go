@@ -133,6 +133,7 @@ func (DataVolumeSourceHTTP) SwaggerDoc() map[string]string {
 		"extraHeaders":       "ExtraHeaders is a list of strings containing extra headers to include with HTTP transfer requests\n+optional",
 		"secretExtraHeaders": "SecretExtraHeaders is a list of Secret references, each containing an extra HTTP header that may include sensitive information\n+optional",
 		"checksum":           "Checksum is the expected checksum of the file. Format: \"algorithm:hash\", e.g., \"sha256:1234abcd...\" or \"md5:5678efgh...\"\nSupported algorithms: md5, sha1, sha256, sha512\nIf specified, the importer will verify the downloaded content matches this checksum\n+optional",
+		"insecureSkipVerify": "InsecureSkipVerify is a flag to skip certificate verification for the HTTP endpoint\n+optional",
 	}
 }
 
@@ -149,14 +150,15 @@ func (DataVolumeSourceImageIO) SwaggerDoc() map[string]string {
 
 func (DataVolumeSourceVDDK) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"":             "DataVolumeSourceVDDK provides the parameters to create a Data Volume from a Vmware source",
-		"url":          "URL is the URL of the vCenter or ESXi host with the VM to migrate",
-		"uuid":         "UUID is the UUID of the virtual machine that the backing file is attached to in vCenter/ESXi",
-		"backingFile":  "BackingFile is the path to the virtual hard disk to migrate from vCenter/ESXi",
-		"thumbprint":   "Thumbprint is the certificate thumbprint of the vCenter or ESXi host",
-		"secretRef":    "SecretRef provides a reference to a secret containing the username and password needed to access the vCenter or ESXi host",
-		"initImageURL": "InitImageURL is an optional URL to an image containing an extracted VDDK library, overrides v2v-vmware config map",
-		"extraArgs":    "ExtraArgs is a reference to a ConfigMap containing extra arguments to pass directly to the VDDK library",
+		"":              "DataVolumeSourceVDDK provides the parameters to create a Data Volume from a Vmware source",
+		"url":           "URL is the URL of the vCenter or ESXi host with the VM to migrate",
+		"uuid":          "UUID is the UUID of the virtual machine that the backing file is attached to in vCenter/ESXi",
+		"backingFile":   "BackingFile is the path to the virtual hard disk to migrate from vCenter/ESXi",
+		"thumbprint":    "Thumbprint is the certificate thumbprint of the vCenter or ESXi host",
+		"secretRef":     "SecretRef provides a reference to a secret containing the username and password needed to access the vCenter or ESXi host",
+		"certConfigMap": "CertConfigMap provides a reference to a ConfigMap containing the certificate authority (CA) certificate for the vCenter or ESXi host\n+optional",
+		"initImageURL":  "InitImageURL is an optional URL to an image containing an extracted VDDK library, overrides v2v-vmware config map",
+		"extraArgs":     "ExtraArgs is a reference to a ConfigMap containing extra arguments to pass directly to the VDDK library",
 	}
 }
 
@@ -303,7 +305,7 @@ func (DataImportCronSpec) SwaggerDoc() map[string]string {
 		"garbageCollect":     "GarbageCollect specifies whether old PVCs should be cleaned up after a new PVC is imported.\nOptions are currently \"Outdated\" and \"Never\", defaults to \"Outdated\".\n+optional",
 		"importsToKeep":      "Number of import PVCs to keep when garbage collecting. Default is 3.\n+optional",
 		"managedDataSource":  "ManagedDataSource specifies the name of the corresponding DataSource this cron will manage.\nDataSource has to be in the same namespace.",
-		"retentionPolicy":    "RetentionPolicy specifies whether the created DataVolumes and DataSources are retained when their DataImportCron is deleted. Default is RatainAll.\n+optional",
+		"retentionPolicy":    "RetentionPolicy specifies whether the created DataVolumes and DataSources are retained when their DataImportCron is deleted. Default is RetainAll.\n+optional",
 		"serviceAccountName": "ServiceAccountName is the name of the ServiceAccount for creating DataVolumes.\n+optional\n+kubebuilder:validation:MinLength=1",
 	}
 }
@@ -532,6 +534,7 @@ func (CDIConfigSpec) SwaggerDoc() map[string]string {
 		"scratchSpaceStorageClass": "Override the storage class to used for scratch space during transfer operations. The scratch space storage class is determined in the following order: 1. value of scratchSpaceStorageClass, if that doesn't exist, use the default storage class, if there is no default storage class, use the storage class of the DataVolume, if no storage class specified, use no storage class for scratch space",
 		"podResourceRequirements":  "ResourceRequirements describes the compute resource requirements.",
 		"featureGates":             "FeatureGates are a list of specific enabled feature gates",
+		"webhookPvcRendering":      "WebhookPvcRendering controls whether the PVC mutating webhook that completes\nPVC specs from StorageProfiles is enabled or disabled\nAllowed values are \"Enabled\" (default) and \"Disabled\"\n+optional",
 		"filesystemOverhead":       "FilesystemOverhead describes the space reserved for overhead when using Filesystem volumes. A value is between 0 and 1, if not defined it is 0.06 (6% overhead)",
 		"preallocation":            "Preallocation controls whether storage for DataVolumes should be allocated in advance.",
 		"insecureRegistries":       "InsecureRegistries is a list of TLS disabled registries",

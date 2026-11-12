@@ -4,8 +4,10 @@ package ram
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
+	"github.com/aws/aws-sdk-go-v2/service/ram/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Adds or replaces the RAM permission for a resource type included in a resource
@@ -63,6 +65,12 @@ type AssociateResourceSharePermissionInput struct {
 	// [UUID type of value.]: https://wikipedia.org/wiki/Universally_unique_identifier
 	ClientToken *string
 
+	// Specifies the template parameter values for the permission being associated.
+	// You must provide values for all parameters declared in the permission template.
+	// This parameter is required only if the specified permission has template
+	// parameters.
+	PermissionTemplateParameters []types.PermissionTemplateParameterInput
+
 	// Specifies the version of the RAM permission to associate with the resource
 	// share. You can specify only the version that is currently set as the default
 	// version for the permission. If you also set the replace pararameter to true ,
@@ -88,6 +96,33 @@ type AssociateResourceSharePermissionInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *AssociateResourceSharePermissionInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.AssociateResourceSharePermissionRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *AssociateResourceSharePermissionInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.AssociateResourceSharePermissionRequest_clientToken, *v.ClientToken)
+	}
+	if v.PermissionArn != nil {
+		s.WriteString(schemas.AssociateResourceSharePermissionRequest_permissionArn, *v.PermissionArn)
+	}
+	if v.PermissionTemplateParameters != nil {
+		serializePermissionTemplateParameterInputList(s, schemas.AssociateResourceSharePermissionRequest_permissionTemplateParameters, v.PermissionTemplateParameters)
+	}
+	if v.PermissionVersion != nil {
+		s.WriteInt32(schemas.AssociateResourceSharePermissionRequest_permissionVersion, *v.PermissionVersion)
+	}
+	if v.Replace != nil {
+		s.WriteBool(schemas.AssociateResourceSharePermissionRequest_replace, *v.Replace)
+	}
+	if v.ResourceShareArn != nil {
+		s.WriteString(schemas.AssociateResourceSharePermissionRequest_resourceShareArn, *v.ResourceShareArn)
+	}
+}
+
 type AssociateResourceSharePermissionOutput struct {
 
 	// The idempotency identifier associated with this request. If you want to repeat
@@ -106,22 +141,41 @@ type AssociateResourceSharePermissionOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *AssociateResourceSharePermissionOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.AssociateResourceSharePermissionResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *AssociateResourceSharePermissionOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.AssociateResourceSharePermissionResponse_clientToken, *v.ClientToken)
+	}
+	if v.ReturnValue != nil {
+		s.WriteBool(schemas.AssociateResourceSharePermissionResponse_returnValue, *v.ReturnValue)
+	}
+}
+func (v *AssociateResourceSharePermissionOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.AssociateResourceSharePermissionResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.AssociateResourceSharePermissionResponse_clientToken:
+			v.ClientToken = new(string)
+			return d.ReadString(schemas.AssociateResourceSharePermissionResponse_clientToken, v.ClientToken)
+		case schemas.AssociateResourceSharePermissionResponse_returnValue:
+			v.ReturnValue = new(bool)
+			return d.ReadBool(schemas.AssociateResourceSharePermissionResponse_returnValue, v.ReturnValue)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationAssociateResourceSharePermissionMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpAssociateResourceSharePermission{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.AssociateResourceSharePermission, schemas.AssociateResourceSharePermissionRequest, schemas.AssociateResourceSharePermissionResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpAssociateResourceSharePermission{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.AssociateResourceSharePermission, schemas.AssociateResourceSharePermissionRequest, schemas.AssociateResourceSharePermissionResponse), output: &AssociateResourceSharePermissionOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -131,19 +185,10 @@ func (c *Client) addOperationAssociateResourceSharePermissionMiddlewares(stack *
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpAssociateResourceSharePermissionValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "AssociateResourceSharePermission"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

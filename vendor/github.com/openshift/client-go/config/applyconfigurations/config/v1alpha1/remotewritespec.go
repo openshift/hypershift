@@ -13,7 +13,7 @@ import (
 type RemoteWriteSpecApplyConfiguration struct {
 	// url is the URL of the remote write endpoint.
 	// Must be a valid URL with http or https scheme and a non-empty hostname.
-	// Query parameters, fragments, and user information (e.g. user:password@host) are not allowed.
+	// Query parameters are allowed. Fragments and user information (e.g. user:password@host) are not allowed.
 	// Empty string is invalid. Must be between 1 and 2048 characters in length.
 	URL *string `json:"url,omitempty"`
 	// name is a required identifier for this remote write configuration (name is the list key for the remoteWrite list).

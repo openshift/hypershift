@@ -4,8 +4,9 @@ package kms
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/kms/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Connects or reconnects a [custom key store] to its backing key store. For an CloudHSM key store,
@@ -126,6 +127,18 @@ type ConnectCustomKeyStoreInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ConnectCustomKeyStoreInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ConnectCustomKeyStoreRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ConnectCustomKeyStoreInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.CustomKeyStoreId != nil {
+		s.WriteString(schemas.ConnectCustomKeyStoreRequest_CustomKeyStoreId, *v.CustomKeyStoreId)
+	}
+}
+
 type ConnectCustomKeyStoreOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -133,22 +146,29 @@ type ConnectCustomKeyStoreOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ConnectCustomKeyStoreOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ConnectCustomKeyStoreResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ConnectCustomKeyStoreOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *ConnectCustomKeyStoreOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ConnectCustomKeyStoreResponse, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationConnectCustomKeyStoreMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson11_serializeOpConnectCustomKeyStore{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ConnectCustomKeyStore, schemas.ConnectCustomKeyStoreRequest, schemas.ConnectCustomKeyStoreResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpConnectCustomKeyStore{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ConnectCustomKeyStore, schemas.ConnectCustomKeyStoreRequest, schemas.ConnectCustomKeyStoreResponse), output: &ConnectCustomKeyStoreOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -158,19 +178,10 @@ func (c *Client) addOperationConnectCustomKeyStoreMiddlewares(stack *middleware.
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpConnectCustomKeyStoreValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ConnectCustomKeyStore"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

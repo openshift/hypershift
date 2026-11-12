@@ -40,6 +40,7 @@ type InfrastructureStatusApplyConfiguration struct {
 	// The default is 'HighlyAvailable', which represents the behavior operators have in a "normal" cluster.
 	// The 'SingleReplica' mode will be used in single-node deployments
 	// and the operators should not configure the operand for highly-available operation
+	// The 'DualReplica' mode is used in two-node deployments with fencing.
 	// The 'External' mode indicates that the control plane is hosted externally to the cluster and that
 	// its components are not visible within the cluster.
 	// The 'HighlyAvailableArbiter' mode indicates that the control plane will consist of 2 control-plane nodes
