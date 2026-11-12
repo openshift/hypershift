@@ -908,12 +908,20 @@ func TestEnsureRBAC(t *testing.T) {
 		name := resultConfigMapName(backup)
 		role := &rbacv1.Role{}
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: name, Namespace: testHONamespace}, role)).To(Succeed())
+		// Kubernetes RBAC cannot restrict create by resource name, so the
+		// Job only ever updates the pre-created ConfigMap and the verb set
+		// excludes create.
 		g.Expect(role.Rules).To(ConsistOf(rbacv1.PolicyRule{
 			APIGroups:     []string{""},
 			Resources:     []string{"configmaps"},
 			ResourceNames: []string{name},
-			Verbs:         []string{"create", "update", "patch", "get"},
+			Verbs:         []string{"get", "update", "patch"},
 		}))
+
+		// The result ConfigMap is pre-created (empty) so the Job's
+		// service account can update it without create permissions.
+		cm := &corev1.ConfigMap{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: name, Namespace: testHONamespace}, cm)).To(Succeed())
 
 		rb := &rbacv1.RoleBinding{}
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: name, Namespace: testHONamespace}, rb)).To(Succeed())

@@ -1070,8 +1070,11 @@ func (r *HCPEtcdBackupReconciler) ensureRBAC(ctx context.Context, backup *hyperv
 	}
 
 	// Role in the operator namespace granting the backup Job's service
-	// account create/update access to exactly its result ConfigMap, where
-	// etcd-upload stores the multi-shard snapshot results.
+	// account get/update access to exactly its result ConfigMap, where
+	// etcd-upload stores the multi-shard snapshot results. Kubernetes RBAC
+	// cannot restrict create requests by resource name, so the ConfigMap is
+	// pre-created (empty) below and the Job only ever updates it; the verb
+	// set therefore stays narrowly scoped to this one object.
 	resultRBACName := resultConfigMapName(backup)
 	resultRole := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1085,13 +1088,32 @@ func (r *HCPEtcdBackupReconciler) ensureRBAC(ctx context.Context, backup *hyperv
 				APIGroups:     []string{""},
 				Resources:     []string{"configmaps"},
 				ResourceNames: []string{resultRBACName},
-				Verbs:         []string{"create", "update", "patch", "get"},
+				Verbs:         []string{"get", "update", "patch"},
 			},
 		}
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("failed to ensure result Role: %w", err)
+	}
+
+	// Pre-create the (empty) result ConfigMap the Job updates. CreateOrUpdate
+	// is idempotent across reconciles; the Job's create-then-update store
+	// falls through to the update path on the AlreadyExists.
+	resultConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resultRBACName,
+			Namespace: r.OperatorNamespace,
+		},
+	}
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, resultConfigMap, func() error {
+		if resultConfigMap.Data == nil {
+			resultConfigMap.Data = map[string]string{}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to ensure result ConfigMap: %w", err)
 	}
 
 	resultRB := &rbacv1.RoleBinding{
@@ -1212,6 +1234,22 @@ func (r *HCPEtcdBackupReconciler) ensureNetworkPolicy(ctx context.Context, backu
 func (r *HCPEtcdBackupReconciler) cleanupResources(ctx context.Context, backup *hyperv1.HCPEtcdBackup) error {
 	logger := log.FromContext(ctx)
 
+	var firstErr error
+
+	// The result Role/RoleBinding are named after this backup and never
+	// shared with any other backup, so they are deleted before the
+	// shared-resource guard below — otherwise they would leak whenever
+	// another backup is in flight when this backup reaches cleanup.
+	for _, obj := range []client.Object{
+		&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: resultConfigMapName(backup), Namespace: r.OperatorNamespace}},
+		&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: resultConfigMapName(backup), Namespace: r.OperatorNamespace}},
+	} {
+		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+			logger.Error(err, "failed to delete backup result RBAC", "name", resultConfigMapName(backup))
+			firstErr = err
+		}
+	}
+
 	// Guard: don't delete shared resources while another non-terminal backup exists.
 	// This covers both the case where a Job is active AND the race window where a
 	// new HCPEtcdBackup has been created but its Job hasn't been spawned yet.
@@ -1221,22 +1259,7 @@ func (r *HCPEtcdBackupReconciler) cleanupResources(ctx context.Context, backup *
 	}
 	if hasOther {
 		logger.Info("skipping cleanup: another backup is still pending or in-progress", "otherBackup", otherName)
-		return nil
-	}
-
-	var firstErr error
-
-	// The result Role/RoleBinding are named after this backup and never
-	// shared, so they can be deleted unconditionally (unlike the shared
-	// resources below, which the guard protects).
-	for _, obj := range []client.Object{
-		&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: resultConfigMapName(backup), Namespace: r.OperatorNamespace}},
-		&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: resultConfigMapName(backup), Namespace: r.OperatorNamespace}},
-	} {
-		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
-			logger.Error(err, "failed to delete backup result RBAC", "name", resultConfigMapName(backup))
-			firstErr = err
-		}
+		return firstErr
 	}
 
 	// Delete NetworkPolicy
