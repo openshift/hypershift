@@ -75,6 +75,7 @@ import (
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -4609,7 +4610,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	}
 
 	var currentVersion *semver.Version
-	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != imageregistry.HCControlPlaneReleaseImage(hc) {
+	if hc.Status.Version != nil && !sameReleaseImage(hc.Status.Version.Desired.Image, imageregistry.HCControlPlaneReleaseImage(hc)) {
 		releaseInfo, err := releaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to lookup release image: %w", err)
@@ -4623,6 +4624,27 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
+}
+
+// sameReleaseImage reports whether two release image pull specs refer to the same
+// release payload. Identical strings always match, which preserves the behavior for
+// pull specs that cannot be parsed. Otherwise both pull specs must parse and pin the
+// same digest, so a mirrored pull spec (for example one resolved through registry
+// overrides or image content policies) matches its source when the digests are equal.
+// Pull specs without a digest only match when the strings are identical.
+func sameReleaseImage(a, b string) bool {
+	if a == b {
+		return true
+	}
+	refA, err := reference.Parse(a)
+	if err != nil {
+		return false
+	}
+	refB, err := reference.Parse(b)
+	if err != nil {
+		return false
+	}
+	return refA.ID != "" && refA.ID == refB.ID
 }
 
 func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, refWithDigest func() (string, error)) (bool, error) {
@@ -4645,7 +4667,7 @@ func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseI
 		return false, err
 	}
 
-	if hc.Status.Version == nil || (hc.Spec.Release.Image != hc.Status.Version.Desired.Image && withDigest != hc.Status.Version.Desired.Image) {
+	if hc.Status.Version == nil || (!sameReleaseImage(hc.Spec.Release.Image, hc.Status.Version.Desired.Image) && !sameReleaseImage(withDigest, hc.Status.Version.Desired.Image)) {
 		// cluster is doing initial rollout or upgrading
 		return true, nil
 	}
@@ -5566,7 +5588,7 @@ func (r *HostedClusterReconciler) syncKVLiveMigratableCondition(ctx context.Cont
 // 2) non-error message about the condition of the upgrade
 // 3) error indicating that the upgrade is not allowed or we were not able to determine
 func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, string, error) {
-	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == imageregistry.HCControlPlaneReleaseImage(hcluster) {
+	if hcluster.Status.Version == nil || sameReleaseImage(hcluster.Status.Version.Desired.Image, imageregistry.HCControlPlaneReleaseImage(hcluster)) {
 		// cluster is either installing or at the version requested by the spec, no upgrade in progress
 		return false, "", nil
 	}
