@@ -87,5 +87,9 @@ func (u *UnstructuredAdapter[T]) StatusConditions(opts ...ForOption) ConditionSe
 	conditionTypes := lo.Map(u.GetConditions(), func(condition Condition, _ int) string {
 		return condition.Type
 	})
-	return NewReadyConditions(conditionTypes...).For(u, opts...)
+	// The adapter is a read-only reflection of an object the controller does not
+	// own, used to emit metrics for whatever conditions are present. Build the set
+	// from observed conditions only so we don't fabricate a root "Ready" condition
+	// (and a phantom Ready=Unknown metric) for objects that never define one.
+	return NewReadyConditions(conditionTypes...).For(u, append(opts, WithObservedOnly())...)
 }
