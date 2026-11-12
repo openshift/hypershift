@@ -19,3 +19,7 @@ docs/content/reference/aggregated-docs.md linguist-generated=true
 vendor/** linguist-vendored=true
 api/vendor/** linguist-vendored=true
 hack/tools/vendor/** linguist-vendored=true
+
+# Preserve upstream bytes (including whitespace) in pinned GCP CI manifests.
+test/e2e/fixtures/gcp/prerequisites/*.yaml linguist-vendored=true -whitespace
+test/e2e/fixtures/gcp/prerequisites/LICENSE.* linguist-vendored=true -whitespace
