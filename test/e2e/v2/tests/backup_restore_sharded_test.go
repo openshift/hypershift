@@ -253,11 +253,19 @@ func (s *shardedE2E) resolveBSL() (bucket, region string, credsSecret *corev1.Se
 	if err != nil {
 		return "", "", nil, fmt.Errorf("failed to get BackupStorageLocation: %w", err)
 	}
+	// The lane's OADP setup creates the BSL with the legacy provider-based
+	// structure (spec.objectStorage/config/credential); support the newer
+	// storageType-based structure as well.
 	bucket, _, _ = unstructured.NestedString(bsl.Object, "spec", "storageType", "s3", "bucket")
 	region, _, _ = unstructured.NestedString(bsl.Object, "spec", "storageType", "s3", "region")
-	credName, _, _ := unstructured.NestedString(bsl.Object, "spec", "storageType", "s3", "credential", "name")
+	credName, _, _ = unstructured.NestedString(bsl.Object, "spec", "storageType", "s3", "credential", "name")
+	if bucket == "" {
+		bucket, _, _ = unstructured.NestedString(bsl.Object, "spec", "objectStorage", "bucket")
+		region, _, _ = unstructured.NestedString(bsl.Object, "spec", "config", "region")
+		credName, _, _ = unstructured.NestedString(bsl.Object, "spec", "credential", "name")
+	}
 	if bucket == "" || credName == "" {
-		return "", "", nil, fmt.Errorf("BackupStorageLocation %s has no s3 bucket or credential", s.testCtx.ClusterName)
+		return "", "", nil, fmt.Errorf("BackupStorageLocation %s has no s3 bucket or credential (spec: %v)", s.testCtx.ClusterName, bsl.Object["spec"])
 	}
 	credsSecret = &corev1.Secret{}
 	if err := s.testCtx.MgmtClient.Get(s.testCtx.Context, types.NamespacedName{Namespace: "openshift-adp", Name: credName}, credsSecret); err != nil {
