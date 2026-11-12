@@ -451,7 +451,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	}
 
 	log.Info("reconciling clusterversion")
-	params.FeatureSet = hcp.Spec.Configuration.GetFeatureGateSelection().FeatureSet
 	params.ControlPlaneReleaseVersion = controlPlaneReleaseVersion
 	if err := configuration.Reconcile(ctx, r.client, r.CreateOrUpdate, params, configuration.ClusterVersion); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile clusterversion: %w", err))

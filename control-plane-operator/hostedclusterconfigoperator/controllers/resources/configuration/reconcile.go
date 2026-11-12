@@ -22,7 +22,6 @@ type ReconcileParams struct {
 	Channel                    string
 	Capabilities               *hyperv1.Capabilities
 	Versions                   map[string]string
-	FeatureSet                 configv1.FeatureSet
 	ControlPlaneReleaseVersion semver.Version
 }
 type Stage int

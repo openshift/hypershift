@@ -28,32 +28,27 @@ func TestReconcileClusterVersion(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name          string
-		featureSet    configv1.FeatureSet
 		version       semver.Version
 		knownCaps     []configv1.ClusterVersionCapability
 		expectEnabled bool
 	}{
 		{
-			name:       "When a 5.1 dev preview cluster has no known capabilities, it should enable compatibility requirements",
-			featureSet: configv1.DevPreviewNoUpgrade, version: config.Version510, expectEnabled: true,
+			name:    "When a 5.1 cluster has no known capabilities, it should enable compatibility requirements",
+			version: config.Version510, expectEnabled: true,
 		},
 		{
-			name:       "When a 5.1 tech preview cluster knows compatibility requirements, it should enable the capability",
-			featureSet: configv1.TechPreviewNoUpgrade, version: config.Version510,
+			name:      "When a 5.1 cluster knows compatibility requirements, it should enable the capability",
+			version:   config.Version510,
 			knownCaps: []configv1.ClusterVersionCapability{configv1.ClusterVersionCapabilityCompatibilityRequirements}, expectEnabled: true,
 		},
 		{
-			name:       "When the guest CVO does not know compatibility requirements, it should filter out the capability",
-			featureSet: configv1.TechPreviewNoUpgrade, version: config.Version510,
+			name:      "When the guest CVO does not know compatibility requirements, it should filter out the capability",
+			version:   config.Version510,
 			knownCaps: []configv1.ClusterVersionCapability{configv1.ClusterVersionCapabilityBuild},
 		},
 		{
-			name:    "When the feature set is default, it should not enable compatibility requirements",
-			version: config.Version510,
-		},
-		{
-			name:       "When a preview cluster uses an older release, it should not enable compatibility requirements",
-			featureSet: configv1.TechPreviewNoUpgrade, version: semver.MustParse("5.0.0"),
+			name:    "When a cluster uses an older release, it should not enable compatibility requirements",
+			version: semver.MustParse("5.0.0"),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -66,7 +61,7 @@ func TestReconcileClusterVersion(t *testing.T) {
 				},
 			}
 			guest := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
-			params := ReconcileParams{ClusterID: "test-cluster-id", FeatureSet: test.featureSet, ControlPlaneReleaseVersion: test.version}
+			params := ReconcileParams{ClusterID: "test-cluster-id", ControlPlaneReleaseVersion: test.version}
 			g.Expect(reconcileClusterVersion(t.Context(), guest, controllerutil.CreateOrUpdate, params)).To(Succeed())
 			g.Expect(guest.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)).To(Succeed())
 			if test.expectEnabled {

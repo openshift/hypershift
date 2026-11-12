@@ -348,13 +348,15 @@ func TestAdaptDeploymentClusterVersionCapabilities(t *testing.T) {
 	tests := []struct {
 		name                string
 		featureSet          configv1.FeatureSet
+		omitConfiguration   bool
 		releaseVersion      string
 		expectCompatibility bool
 	}{
-		{name: "does not enable compatibility requirements before 5.1", featureSet: configv1.TechPreviewNoUpgrade, releaseVersion: "5.0.0", expectCompatibility: false},
-		{name: "does not enable compatibility requirements for the default feature set", featureSet: configv1.Default, releaseVersion: "5.1.0", expectCompatibility: false},
-		{name: "enables compatibility requirements for TechPreviewNoUpgrade on 5.1", featureSet: configv1.TechPreviewNoUpgrade, releaseVersion: "5.1.0", expectCompatibility: true},
-		{name: "enables compatibility requirements for DevPreviewNoUpgrade on 5.1", featureSet: configv1.DevPreviewNoUpgrade, releaseVersion: "5.1.0", expectCompatibility: true},
+		{name: "When configuration is omitted on 5.1, it should enable compatibility requirements", omitConfiguration: true, releaseVersion: "5.1.0", expectCompatibility: true},
+		{name: "When the release is before 5.1, it should not enable compatibility requirements", featureSet: configv1.Default, releaseVersion: "5.0.0", expectCompatibility: false},
+		{name: "When the feature set is Default on 5.1, it should enable compatibility requirements", featureSet: configv1.Default, releaseVersion: "5.1.0", expectCompatibility: true},
+		{name: "When the feature set is TechPreviewNoUpgrade on 5.1, it should enable compatibility requirements", featureSet: configv1.TechPreviewNoUpgrade, releaseVersion: "5.1.0", expectCompatibility: true},
+		{name: "When the feature set is DevPreviewNoUpgrade on 5.1, it should enable compatibility requirements", featureSet: configv1.DevPreviewNoUpgrade, releaseVersion: "5.1.0", expectCompatibility: true},
 	}
 
 	for _, test := range tests {
@@ -372,6 +374,9 @@ func TestAdaptDeploymentClusterVersionCapabilities(t *testing.T) {
 						FeatureGateSelection: configv1.FeatureGateSelection{FeatureSet: test.featureSet},
 					}},
 				},
+			}
+			if test.omitConfiguration {
+				hcp.Spec.Configuration = nil
 			}
 			cpContext := createTestContext(hcp)
 			cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion(test.releaseVersion))
