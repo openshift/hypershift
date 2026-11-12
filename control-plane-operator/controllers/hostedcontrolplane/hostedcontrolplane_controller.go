@@ -2901,6 +2901,8 @@ func restoreURLCoverageGaps(managed *hyperv1.ManagedEtcdSpec) []string {
 	return hyperv1.MissingPersistentShards(covered, managed)
 }
 
+// hasRestoreURLs reports whether any persistent shard (the default etcd via
+// the legacy storage field, or any named shard) has a restoreSnapshotURL set.
 func (r *HostedControlPlaneReconciler) hasRestoreURLs(hcp *hyperv1.HostedControlPlane) bool {
 	if hcp.Spec.Etcd.Managed == nil {
 		return false
