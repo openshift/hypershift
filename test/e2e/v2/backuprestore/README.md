@@ -14,13 +14,42 @@ The backup and restore tests validate the ability to:
 
 ### Required Components
 
-1. **OADP Operator**: Must be installed and running in the `openshift-adp` namespace on the management cluster
+1. **OADP Operator (OADP 1.5 or later)**: Required for the `backup-restore` and `etcd-snapshot` suites on the management cluster. The `standalone-velero` suite runs Velero plus the HyperShift plugin without the OADP operator (used where there is no OLM, such as AKS)
 2. **Storage for OADP data**: Might be S3 bucket or other storage
 3. **Secret for accessing storage**
 4. **Backup Storage Location**: Configured storage location for backups (e.g., S3 bucket for AWS)
-5. **DataProtectionApplication**: This resource brings Velero pod that handles the backups
+5. **DataProtectionApplication**: Required for standard backup/restore tests; deploys the Velero pod
 6. **HyperShift CLI**: The `hypershift` binary must be available in your PATH
-7. **Platform**: Supports AWS, Agent, and KubeVirt platforms
+7. **Supported platforms**: See [Provider and suite coverage](#provider-and-suite-coverage).
+
+### Provider and suite coverage
+
+All backup/restore CI jobs are **periodics only**; none of these suites gate merges.
+
+| Label | Approach | Hosted cluster platforms |
+| --- | --- | --- |
+| `backup-restore` | OADP operator, same management cluster | AWS, Azure (self-managed, including an ARO management cluster), Agent, KubeVirt |
+| `etcd-snapshot` | OADP operator, etcd snapshot method | AWS, Azure (requires the `HCPEtcdBackup` CRD) |
+| `cross-cluster-restore` | OADP operator, restore on a different management cluster | AWS |
+| `standalone-velero` | Velero + HyperShift plugin, no OADP operator | Azure on an AKS management cluster |
+
+Platforms that are not covered skip cleanly with a "not supported on platform" message instead of failing:
+
+* **OpenStack** and **IBMCloud (including PowerVS)**: no CI infrastructure.
+* **GCP**: not covered. The HyperShift OADP plugin rejects GCP hosted clusters during backup and restore validation (`unsupported platform type GCP`), so GCP coverage depends on plugin support landing first.
+
+### OADP and Velero version matrix
+
+OADP and Velero versions follow the OCP release under test and the OADP team's supportability guidance; they are not chosen freely. The minimum supported baseline is **OADP 1.5**. OADP versions below 1.5 and Velero 1.13 are out of scope.
+
+| OCP release | OADP | Velero | Azure Velero plugin (standalone) | Providers | Status |
+| --- | --- | --- | --- | --- | --- |
+| 4.21 (`oadp-1.5` plugin branch) | 1.5 (`stable-1.5`, 1.5.9) | 1.16 (1.16.2) | v1.12.x | ARO (OADP operator); AKS (standalone Velero). The existing AWS plugin periodic is not yet aligned to this row. | Pending OADP team sign-off |
+| 5.1 (`main`) | 1.6 (1.6.2) proposed | 1.18 (1.18.4) proposed | v1.14.x proposed | Not yet wired in CI | Proposed, pending OADP team sign-off |
+
+The OADP-to-Velero pairing comes from the `oadp-1.5` and `oadp-1.6` branches of `openshift/oadp-operator`. The Azure plugin pairing comes from the compatibility table in `vmware-tanzu/velero-plugin-for-microsoft-azure` (v1.12.x with Velero 1.16.x, v1.14.x with Velero 1.18.x). The HyperShift OADP plugin `main` branch builds against Velero 1.18.
+
+The Velero server version asserted by the `standalone-velero` suite is set per job with `E2E_EXPECTED_VELERO_VERSION`, so the matrix is enforced from the CI configuration rather than hardcoded in the tests.
 
 #### Platform-specific Prerequisites
 
@@ -347,7 +376,8 @@ Test artifacts are stored in the `ARTIFACT_DIR`:
 
 ## Known Limitations
 
-1. **Platform Support**: Supports AWS, Agent, and KubeVirt platforms. The etcd snapshot test (`BackupRestoreEtcdSnapshot`) is AWS-only
+1. **Platform Support**: See [Provider and suite coverage](#provider-and-suite-coverage)
 2. **Guest Cluster Validation**: Guest cluster health checks are skipped due to OCPBUGS-59876
 3. **Continual Operations**: Continual operation verification is skipped until CNTRLPLANE-2676 is implemented
 4. **Serial Execution**: Tests must run serially as it breaks the cluster
+5. **Workload Validation**: User workload validation is not implemented; the approach is pending agreement
