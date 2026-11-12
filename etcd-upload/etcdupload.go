@@ -240,34 +240,63 @@ type resultStore interface {
 
 // configMapStore stores results in a ConfigMap in the namespace the command
 // runs in, using the pod's service account. The RBAC granted to the backup
-// Job restricts it to this one ConfigMap.
-type configMapStore struct{}
+// Job restricts it to this one ConfigMap with get/update/patch only: the
+// controller pre-creates it, because Kubernetes cannot authorize create
+// requests by resource name (the object's name is not known at authorization
+// time), so a create-first flow would be rejected with a 403 before the
+// AlreadyExists check. Store therefore gets-and-updates the ConfigMap, and
+// only creates it when it does not exist (e.g. when run standalone with a
+// less restrictive service account).
+type configMapStore struct {
+	// client is the Kubernetes client to use; nil means in-cluster config.
+	client kubernetes.Interface
+	// namespace overrides the namespace read from the service account token
+	// (injectable for tests).
+	namespace string
+}
 
-func (configMapStore) Store(ctx context.Context, name, value string) error {
-	cfg, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("not running in a cluster: %w", err)
+func (s configMapStore) Store(ctx context.Context, name, value string) error {
+	clientset := s.client
+	if clientset == nil {
+		cfg, err := rest.InClusterConfig()
+		if err != nil {
+			return fmt.Errorf("not running in a cluster: %w", err)
+		}
+		clientset, err = kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to build client: %w", err)
+		}
 	}
-	clientset, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to build client: %w", err)
-	}
-	namespace, err := inClusterNamespace()
-	if err != nil {
-		return err
-	}
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		Data:       map[string]string{resultConfigMapKey: value},
-	}
-	if _, err := clientset.CoreV1().ConfigMaps(namespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
+	namespace := s.namespace
+	if namespace == "" {
+		var err error
+		namespace, err = inClusterNamespace()
+		if err != nil {
 			return err
 		}
-		_, err = clientset.CoreV1().ConfigMaps(namespace).Update(ctx, cm, metav1.UpdateOptions{})
-		return err
 	}
-	return nil
+	exists := true
+	cm, err := clientset.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		// Not pre-created (e.g. standalone use): create it.
+		exists = false
+		cm = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		}
+	}
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+	cm.Data[resultConfigMapKey] = value
+	if exists {
+		_, err = clientset.CoreV1().ConfigMaps(namespace).Update(ctx, cm, metav1.UpdateOptions{})
+	} else {
+		_, err = clientset.CoreV1().ConfigMaps(namespace).Create(ctx, cm, metav1.CreateOptions{})
+	}
+	return err
 }
 
 // inClusterNamespace returns the namespace of the running pod, from the

@@ -9,6 +9,10 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 )
 
 func TestNewStartCommand(t *testing.T) {
@@ -276,4 +280,37 @@ func (f *fakeStore) Store(_ context.Context, name, value string) error {
 
 func writeTestFile(dir, name string) error {
 	return os.WriteFile(filepath.Join(dir, name), []byte("test-data"), 0644)
+}
+
+func TestConfigMapStore_Store(t *testing.T) {
+	t.Run("When the result ConfigMap is pre-created it should be updated, not created", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		// The backup Job's service account only has get/update/patch on the
+		// one ConfigMap; a create-first flow would be rejected with a 403
+		// because Kubernetes cannot authorize create by resource name.
+		clientset := kubefake.NewSimpleClientset(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "result-cm", Namespace: "default"},
+		})
+		store := configMapStore{client: clientset, namespace: "default"}
+
+		err := store.Store(context.Background(), "result-cm", `[{"name":"default"}]`)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cm, err := clientset.CoreV1().ConfigMaps("default").Get(context.Background(), "result-cm", metav1.GetOptions{})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(cm.Data[resultConfigMapKey]).To(Equal(`[{"name":"default"}]`))
+	})
+
+	t.Run("When the result ConfigMap does not exist it should be created", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		clientset := kubefake.NewSimpleClientset()
+		store := configMapStore{client: clientset, namespace: "default"}
+
+		err := store.Store(context.Background(), "result-cm", `[{"name":"default"}]`)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cm, err := clientset.CoreV1().ConfigMaps("default").Get(context.Background(), "result-cm", metav1.GetOptions{})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(cm.Data[resultConfigMapKey]).To(Equal(`[{"name":"default"}]`))
+	})
 }
