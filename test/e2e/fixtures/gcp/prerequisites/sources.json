@@ -1,0 +1,42 @@
+{
+  "monitoring.coreos.com_servicemonitors.yaml": {
+    "url": "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/854d33a40caad1dd773f73deb55726732803bcb8/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml",
+    "revision": "854d33a40caad1dd773f73deb55726732803bcb8",
+    "sha256": "ad3510604d5bae89b2c9a6797334f8cd058095656825cdb2e507d496487112d7"
+  },
+  "monitoring.coreos.com_prometheusrules.yaml": {
+    "url": "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/854d33a40caad1dd773f73deb55726732803bcb8/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml",
+    "revision": "854d33a40caad1dd773f73deb55726732803bcb8",
+    "sha256": "04646c10a1955b1bbe0e6c4284533033f1dc63775c93bf62ddc540576467d636"
+  },
+  "monitoring.coreos.com_podmonitors.yaml": {
+    "url": "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/854d33a40caad1dd773f73deb55726732803bcb8/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml",
+    "revision": "854d33a40caad1dd773f73deb55726732803bcb8",
+    "sha256": "d2f10daf7528577e5eb7fd09735bfef381bd7955b4d3619af03fc91b83d85b48"
+  },
+  "routes.crd.yaml": {
+    "url": "https://raw.githubusercontent.com/openshift/api/6bababe9164ea6c78274fd79c94a3f951f8d5ab2/route/v1/zz_generated.crd-manifests/routes.crd.yaml",
+    "revision": "6bababe9164ea6c78274fd79c94a3f951f8d5ab2",
+    "sha256": "2ce23688233c575d23f39be012eb2fcfad55126fb2e94bf10aa56217fe86d4c9"
+  },
+  "cert-manager.yaml": {
+    "url": "https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml",
+    "revision": "v1.14.0",
+    "sha256": "b69e4062859508b8c3d91d25310e8b36fa25d00d7c468509124df3b76bf8fc2b"
+  },
+  "LICENSE.prometheus-operator": {
+    "url": "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/854d33a40caad1dd773f73deb55726732803bcb8/LICENSE",
+    "revision": "854d33a40caad1dd773f73deb55726732803bcb8",
+    "sha256": "d944a57b4a9807adbf98cf93ebe7b30e70b43d4742dda15640b86d099a7f65f3"
+  },
+  "LICENSE.openshift-api": {
+    "url": "https://raw.githubusercontent.com/openshift/api/6bababe9164ea6c78274fd79c94a3f951f8d5ab2/LICENSE",
+    "revision": "6bababe9164ea6c78274fd79c94a3f951f8d5ab2",
+    "sha256": "ea81dcff98532f22802f03eb0ad532407b9122c4c76aae32cbd58442485f3885"
+  },
+  "LICENSE.cert-manager": {
+    "url": "https://raw.githubusercontent.com/cert-manager/cert-manager/v1.14.0/LICENSE",
+    "revision": "v1.14.0",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  }
+}
