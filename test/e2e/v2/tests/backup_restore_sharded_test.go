@@ -129,32 +129,60 @@ func (s *shardedE2E) getHostedCluster(name string) (*hyperv1.HostedCluster, erro
 }
 
 // waitForGuestAPI waits until the hosted cluster's admin kubeconfig is usable.
+// On timeout, the error carries the cluster's observed state to make lane
+// failures diagnosable from the test output.
 func (s *shardedE2E) waitForGuestAPI(name string, timeout time.Duration) (*hyperv1.HostedCluster, error) {
 	var hc *hyperv1.HostedCluster
+	var lastDiagnosis string
 	err := eventuallyWithContext(s.testCtx.Context, timeout, func() (bool, error) {
 		got, err := s.getHostedCluster(name)
 		if err != nil {
+			lastDiagnosis = fmt.Sprintf("HostedCluster not found: %v", err)
 			return false, nil //nolint:nilerr // transient: keep polling until the timeout
 		}
 		hc = got
 		if hc.Status.KubeConfig == nil {
+			lastDiagnosis = "kubeconfig not available yet; HC conditions: " + describeConditions(hc.Status.Conditions)
 			return false, nil //nolint:nilerr // transient: keep polling until the timeout
 		}
 		restCfg, err := s.testCtx.GetHostedClusterRESTConfig(hc)
 		if err != nil {
+			lastDiagnosis = fmt.Sprintf("kubeconfig not usable: %v; HC conditions: %s", err, describeConditions(hc.Status.Conditions))
 			return false, nil //nolint:nilerr // transient: keep polling until the timeout
 		}
 		discoveryClient, err := discovery.NewDiscoveryClientForConfig(restCfg)
 		if err != nil {
+			lastDiagnosis = fmt.Sprintf("discovery client: %v", err)
 			return false, nil //nolint:nilerr // transient: keep polling until the timeout
 		}
-		_, err = discoveryClient.ServerVersion()
-		return err == nil, nil
+		if _, err := discoveryClient.ServerVersion(); err != nil {
+			lastDiagnosis = fmt.Sprintf("API not reachable: %v; HC conditions: %s", err, describeConditions(hc.Status.Conditions))
+			return false, nil //nolint:nilerr // transient: keep polling until the timeout
+		}
+		return true, nil
 	})
 	if err != nil {
-		return nil, err
+		// Include the HCP's conditions too, when it exists.
+		hcpDiagnosis := ""
+		hcp := &hyperv1.HostedControlPlane{}
+		if hcpErr := s.testCtx.MgmtClient.Get(s.testCtx.Context, types.NamespacedName{Name: name, Namespace: "clusters-" + name}, hcp); hcpErr == nil {
+			hcpDiagnosis = "; HCP conditions: " + describeConditions(hcp.Status.Conditions)
+		}
+		return nil, fmt.Errorf("guest API for %s not usable after %s: %s%s", name, timeout, lastDiagnosis, hcpDiagnosis)
 	}
 	return hc, nil
+}
+
+// describeConditions renders conditions compactly for failure messages.
+func describeConditions(conds []metav1.Condition) string {
+	if len(conds) == 0 {
+		return "<none>"
+	}
+	parts := make([]string, 0, len(conds))
+	for _, c := range conds {
+		parts = append(parts, fmt.Sprintf("%s=%s(%s)", c.Type, c.Status, c.Reason))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func eventuallyWithContext(ctx context.Context, timeout time.Duration, f func() (bool, error)) error {
@@ -559,6 +587,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 			Expect(err).NotTo(HaveOccurred(), "failed to render target cluster manifests")
 
 			By("Injecting the per-shard restore URLs into the rendered HostedCluster")
+			Expect(os.WriteFile(filepath.Join(e.testCtx.ArtifactDir, "target-cluster-rendered.yaml"), rendered, 0644)).To(Succeed())
 			applyRestoredShardedCluster(e.testCtx, rendered, defaultURL, namedURL, shardedE2EShardName)
 
 			By("Waiting for EtcdSnapshotRestored=True on the target control plane")
@@ -567,9 +596,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 				hcp := &hyperv1.HostedControlPlane{}
 				g.Expect(e.testCtx.MgmtClient.Get(e.testCtx.Context, types.NamespacedName{Name: e.targetCluster, Namespace: hcpNamespace}, hcp)).To(Succeed())
 				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
-				if cond == nil {
-					return
-				}
+				// A nil condition must fail this poll, not succeed it: the
+				// condition is only set once the CPO observes the restore.
+				g.Expect(cond).NotTo(BeNil(), "EtcdSnapshotRestored condition not set yet")
 				if cond.Status != metav1.ConditionTrue {
 					GinkgoWriter.Printf("EtcdSnapshotRestored=%s reason=%s message=%s\n", cond.Status, cond.Reason, cond.Message)
 				}
