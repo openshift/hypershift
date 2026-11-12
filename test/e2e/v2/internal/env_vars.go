@@ -154,6 +154,16 @@ func init() {
 		false,
 	)
 	RegisterEnvVar(
+		"E2E_GCP_CREDENTIALS_FILE",
+		"Path to the GCP workload identity credentials file for resource label tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_GCP_CONTROL_PLANE_PROJECT_ID_FILE",
+		"Path to the file containing the GCP control-plane project ID for resource label tests.",
+		false,
+	)
+	RegisterEnvVar(
 		"E2E_SHOW_ENV_HELP",
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,

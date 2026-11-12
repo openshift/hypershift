@@ -277,3 +277,68 @@ func TestGCPCheckBaseDomainLength(t *testing.T) {
 		}
 	}
 }
+
+func TestGCPPlatformConfig_SetupTestEnv(t *testing.T) {
+	sharedDir := t.TempDir()
+	for _, tc := range []struct {
+		name            string
+		sharedDir       string
+		credentials     string
+		projectID       string
+		wantCredentials string
+		wantProjectID   string
+	}{
+		{
+			name:            "When paths are unset, it should configure shared directory paths",
+			sharedDir:       sharedDir,
+			wantCredentials: filepath.Join(sharedDir, "wif-cred.json"),
+			wantProjectID:   filepath.Join(sharedDir, "control-plane-project-id"),
+		},
+		{
+			name:            "When both paths are provided, it should preserve explicit overrides",
+			sharedDir:       sharedDir,
+			credentials:     "/custom/gcp-credentials.json",
+			projectID:       "/custom/control-plane-project-id",
+			wantCredentials: "/custom/gcp-credentials.json",
+			wantProjectID:   "/custom/control-plane-project-id",
+		},
+		{
+			name:            "When only credentials are provided, it should default the project path independently",
+			sharedDir:       sharedDir,
+			credentials:     "/custom/gcp-credentials.json",
+			wantCredentials: "/custom/gcp-credentials.json",
+			wantProjectID:   filepath.Join(sharedDir, "control-plane-project-id"),
+		},
+		{
+			name:            "When only the project path is provided, it should default the credentials path independently",
+			sharedDir:       sharedDir,
+			projectID:       "/custom/control-plane-project-id",
+			wantCredentials: filepath.Join(sharedDir, "wif-cred.json"),
+			wantProjectID:   "/custom/control-plane-project-id",
+		},
+		{
+			name: "When the shared directory is empty, it should leave paths unset",
+		},
+		{
+			name:            "When the shared directory is empty, it should preserve explicit overrides",
+			credentials:     "/custom/gcp-credentials.json",
+			projectID:       "/custom/control-plane-project-id",
+			wantCredentials: "/custom/gcp-credentials.json",
+			wantProjectID:   "/custom/control-plane-project-id",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("E2E_GCP_CREDENTIALS_FILE", tc.credentials)
+			t.Setenv("E2E_GCP_CONTROL_PLANE_PROJECT_ID_FILE", tc.projectID)
+
+			(&GCPPlatformConfig{}).SetupTestEnv(tc.sharedDir)
+
+			if got := os.Getenv("E2E_GCP_CREDENTIALS_FILE"); got != tc.wantCredentials {
+				t.Errorf("credentials path = %q, want %q", got, tc.wantCredentials)
+			}
+			if got := os.Getenv("E2E_GCP_CONTROL_PLANE_PROJECT_ID_FILE"); got != tc.wantProjectID {
+				t.Errorf("project ID path = %q, want %q", got, tc.wantProjectID)
+			}
+		})
+	}
+}

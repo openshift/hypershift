@@ -311,10 +311,27 @@ func (g *GCPPlatformConfig) TestMatrix() TestMatrix {
 	}
 }
 
-// SetupTestEnv sets GCP-specific environment variables for the test
-// subprocesses. The current GCP suite reads no SHARED_DIR-sourced env, so
-// this is a no-op; add exports here as GCP test coverage grows.
-func (g *GCPPlatformConfig) SetupTestEnv(sharedDir string) {}
+// SetupTestEnv sets GCP test input paths from the CI shared directory,
+// preserving paths explicitly supplied by the caller.
+func (g *GCPPlatformConfig) SetupTestEnv(sharedDir string) {
+	if sharedDir == "" {
+		return
+	}
+	for _, input := range []struct {
+		envName string
+		file    string
+	}{
+		{envName: "E2E_GCP_CREDENTIALS_FILE", file: "wif-cred.json"},
+		{envName: "E2E_GCP_CONTROL_PLANE_PROJECT_ID_FILE", file: "control-plane-project-id"},
+	} {
+		if os.Getenv(input.envName) != "" {
+			continue
+		}
+		if err := os.Setenv(input.envName, filepath.Join(sharedDir, input.file)); err != nil {
+			log.Printf("Failed to set %s: %v", input.envName, err)
+		}
+	}
+}
 
 // readSharedFile returns the trimmed contents of sharedDir/name. A missing
 // file (or an empty sharedDir) yields "", nil; any other read error is

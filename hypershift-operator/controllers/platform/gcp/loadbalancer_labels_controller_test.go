@@ -109,6 +109,8 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 		wantGetCalls       []string
 		wantRequeueAfter   time.Duration
 		wantPaused         bool
+		listErr            error
+		wantErr            string
 	}{
 		{
 			name: "When Service has a forwarding-rule annotation, it should get that forwarding rule without listing",
@@ -152,6 +154,101 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			wantSetCalls:     1,
 			wantSetCallNames: []string{"private-router-forwarding-rule"},
 			wantLabels:       map[string]string{"goog-partner-solution": "isol_psn_0014m00001h31bnqaq_openshift"},
+		},
+		{
+			name: "When a legacy private-router Service has a GKE backend annotation, it should label its forwarding rule",
+			labels: []hyperv1.GCPResourceLabel{
+				{Key: "environment", Value: ptr.To("test")},
+			},
+			privateService: &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace, Name: privateRouterServiceName,
+				Annotations: map[string]string{legacyBackendServiceAnnotation: "private-backend"},
+			}},
+			forwardingRules: []*compute.ForwardingRule{
+				{Name: "private-forwarding-rule", BackendService: "projects/project/regions/us-east1/backendServices/private-backend", LabelFingerprint: "fingerprint"},
+				{Name: "unrelated", BackendService: "projects/project/regions/us-east1/backendServices/other", LabelFingerprint: "fingerprint"},
+			},
+			wantSetCalls:     1,
+			wantSetCallNames: []string{"private-forwarding-rule"},
+			wantLabels:       map[string]string{"environment": "test"},
+		},
+		{
+			name: "When legacy public and private routers are present, it should label both forwarding rules",
+			labels: []hyperv1.GCPResourceLabel{
+				{Key: "environment", Value: ptr.To("test")},
+			},
+			service: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: routerServiceName, Annotations: map[string]string{targetPoolAnnotation: "router-pool"}},
+				Status:     corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: "192.0.2.1"}}}},
+			},
+			privateService: &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace, Name: privateRouterServiceName,
+				Annotations: map[string]string{legacyBackendServiceAnnotation: "private-backend"},
+			}},
+			forwardingRules: []*compute.ForwardingRule{
+				{Name: "public-rule", Target: "projects/project/regions/us-east1/targetPools/router-pool", IPAddress: "192.0.2.1", LabelFingerprint: "fingerprint"},
+				{Name: "private-rule", BackendService: "projects/project/regions/us-east1/backendServices/private-backend", LabelFingerprint: "fingerprint"},
+			},
+			wantSetCalls:     2,
+			wantSetCallNames: []string{"public-rule", "private-rule"},
+			wantLabels:       map[string]string{"environment": "test"},
+		},
+		{
+			name: "When a legacy backend annotation contains a resource URL, it should match its forwarding rule",
+			labels: []hyperv1.GCPResourceLabel{
+				{Key: "environment", Value: ptr.To("test")},
+			},
+			privateService: &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace, Name: privateRouterServiceName,
+				Annotations: map[string]string{legacyBackendServiceAnnotation: "projects/project/regions/us-east1/backendServices/private-backend"},
+			}},
+			forwardingRules:  []*compute.ForwardingRule{{Name: "private-rule", BackendService: "projects/project/regions/us-east1/backendServices/private-backend", LabelFingerprint: "fingerprint"}},
+			wantSetCalls:     1,
+			wantSetCallNames: []string{"private-rule"},
+			wantLabels:       map[string]string{"environment": "test"},
+		},
+		{
+			name: "When a legacy public router has a target pool, it should label only rules for its load balancer IP",
+			labels: []hyperv1.GCPResourceLabel{
+				{Key: "environment", Value: ptr.To("test")},
+			},
+			service: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: routerServiceName, Annotations: map[string]string{targetPoolAnnotation: "router-pool"}},
+				Status:     corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: "192.0.2.1"}}}},
+			},
+			forwardingRules: []*compute.ForwardingRule{
+				{Name: "router-forwarding-rule", Target: "projects/project/regions/us-east1/targetPools/router-pool", IPAddress: "192.0.2.1", LabelFingerprint: "fingerprint"},
+				{Name: "other-ip", Target: "projects/project/regions/us-east1/targetPools/router-pool", IPAddress: "192.0.2.2", LabelFingerprint: "fingerprint"},
+				{Name: "other-pool", Target: "projects/project/regions/us-east1/targetPools/other", IPAddress: "192.0.2.1", LabelFingerprint: "fingerprint"},
+			},
+			wantSetCalls:     1,
+			wantSetCallNames: []string{"router-forwarding-rule"},
+			wantLabels:       map[string]string{"environment": "test"},
+		},
+		{
+			name: "When a target-pool router has no load balancer IP, it should remain pending",
+			service: &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace, Name: routerServiceName, Annotations: map[string]string{targetPoolAnnotation: "router-pool"},
+			}},
+			forwardingRules:  []*compute.ForwardingRule{{Name: "router-forwarding-rule", Target: "projects/project/regions/us-east1/targetPools/router-pool", IPAddress: "192.0.2.1"}},
+			wantRequeueAfter: loadBalancerDiscoveryRetry,
+		},
+		{
+			name: "When current and legacy backend annotations are both present, it should prefer the current annotation",
+			labels: []hyperv1.GCPResourceLabel{
+				{Key: "environment", Value: ptr.To("test")},
+			},
+			service: &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace, Name: routerServiceName,
+				Annotations: map[string]string{backendServiceAnnotation: "current", legacyBackendServiceAnnotation: "legacy"},
+			}},
+			forwardingRules: []*compute.ForwardingRule{
+				{Name: "current-rule", BackendService: "projects/project/regions/us-east1/backendServices/current", LabelFingerprint: "fingerprint"},
+				{Name: "legacy-rule", BackendService: "projects/project/regions/us-east1/backendServices/legacy", LabelFingerprint: "fingerprint"},
+			},
+			wantSetCalls:     1,
+			wantSetCallNames: []string{"current-rule"},
+			wantLabels:       map[string]string{"environment": "test"},
 		},
 		{
 			name: "When router and private-router Services have forwarding rules, it should apply HCP labels to both",
@@ -269,6 +366,12 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			service:          routerService(namespace, backendServiceName),
 			wantRequeueAfter: loadBalancerDiscoveryRetry,
 		},
+		{
+			name:    "When listing target-pool forwarding rules fails, it should report the error",
+			service: &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: routerServiceName, Annotations: map[string]string{targetPoolAnnotation: "router-pool"}}},
+			listErr: fmt.Errorf("compute API unavailable"),
+			wantErr: "list forwarding rules for Service router: compute API unavailable",
+		},
 	}
 
 	for _, tt := range tests {
@@ -297,7 +400,7 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			if tt.privateService != nil {
 				objects = append(objects, tt.privateService)
 			}
-			gcpClient := &fakeLoadBalancerLabelsComputeClient{forwardingRules: tt.forwardingRules, getForwardingRules: tt.getForwardingRules}
+			gcpClient := &fakeLoadBalancerLabelsComputeClient{forwardingRules: tt.forwardingRules, getForwardingRules: tt.getForwardingRules, listErr: tt.listErr}
 			reconciler := &GCPLoadBalancerLabelsReconciler{
 				Client:    fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithStatusSubresource(&hyperv1.HostedControlPlane{}).WithObjects(objects...).Build(),
 				GcpClient: gcpClient,
@@ -307,6 +410,20 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			}
 
 			result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(hcp)})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("reconcile error = %v, want error containing %q", err, tt.wantErr)
+				}
+				updatedHCP := &hyperv1.HostedControlPlane{}
+				if err := reconciler.Client.Get(context.Background(), client.ObjectKeyFromObject(hcp), updatedHCP); err != nil {
+					t.Fatalf("get HostedControlPlane: %v", err)
+				}
+				condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, gcpResourceLabelsAppliedCondition)
+				if condition == nil || condition.Status != metav1.ConditionFalse || condition.Reason != reconciliationFailedReason {
+					t.Fatalf("condition = %#v, want False with reason %q", condition, reconciliationFailedReason)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("reconcile: %v", err)
 			}
@@ -339,6 +456,71 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			}
 			if !slices.Equal(gcpClient.getCalls, tt.wantGetCalls) {
 				t.Fatalf("GetForwardingRule calls = %#v, want %#v", gcpClient.getCalls, tt.wantGetCalls)
+			}
+		})
+	}
+}
+
+func TestFilterForwardingRulesByTargetPool(t *testing.T) {
+	const target = "projects/project/regions/us-east1/targetPools/router-pool"
+	tests := []struct {
+		name       string
+		pool       string
+		serviceIPs []string
+		rules      []*compute.ForwardingRule
+		want       []string
+	}{
+		{
+			name:       "When the target pool and Service IP match, it should return every matching rule once",
+			pool:       "router-pool",
+			serviceIPs: []string{"192.0.2.1", "192.0.2.1"},
+			rules: []*compute.ForwardingRule{
+				{Name: "tcp", Target: target, IPAddress: "192.0.2.1"},
+				{Name: "udp", Target: target, IPAddress: "192.0.2.1"},
+			},
+			want: []string{"tcp", "udp"},
+		},
+		{
+			name:       "When a matching target pool belongs to a different Service IP, it should ignore the rule",
+			pool:       "router-pool",
+			serviceIPs: []string{"192.0.2.1"},
+			rules:      []*compute.ForwardingRule{{Name: "other", Target: target, IPAddress: "192.0.2.2"}},
+		},
+		{
+			name:       "When the rule targets a different resource type or pool, it should ignore the rule",
+			pool:       "router-pool",
+			serviceIPs: []string{"192.0.2.1"},
+			rules: []*compute.ForwardingRule{
+				{Name: "instance", Target: "projects/project/regions/us-east1/targetInstances/router-pool", IPAddress: "192.0.2.1"},
+				{Name: "pool", Target: "projects/project/regions/us-east1/targetPools/another-pool", IPAddress: "192.0.2.1"},
+			},
+		},
+		{
+			name:       "When either IP is empty, it should not match empty values",
+			pool:       "router-pool",
+			serviceIPs: []string{""},
+			rules:      []*compute.ForwardingRule{{Name: "empty-ip", Target: target}},
+		},
+		{
+			name:       "When the pool annotation contains a resource URL, it should match the pool name",
+			pool:       target,
+			serviceIPs: []string{"192.0.2.1"},
+			rules:      []*compute.ForwardingRule{{Name: "rule", Target: target, IPAddress: "192.0.2.1"}},
+			want:       []string{"rule"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &corev1.Service{}
+			for _, ip := range tt.serviceIPs {
+				service.Status.LoadBalancer.Ingress = append(service.Status.LoadBalancer.Ingress, corev1.LoadBalancerIngress{IP: ip})
+			}
+			var got []string
+			for _, rule := range filterForwardingRulesByTargetPool(tt.rules, service, tt.pool) {
+				got = append(got, rule.Name)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("matched forwarding rules = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -94,6 +94,7 @@ hypershift create cluster gcp \
 | `--machine-type` | No | GCP machine type (default: `n2-standard-4`) |
 | `--zone` | Conditional | GCP zone for nodes. Required when `--node-pool-replicas >= 0` (default). Optional when `--node-pool-replicas=-1` (no NodePool created). |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
+| `--resource-labels` | No | GCP resource labels as comma-separated `key=value` pairs; can be specified multiple times |
 
 ## Monitor Cluster Creation
 
