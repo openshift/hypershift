@@ -47,6 +47,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -168,9 +170,70 @@ func (s *shardedE2E) waitForGuestAPI(name string, timeout time.Duration) (*hyper
 		if hcpErr := s.testCtx.MgmtClient.Get(s.testCtx.Context, types.NamespacedName{Name: name, Namespace: "clusters-" + name}, hcp); hcpErr == nil {
 			hcpDiagnosis = "; HCP conditions: " + describeConditions(hcp.Status.Conditions)
 		}
+		// Dump the control plane namespace's workloads and the logs of any
+		// non-ready pods to the artifact dir, before the deferred cleanup
+		// destroys the cluster — the lane's post-dump never sees it.
+		s.dumpControlPlaneState(name)
 		return nil, fmt.Errorf("guest API for %s not usable after %s: %s%s", name, timeout, lastDiagnosis, hcpDiagnosis)
 	}
 	return hc, nil
+}
+
+// dumpControlPlaneState writes the deployments, pods, and non-ready pod logs
+// of the given cluster's control plane namespace to the artifact dir.
+func (s *shardedE2E) dumpControlPlaneState(name string) {
+	ns := "clusters-" + name
+	clientset, err := kubernetes.NewForConfig(s.testCtx.MgmtRESTConfig)
+	if err != nil {
+		GinkgoWriter.Printf("failed to build clientset for diagnostics: %v\n", err)
+		return
+	}
+	var out strings.Builder
+	deployments, err := clientset.AppsV1().Deployments(ns).List(s.testCtx.Context, metav1.ListOptions{})
+	if err == nil {
+		fmt.Fprintf(&out, "=== deployments in %s ===\n", ns)
+		for _, d := range deployments.Items {
+			fmt.Fprintf(&out, "%s: ready=%d unavailable=%d (desired=%d)\n", d.Name, d.Status.ReadyReplicas, d.Status.UnavailableReplicas, ptr.Deref(d.Spec.Replicas, -1))
+		}
+	}
+	pods, err := clientset.CoreV1().Pods(ns).List(s.testCtx.Context, metav1.ListOptions{})
+	if err == nil {
+		fmt.Fprintf(&out, "\n=== pods in %s ===\n", ns)
+		for _, p := range pods.Items {
+			fmt.Fprintf(&out, "%s: phase=%s", p.Name, p.Status.Phase)
+			for _, cs := range p.Status.ContainerStatuses {
+				if cs.State.Waiting != nil {
+					fmt.Fprintf(&out, " [%s: waiting %s: %s]", cs.Name, cs.State.Waiting.Reason, cs.State.Waiting.Message)
+				}
+				if cs.State.Terminated != nil {
+					fmt.Fprintf(&out, " [%s: terminated %s exit=%d]", cs.Name, cs.State.Terminated.Reason, cs.State.Terminated.ExitCode)
+				}
+			}
+			fmt.Fprintln(&out)
+		}
+		// Logs of pods that are not ready.
+		for _, p := range pods.Items {
+			ready := false
+			for _, cond := range p.Status.Conditions {
+				if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+					ready = true
+				}
+			}
+			if ready {
+				continue
+			}
+			for _, cs := range p.Spec.Containers {
+				logReq := clientset.CoreV1().Pods(ns).GetLogs(p.Name, &corev1.PodLogOptions{Container: cs.Name, TailLines: ptr.To[int64](100)})
+				logs, err := logReq.DoRaw(s.testCtx.Context)
+				if err == nil && len(logs) > 0 {
+					fmt.Fprintf(&out, "\n=== logs %s/%s ===\n%s\n", p.Name, cs.Name, string(logs))
+				}
+			}
+		}
+	}
+	if err := os.WriteFile(filepath.Join(s.testCtx.ArtifactDir, fmt.Sprintf("target-control-plane-state-%s.txt", name)), []byte(out.String()), 0644); err != nil {
+		GinkgoWriter.Printf("failed to write diagnostics: %v\n", err)
+	}
 }
 
 // describeConditions renders conditions compactly for failure messages.
