@@ -426,7 +426,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		})
 		return &ctrl.Result{}, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, sharedIngressServiceFallbackAllowed, resolvedRHELStream)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
