@@ -94,9 +94,8 @@ spec:
                           Karpenter provisioner.
                         properties:
                           aws:
-                            description: |-
-                              aws specifies the AWS-specific configuration for Karpenter.
-                              Required when platform is "AWS", and forbidden otherwise.
+                            description: aws specifies the AWS-specific configuration
+                              for Karpenter.
                             properties:
                               roleARN:
                                 description: "roleARN specifies the ARN of the IAM
@@ -187,42 +186,11 @@ spec:
                             required:
                             - roleARN
                             type: object
-                          azure:
-                            description: |-
-                              azure specifies the Azure-specific configuration for Karpenter.
-                              Required when platform is "Azure", and forbidden otherwise.
-                            properties:
-                              clientID:
-                                description: |-
-                                  clientID is the client ID of the user-assigned managed identity Karpenter uses
-                                  to provision and manage Azure VMs in the hosted cluster's subscription.
-
-                                  The identity must have a federated credential that trusts the hosted cluster
-                                  OIDC issuer for subject system:serviceaccount:kube-system:karpenter.
-
-                                  The identity must be granted Virtual Machine Contributor, Network Contributor,
-                                  and Managed Identity Operator on the cluster resource group (and Network Contributor
-                                  on the VNet resource group when it differs).
-
-                                  The client ID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
-                                maxLength: 36
-                                minLength: 36
-                                pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
-                                type: string
-                                x-kubernetes-validations:
-                                - message: the client ID of a managed identity must
-                                    be a valid UUID. It should be 5 groups of hyphen
-                                    separated hexadecimal characters in the form 8-4-4-4-12.
-                                  rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
-                            required:
-                            - clientID
-                            type: object
                           platform:
                             description: platform specifies the infrastructure platform
                               that Karpenter should provision nodes on.
                             enum:
                             - AWS
-                            - Azure
                             maxLength: 100
                             type: string
                         required:
@@ -232,9 +200,6 @@ spec:
                         - message: aws is required when platform is AWS, and forbidden
                             otherwise
                           rule: 'self.platform == ''AWS'' ? has(self.aws) : !has(self.aws)'
-                        - message: azure is required when platform is Azure, and forbidden
-                            otherwise
-                          rule: 'self.platform == ''Azure'' ? has(self.azure) : !has(self.azure)'
                       name:
                         description: name specifies the name of the provisioner to
                           use for automatic node management.
@@ -866,8 +831,6 @@ spec:
                     description: |-
                       authentication specifies cluster-wide settings for authentication (like OAuth and
                       webhook token authenticators).
-                      Note: the serviceAccountIssuer field within this configuration is ignored; the
-                      HostedCluster's spec.issuerURL is always used as the service account issuer instead.
                     properties:
                       oauthMetadata:
                         description: |-
@@ -3445,62 +3408,6 @@ spec:
                     - message: ovnKubernetesConfig is immutable once set and cannot
                         be removed
                       rule: '!has(oldSelf.ovnKubernetesConfig) || has(self.ovnKubernetesConfig)'
-                  csiDriverOperator:
-                    description: |-
-                      csiDriverOperator configures the CSI drivers of the hosted cluster.
-                      Settings are grouped by platform.
-
-                      When omitted, the CSI drivers use their default configuration.
-                    minProperties: 1
-                    properties:
-                      aws:
-                        description: |-
-                          aws configures the AWS EBS CSI driver.
-                          It can only be set when spec.platform.type is AWS.
-
-                          When omitted, no AWS-specific CSI driver configuration is applied and the
-                          default StorageClass uses the AWS account's default EBS encryption settings.
-                        minProperties: 1
-                        properties:
-                          initialKMSKeyARN:
-                            description: |-
-                              initialKMSKeyARN is the ARN of an AWS KMS key used to encrypt volumes
-                              created by the default StorageClass. When set, new PersistentVolumes
-                              provisioned by the default StorageClass are encrypted with this key
-                              instead of the AWS account's default EBS encryption key.
-
-                              When omitted, no KMS key is configured on the default StorageClass and
-                              EBS volumes are encrypted with the AWS account's default EBS encryption
-                              key.
-
-                              The value may be either the ARN or Alias ARN of a KMS key and must follow
-                              the format arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>,
-                              where <partition> is one of aws, aws-cn, aws-us-gov, aws-iso, aws-iso-b,
-                              aws-iso-e, or aws-iso-f; <region> is the AWS region; <account-id> is the
-                              12-digit AWS account identifier; and <key-id-or-alias> is the KMS key ID
-                              or alias name. The key must be in the same region as the cluster
-                              (spec.platform.aws.region).
-
-                              When set, must be between 1 and 2048 characters.
-
-                              This field can only be set when the HostedCluster is created and is
-                              immutable afterwards. Day-2 changes to storage encryption must be made
-                              directly on the ClusterCSIDriver resource in the hosted cluster.
-
-                              The IAM role in spec.platform.aws.rolesRef.storageARN must have
-                              kms:Decrypt, kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
-                              permissions on the specified key.
-                            maxLength: 2048
-                            minLength: 1
-                            type: string
-                            x-kubernetes-validations:
-                            - message: 'initialKMSKeyARN must be a valid AWS KMS key
-                                ARN in the format: arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>'
-                              rule: self.matches('^arn:(aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f):kms:[a-z]([a-z0-9]|-[a-z0-9])*:[0-9]{12}:(key|alias)/.+$')
-                            - message: initialKMSKeyARN is immutable
-                              rule: self == oldSelf
-                        type: object
-                    type: object
                   ingressOperator:
                     description: |-
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
@@ -4405,58 +4312,28 @@ spec:
                           Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
                           These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
                           Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
-                          For NodePool-created resources (EC2 instances and their initial EBS volumes), these will be merged with NodePool-scoped tags.
-                          By default, HostedCluster tags take precedence over NodePool tags when both specify the same key.
-                          To allow a NodePool tag to override a specific HostedCluster tag, set overridePolicy to "Allow" on that tag.
-                          Cluster-scoped resources (VPC endpoints, security groups) only receive HostedCluster tags.
                           These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
                         items:
-                          description: |-
-                            AWSClusterResourceTag is a tag to apply to AWS resources created for a
-                            HostedCluster. It extends the base tag with an overridePolicy field that
-                            controls whether NodePool-level tags can override this tag.
+                          description: AWSResourceTag is a tag to apply to AWS resources
+                            created for the cluster.
                           properties:
                             key:
-                              description: |-
-                                key is the key of the tag.
-                                Must be between 1 and 128 characters and may only contain letters, digits,
-                                spaces, and the characters _ . : / = + - @
+                              description: key is the key of the tag.
                               maxLength: 128
                               minLength: 1
-                              type: string
-                              x-kubernetes-validations:
-                              - message: 'key must only contain letters, digits, spaces,
-                                  and the characters _ . : / = + - @'
-                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
-                            overridePolicy:
-                              description: |-
-                                overridePolicy controls whether a NodePool-level tag with the same key can
-                                override this HostedCluster-level tag.
-
-                                When set to "Allow", a NodePool tag with the same key will take precedence
-                                over this HostedCluster tag. When set to "Deny" or omitted, the
-                                HostedCluster value is preserved and the NodePool tag is ignored for that
-                                key.
-                              enum:
-                              - Allow
-                              - Deny
+                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
                             value:
                               description: |-
                                 value is the value of the tag.
-                                Must be between 1 and 256 characters and may only contain letters, digits,
-                                spaces, and the characters _ . : / = + - @
 
                                 Some AWS service do not support empty values. Since tags are added to
                                 resources in many services, the length of the tag value must meet the
                                 requirements of all services.
                               maxLength: 256
                               minLength: 1
+                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
-                              x-kubernetes-validations:
-                              - message: 'value must only contain letters, digits,
-                                  spaces, and the characters _ . : / = + - @'
-                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                           required:
                           - key
                           - value
@@ -4770,9 +4647,8 @@ spec:
                           before they are terminated, providing a best effort for graceful shutdown.
 
                           Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
-                          Supports FedRAMP/FIPS endpoints (sqs-fips prefix) and GovCloud regions.
                         maxLength: 512
-                        pattern: ^https://sqs(-fips)?\.([a-z0-9-]+)\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$
+                        pattern: ^https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$
                         type: string
                     required:
                     - region
@@ -5609,8 +5485,8 @@ spec:
                                   If not provided, the controller will auto-create a NAT subnet in the HC's VNet.
                                   The expected format is:
                                     /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
-                                  The maximum length is 357 characters: 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).
-                                maxLength: 357
+                                  The maximum length is 355 characters.
+                                maxLength: 355
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
@@ -5702,26 +5578,22 @@ spec:
                           rule: self == oldSelf
                       subnetID:
                         description: |-
-                          subnetID is the ID of an existing subnet where the HostedCluster's nodes will be created. It must exist in the same
-                          network as VnetID and under the same subscription as SubscriptionID.
+                          subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+                          different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
+                          exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
+                          HostedCluster.Spec.Platform.Azure.SubscriptionID.
                           subnetID is immutable once set.
                           The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
-                          The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                          The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
                           The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
                           The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
                           The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
-
-                          MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).
-                        maxLength: 357
+                        maxLength: 355
                         minLength: 1
                         type: string
                         x-kubernetes-validations:
-                        - message: subnetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
+                        - message: encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
                           rule: size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')
-                        - message: the subscriptionId in the subnetID must be a valid
-                            UUID. It should be 5 groups of hyphen separated hexadecimal
-                            characters in the form 8-4-4-4-12
-                          rule: self.split('/')[2].matches('^([0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}|[{][0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}])$')
                         - message: The resourceGroupName should be between 1 and 90
                             characters, consisting only of alphanumeric characters,
                             hyphens, underscores, periods and parenthesis
@@ -5977,10 +5849,6 @@ spec:
                           Labels are key-value pairs used for organizing and managing GCP resources.
                           Changes to this field will be propagated in-place to GCP resources where supported.
                           GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
-                          HyperShift sets hypershift-openshift-io-cluster to the HostedCluster name and,
-                          when an infrastructure ID is available, hypershift-openshift-io-infra-id to that ID.
-                          These system values override user-supplied values for those keys on GCPCluster
-                          and NodePool machine resources.
                           For GCP labeling guidance, see https://cloud.google.com/compute/docs/labeling-resources
                         items:
                           description: |-
@@ -5996,8 +5864,7 @@ spec:
                                 - Contain only lowercase letters, digits, underscores, or hyphens
                                 - End with a lowercase letter or digit (not a hyphen or underscore)
                                 - Be 1-63 characters long
-                                GCP reserves the 'goog' prefix for system labels, with the exception of
-                                'goog-partner-solution' which Google requires for partner attribution tracking.
+                                GCP reserves the 'goog' prefix for system labels.
                                 See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
                               maxLength: 63
                               minLength: 1
@@ -6007,9 +5874,9 @@ spec:
                                   only lowercase letters, digits, underscores, or
                                   hyphens, and end with a letter or digit
                                 rule: self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
-                              - message: 'Label keys starting with the reserved ''goog''
-                                  prefix are not allowed (exception: ''goog-partner-solution'')'
-                                rule: '!self.startsWith(''goog'') || self == ''goog-partner-solution'''
+                              - message: Label keys starting with the reserved 'goog'
+                                  prefix are not allowed
+                                rule: '!self.startsWith(''goog'')'
                             value:
                               description: |-
                                 value is the value part of the label. A label value can have a maximum of 63 characters.
@@ -6035,104 +5902,6 @@ spec:
                         x-kubernetes-list-map-keys:
                         - key
                         x-kubernetes-list-type: map
-                      resourceTags:
-                        description: |-
-                          resourceTags are pre-existing Google Cloud Resource Manager tags to apply to
-                          GCP resources created for the hosted cluster.
-                          Currently, tags are applied to newly provisioned persistent disks and, when the
-                          image registry is enabled, to its storage bucket. Other GCP resources, such as
-                          worker VMs and their boot disks, are not tagged.
-                          The set of tagged resources is subject to change over time.
-
-                          When omitted, no tags are applied through this setting. When specified,
-                          the list must contain 1 to 50 entries, and each short key must be unique
-                          across the list, even when the tags have different parents. A tag's
-                          parentID defaults to the HostedCluster's GCP project if omitted.
-                          Google Cloud permits at most 50 directly attached tags per resource,
-                          including tags attached by other actors. Coordinate with external tagging
-                          automation to leave sufficient capacity; admission does not reserve tag slots.
-
-                          The referenced tags must already exist, and the storage and imageRegistry
-                          service accounts must have permission to use them. Neither is checked when the
-                          HostedCluster is created. When a tag cannot be applied, provisioning of the
-                          affected disk or bucket can fail, and the error is reported in the persistent
-                          volume claim's events or the image registry operator's status.
-
-                          resourceTags can only be set when the HostedCluster is created. It cannot be
-                          added, removed or changed afterwards. If the configured list must change,
-                          the HostedCluster must be recreated.
-                          Resource tags require a control plane operator image that supports GCP resource
-                          tag propagation. When that capability is unavailable, reconciliation fails
-                          with a message identifying resourceTags on the ReconciliationSucceeded
-                          condition, and dependent component deployments are blocked until a
-                          supporting control plane operator image is configured.
-                        items:
-                          description: |-
-                            GCPResourceTag selects a pre-existing Google Cloud Resource Manager tag by
-                            its parent, short key, and short value. The tag must be defined in the
-                            HostedCluster project or an organization before the cluster is created.
-                            See https://cloud.google.com/resource-manager/docs/tags/tags-overview.
-                          properties:
-                            key:
-                              description: |-
-                                key is required and is the short name of the pre-existing Resource Manager TagKey.
-                                A key is 1-63 characters, begins and ends with
-                                an ASCII alphanumeric character, and may contain letters, digits, '.',
-                                '_', or '-' between them.
-                              maxLength: 63
-                              minLength: 1
-                              type: string
-                              x-kubernetes-validations:
-                              - message: key must start and end with an ASCII letter
-                                  or digit and contain only ASCII letters, digits,
-                                  '.', '_' or '-'
-                                rule: self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.-]{0,61}[a-zA-Z0-9])?$')
-                            parentID:
-                              description: |-
-                                parentID is the ID of the project or organization that defines the TagKey.
-                                When omitted, the HostedCluster's GCP project is used.
-                                An explicit value must be the HostedCluster's GCP project ID or a numeric
-                                organization ID. A numeric value is treated as an organization ID; project
-                                numbers are not supported.
-                                An organization ID consists of 1 to 32 decimal digits and must not start with 0.
-                                A project ID is 6 to 30 characters long, contains only lowercase letters, digits
-                                and hyphens, starts with a letter and must not end with a hyphen.
-                              maxLength: 32
-                              minLength: 1
-                              type: string
-                              x-kubernetes-validations:
-                              - message: parentID must be a numeric organization ID
-                                  or a valid GCP project ID
-                                rule: self.matches('(^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)')
-                            value:
-                              description: |-
-                                value is required and is the short name of the pre-existing Resource Manager TagValue for
-                                key. Exactly one value for a TagKey can be attached to a resource. A value
-                                is 1-63 characters, begins and ends with an ASCII alphanumeric character,
-                                and may contain ASCII letters and digits, `_-.@%=+:,*#&()[]{}`, and
-                                spaces between them.
-                              maxLength: 63
-                              minLength: 1
-                              type: string
-                              x-kubernetes-validations:
-                              - message: value must start and end with an ASCII letter
-                                  or digit and contain only ASCII letters, digits,
-                                  spaces or the characters _-.@%=+:,*#&()[]{}
-                                rule: self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.@%=+:,*#&()\\[\\]{}\\-
-                                  ]{0,61}[a-zA-Z0-9])?$')
-                          required:
-                          - key
-                          - value
-                          type: object
-                        maxItems: 50
-                        minItems: 1
-                        type: array
-                        x-kubernetes-list-type: atomic
-                        x-kubernetes-validations:
-                        - message: resourceTags are immutable
-                          rule: self == oldSelf
-                        - message: resourceTags keys must be unique across all parents
-                          rule: self.all(t, self.exists_one(u, u.key == t.key))
                       workloadIdentity:
                         description: |-
                           workloadIdentity configures Workload Identity Federation for the cluster.
@@ -6273,7 +6042,6 @@ spec:
                                   that manages GCS storage for the internal container image registry.
                                   This GSA requires the following IAM roles:
                                   - roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
-                                  - roles/resourcemanager.tagUser (Tag User - for applying resource tags to the bucket)
                                   See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
                                   Format: service-account-name@project-id.iam.gserviceaccount.com
 
@@ -6438,18 +6206,11 @@ spec:
                     - message: network service account must belong to the same project
                       rule: self.workloadIdentity.serviceAccountsEmails.network.endsWith('@'
                         + self.project + '.iam.gserviceaccount.com')
-                    - fieldPath: .resourceTags
-                      message: resourceTags may only be configured during installation
-                      rule: has(self.resourceTags) == has(oldSelf.resourceTags)
-                    - fieldPath: .resourceTags
-                      message: resourceTags parentID must be an organization ID or
-                        the GCP platform project
-                      rule: '!has(self.resourceTags) || self.resourceTags.all(t, !has(t.parentID)
-                        || t.parentID.matches(''^[1-9][0-9]{0,31}$'') || t.parentID
-                        == self.project)'
-                    - message: ingress service account must belong to the same project
+                    - fieldPath: .workloadIdentity.serviceAccountsEmails.ingress
+                      message: ingress service account must belong to the same project
                       rule: '!has(self.workloadIdentity.serviceAccountsEmails.ingress)
-                        || self.workloadIdentity.serviceAccountsEmails.ingress.endsWith(''@''
+                        || size(self.workloadIdentity.serviceAccountsEmails.ingress)
+                        == 0 || self.workloadIdentity.serviceAccountsEmails.ingress.endsWith(''@''
                         + self.project + ''.iam.gserviceaccount.com'')'
                     - fieldPath: .delegation
                       message: delegation cannot be removed once set
@@ -6936,9 +6697,6 @@ spec:
                 - type
                 type: object
                 x-kubernetes-validations:
-                - message: resourceTags may only be configured during installation
-                  rule: (has(self.gcp) && has(self.gcp.resourceTags)) == (has(oldSelf.gcp)
-                    && has(oldSelf.gcp.resourceTags))
                 - message: delegation cannot be removed once set
                   rule: '!has(oldSelf.gcp) || !has(oldSelf.gcp.delegation) || (has(self.gcp)
                     && has(self.gcp.delegation))'
@@ -7465,10 +7223,9 @@ spec:
                                   || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')
                             port:
                               description: |-
-                                port is the port of the NodePort service.
-                                If omitted, the port is dynamically assigned when the service is created.
+                                port is the port of the NodePort service. If <=0, the port is dynamically
+                                assigned when the service is created.
                               format: int32
-                              minimum: 1
                               type: integer
                           required:
                           - address
@@ -7905,19 +7662,6 @@ spec:
                   is managed by an external service.
                   https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468
                 type: boolean
-              initialization:
-                description: initialization contains fields that track the status
-                  of the initialization of the HostedControlPlane.
-                minProperties: 1
-                properties:
-                  controlPlaneInitialized:
-                    description: |-
-                      controlPlaneInitialized is true when the control plane is functional enough to accept requests.
-                      Once this condition is marked true, its value is never changed. See the Ready condition for an
-                      indication of the current readiness of the cluster's control plane.
-                      This satisfies CAPI contract https://cluster-api.sigs.k8s.io/developer/providers/contracts/control-plane#controlplane-initialization-completed
-                    type: boolean
-                type: object
               initialized:
                 default: false
                 description: |-

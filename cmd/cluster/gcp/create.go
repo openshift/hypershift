@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
 	"slices"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -153,7 +151,7 @@ type validatedCreateOptions struct {
 }
 
 // Validate validates the GCP create cluster command options
-func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
+func (o *RawCreateOptions) Validate(_ context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
 
 	if err := util.ValidateRequiredOption(flagProject, o.Project); err != nil {
 		return nil, err

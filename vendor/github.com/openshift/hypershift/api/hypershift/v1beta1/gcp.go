@@ -205,7 +205,11 @@ type GCPPlatformSpec struct {
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.delegation) || has(self.delegation)",message="delegation cannot be removed once set",fieldPath=".delegation"
+	// delegation configures DNS delegation for the ingress wildcard certificate
+	// of the hosted cluster. When omitted, no delegation record is created.
+	// +optional
+	Delegation GCPDNSDelegationSpec `json:"delegation,omitzero"`
+
 	// workloadIdentity configures Workload Identity Federation for the cluster.
 	// This enables secure, short-lived token-based authentication without storing
 	// long-term service account keys. These fields are immutable after cluster creation
