@@ -80,6 +80,12 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		conditions[hyperv1.GCPEndpointAvailable] = metav1.ConditionTrue
 		conditions[hyperv1.GCPServiceAttachmentAvailable] = metav1.ConditionTrue
 
+		// GCP is the only platform that reconciles the ingress credentials
+		// condition. It reports True whether the Ingress capability is enabled
+		// (the ingress service account is required) or disabled (no ingress
+		// credentials are needed), so a healthy cluster must always carry it.
+		conditions[hyperv1.IngressCredentialsFound] = metav1.ConditionTrue
+
 		// GCP KMS validation - future support for GCP KMS secret encryption
 		// Following the same pattern as AWS and Azure
 		// Note: GCP KMS integration is not yet implemented but prepared for future use
