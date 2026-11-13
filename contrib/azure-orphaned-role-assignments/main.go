@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,14 +27,15 @@ import (
 )
 
 type options struct {
-	subscriptionID string
-	roleFilter     string
-	scopeFilter    string
-	principalTypes string
-	minAge         time.Duration
-	dryRun         bool
-	allOrphans     bool
-	verbose        bool
+	subscriptionID    string
+	roleFilter        string
+	scopeFilter       string
+	principalTypes    string
+	minAge            time.Duration
+	dryRun            bool
+	allOrphans        bool
+	verbose           bool
+	deleteConcurrency int
 }
 
 // apiTimeout bounds each individual Azure/Graph API call so a stalled request
@@ -52,6 +54,7 @@ func main() {
 	flag.BoolVar(&opts.dryRun, "dry-run", true, "If true, only print what would be deleted (default: true)")
 	flag.BoolVar(&opts.allOrphans, "all-orphans", false, "Allow deleting across the entire subscription without a -scope-filter or -role-filter. Required to opt in to a subscription-wide sweep when -dry-run=false.")
 	flag.BoolVar(&opts.verbose, "verbose", false, "Enable verbose logging")
+	flag.IntVar(&opts.deleteConcurrency, "delete-concurrency", 5, "Maximum concurrent deletion requests (must be positive; 1 deletes sequentially)")
 	flag.Parse()
 
 	if opts.subscriptionID == "" {
@@ -109,6 +112,9 @@ type assignmentInfo struct {
 }
 
 func run(ctx context.Context, opts options) error {
+	if err := validateDeleteConcurrency(opts); err != nil {
+		return err
+	}
 	// Create Azure credentials using DefaultAzureCredential.
 	// This supports environment variables, managed identity, Azure CLI, etc.
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -265,45 +271,89 @@ type assignmentDeleter interface {
 // deleteCandidates deletes the selected assignments (or, in dry-run, only reports
 // them), attempting every candidate and returning an error if any deletion failed.
 func deleteCandidates(ctx context.Context, deleter assignmentDeleter, candidates []assignmentInfo, opts options) error {
+	if err := validateDeleteConcurrency(opts); err != nil {
+		return err
+	}
 	var deleted, failed int
-	for _, a := range candidates {
-		if opts.dryRun {
+	if opts.dryRun {
+		for _, a := range candidates {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if opts.verbose {
 				log.Printf("[DRY-RUN] Would delete assignment %s (role=%q principalType=%s principal=%s scope=%s)",
 					shortID(a.id), a.roleName, a.principalType, a.principalID, a.scope)
 			}
-			continue
 		}
-		// Default logging avoids raw principal IDs and full ARM scopes; -verbose
-		// includes them for auditing.
-		if opts.verbose {
-			log.Printf("Deleting assignment %s (role=%q principal=%s scope=%s)", shortID(a.id), a.roleName, a.principalID, a.scope)
-		} else {
-			log.Printf("Deleting orphaned assignment %s (role=%q)", shortID(a.id), a.roleName)
-		}
-		if err := func() error {
-			delCtx, cancel := context.WithTimeout(ctx, apiTimeout)
-			defer cancel()
-			_, err := deleter.DeleteByID(delCtx, a.id, nil)
-			return err
-		}(); err != nil {
-			log.Printf("  ERROR: failed to delete assignment %s: %v", shortID(a.id), err)
-			failed++
-			continue
-		}
-		deleted++
-	}
-
-	log.Println("")
-	if opts.dryRun {
 		log.Printf("DRY RUN: would delete %d orphaned role assignments", len(candidates))
 		log.Println("To actually delete them, run with -dry-run=false")
-	} else {
-		log.Printf("Deleted %d role assignments, %d failed", deleted, failed)
+		return ctx.Err()
+	}
+	jobs := make(chan assignmentInfo)
+	var workers sync.WaitGroup
+	var totals sync.Mutex
+	for worker := 0; worker < min(opts.deleteConcurrency, len(candidates)); worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for a := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				// Default logging avoids raw principal IDs and full ARM scopes; -verbose
+				// includes them for auditing.
+				if opts.verbose {
+					log.Printf("Deleting assignment %s (role=%q principal=%s scope=%s)", shortID(a.id), a.roleName, a.principalID, a.scope)
+				} else {
+					log.Printf("Deleting orphaned assignment %s (role=%q)", shortID(a.id), a.roleName)
+				}
+				if err := func() error {
+					delCtx, cancel := context.WithTimeout(ctx, apiTimeout)
+					defer cancel()
+					_, err := deleter.DeleteByID(delCtx, a.id, nil)
+					return err
+				}(); err != nil {
+					log.Printf("  ERROR: failed to delete assignment %s: %v", shortID(a.id), err)
+					totals.Lock()
+					failed++
+					totals.Unlock()
+					continue
+				}
+				totals.Lock()
+				deleted++
+				totals.Unlock()
+			}
+		}()
+	}
+schedule:
+	for _, candidate := range candidates {
+		if ctx.Err() != nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			break schedule
+		case jobs <- candidate:
+		}
+	}
+	close(jobs)
+	workers.Wait()
+
+	log.Println("")
+	log.Printf("Deleted %d role assignments, %d failed", deleted, failed)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("deletion canceled: %d deleted, %d failed, %d not attempted: %w", deleted, failed, len(candidates)-deleted-failed, err)
 	}
 
 	if failed > 0 {
 		return fmt.Errorf("%d of %d role assignment deletions failed", failed, deleted+failed)
+	}
+	return nil
+}
+
+func validateDeleteConcurrency(opts options) error {
+	if opts.deleteConcurrency <= 0 {
+		return fmt.Errorf("-delete-concurrency must be > 0, got %d", opts.deleteConcurrency)
 	}
 	return nil
 }

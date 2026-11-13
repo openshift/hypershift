@@ -38,6 +38,20 @@ These orphans:
 4. In dry-run (the default) it only prints. With `-dry-run=false` it deletes the
    selected orphaned assignments (`DeleteByID`).
 
+Deletion uses a bounded worker pool, with up to **5** requests in flight by
+default. Set `-delete-concurrency=1` for sequential deletion, or another positive
+value to adjust the limit. Each request still deletes one assignment; this is not
+a bulk-delete API. Azure SDK retries and the two-minute per-request timeout remain
+unchanged. Higher concurrency may trigger Azure throttling and does not guarantee
+a speedup. Selection, scope filters, and the min-age guard are unchanged, and
+dry-run never sends deletion requests.
+
+On cancellation, the tool stops scheduling new deletions, cancels in-flight
+requests, and waits for started workers before returning an error. Completed
+successes, failed requests, and candidates not attempted are reported separately;
+candidates not attempted are never counted as deleted. Without cancellation, all
+candidates are attempted even if individual deletions fail.
+
 ### Safety guardrails
 
 - **Requires an explicit ownership boundary to delete broadly.** With
@@ -108,6 +122,7 @@ are not swept.
 |------|----------|---------|-------------|
 | `-subscription-id` | Yes | | Azure subscription ID |
 | `-dry-run` | No | `true` | Preview changes without deleting |
+| `-delete-concurrency` | No | `5` | Maximum concurrent deletion requests. Must be positive, including in dry-run; `1` deletes sequentially. |
 | `-all-orphans` | No | `false` | Opt in to a subscription-wide sweep. Required to delete (`-dry-run=false`) when neither `-scope-filter` nor `-role-filter` is set. |
 | `-verbose` | No | `false` | Show individual assignments and Graph batch progress |
 | `-scope-filter` | No | | Only consider assignments in this scope. A bare name (e.g. `os4-common`) matches that resource group **exactly** — it will not match `os4-common-backup`; a value containing `/` is treated as a scope path and matches that scope or anything beneath it. Case-insensitive. |

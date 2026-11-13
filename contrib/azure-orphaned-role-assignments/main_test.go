@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -222,12 +225,43 @@ func TestSelectCandidates(t *testing.T) {
 
 // fakeDeleter records DeleteByID calls and fails those whose ID is in failIDs.
 type fakeDeleter struct {
-	calls   []string
-	failIDs sets.Set[string]
+	mutex     sync.Mutex
+	calls     []string
+	failIDs   sets.Set[string]
+	entered   chan context.Context
+	release   <-chan struct{}
+	canceled  chan struct{}
+	active    int
+	maxActive int
 }
 
-func (f *fakeDeleter) DeleteByID(_ context.Context, roleAssignmentID string, _ *armauthorization.RoleAssignmentsClientDeleteByIDOptions) (armauthorization.RoleAssignmentsClientDeleteByIDResponse, error) {
+func (f *fakeDeleter) DeleteByID(ctx context.Context, roleAssignmentID string, _ *armauthorization.RoleAssignmentsClientDeleteByIDOptions) (armauthorization.RoleAssignmentsClientDeleteByIDResponse, error) {
+	f.mutex.Lock()
 	f.calls = append(f.calls, roleAssignmentID)
+	f.active++
+	f.maxActive = max(f.maxActive, f.active)
+	f.mutex.Unlock()
+	defer func() {
+		f.mutex.Lock()
+		f.active--
+		f.mutex.Unlock()
+	}()
+	if f.entered != nil {
+		f.entered <- ctx
+	}
+	if f.release != nil {
+		select {
+		case <-f.release:
+		case <-ctx.Done():
+			if f.canceled != nil {
+				f.canceled <- struct{}{}
+			}
+			<-f.release
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return armauthorization.RoleAssignmentsClientDeleteByIDResponse{}, err
+	}
 	if f.failIDs.Has(roleAssignmentID) {
 		return armauthorization.RoleAssignmentsClientDeleteByIDResponse{}, fmt.Errorf("simulated delete failure for %s", roleAssignmentID)
 	}
@@ -242,7 +276,7 @@ func TestDeleteCandidates(t *testing.T) {
 
 	t.Run("When dry-run is enabled, it should not call the deleter and should succeed", func(t *testing.T) {
 		f := &fakeDeleter{}
-		if err := deleteCandidates(context.Background(), f, candidates, options{dryRun: true}); err != nil {
+		if err := deleteCandidates(context.Background(), f, candidates, options{dryRun: true, deleteConcurrency: 5}); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 		if len(f.calls) != 0 {
@@ -252,7 +286,7 @@ func TestDeleteCandidates(t *testing.T) {
 
 	t.Run("When all deletions succeed, it should delete every candidate and return no error", func(t *testing.T) {
 		f := &fakeDeleter{}
-		if err := deleteCandidates(context.Background(), f, candidates, options{dryRun: false}); err != nil {
+		if err := deleteCandidates(context.Background(), f, candidates, options{deleteConcurrency: 5}); err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 		if !equalStringSets(f.calls, []string{"a1", "a2"}) {
@@ -260,16 +294,175 @@ func TestDeleteCandidates(t *testing.T) {
 		}
 	})
 
-	t.Run("When one deletion fails, it should still attempt every candidate and return an error", func(t *testing.T) {
-		f := &fakeDeleter{failIDs: sets.New[string]("a1")}
-		err := deleteCandidates(context.Background(), f, candidates, options{dryRun: false})
-		if err == nil {
-			t.Fatal("expected an aggregate error, got nil")
+	for _, concurrency := range []int{1, 5} {
+		t.Run(fmt.Sprintf("When one deletion fails with concurrency %d, it should still attempt every candidate", concurrency), func(t *testing.T) {
+			f := &fakeDeleter{failIDs: sets.New[string]("a1")}
+			err := deleteCandidates(context.Background(), f, candidates, options{deleteConcurrency: concurrency})
+			if err == nil || err.Error() != "1 of 2 role assignment deletions failed" {
+				t.Fatalf("expected an accurate aggregate error, got %v", err)
+			}
+			if !equalStringSets(f.calls, []string{"a1", "a2"}) {
+				t.Errorf("expected all candidates attempted despite failure, got %v", f.calls)
+			}
+		})
+	}
+
+	for _, concurrency := range []int{1, 2, 5} {
+		t.Run(fmt.Sprintf("When concurrency is %d, it should overlap requests up to the limit", concurrency), func(t *testing.T) {
+			assertDeleteConcurrency(t, concurrency)
+		})
+	}
+
+	t.Run("When cancellation occurs during deletion, it should stop scheduling and wait for started calls", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		watchdog, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		release := make(chan struct{})
+		var releaseOnce sync.Once
+		unblock := func() { releaseOnce.Do(func() { close(release) }) }
+		defer unblock()
+		fake := &fakeDeleter{entered: make(chan context.Context, 2), canceled: make(chan struct{}, 2), release: release}
+		result := make(chan error, 1)
+		go func() {
+			result <- deleteCandidates(ctx, fake, append(candidates, assignmentInfo{id: "a3"}), options{deleteConcurrency: 2})
+		}()
+		for request := 0; request < 2; request++ {
+			select {
+			case <-fake.entered:
+			case <-watchdog.Done():
+				t.Fatal("timed out waiting for started calls")
+			}
 		}
-		if !equalStringSets(f.calls, []string{"a1", "a2"}) {
-			t.Errorf("expected all candidates attempted despite failure, got %v", f.calls)
+		cancel()
+		for request := 0; request < 2; request++ {
+			select {
+			case <-fake.canceled:
+			case <-watchdog.Done():
+				t.Fatal("parent cancellation did not reach started calls")
+			}
+		}
+		select {
+		case err := <-result:
+			t.Fatalf("returned before started calls finished: %v", err)
+		default:
+		}
+		unblock()
+		select {
+		case err := <-result:
+			if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "0 deleted, 2 failed, 1 not attempted") {
+				t.Fatalf("expected cancellation with accurate totals, got %v", err)
+			}
+		case <-watchdog.Done():
+			t.Fatal("timed out waiting for cancellation")
+		}
+		if len(fake.calls) != 2 || fake.active != 0 {
+			t.Fatalf("expected only started calls, all finished; calls=%v active=%d", fake.calls, fake.active)
 		}
 	})
+
+	t.Run("When already canceled, it should not start any deletions", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		fake := &fakeDeleter{}
+		err := deleteCandidates(ctx, fake, candidates, options{deleteConcurrency: 5})
+		if !errors.Is(err, context.Canceled) || len(fake.calls) != 0 {
+			t.Fatalf("expected cancellation without calls, got err=%v calls=%v", err, fake.calls)
+		}
+	})
+
+	t.Run("When no candidates exist, it should succeed without calls", func(t *testing.T) {
+		fake := &fakeDeleter{}
+		if err := deleteCandidates(context.Background(), fake, nil, options{deleteConcurrency: 5}); err != nil || len(fake.calls) != 0 {
+			t.Fatalf("expected success without calls, got %v", err)
+		}
+	})
+
+	for _, concurrency := range []int{0, -1} {
+		t.Run(fmt.Sprintf("When concurrency is %d, it should reject deletion before any calls", concurrency), func(t *testing.T) {
+			fake := &fakeDeleter{}
+			if err := deleteCandidates(context.Background(), fake, candidates, options{deleteConcurrency: concurrency}); err == nil || len(fake.calls) != 0 {
+				t.Fatalf("expected invalid concurrency without calls, got %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateDeleteConcurrency(t *testing.T) {
+	for _, concurrency := range []int{-1, 0, 1, 5} {
+		t.Run(fmt.Sprintf("When concurrency is %d, it should require a positive value", concurrency), func(t *testing.T) {
+			err := validateDeleteConcurrency(options{deleteConcurrency: concurrency})
+			if (err != nil) != (concurrency <= 0) {
+				t.Fatalf("unexpected validation result: %v", err)
+			}
+		})
+	}
+}
+
+func assertDeleteConcurrency(t *testing.T, concurrency int) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	watchdog, stop := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stop()
+	release := make(chan struct{})
+	defer close(release)
+	batch := make([]assignmentInfo, 8)
+	for index := range batch {
+		batch[index].id = fmt.Sprintf("assignment-%d", index)
+	}
+	fake := &fakeDeleter{entered: make(chan context.Context, len(batch)), release: release}
+	result := make(chan error, 1)
+	go func() { result <- deleteCandidates(ctx, fake, batch, options{deleteConcurrency: concurrency}) }()
+	for request := 0; request < len(batch); request++ {
+		select {
+		case callCtx := <-fake.entered:
+			deadline, ok := callCtx.Deadline()
+			if !ok || time.Until(deadline) > apiTimeout || time.Until(deadline) < apiTimeout-10*time.Second {
+				t.Error("expected a bounded request deadline")
+			}
+		case <-watchdog.Done():
+			t.Fatal("timed out waiting for delete calls")
+		}
+		if request >= concurrency-1 {
+			select {
+			case release <- struct{}{}:
+			case <-watchdog.Done():
+				t.Fatal("timed out releasing delete call")
+			}
+		}
+	}
+	for request := 1; request < concurrency; request++ {
+		select {
+		case release <- struct{}{}:
+		case <-watchdog.Done():
+			t.Fatal("timed out releasing remaining calls")
+		}
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-watchdog.Done():
+		t.Fatal("timed out waiting for workers")
+	}
+	if fake.maxActive != concurrency || len(fake.calls) != len(batch) || fake.active != 0 {
+		t.Fatalf("expected %d concurrent calls and all attempts completed, got max=%d calls=%d active=%d", concurrency, fake.maxActive, len(fake.calls), fake.active)
+	}
+}
+
+func TestRun(t *testing.T) {
+	for _, concurrency := range []int{-1, 0} {
+		for _, dryRun := range []bool{true, false} {
+			t.Run(fmt.Sprintf("When concurrency is %d and dry-run is %t, it should fail before creating Azure clients", concurrency, dryRun), func(t *testing.T) {
+				err := run(context.Background(), options{deleteConcurrency: concurrency, dryRun: dryRun})
+				if err == nil || !strings.Contains(err.Error(), "-delete-concurrency must be > 0") {
+					t.Fatalf("expected concurrency validation before Azure operations, got %v", err)
+				}
+			})
+		}
+	}
 }
 
 func equalStringSets(a, b []string) bool {
