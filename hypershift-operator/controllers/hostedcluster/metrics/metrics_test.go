@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -1818,6 +1819,296 @@ func TestCollectFailureConditionCounts(t *testing.T) {
 				if got := (*counts[hyperv1.GCPPlatform])[string(conditionType)]; got != 0 {
 					t.Errorf("unexpected condition %s failure count: %d", conditionType, got)
 				}
+			}
+		})
+	}
+}
+
+//nolint:hypershiftlinter // Subtests verify collector lifecycle (deletion cleanup) across multiple production functions.
+func TestCreateHostedClustersMetricsCollector(t *testing.T) {
+	t.Run("When a cluster is deleted, no failure reason metrics should be emitted", func(t *testing.T) {
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "hc",
+				Namespace:         "any",
+				CreationTimestamp: metav1.Time{Time: now},
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "id",
+				Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			},
+		}
+
+		clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+
+		reg := prometheus.NewPedanticRegistry()
+		reg.MustRegister(createHostedClustersMetricsCollector(c, clk))
+
+		// First gather: verify failure reason metrics are emitted.
+		result1, err := reg.Gather()
+		if err != nil {
+			t.Fatalf("first gather failed: %v", err)
+		}
+		failureMetric := findMetricValue(&result1, hcmetrics.InstallationFailureReasonMetricName)
+		if failureMetric == nil {
+			t.Fatal("expected installation_failure_reason metric to be emitted, but it was not found")
+		}
+
+		// Delete the cluster.
+		if err := c.Delete(context.Background(), hcluster); err != nil {
+			t.Fatalf("failed to delete hcluster: %v", err)
+		}
+
+		// Second gather: verify no failure reason metrics for the deleted cluster.
+		result2, err := reg.Gather()
+		if err != nil {
+			t.Fatalf("second gather failed: %v", err)
+		}
+		failureMetric2 := findMetricValue(&result2, hcmetrics.InstallationFailureReasonMetricName)
+		if failureMetric2 != nil {
+			t.Errorf("expected no installation_failure_reason metrics after cluster deletion, but found %d series", len(failureMetric2.Metric))
+		}
+	})
+
+	t.Run("When HC condition is RouteNotAdmitted failure, gauge should reflect current state", func(t *testing.T) {
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "hc",
+				Namespace:         "any",
+				CreationTimestamp: metav1.Time{Time: now},
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "id",
+				Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			},
+		}
+
+		clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).
+			WithStatusSubresource(hcluster).
+			WithObjects(hcluster).Build()
+		reg := prometheus.NewPedanticRegistry()
+		reg.MustRegister(createHostedClustersMetricsCollector(c, clk))
+
+		// Collect 1: baseline with no conditions → all gauges 0.
+		result, err := reg.Gather()
+		if err != nil {
+			t.Fatalf("gather 1 failed: %v", err)
+		}
+		if got := getFailureReasonGauge(result, hyperv1.ReasonRouteNotAdmitted); got != 0 {
+			t.Errorf("after baseline: RouteNotAdmitted = %v, want 0", got)
+		}
+
+		// Set InfrastructureReady=False with Reason=RouteNotAdmitted.
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:   string(hyperv1.InfrastructureReady),
+			Status: metav1.ConditionFalse,
+			Reason: hyperv1.ReasonRouteNotAdmitted,
+		})
+		if err := c.Status().Update(context.Background(), hcluster); err != nil {
+			t.Fatalf("status update failed: %v", err)
+		}
+
+		// Collect 2: failure active → gauge = 1.
+		result, err = reg.Gather()
+		if err != nil {
+			t.Fatalf("gather 2 failed: %v", err)
+		}
+		if got := getFailureReasonGauge(result, hyperv1.ReasonRouteNotAdmitted); got != 1 {
+			t.Errorf("during failure: RouteNotAdmitted = %v, want 1", got)
+		}
+
+		// Recover: set InfrastructureReady=True.
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:   string(hyperv1.InfrastructureReady),
+			Status: metav1.ConditionTrue,
+			Reason: "AsExpected",
+		})
+		if err := c.Status().Update(context.Background(), hcluster); err != nil {
+			t.Fatalf("status update failed: %v", err)
+		}
+		result, err = reg.Gather()
+		if err != nil {
+			t.Fatalf("gather 3 failed: %v", err)
+		}
+		if got := getFailureReasonGauge(result, hyperv1.ReasonRouteNotAdmitted); got != 0 {
+			t.Errorf("after recovery: RouteNotAdmitted = %v, want 0", got)
+		}
+	})
+
+	t.Run("When a cluster is deleted, it should clean up installation stage metric", func(t *testing.T) {
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "hc",
+				Namespace:         "any",
+				CreationTimestamp: metav1.Time{Time: now},
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "id",
+				Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			},
+			Status: hyperv1.HostedClusterStatus{
+				Installation: hyperv1.InstallationStatus{
+					Stage: hyperv1.InstallationStageControlPlaneProvisioning,
+				},
+			},
+		}
+
+		clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+
+		collector := createHostedClustersMetricsCollector(c, clk).(*hostedClustersMetricsCollector)
+		reg := prometheus.NewPedanticRegistry()
+		reg.MustRegister(collector)
+
+		// First gather: verify installation stage metric is emitted.
+		result1, err := reg.Gather()
+		if err != nil {
+			t.Fatalf("first gather failed: %v", err)
+		}
+		stageMetric := findMetricValue(&result1, hcmetrics.InstallationStageMetricName)
+		if stageMetric == nil {
+			t.Fatal("expected installation_stage metric to be emitted, but it was not found")
+		}
+
+		// Delete the cluster.
+		if err := c.Delete(context.Background(), hcluster); err != nil {
+			t.Fatalf("failed to delete hcluster: %v", err)
+		}
+
+		// Second gather: verify no installation stage metrics for the deleted cluster.
+		result2, err := reg.Gather()
+		if err != nil {
+			t.Fatalf("second gather failed: %v", err)
+		}
+		stageMetric2 := findMetricValue(&result2, hcmetrics.InstallationStageMetricName)
+		if stageMetric2 != nil {
+			t.Errorf("expected no installation_stage metrics after cluster deletion, but found %d series", len(stageMetric2.Metric))
+		}
+	})
+}
+
+// getFailureReasonGauge extracts the gauge value for a specific reason from gathered metrics.
+func getFailureReasonGauge(result []*dto.MetricFamily, reason string) float64 {
+	mf := findMetricValue(&result, hcmetrics.InstallationFailureReasonMetricName)
+	if mf == nil {
+		return 0
+	}
+	for _, m := range mf.Metric {
+		for _, lp := range m.Label {
+			if lp.GetName() == "reason" && lp.GetValue() == reason {
+				if m.Gauge != nil {
+					return m.Gauge.GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func TestCollectInstallationStageMetric(t *testing.T) {
+	testCases := []struct {
+		name            string
+		installation    hyperv1.InstallationStatus
+		expectedOrdinal float64
+	}{
+		{
+			name: "When stage is Initializing it should report ordinal 0",
+			installation: hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageInitializing,
+			},
+			expectedOrdinal: 0,
+		},
+		{
+			name: "When stage is InfrastructureReady it should report ordinal 1",
+			installation: hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageInfrastructureReady,
+			},
+			expectedOrdinal: 1,
+		},
+		{
+			name: "When stage is ControlPlaneProvisioning it should report ordinal 2",
+			installation: hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageControlPlaneProvisioning,
+			},
+			expectedOrdinal: 2,
+		},
+		{
+			name: "When stage is APIServerAvailable it should report ordinal 3",
+			installation: hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageAPIServerAvailable,
+			},
+			expectedOrdinal: 3,
+		},
+		{
+			name: "When stage is WorkerAvailable it should report ordinal 4",
+			installation: hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageWorkerAvailable,
+			},
+			expectedOrdinal: 4,
+		},
+		{
+			name: "When stage is WaitingForOperators it should report ordinal 5",
+			installation: hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageWaitingForOperators,
+			},
+			expectedOrdinal: 5,
+		},
+		{
+			name: "When stage is InstallationComplete it should report ordinal 6",
+			installation: hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageInstallationComplete,
+			},
+			expectedOrdinal: 6,
+		},
+		{
+			name:            "When installation is empty it should report ordinal -1",
+			installation:    hyperv1.InstallationStatus{},
+			expectedOrdinal: -1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hc",
+					Namespace:         "any",
+					CreationTimestamp: metav1.Time{Time: now},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+					Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Installation: tc.installation,
+				},
+			}
+
+			clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+
+			reg := prometheus.NewPedanticRegistry()
+			reg.MustRegister(createHostedClustersMetricsCollector(c, clk))
+
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			stageMetric := findMetricValue(&result, hcmetrics.InstallationStageMetricName)
+			if stageMetric == nil {
+				t.Fatal("expected installation_stage metric to be emitted, but it was not found")
+			}
+
+			// Expect exactly 1 series per cluster (numeric ordinal).
+			if len(stageMetric.Metric) != 1 {
+				t.Errorf("expected 1 stage series, got %d", len(stageMetric.Metric))
+			}
+
+			if stageMetric.Metric[0].Gauge.GetValue() != tc.expectedOrdinal {
+				t.Errorf("expected ordinal %v, got %v", tc.expectedOrdinal, stageMetric.Metric[0].Gauge.GetValue())
 			}
 		})
 	}

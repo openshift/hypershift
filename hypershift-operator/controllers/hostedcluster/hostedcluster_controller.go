@@ -116,8 +116,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/blang/semver"
@@ -277,12 +279,62 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
 	}
 
+	// Watch ControlPlaneComponents separately with a predicate that filters
+	// update events to only enqueue when Available or RolloutComplete conditions
+	// change. Without this, every CPC status update (which the CPO writes
+	// frequently) would trigger a full HC reconcile.
+	bldr.Watches(&hyperv1.ControlPlaneComponent{},
+		handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())),
+		builder.WithPredicates(predicate.And(
+			cpcConditionChangedPredicate(),
+			reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()),
+		)),
+	)
+
 	// Set based on SCC capability
 	// When SCC is available (OpenShift), the container's security context and UID range is automatically set
 	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
 
 	return bldr.Complete(r)
+}
+
+// cpcConditionChangedPredicate returns a predicate that filters ControlPlaneComponent
+// events to only pass through when the Available or RolloutComplete conditions have
+// changed. Create and Delete events always pass through; Update events are filtered
+// to avoid unnecessary HC reconciliations from frequent CPC status updates that don't
+// affect conditions the HC controller reads (installation stage, resource pressure,
+// metrics).
+func cpcConditionChangedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldCPC, ok := e.ObjectOld.(*hyperv1.ControlPlaneComponent)
+			if !ok {
+				return true
+			}
+			newCPC, ok := e.ObjectNew.(*hyperv1.ControlPlaneComponent)
+			if !ok {
+				return true
+			}
+			return cpcConditionChanged(oldCPC, newCPC, string(hyperv1.ControlPlaneComponentAvailable)) ||
+				cpcConditionChanged(oldCPC, newCPC, string(hyperv1.ControlPlaneComponentRolloutComplete))
+		},
+	}
+}
+
+// cpcConditionChanged returns true if the named condition differs between old and new CPC.
+func cpcConditionChanged(oldCPC, newCPC *hyperv1.ControlPlaneComponent, conditionType string) bool {
+	oldCond := meta.FindStatusCondition(oldCPC.Status.Conditions, conditionType)
+	newCond := meta.FindStatusCondition(newCPC.Status.Conditions, conditionType)
+	if oldCond == nil && newCond == nil {
+		return false
+	}
+	if oldCond == nil || newCond == nil {
+		return true
+	}
+	return oldCond.Status != newCond.Status ||
+		oldCond.Reason != newCond.Reason ||
+		oldCond.Message != newCond.Message
 }
 
 // managedResources are all the resources that are managed as childresources for a HostedCluster
@@ -950,6 +1002,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Copy the control plane version status from the hostedcontrolplane
 	propagateControlPlaneVersion(hcluster, hcp)
+	reconcileInstallationStage(ctx, r.Client, hcluster, hcp, controlPlaneNamespace.Name)
 
 	// Set the AutoNodeEnabled condition reflecting both spec intent and actual component rollout progress.
 	autoNodeCondition, autoNodeProgressing := r.reconcileAutoNodeEnabledCondition(ctx, hcluster, controlPlaneNamespace.Name)
@@ -1038,6 +1091,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 	}
+
+	// Set ManagementClusterResourcePressure condition based on pod scheduling failures.
+	reconcileManagementClusterResourcePressure(ctx, r.Client, hcluster, controlPlaneNamespace.Name)
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -4409,18 +4465,9 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			if typedObj.Name != "etcd" {
 				return []reconcile.Request{}
 			}
-			hcpList := &hyperv1.HostedControlPlaneList{}
-			if err := c.List(ctx, hcpList, client.InNamespace(typedObj.Namespace)); err != nil {
-				log.Error(err, "failed to list hcp")
-				return []reconcile.Request{}
-			}
-			if len(hcpList.Items) == 1 {
-				hcAnnotation := hcpList.Items[0].Annotations[k8sutil.HostedClusterAnnotation]
-				if hcAnnotation != "" {
-					return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
-				}
-			}
-			return []reconcile.Request{}
+			return hostedClusterRequestFromHCPNamespace(ctx, c, typedObj.Namespace)
+		case *hyperv1.ControlPlaneComponent:
+			return hostedClusterRequestFromHCPNamespace(ctx, c, typedObj.Namespace)
 		case *batchv1.Job:
 			if typedObj.Name != pkgetcdrecovery.EtcdRecoveryJob("").Name {
 				return []reconcile.Request{}
@@ -4462,6 +4509,24 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			return handleDefault(typedObj)
 		}
 	}
+}
+
+// hostedClusterRequestFromHCPNamespace resolves the HostedCluster reconcile request
+// for a resource in a hosted control plane namespace by looking up the single HCP's
+// HostedCluster annotation.
+func hostedClusterRequestFromHCPNamespace(ctx context.Context, c client.Client, namespace string) []reconcile.Request {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := c.List(ctx, hcpList, client.InNamespace(namespace)); err != nil {
+		ctrllog.Log.Error(err, "failed to list hcp")
+		return []reconcile.Request{}
+	}
+	if len(hcpList.Items) == 1 {
+		hcAnnotation := hcpList.Items[0].Annotations[k8sutil.HostedClusterAnnotation]
+		if hcAnnotation != "" {
+			return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
+		}
+	}
+	return []reconcile.Request{}
 }
 
 func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, namespace string) error {

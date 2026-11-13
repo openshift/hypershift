@@ -9,6 +9,7 @@ import (
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	platformgcp "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
 	hcmetrics "github.com/openshift/hypershift/pkg/metrics/hostedcluster"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/conditions"
@@ -65,6 +66,9 @@ const (
 
 	HostedClusterAzureInfoMetricHelp    = "Reports Azure information about the given HostedCluster"
 	acrPullIdentityConfiguredMetricHelp = "Indicates whether a HostedCluster has an ACR pull managed identity configured (1=configured, 0=not configured). Only emitted for Azure platform clusters."
+
+	installationStageMetricHelp         = "Reports the current installation stage of a HostedCluster as a numeric ordinal gauge (0=Initializing, 1=InfrastructureReady, 2=ControlPlaneProvisioning, 3=APIServerAvailable, 4=WorkerAvailable, 5=WaitingForOperators, 6=InstallationComplete)."
+	installationFailureReasonMetricHelp = "Indicates whether a HostedCluster is currently experiencing a known installation failure reason (1=active, 0=not active)."
 )
 
 // semantically constant - not supposed to be changed at runtime
@@ -182,6 +186,22 @@ var (
 	acrPullIdentityConfiguredMetricDesc = prometheus.NewDesc(
 		hcmetrics.AcrPullIdentityConfiguredMetricName, acrPullIdentityConfiguredMetricHelp,
 		hclusterLabels, nil)
+
+	installationStageMetricDesc = prometheus.NewDesc(
+		hcmetrics.InstallationStageMetricName, installationStageMetricHelp,
+		hclusterLabels, nil)
+
+	installationFailureReasonMetricDesc = prometheus.NewDesc(
+		hcmetrics.InstallationFailureReasonMetricName, installationFailureReasonMetricHelp,
+		append(hclusterLabels, "reason"), nil)
+
+	knownFailureReasons = []string{
+		hyperv1.ReasonPodSchedulingFailed,
+		hyperv1.ReasonCrashLoopBackOff,
+		hyperv1.ReasonImagePullBackOff,
+		hyperv1.ReasonRouteNotAdmitted,
+		string(hyperv1.ClusterVersionFailing),
+	}
 )
 
 type hostedClustersMetricsCollector struct {
@@ -258,7 +278,15 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		c.collectTransitionDurationMetrics(hcluster, currentCollectTime)
 
 		hclusterLabelValues := []string{hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID}
-		c.collectPerClusterMetrics(ch, hcluster, hclusterLabelValues)
+		cpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		// List CPCs scoped to this HC's control plane namespace instead of
+		// using a cluster-wide list, to avoid creating a global CPC informer.
+		cpcs := &hyperv1.ControlPlaneComponentList{}
+		if err := c.List(context.Background(), cpcs, client.InNamespace(cpNamespace)); err != nil {
+			log.Error(err, "failed to list control plane components", "namespace", cpNamespace)
+			cpcs = &hyperv1.ControlPlaneComponentList{}
+		}
+		c.collectPerClusterMetrics(ch, hcluster, hclusterLabelValues, cpcs.Items)
 	}
 
 	emitAggregatedMetrics(ch, identityProviderToHClustersCount, platformToHClustersCount, platformToFailureConditionToHClustersCount)
@@ -337,7 +365,7 @@ func (c *hostedClustersMetricsCollector) collectTransitionDurationMetrics(hclust
 	}
 }
 
-func (c *hostedClustersMetricsCollector) collectPerClusterMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+func (c *hostedClustersMetricsCollector) collectPerClusterMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string, cpcs []hyperv1.ControlPlaneComponent) {
 	collectInitialAvailabilityMetric(ch, c.clock, hcluster, hclusterLabelValues)
 	collectInitialRollingOutMetric(ch, c.clock, hcluster, hclusterLabelValues)
 	collectUpgradingDurationMetric(ch, c.clock, hcluster, hclusterLabelValues)
@@ -350,6 +378,8 @@ func (c *hostedClustersMetricsCollector) collectPerClusterMetrics(ch chan<- prom
 	collectAwsCredsMetric(ch, hcluster, hclusterLabelValues)
 	collectGcpCredsMetric(ch, hcluster, hclusterLabelValues)
 	collectDeletingMetrics(ch, c.clock, hcluster, hclusterLabelValues)
+	collectInstallationStageMetric(ch, hcluster, hclusterLabelValues)
+	collectInstallationFailureReasonMetric(ch, hcluster, hclusterLabelValues, cpcs)
 }
 
 func collectInitialAvailabilityMetric(ch chan<- prometheus.Metric, clk clock.Clock, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
@@ -640,4 +670,61 @@ func emitAggregatedMetrics(ch chan<- prometheus.Metric, identityProviderToHClust
 // Returns the time.Time in UTC format.
 func (c *hostedClustersMetricsCollector) expiryTimeProxyCA(hcluster *hyperv1.HostedCluster) (*time.Time, error) {
 	return proxy.ExpiryTimeProxyCA(context.TODO(), c.Client, hcluster)
+}
+
+// collectInstallationStageMetric emits a numeric ordinal gauge for the
+// HostedCluster's current installation stage. Emits -1 when the stage
+// field is empty (pre-existing clusters before first reconciliation).
+func collectInstallationStageMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	currentStage := hcluster.Status.Installation.Stage
+	ordinal := hyperv1.InstallationStageOrdinal(currentStage)
+	ch <- prometheus.MustNewConstMetric(
+		installationStageMetricDesc,
+		prometheus.GaugeValue,
+		float64(ordinal),
+		hclusterLabelValues...,
+	)
+}
+
+// collectInstallationFailureReasonMetric emits a gauge per known failure reason
+// for the given HostedCluster: 1 if the reason is currently active, 0 if not.
+// Active reasons are derived from CPC Available conditions and HC-level conditions.
+func collectInstallationFailureReasonMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string, cpcs []hyperv1.ControlPlaneComponent) {
+	// Collect active reasons from CPC RolloutComplete conditions.
+	// RolloutComplete is used instead of Available to catch partial scheduling
+	// pressure (e.g., etcd with 1/3 replicas) — consistent with
+	// reconcileManagementClusterResourcePressure in resource_pressure.go.
+	activeReasons := make(map[string]bool, len(knownFailureReasons))
+	for i := range cpcs {
+		cond := meta.FindStatusCondition(cpcs[i].Status.Conditions, string(hyperv1.ControlPlaneComponentRolloutComplete))
+		if cond != nil && cond.Status == metav1.ConditionFalse && cond.Reason != "" {
+			activeReasons[cond.Reason] = true
+		}
+	}
+
+	// Collect active reasons from HC-level conditions.
+	// InfrastructureReady=False → use its Reason as the failure reason.
+	infraCond := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.InfrastructureReady))
+	if infraCond != nil && infraCond.Status == metav1.ConditionFalse && infraCond.Reason != "" {
+		activeReasons[infraCond.Reason] = true
+	}
+	// ClusterVersionFailing=True → CVO reports a failure.
+	cvFailingCond := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ClusterVersionFailing))
+	if cvFailingCond != nil && cvFailingCond.Status == metav1.ConditionTrue {
+		activeReasons[string(hyperv1.ClusterVersionFailing)] = true
+	}
+
+	// Emit a gauge per known reason: 1 if active, 0 if not.
+	for _, reason := range knownFailureReasons {
+		val := 0.0
+		if activeReasons[reason] {
+			val = 1.0
+		}
+		ch <- prometheus.MustNewConstMetric(
+			installationFailureReasonMetricDesc,
+			prometheus.GaugeValue,
+			val,
+			append(hclusterLabelValues, reason)...,
+		)
+	}
 }

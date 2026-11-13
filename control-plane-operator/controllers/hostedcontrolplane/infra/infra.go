@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -27,6 +28,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -49,6 +52,12 @@ type InfrastructureStatus struct {
 	NeedInternalRouter      bool
 	ExternalHCPRouterHost   string
 	NeedExternalRouter      bool
+
+	// RouteNotAdmitted is true when one or more HCP-managed Routes have not been
+	// admitted by the router (empty .status.ingress or Admitted=False).
+	RouteNotAdmitted bool
+	// RouteNotAdmittedMsg describes which routes are not admitted.
+	RouteNotAdmittedMsg string
 }
 
 func (s InfrastructureStatus) IsReady() bool {
@@ -168,7 +177,40 @@ func (r *Reconciler) ReconcileInfrastructureStatus(ctx context.Context, hcp *hyp
 		infraStatus.Message = strings.Join(messages, "; ")
 	}
 
+	// Check Route admission status by inspecting Route resources directly,
+	// only after all required LoadBalancer services have been provisioned.
+	if areLoadBalancersReady(hcp, infraStatus) {
+		notAdmittedRoutes, routeErr := r.CheckRouteAdmission(ctx, hcp, infraStatus.NeedInternalRouter)
+		if routeErr != nil {
+			errs = append(errs, routeErr)
+		} else if len(notAdmittedRoutes) > 0 {
+			infraStatus.RouteNotAdmitted = true
+			infraStatus.RouteNotAdmittedMsg = fmt.Sprintf("Routes not admitted: %s", strings.Join(notAdmittedRoutes, ", "))
+		}
+	}
+
 	return infraStatus, utilerrors.NewAggregate(errs)
+}
+
+func areLoadBalancersReady(hcp *hyperv1.HostedControlPlane, s InfrastructureStatus) bool {
+	if s.NeedInternalRouter && s.InternalHCPRouterHost == "" {
+		return false
+	}
+	if s.NeedExternalRouter && s.ExternalHCPRouterHost == "" {
+		return false
+	}
+	if netutil.IsLBKAS(hcp) && s.APIHost == "" {
+		return false
+	}
+	if konnectivityStrategy := netutil.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Konnectivity); konnectivityStrategy != nil && konnectivityStrategy.Type == hyperv1.LoadBalancer && s.KonnectivityHost == "" {
+		return false
+	}
+	if s.OAuthEnabled {
+		if oauthStrategy := netutil.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer); oauthStrategy != nil && oauthStrategy.Type == hyperv1.LoadBalancer && s.OAuthHost == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Reconciler) AdmitHCPManagedRoutes(ctx context.Context, hcp *hyperv1.HostedControlPlane, privateRouterHost, externalRouterHost string) error {
@@ -206,6 +248,92 @@ func (r *Reconciler) AdmitHCPManagedRoutes(ctx context.Context, hcp *hyperv1.Hos
 	}
 
 	return nil
+}
+
+// CheckRouteAdmission inspects control-plane Routes in the HCP namespace and
+// returns a sorted list of route names that are not admitted. A route is
+// considered not admitted if it has no .status.ingress entries, or if the
+// Admitted condition on any ingress entry is not True.
+//
+// Only routes that belong to the control plane are checked: those labeled with
+// HCPRouteLabel (managed by the HCP router) or owned by the HostedControlPlane
+// (created by the CPO). Non-control-plane routes in the namespace (e.g.,
+// KubeVirt default-ingress-passthrough-route created by HCCO) are excluded so
+// they do not gate InfrastructureReady.
+//
+// When needInternalRouter is false, routes labeled with InternalRouteLabel are
+// skipped because no internal router exists to admit them (e.g. Public-only AWS
+// HCP with KAS Route+hostname).
+// When no service uses the Route publishing strategy, or when the Route CRD is
+// not installed on the management cluster, it returns nil, nil.
+func (r *Reconciler) CheckRouteAdmission(ctx context.Context, hcp *hyperv1.HostedControlPlane, needInternalRouter bool) (notAdmittedRoutes []string, err error) {
+	if !hasRoutePublishingStrategy(hcp) {
+		return nil, nil
+	}
+
+	routeList := &routev1.RouteList{}
+	if err := r.Client.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
+		if meta.IsNoMatchError(err) || runtime.IsNotRegisteredError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to list routes: %w", err)
+	}
+
+	for i := range routeList.Items {
+		route := &routeList.Items[i]
+		if !isControlPlaneRoute(route, hcp) {
+			continue
+		}
+		if !needInternalRouter {
+			if _, isInternal := route.Labels[netutil.InternalRouteLabel]; isInternal {
+				continue
+			}
+		}
+		if !routeIsAdmitted(route) {
+			notAdmittedRoutes = append(notAdmittedRoutes, route.Name)
+		}
+	}
+	sort.Strings(notAdmittedRoutes)
+	return notAdmittedRoutes, nil
+}
+
+// isControlPlaneRoute returns true if the route is part of the control plane:
+// either labeled with HCPRouteLabel (HCP-router managed) or owned by the HCP.
+func isControlPlaneRoute(route *routev1.Route, hcp *hyperv1.HostedControlPlane) bool {
+	if _, hasLabel := route.Labels[netutil.HCPRouteLabel]; hasLabel {
+		return true
+	}
+	for _, ref := range route.OwnerReferences {
+		if ref.Kind == "HostedControlPlane" && ref.Name == hcp.Name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRoutePublishingStrategy(hcp *hyperv1.HostedControlPlane) bool {
+	for _, svc := range hcp.Spec.Services {
+		if svc.ServicePublishingStrategy.Type == hyperv1.Route {
+			return true
+		}
+	}
+	return false
+}
+
+// routeIsAdmitted returns true if the route has at least one ingress entry
+// with Admitted=True.
+func routeIsAdmitted(route *routev1.Route) bool {
+	if len(route.Status.Ingress) == 0 {
+		return false
+	}
+	for _, ing := range route.Status.Ingress {
+		for _, cond := range ing.Conditions {
+			if cond.Type == routev1.RouteAdmitted && cond.Status == corev1.ConditionTrue {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {

@@ -238,6 +238,14 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 	}
 
 	if _, err := controllerutil.CreateOrPatch(cpContext, cpContext.Client, component, func() error {
+		// Propagate HostedClusterAnnotation from the HCP so that annotation-based
+		// scoping predicates can resolve the owning HostedCluster without listing HCPs.
+		if hcRef, ok := cpContext.HCP.Annotations[k8sutil.HostedClusterAnnotation]; ok {
+			if component.Annotations == nil {
+				component.Annotations = make(map[string]string, 1)
+			}
+			component.Annotations[k8sutil.HostedClusterAnnotation] = hcRef
+		}
 		return c.reconcileComponentStatus(cpContext, component, unmetPreconditions, unavailableDependencies, reconcilationError)
 	}); err != nil {
 		return err

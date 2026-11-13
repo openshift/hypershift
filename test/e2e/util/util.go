@@ -3086,6 +3086,12 @@ func hostedClusterConditionsPredicate(hasWorkerNodes bool, upgradeContext *Upgra
 		if upgradeContext != nil {
 			delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
 		}
+
+		// ManagementClusterResourcePressure is set by the HO; during an upgrade
+		// the old HO version may not set it yet.
+		if upgradeContext != nil {
+			delete(expectedConditions, hyperv1.ManagementClusterResourcePressure)
+		}
 		var reasons []string
 		for conditionType, conditionStatus := range expectedConditions {
 			done, reason, err := ConditionPredicate[*hyperv1.HostedCluster](Condition{

@@ -904,26 +904,54 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Host: infraStatus.APIHost,
 			Port: infraStatus.APIPort,
 		}
-		newCondition = metav1.Condition{
-			Type:    string(hyperv1.InfrastructureReady),
-			Status:  metav1.ConditionTrue,
-			Message: hyperv1.AllIsWellMessage,
-			Reason:  hyperv1.AsExpectedReason,
-		}
 		if reconcilerpolicy.HCPOAuthEnabled(hostedControlPlane) {
 			// JoinHostPort brackets IPv6 literals so url.Parse accepts the callback template.
 			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s/oauth2callback/[identity-provider-name]",
 				net.JoinHostPort(infraStatus.OAuthHost, strconv.Itoa(int(infraStatus.OAuthPort))))
+		}
+		if infraStatus.RouteNotAdmitted {
+			message := "Cluster infrastructure is still provisioning"
+			if len(infraStatus.Message) > 0 {
+				message = infraStatus.Message
+			}
+			if infraStatus.RouteNotAdmittedMsg != "" {
+				message = message + "; " + infraStatus.RouteNotAdmittedMsg
+			}
+			newCondition = metav1.Condition{
+				Type:    string(hyperv1.InfrastructureReady),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.ReasonRouteNotAdmitted,
+				Message: message,
+			}
+			r.Log.Info("Infrastructure is not yet ready")
+		} else {
+			newCondition = metav1.Condition{
+				Type:    string(hyperv1.InfrastructureReady),
+				Status:  metav1.ConditionTrue,
+				Message: hyperv1.AllIsWellMessage,
+				Reason:  hyperv1.AsExpectedReason,
+			}
 		}
 	} else {
 		message := "Cluster infrastructure is still provisioning"
 		if len(infraStatus.Message) > 0 {
 			message = infraStatus.Message
 		}
+		reason := hyperv1.WaitingOnInfrastructureReadyReason
+		if infraStatus.RouteNotAdmitted {
+			reason = hyperv1.ReasonRouteNotAdmitted
+			if infraStatus.RouteNotAdmittedMsg != "" {
+				if len(message) > 0 {
+					message = message + "; " + infraStatus.RouteNotAdmittedMsg
+				} else {
+					message = infraStatus.RouteNotAdmittedMsg
+				}
+			}
+		}
 		newCondition = metav1.Condition{
 			Type:    string(hyperv1.InfrastructureReady),
 			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
+			Reason:  reason,
 			Message: message,
 		}
 		r.Log.Info("Infrastructure is not yet ready")
@@ -1252,15 +1280,36 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 	}
 
 	var notAvailable []string
+	var firstFailureName, firstFailureReason, firstFailureMessage string
+	sort.Slice(componentsList.Items, func(i, j int) bool {
+		return componentsList.Items[i].Name < componentsList.Items[j].Name
+	})
 	for _, component := range componentsList.Items {
 		availableCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
 		if availableCondition == nil || availableCondition.Status != metav1.ConditionTrue {
 			notAvailable = append(notAvailable, component.Name)
+			if firstFailureName == "" && availableCondition != nil {
+				firstFailureName = component.Name
+				firstFailureReason = availableCondition.Reason
+				firstFailureMessage = availableCondition.Message
+			}
 		}
 	}
 
 	if len(notAvailable) > 0 {
-		return fmt.Sprintf("Waiting for components to be available: %s", strings.Join(notAvailable, ", ")), nil
+		noun := "components"
+		if len(notAvailable) == 1 {
+			noun = "component"
+		}
+		msg := fmt.Sprintf("%d %s unavailable: %s", len(notAvailable), noun, strings.Join(notAvailable, ", "))
+		if firstFailureName != "" {
+			detail := firstFailureReason
+			if firstFailureMessage != "" {
+				detail += ": " + firstFailureMessage
+			}
+			msg += fmt.Sprintf(". First failure: %s — %s", firstFailureName, detail)
+		}
+		return msg, nil
 	}
 
 	return "", nil
