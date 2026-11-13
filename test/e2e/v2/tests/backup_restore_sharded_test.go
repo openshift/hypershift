@@ -531,6 +531,15 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 		It("should restore both shards into a fresh cluster with presigned per-shard URLs and verify the data", func() {
 			Expect(shardedSnapshotResults).To(HaveLen(2))
 
+			By("Destroying the source cluster to free management-cluster resources")
+			// The nested management cluster cannot fit two full control
+			// planes plus OADP at once: with the source still running, the
+			// target's kube-apiserver pod never becomes schedulable. The
+			// restore only needs the presigned snapshot URLs (and the
+			// expected data values, which are constants), not the source.
+			e.destroyCluster(e.testCtx.Context, e.sourceCluster)
+			e.sourceCluster = ""
+
 			By("Presigning both snapshot URLs")
 			_, bslRegion, credsSecret, err := e.resolveBSL()
 			Expect(err).NotTo(HaveOccurred())
