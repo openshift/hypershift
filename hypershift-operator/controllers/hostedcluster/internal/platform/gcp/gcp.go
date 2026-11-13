@@ -367,17 +367,22 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		return fmt.Errorf("failed to reconcile GCP credentials: %v", errs)
 	}
 
+	// Set credentials condition to indicate federation is ready
+	setCondition(hcluster, hyperv1.ValidGCPCredentials, metav1.ConditionTrue, "WIFReady", "GCP Workload Identity Federation is configured and ready")
+
 	p.reconcileIngressCredentialsCondition(hcluster)
+
+	// Persist status condition changes to the API server
+	if err := c.Status().Update(ctx, hcluster); err != nil {
+		return fmt.Errorf("failed to update HostedCluster status conditions: %w", err)
+	}
 	return nil
 }
 
 // reconcileIngressCredentialsCondition maintains the non-blocking
-// IngressCredentialsFound condition in memory on the HostedCluster. It reaches
-// the API server through the unconditional status update of the
-// PlatformOIDCAndCSI step (reconcilePlatformSpecific ->
-// reconcileOIDCDocumentsWithStatus), which runs after PlatformCredentials on
-// every reconcile; the PlatformCredentials status write itself only happens
-// when PlatformCredentialsFound flips. The ingress service account is optional
+// IngressCredentialsFound condition in memory on the HostedCluster; the
+// caller persists it together with ValidGCPCredentials in the PlatformCredentials
+// status update. The ingress service account is optional
 // at the API level and enforced at creation time by the CLI only; clusters
 // created without it (e.g. via direct YAML) keep reconciling (the guest
 // ingress operator simply runs without cloud credentials and cannot publish
