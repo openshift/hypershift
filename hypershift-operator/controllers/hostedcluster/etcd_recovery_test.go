@@ -1,6 +1,7 @@
 package hostedcluster
 
 import (
+	"slices"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -689,6 +690,70 @@ func TestReconcileEtcdRecoveryRoleBinding(t *testing.T) {
 		g.Expect(roleBinding.Subjects[0].Name).To(Equal("etcd-recovery-sa"))
 		g.Expect(roleBinding.Subjects[0].Namespace).To(Equal("clusters-test"))
 	})
+}
+
+func TestReconcileEtcdRecoveryJob(t *testing.T) {
+	controlPlaneTolerations := []corev1.Toleration{
+		{
+			Key:      "hypershift.openshift.io/control-plane",
+			Operator: corev1.TolerationOpEqual,
+			Value:    "true",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+		{
+			Key:      hyperv1.HostedClusterLabel,
+			Operator: corev1.TolerationOpEqual,
+			Value:    "clusters-test",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}
+	userToleration := corev1.Toleration{
+		Key:      "dedicated",
+		Operator: corev1.TolerationOpEqual,
+		Value:    "control-plane",
+		Effect:   corev1.TaintEffectNoSchedule,
+	}
+
+	tests := []struct {
+		name                 string
+		nodeSelector         map[string]string
+		tolerations          []corev1.Toleration
+		expectedNodeSelector map[string]string
+		expectedTolerations  []corev1.Toleration
+	}{
+		{
+			name:                 "When the HostedCluster defines scheduling constraints, it should propagate them to the recovery pod after the control plane tolerations",
+			nodeSelector:         map[string]string{"role": "infra"},
+			tolerations:          []corev1.Toleration{userToleration},
+			expectedNodeSelector: map[string]string{"role": "infra"},
+			expectedTolerations:  append(slices.Clone(controlPlaneTolerations), userToleration),
+		},
+		{
+			name:                "When the HostedCluster defines no scheduling constraints, it should only tolerate control plane Node taints",
+			expectedTolerations: controlPlaneTolerations,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
+				Spec: hyperv1.HostedClusterSpec{
+					NodeSelector: test.nodeSelector,
+					Tolerations:  test.tolerations,
+				},
+			}
+
+			r := &HostedClusterReconciler{}
+			job := &batchv1.Job{}
+			g.Expect(r.reconcileEtcdRecoveryJob(job, hc)).To(Succeed())
+
+			g.Expect(job.Spec.Template.Spec.NodeSelector).To(Equal(test.expectedNodeSelector))
+			g.Expect(job.Spec.Template.Spec.Tolerations).To(Equal(test.expectedTolerations))
+		})
+	}
 }
 
 // findCondition is a test helper that looks up a condition by type.
