@@ -1,5 +1,5 @@
 ---
-name: E2E Test Runner
+name: e2e-run-aws
 description: "Provides the ability to run and iterate on HyperShift e2e tests. Auto-applies when implementing features that require e2e validation, fixing e2e test failures, or working on tasks that need live cluster testing."
 ---
 
