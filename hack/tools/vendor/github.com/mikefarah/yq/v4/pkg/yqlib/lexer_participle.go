@@ -57,7 +57,7 @@ var participleYqRules = []*participleYqRule{
 	simpleOp("sort_?keys", sortKeysOpType),
 
 	{"ArrayToMap", "array_?to_?map", expressionOpToken(`(.[] | select(. != null) ) as $i ireduce({}; .[$i | key] = $i)`), 0},
-
+	{"Root", "root", expressionOpToken(`parent(-1)`), 0},
 	{"YamlEncodeWithIndent", `to_?yaml\([0-9]+\)`, encodeParseIndent(YamlFormat), 0},
 	{"XMLEncodeWithIndent", `to_?xml\([0-9]+\)`, encodeParseIndent(XMLFormat), 0},
 	{"JSONEncodeWithIndent", `to_?json\([0-9]+\)`, encodeParseIndent(JSONFormat), 0},
@@ -81,6 +81,9 @@ var participleYqRules = []*participleYqRule{
 	{"TSVDecode", `from_?tsv|@tsvd`, decodeOp(TSVFormat), 0},
 	{"TSVEncode", `to_?tsv|@tsv`, encodeWithIndent(TSVFormat, 0), 0},
 
+	{"Base64Urld", `@base64urld`, decodeOp(Base64UrlFormat), 0},
+	{"Base64Url", `@base64url`, encodeWithIndent(Base64UrlFormat, 0), 0},
+
 	{"Base64d", `@base64d`, decodeOp(Base64Format), 0},
 	{"Base64", `@base64`, encodeWithIndent(Base64Format, 0), 0},
 
@@ -95,6 +98,8 @@ var participleYqRules = []*participleYqRule{
 	{"LoadProperties", `load_?props`, loadOp(NewPropertiesDecoder()), 0},
 	simpleOp("load_?str|str_?load", loadStringOpType),
 	{"LoadYaml", `load`, loadOp(NewYamlDecoder(LoadYamlPreferences)), 0},
+
+	simpleOp("system", systemOpType),
 
 	{"SplitDocument", `splitDoc|split_?doc`, opToken(splitDocumentOpType), 0},
 
@@ -118,6 +123,7 @@ var participleYqRules = []*participleYqRule{
 
 	simpleOp("sort_?by", sortByOpType),
 	simpleOp("sort", sortOpType),
+	simpleOp("first", firstOpType),
 
 	simpleOp("reverse", reverseOpType),
 
@@ -130,7 +136,8 @@ var participleYqRules = []*participleYqRule{
 	simpleOp("contains", containsOpType),
 	simpleOp("split", splitStringOpType),
 
-	{"ParentWithLevel", `parent\([0-9]+\)`, parentWithLevel(), 0},
+	simpleOp("parents", getParentsOpType),
+	{"ParentWithLevel", `parent\(-?[0-9]+\)`, parentWithLevel(), 0},
 	{"ParentWithDefaultLevel", `parent`, parentWithDefaultLevel(), 0},
 
 	simpleOp("keys", keysOpType),
@@ -160,6 +167,12 @@ var participleYqRules = []*participleYqRule{
 
 	{"ALL_COMMENTS", `comments\s*=`, assignAllCommentsOp(false), 0},
 	{"ALL_COMMENTS_ASSIGN_RELATIVE", `comments\s*\|=`, assignAllCommentsOp(true), 0},
+
+	{"If", `if`, literalTokenWithCloser(openBracket, false, "end"), 0},
+	{"Then", `then`, opToken(ifThenOpType), 0},
+	{"Elif", `elif`, opToken(ifElseOpType), 0},
+	{"Else", `else`, opToken(ifElseOpType), 0},
+	{"End", `end`, literalToken(closeBracket, true), 0},
 
 	{"Block", `;`, opToken(blockOpType), 0},
 	{"Alternative", `\/\/`, opToken(alternativeOpType), 0},
@@ -281,7 +294,7 @@ func pathToken(wrapped bool) yqAction {
 		if wrapped {
 			value = unwrap(value)
 		}
-		log.Debug("PathToken %v", value)
+		log.Debugf("PathToken %v", value)
 		op := &Operation{OperationType: traversePathOpType, Value: value, StringValue: value, Preferences: prefs}
 		return &token{TokenType: operationToken, Operation: op, CheckForPostTraverse: true}, nil
 	}
@@ -334,7 +347,7 @@ func flattenWithDepth() yqAction {
 
 func assignAllCommentsOp(updateAssign bool) yqAction {
 	return func(rawToken lexer.Token) (*token, error) {
-		log.Debug("assignAllCommentsOp %v", rawToken.Value)
+		log.Debugf("assignAllCommentsOp %v", rawToken.Value)
 		value := rawToken.Value
 		op := &Operation{
 			OperationType: assignCommentOpType,
@@ -349,7 +362,7 @@ func assignAllCommentsOp(updateAssign bool) yqAction {
 
 func assignOpToken(updateAssign bool) yqAction {
 	return func(rawToken lexer.Token) (*token, error) {
-		log.Debug("assignOpToken %v", rawToken.Value)
+		log.Debugf("assignOpToken %v", rawToken.Value)
 		value := rawToken.Value
 		prefs := assignPreferences{DontOverWriteAnchor: true}
 		if strings.Contains(value, "c") {
@@ -374,12 +387,10 @@ func nullValue() yqAction {
 
 func stringValue() yqAction {
 	return func(rawToken lexer.Token) (*token, error) {
-		log.Debug("rawTokenvalue: %v", rawToken.Value)
+		log.Debugf("rawTokenvalue: %v", rawToken.Value)
 		value := unwrap(rawToken.Value)
-		log.Debug("unwrapped: %v", value)
-		value = strings.ReplaceAll(value, "\\\"", "\"")
-		value = strings.ReplaceAll(value, "\\n", "\n")
-		log.Debug("replaced: %v", value)
+		log.Debugf("unwrapped: %v", value)
+		value = processEscapeCharacters(value)
 		return &token{TokenType: operationToken, Operation: &Operation{
 			OperationType: stringInterpolationOpType,
 			StringValue:   value,
@@ -451,6 +462,7 @@ func multiplyWithPrefs(op *operationType) yqAction {
 			prefs.AssignPrefs.ClobberCustomTags = true
 		}
 		prefs.TraversePrefs.DontFollowAlias = true
+		prefs.TraversePrefs.ExactKeyMatch = true
 		op := &Operation{OperationType: op, Value: multiplyOpType.Type, StringValue: options, Preferences: prefs}
 		return &token{TokenType: operationToken, Operation: op}, nil
 	}
@@ -565,6 +577,12 @@ func opToken(op *operationType) yqAction {
 func literalToken(tt tokenType, checkForPost bool) yqAction {
 	return func(rawToken lexer.Token) (*token, error) {
 		return &token{TokenType: tt, CheckForPostTraverse: checkForPost, Match: rawToken.Value}, nil
+	}
+}
+
+func literalTokenWithCloser(tt tokenType, checkForPost bool, expectedCloser string) yqAction {
+	return func(rawToken lexer.Token) (*token, error) {
+		return &token{TokenType: tt, CheckForPostTraverse: checkForPost, Match: rawToken.Value, ExpectedCloser: expectedCloser}, nil
 	}
 }
 

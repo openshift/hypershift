@@ -3,8 +3,7 @@ package yqlib
 import (
 	"errors"
 	"fmt"
-
-	logging "gopkg.in/op/go-logging.v1"
+	"log/slog"
 )
 
 type expressionPostFixer interface {
@@ -26,12 +25,17 @@ func popOpToResult(opStack []*token, result []*Operation) ([]*token, []*Operatio
 }
 
 func validateNoOpenTokens(token *token) error {
-	if token.TokenType == openCollect {
+	switch token.TokenType {
+	case openCollect:
 		return fmt.Errorf(("bad expression, could not find matching `]`"))
-	} else if token.TokenType == openCollectObject {
+	case openCollectObject:
 		return fmt.Errorf(("bad expression, could not find matching `}`"))
-	} else if token.TokenType == openBracket {
-		return fmt.Errorf(("bad expression, could not find matching `)`"))
+	case openBracket:
+		closer := ")"
+		if token.ExpectedCloser != "" {
+			closer = token.ExpectedCloser
+		}
+		return fmt.Errorf("bad expression, could not find matching `%v`", closer)
 	}
 	return nil
 }
@@ -41,11 +45,13 @@ func (p *expressionPostFixerImpl) ConvertToPostfix(infixTokens []*token) ([]*Ope
 	// surround the whole thing with brackets
 	var opStack = []*token{{TokenType: openBracket}}
 	var tokens = append(infixTokens, &token{TokenType: closeBracket})
+	ifValidator := newIfBlockValidator()
 
 	for _, currentToken := range tokens {
 		log.Debugf("postfix processing currentToken %v", currentToken.toString(true))
 		switch currentToken.TokenType {
 		case openBracket, openCollect, openCollectObject:
+			ifValidator.onOpen(currentToken)
 			opStack = append(opStack, currentToken)
 			log.Debugf("put %v onto the opstack", currentToken.toString(true))
 		case closeCollect, closeCollectObject:
@@ -64,7 +70,7 @@ func (p *expressionPostFixerImpl) ConvertToPostfix(infixTokens []*token) ([]*Ope
 				opStack, result = popOpToResult(opStack, result)
 			}
 			if len(opStack) == 0 {
-				return nil, errors.New("Bad path expression, got close collect brackets without matching opening bracket")
+				return nil, errors.New("bad path expression, got close collect brackets without matching opening bracket")
 			}
 			// now we should have [ as the last element on the opStack, get rid of it
 			opStack = opStack[0 : len(opStack)-1]
@@ -106,10 +112,16 @@ func (p *expressionPostFixerImpl) ConvertToPostfix(infixTokens []*token) ([]*Ope
 			if len(opStack) == 0 {
 				return nil, errors.New("bad expression, got close brackets without matching opening bracket")
 			}
+			if err := ifValidator.onClose(opStack[len(opStack)-1], currentToken); err != nil {
+				return nil, err
+			}
 			// now we should have ( as the last element on the opStack, get rid of it
 			opStack = opStack[0 : len(opStack)-1]
 
 		default:
+			if err := ifValidator.onKeyword(opStack, currentToken); err != nil {
+				return nil, err
+			}
 			var currentPrecedence = currentToken.Operation.OperationType.Precedence
 			// pop off higher precedent operators onto the result
 			for len(opStack) > 0 &&
@@ -133,7 +145,7 @@ func (p *expressionPostFixerImpl) ConvertToPostfix(infixTokens []*token) ([]*Ope
 		return nil, fmt.Errorf("bad expression - probably missing close bracket on %v", opStack[len(opStack)-1].toString(false))
 	}
 
-	if log.IsEnabledFor(logging.DEBUG) {
+	if log.IsEnabledFor(slog.LevelDebug) {
 		log.Debugf("PostFix Result:")
 		for _, currentToken := range result {
 			log.Debugf("> %v", currentToken.toString())
