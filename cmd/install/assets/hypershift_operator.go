@@ -570,6 +570,9 @@ type HyperShiftOperatorDeployment struct {
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
 	EnableCPOOverrides                      bool
+	CPOFromMain                             bool
+	CPOFromMainVersions                     string
+	CPOFromMainImage                        string
 	EnableKarpenterOperator                 bool
 	AdditionalOperatorEnvVars               map[string]string
 	AROHCPKeyVaultUsersClientID             string
@@ -896,6 +899,15 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 	}
 	if o.EnableCPOOverrides {
 		envVars = append(envVars, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"})
+	}
+	if o.CPOFromMain {
+		envVars = append(envVars, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOFromMainEnvVar, Value: "1"})
+		if len(o.CPOFromMainVersions) > 0 {
+			envVars = append(envVars, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOFromMainVersionsEnvVar, Value: o.CPOFromMainVersions})
+		}
+		if len(o.CPOFromMainImage) > 0 {
+			envVars = append(envVars, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOFromMainImageEnvVar, Value: o.CPOFromMainImage})
+		}
 	}
 	if o.EnableKarpenterOperator {
 		envVars = append(envVars, corev1.EnvVar{Name: karpenterutil.EnableStandaloneKarpenterOperatorEnvVar, Value: "1"})
