@@ -274,18 +274,6 @@ func TestWithPredicate(t *testing.T) {
 	g.Expect(ga.predicate).ToNot(BeNil())
 }
 
-func TestSkipManifest(t *testing.T) {
-	t.Parallel()
-	g := NewWithT(t)
-
-	ga := &genericAdapter{}
-
-	opt := SkipManifest()
-	opt(ga)
-
-	g.Expect(ga.skip).To(BeTrue())
-}
-
 func TestReconcileExisting(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)

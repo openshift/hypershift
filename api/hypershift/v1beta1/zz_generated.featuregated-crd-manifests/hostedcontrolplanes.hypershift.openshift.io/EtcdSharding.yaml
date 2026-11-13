@@ -2721,10 +2721,6 @@ spec:
                           Minimum 1, maximum 10 entries. Resources must not overlap across
                           shards. Immutable after creation: shards cannot be added, removed,
                           or reordered.
-
-                          WARNING: In the current TechPreview implementation, shard data is NOT
-                          included in HCPEtcdBackup. Resources routed to shards will not be
-                          backed up. This will be addressed before promotion beyond TechPreview.
                         items:
                           description: |-
                             ManagedEtcdShardSpec defines the configuration for a single etcd shard
@@ -2734,9 +2730,12 @@ spec:
                               description: |-
                                 name is a unique identifier for this shard. It is used to derive
                                 resource names (e.g., StatefulSet "etcd-{name}", Service
-                                "etcd-client-{name}").
+                                "etcd-client-{name}"), and it is the identity reported for the shard in
+                                HCPEtcdBackup.status.shardSnapshots (the default shard is reported as
+                                "default" instead).
                                 Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
                                 starting and ending with an alphanumeric character), max 48 characters.
+                                Must not be "default", which is reserved for the default shard.
                                 Immutable once set.
                               maxLength: 48
                               minLength: 1
@@ -2746,6 +2745,9 @@ spec:
                                   alphanumeric with hyphens, starting and ending with
                                   an alphanumeric character'
                                 rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+                              - message: name 'default' is reserved for the default
+                                  shard
+                                rule: self != 'default'
                               - message: name is immutable
                                 rule: self == oldSelf
                             replicas:
@@ -2832,6 +2834,31 @@ spec:
                               x-kubernetes-validations:
                               - message: resources are immutable
                                 rule: self == oldSelf
+                            restoreSnapshotURL:
+                              description: |-
+                                restoreSnapshotURL allows an optional URL to be provided where an etcd
+                                snapshot for this shard can be downloaded. This snapshot will be restored
+                                on initial startup, only when the shard's PV is empty.
+                                When set, it must be between 1 and 2048 characters, matching the maximum
+                                length of a snapshot URL recorded in HCPEtcdBackup status (presigned URLs
+                                with signature query parameters can be long).
+                                When omitted, the shard starts with an empty data directory and no
+                                snapshot is restored.
+                                It must be a URL with scheme https: s3:// URLs must be presigned to
+                                https before being injected (the OADP plugin does this automatically),
+                                because the restore init container fetches the snapshot with curl.
+                                It is not allowed when storage.type is EmptyDir, because EmptyDir shards
+                                are ephemeral and a restored snapshot would be lost on pod restart.
+                                It cannot be added or removed after creation.
+                              maxLength: 2048
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: restoreSnapshotURL is immutable
+                                rule: self == oldSelf
+                              - message: restoreSnapshotURL must be a valid URL with
+                                  scheme https
+                                rule: self.matches('^https://.*')
                             scheduling:
                               description: |-
                                 scheduling configures per-shard pod placement constraints. These
@@ -2963,6 +2990,13 @@ spec:
                           x-kubernetes-validations:
                           - message: storage cannot be added or removed after creation
                             rule: has(oldSelf.storage) == has(self.storage)
+                          - message: restoreSnapshotURL is not supported for EmptyDir
+                              shards
+                            rule: '!has(self.restoreSnapshotURL) || !has(self.storage)
+                              || self.storage.type != ''EmptyDir'''
+                          - message: restoreSnapshotURL cannot be added or removed
+                              after creation
+                            rule: has(oldSelf.restoreSnapshotURL) == has(self.restoreSnapshotURL)
                         maxItems: 10
                         minItems: 1
                         type: array
@@ -3019,8 +3053,11 @@ spec:
                               referencing a storage service.
                               This snapshot will be restored on initial startup, only when the etcd PV
                               is empty.
+                              The URL must use the https scheme: s3:// URLs must be presigned to https
+                              before being injected (the OADP plugin does this automatically), because
+                              the restore init container fetches the snapshot with curl.
                             items:
-                              maxLength: 1024
+                              maxLength: 2048
                               type: string
                             maxItems: 1
                             type: array
@@ -3032,8 +3069,8 @@ spec:
                             - message: restoreSnapshotURL is immutable
                               rule: self == oldSelf
                             - message: restoreSnapshotURL must be a valid URL with
-                                scheme https or s3
-                              rule: self.size() == 0 || self[0].matches('^(https|s3)://.*')
+                                scheme https
+                              rule: self.size() == 0 || self[0].matches('^https://.*')
                           type:
                             description: |-
                               type is the kind of persistent storage implementation to use for etcd.
@@ -3054,6 +3091,14 @@ spec:
                     x-kubernetes-validations:
                     - message: shards cannot be added or removed after creation
                       rule: has(oldSelf.shards) == has(self.shards)
+                    - message: 'when shards are configured, restoreSnapshotURL must
+                        be set on every persistent shard (or none of them): an incomplete
+                        restore mapping is rejected so a control plane cannot boot
+                        with partial data'
+                      rule: '!has(self.shards) || (has(self.storage.restoreSnapshotURL)
+                        ? self.shards.all(s, !has(s.storage) || s.storage.type ==
+                        ''EmptyDir'' || has(s.restoreSnapshotURL)) : self.shards.all(s,
+                        !has(s.restoreSnapshotURL)))'
                   managementType:
                     description: |-
                       managementType defines how the etcd cluster is managed.

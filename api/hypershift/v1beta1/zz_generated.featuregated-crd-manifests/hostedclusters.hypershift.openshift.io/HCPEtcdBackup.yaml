@@ -2836,8 +2836,11 @@ spec:
                               referencing a storage service.
                               This snapshot will be restored on initial startup, only when the etcd PV
                               is empty.
+                              The URL must use the https scheme: s3:// URLs must be presigned to https
+                              before being injected (the OADP plugin does this automatically), because
+                              the restore init container fetches the snapshot with curl.
                             items:
-                              maxLength: 1024
+                              maxLength: 2048
                               type: string
                             maxItems: 1
                             type: array
@@ -2849,8 +2852,8 @@ spec:
                             - message: restoreSnapshotURL is immutable
                               rule: self == oldSelf
                             - message: restoreSnapshotURL must be a valid URL with
-                                scheme https or s3
-                              rule: self.size() == 0 || self[0].matches('^(https|s3)://.*')
+                                scheme https
+                              rule: self.size() == 0 || self[0].matches('^https://.*')
                           type:
                             description: |-
                               type is the kind of persistent storage implementation to use for etcd.
@@ -7571,6 +7574,52 @@ spec:
                 - message: lastSuccessfulEtcdBackupURL must be a valid URL with scheme
                     https or s3
                   rule: self.matches('^(https|s3)://.*')
+              lastSuccessfulEtcdShardBackupURLs:
+                description: |-
+                  lastSuccessfulEtcdShardBackupURLs is the versioned per-shard snapshot
+                  URL mapping (mapping format v1) from the most recent successful etcd
+                  backup: one entry per persistent shard, keyed by the public shard
+                  identity ("default" for the default shard, or the
+                  ManagedEtcdShardSpec.name for named shards). This is the multi-shard
+                  equivalent of lastSuccessfulEtcdBackupURL and, like it, is persisted on
+                  the HostedCluster because HCPEtcdBackup CRs are ephemeral and may be
+                  deleted by retention policies. Restores must validate the mapping
+                  against spec.etcd.managed.shards and fail when a persistent shard has
+                  no entry (see MissingPersistentShards).
+                items:
+                  description: HCPEtcdShardSnapshot represents the snapshot URL for
+                    a single etcd shard.
+                  properties:
+                    name:
+                      description: |-
+                        name is the public shard identity: "default" for the default shard,
+                        or the exact ManagedEtcdShardSpec.name for a named shard
+                        (e.g., "events").
+                        It must be between 1 and 63 characters.
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                    snapshotURL:
+                      description: |-
+                        snapshotURL is the URL of the snapshot in cloud storage.
+                        Must be a valid URL with scheme https or s3, and between 1 and 2048 characters.
+                      maxLength: 2048
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: snapshotURL must be a valid URL with scheme https
+                          or s3
+                        rule: self.matches('^(https|s3)://.*')
+                  required:
+                  - name
+                  - snapshotURL
+                  type: object
+                maxItems: 11
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               oauthCallbackURLTemplate:
                 description: |-
                   oauthCallbackURLTemplate contains a template for the URL to use as a callback

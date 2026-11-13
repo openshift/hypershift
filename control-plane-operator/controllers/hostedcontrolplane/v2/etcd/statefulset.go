@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	etcdutil "github.com/openshift/hypershift/support/etcd"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	util "github.com/openshift/hypershift/support/util"
@@ -154,7 +155,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 
 	snapshotRestored := meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 	if managedEtcdSpec != nil && len(managedEtcdSpec.Storage.RestoreSnapshotURL) > 0 && !snapshotRestored {
-		etcdInit := buildEtcdInitContainer(managedEtcdSpec.Storage.RestoreSnapshotURL[0], hcp.Namespace, initialCluster) // RestoreSnapshotURL can only have 1 entry
+		etcdInit := buildEtcdInitContainer(managedEtcdSpec.Storage.RestoreSnapshotURL[0], hcp.Namespace, initialCluster, etcdutil.DiscoveryServiceName("etcd")) // RestoreSnapshotURL can only have 1 entry
 		insertIdx := len(sts.Spec.Template.Spec.InitContainers)
 		for i, c := range sts.Spec.Template.Spec.InitContainers {
 			if c.Name == "reset-member" {
@@ -185,7 +186,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 //go:embed etcd-init.sh
 var etcdInitScript string
 
-func buildEtcdInitContainer(restoreUrl, namespace, initialCluster string) corev1.Container {
+func buildEtcdInitContainer(restoreUrl, namespace, initialCluster, discoveryService string) corev1.Container {
 	c := corev1.Container{
 		Name: "etcd-init",
 	}
@@ -207,6 +208,10 @@ func buildEtcdInitContainer(restoreUrl, namespace, initialCluster string) corev1
 		{
 			Name:  "ETCD_INITIAL_CLUSTER",
 			Value: initialCluster,
+		},
+		{
+			Name:  "ETCD_DISCOVERY_SERVICE",
+			Value: discoveryService,
 		},
 	}
 	c.Image = "etcd"

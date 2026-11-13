@@ -57,6 +57,14 @@ const (
 	// ControlPlaneOperatorImageAnnotation is an annotation that allows the specification of the control plane operator image.
 	// This is used for development and e2e workflows
 	ControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/control-plane-operator-image"
+	// MultiShardEtcdBackupCapabilityLabel is set to "true" on the
+	// HostedControlPlane by the control plane operator when the image actually
+	// deployed supports multi-shard etcd backup. The HyperShift operator's etcd
+	// backup controller gates multi-shard backup Job creation on it: feature
+	// gates control API exposure, but do not prove that a particular (possibly
+	// overridden or older) control plane operator image supports the
+	// multi-shard backup flags.
+	MultiShardEtcdBackupCapabilityLabel = "hypershift.openshift.io/control-plane-operator-supports-multishard-etcd-backup"
 	// ControlPlaneOperatorImageLabelsAnnotation is an annotation that allows the specification of the control plane operator image labels.
 	// Labels are provided in a comma-delimited format: key=value,key2=value2
 	// This is used for development and e2e workflows
@@ -2155,6 +2163,7 @@ type EtcdSpec struct {
 // ManagedEtcdSpec specifies the behavior of an etcd cluster managed by
 // HyperShift.
 // +openshift:validation:FeatureGateAwareXValidation:featureGate=EtcdSharding,rule="has(oldSelf.shards) == has(self.shards)",message="shards cannot be added or removed after creation"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=EtcdSharding,rule="!has(self.shards) || (has(self.storage.restoreSnapshotURL) ? self.shards.all(s, !has(s.storage) || s.storage.type == 'EmptyDir' || has(s.restoreSnapshotURL)) : self.shards.all(s, !has(s.restoreSnapshotURL)))",message="when shards are configured, restoreSnapshotURL must be set on every persistent shard (or none of them): an incomplete restore mapping is rejected so a control plane cannot boot with partial data"
 type ManagedEtcdSpec struct {
 	// storage specifies how etcd data is persisted.
 	// +required
@@ -2182,9 +2191,6 @@ type ManagedEtcdSpec struct {
 	// shards. Immutable after creation: shards cannot be added, removed,
 	// or reordered.
 	//
-	// WARNING: In the current TechPreview implementation, shard data is NOT
-	// included in HCPEtcdBackup. Resources routed to shards will not be
-	// backed up. This will be addressed before promotion beyond TechPreview.
 	// +optional
 	// +openshift:enable:FeatureGate=EtcdSharding
 	// +listType=map
@@ -2231,15 +2237,18 @@ type ManagedEtcdStorageSpec struct {
 	// referencing a storage service.
 	// This snapshot will be restored on initial startup, only when the etcd PV
 	// is empty.
+	// The URL must use the https scheme: s3:// URLs must be presigned to https
+	// before being injected (the OADP plugin does this automatically), because
+	// the restore init container fetches the snapshot with curl.
 	//
 	// +optional
 	// +immutable
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=1
-	// +kubebuilder:validation:items:MaxLength=1024
+	// +kubebuilder:validation:items:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="self.size() <= 1", message="RestoreSnapshotURL shouldn't contain more than 1 entry"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="restoreSnapshotURL is immutable"
-	// +kubebuilder:validation:XValidation:rule="self.size() == 0 || self[0].matches('^(https|s3)://.*')", message="restoreSnapshotURL must be a valid URL with scheme https or s3"
+	// +kubebuilder:validation:XValidation:rule="self.size() == 0 || self[0].matches('^https://.*')", message="restoreSnapshotURL must be a valid URL with scheme https"
 	RestoreSnapshotURL []string `json:"restoreSnapshotURL,omitempty"`
 }
 
@@ -2358,17 +2367,23 @@ type EtcdShardResource struct {
 // ManagedEtcdShardSpec defines the configuration for a single etcd shard
 // within a managed etcd deployment.
 // +kubebuilder:validation:XValidation:rule="has(oldSelf.storage) == has(self.storage)",message="storage cannot be added or removed after creation"
+// +kubebuilder:validation:XValidation:rule="!has(self.restoreSnapshotURL) || !has(self.storage) || self.storage.type != 'EmptyDir'",message="restoreSnapshotURL is not supported for EmptyDir shards"
+// +kubebuilder:validation:XValidation:rule="has(oldSelf.restoreSnapshotURL) == has(self.restoreSnapshotURL)",message="restoreSnapshotURL cannot be added or removed after creation"
 type ManagedEtcdShardSpec struct {
 	// name is a unique identifier for this shard. It is used to derive
 	// resource names (e.g., StatefulSet "etcd-{name}", Service
-	// "etcd-client-{name}").
+	// "etcd-client-{name}"), and it is the identity reported for the shard in
+	// HCPEtcdBackup.status.shardSnapshots (the default shard is reported as
+	// "default" instead).
 	// Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
 	// starting and ending with an alphanumeric character), max 48 characters.
+	// Must not be "default", which is reserved for the default shard.
 	// Immutable once set.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=48
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="name must be a valid DNS1123 label: lowercase alphanumeric with hyphens, starting and ending with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule="self != 'default'",message="name 'default' is reserved for the default shard"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="name is immutable"
 	Name string `json:"name,omitempty"`
 
@@ -2410,6 +2425,27 @@ type ManagedEtcdShardSpec struct {
 	// isolation settings (nodeSelector, tolerations, topology spread).
 	// +optional
 	Scheduling EtcdShardSchedulingSpec `json:"scheduling,omitzero"`
+
+	// restoreSnapshotURL allows an optional URL to be provided where an etcd
+	// snapshot for this shard can be downloaded. This snapshot will be restored
+	// on initial startup, only when the shard's PV is empty.
+	// When set, it must be between 1 and 2048 characters, matching the maximum
+	// length of a snapshot URL recorded in HCPEtcdBackup status (presigned URLs
+	// with signature query parameters can be long).
+	// When omitted, the shard starts with an empty data directory and no
+	// snapshot is restored.
+	// It must be a URL with scheme https: s3:// URLs must be presigned to
+	// https before being injected (the OADP plugin does this automatically),
+	// because the restore init container fetches the snapshot with curl.
+	// It is not allowed when storage.type is EmptyDir, because EmptyDir shards
+	// are ephemeral and a restored snapshot would be lost on pod restart.
+	// It cannot be added or removed after creation.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="restoreSnapshotURL is immutable"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://.*')",message="restoreSnapshotURL must be a valid URL with scheme https"
+	RestoreSnapshotURL string `json:"restoreSnapshotURL,omitempty"`
 }
 
 // ManagedEtcdShardStorageType defines the type of storage for an etcd shard.
@@ -2847,6 +2883,24 @@ type HostedClusterStatus struct {
 	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="lastSuccessfulEtcdBackupURL must be a valid URL with scheme https or s3"
 	LastSuccessfulEtcdBackupURL string `json:"lastSuccessfulEtcdBackupURL,omitempty"`
+
+	// lastSuccessfulEtcdShardBackupURLs is the versioned per-shard snapshot
+	// URL mapping (mapping format v1) from the most recent successful etcd
+	// backup: one entry per persistent shard, keyed by the public shard
+	// identity ("default" for the default shard, or the
+	// ManagedEtcdShardSpec.name for named shards). This is the multi-shard
+	// equivalent of lastSuccessfulEtcdBackupURL and, like it, is persisted on
+	// the HostedCluster because HCPEtcdBackup CRs are ephemeral and may be
+	// deleted by retention policies. Restores must validate the mapping
+	// against spec.etcd.managed.shards and fail when a persistent shard has
+	// no entry (see MissingPersistentShards).
+	// +openshift:enable:FeatureGate=HCPEtcdBackup
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=11
+	LastSuccessfulEtcdShardBackupURLs []HCPEtcdShardSnapshot `json:"lastSuccessfulEtcdShardBackupURLs,omitempty"`
 
 	// secretEncryption tracks the state of secret encryption key rotation and re-encryption.
 	// +optional

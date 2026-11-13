@@ -10339,7 +10339,28 @@ string
 <td>
 <em>(Optional)</em>
 <p>snapshotURL is the URL of the completed backup snapshot in cloud storage.
+This field contains the default shard&rsquo;s snapshot URL for backward compatibility.
+New consumers should prefer shardSnapshots.
 Must be a valid URL with scheme https or s3.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>shardSnapshots</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot">
+[]HCPEtcdShardSnapshot
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>shardSnapshots contains the snapshot URLs for each etcd shard that was
+backed up. When etcd sharding is not enabled, this list contains a single
+entry for the default shard. Each entry maps a shard name to its snapshot URL.
+It contains between 1 and 11 entries (1 default shard plus up to 10 named
+shards). When omitted, no backup has completed yet: the field is only
+populated by the backup controller after a successful upload.</p>
 </td>
 </tr>
 <tr>
@@ -10355,6 +10376,23 @@ HCPEtcdBackupEncryptionMetadata
 <em>(Optional)</em>
 <p>encryptionMetadata contains metadata about the encryption of the backup.
 When present, at least one platform-specific encryption block must be set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>attemptKeyPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>attemptKeyPrefix is the object key prefix used by the most recent
+backup attempt for this HCPEtcdBackup. Objects written by the attempt
+are <attemptKeyPrefix>/<shard>.db for multi-shard backups, or
+<attemptKeyPrefix>.db for single-shard backups. The field lets
+operators identify and clean up objects left behind by failed
+attempts, which are not deleted automatically.</p>
 </td>
 </tr>
 </tbody>
@@ -10444,6 +10482,51 @@ Required when storageType is &ldquo;AzureBlob&rdquo;, and forbidden otherwise.</
 <td><p>S3BackupStorage indicates that the backup is stored in AWS S3.</p>
 </td>
 </tr></tbody>
+</table>
+###HCPEtcdShardSnapshot { #hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">HCPEtcdBackupStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>)
+</p>
+<p>
+<p>HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the public shard identity: &ldquo;default&rdquo; for the default shard,
+or the exact ManagedEtcdShardSpec.name for a named shard
+(e.g., &ldquo;events&rdquo;).
+It must be between 1 and 63 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>snapshotURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>snapshotURL is the URL of the snapshot in cloud storage.
+Must be a valid URL with scheme https or s3, and between 1 and 2048 characters.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###HostedClusterSpec { #hypershift.openshift.io/v1beta1.HostedClusterSpec }
 <p>
@@ -11254,6 +11337,29 @@ string
 <p>lastSuccessfulEtcdBackupURL is the cloud storage URL of the most recent
 successful etcd backup snapshot. Persisted here because HCPEtcdBackup CRs
 are ephemeral and may be deleted by retention policies.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>lastSuccessfulEtcdShardBackupURLs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot">
+[]HCPEtcdShardSnapshot
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>lastSuccessfulEtcdShardBackupURLs is the versioned per-shard snapshot
+URL mapping (mapping format v1) from the most recent successful etcd
+backup: one entry per persistent shard, keyed by the public shard
+identity (&ldquo;default&rdquo; for the default shard, or the
+ManagedEtcdShardSpec.name for named shards). This is the multi-shard
+equivalent of lastSuccessfulEtcdBackupURL and, like it, is persisted on
+the HostedCluster because HCPEtcdBackup CRs are ephemeral and may be
+deleted by retention policies. Restores must validate the mapping
+against spec.etcd.managed.shards and fail when a persistent shard has
+no entry (see MissingPersistentShards).</p>
 </td>
 </tr>
 <tr>
@@ -14776,9 +14882,12 @@ string
 <td>
 <p>name is a unique identifier for this shard. It is used to derive
 resource names (e.g., StatefulSet &ldquo;etcd-{name}&rdquo;, Service
-&ldquo;etcd-client-{name}&rdquo;).
+&ldquo;etcd-client-{name}&rdquo;), and it is the identity reported for the shard in
+HCPEtcdBackup.status.shardSnapshots (the default shard is reported as
+&ldquo;default&rdquo; instead).
 Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
 starting and ending with an alphanumeric character), max 48 characters.
+Must not be &ldquo;default&rdquo;, which is reserved for the default shard.
 Immutable once set.</p>
 </td>
 </tr>
@@ -14845,6 +14954,31 @@ EtcdShardSchedulingSpec
 <p>scheduling configures per-shard pod placement constraints. These
 constraints are merged with the framework&rsquo;s control plane node
 isolation settings (nodeSelector, tolerations, topology spread).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>restoreSnapshotURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>restoreSnapshotURL allows an optional URL to be provided where an etcd
+snapshot for this shard can be downloaded. This snapshot will be restored
+on initial startup, only when the shard&rsquo;s PV is empty.
+When set, it must be between 1 and 2048 characters, matching the maximum
+length of a snapshot URL recorded in HCPEtcdBackup status (presigned URLs
+with signature query parameters can be long).
+When omitted, the shard starts with an empty data directory and no
+snapshot is restored.
+It must be a URL with scheme https: s3:// URLs must be presigned to
+https before being injected (the OADP plugin does this automatically),
+because the restore init container fetches the snapshot with curl.
+It is not allowed when storage.type is EmptyDir, because EmptyDir shards
+are ephemeral and a restored snapshot would be lost on pod restart.
+It cannot be added or removed after creation.</p>
 </td>
 </tr>
 </tbody>
@@ -15011,9 +15145,6 @@ each deployed as an independent StatefulSet and ControlPlaneComponent.
 Minimum 1, maximum 10 entries. Resources must not overlap across
 shards. Immutable after creation: shards cannot be added, removed,
 or reordered.</p>
-<p>WARNING: In the current TechPreview implementation, shard data is NOT
-included in HCPEtcdBackup. Resources routed to shards will not be
-backed up. This will be addressed before promotion beyond TechPreview.</p>
 </td>
 </tr>
 </tbody>
@@ -15078,7 +15209,10 @@ availability configuration).</p>
 an etcd snapshot can be downloaded, for example a pre-signed URL
 referencing a storage service.
 This snapshot will be restored on initial startup, only when the etcd PV
-is empty.</p>
+is empty.
+The URL must use the https scheme: s3:// URLs must be presigned to https
+before being injected (the OADP plugin does this automatically), because
+the restore init container fetches the snapshot with curl.</p>
 </td>
 </tr>
 </tbody>

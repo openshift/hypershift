@@ -22844,7 +22844,7 @@ The backup flow has three phases: CLI initiation, snapshot execution, and Velero
         Job->>etcd: snapshot: etcdctl snapshot save
         Job->>S3: upload: push snapshot.db
 
-        HO->>HO: Extract URL from pod termination message
+        HO->>HO: Extract results (ConfigMap / termination message)
         HO->>HO: Persist URL to HostedCluster status
         HO->>HO: Cleanup RBAC + NetworkPolicy
 
@@ -22954,7 +22954,7 @@ When the OADP plugin creates the `HCPEtcdBackup` CR, the HyperShift Operator's e
 
 1. **Feature gate**: Verifies `HCPEtcdBackup` feature gate is enabled. Returns immediately if disabled.
 2. **Terminal state**: If the backup already succeeded, failed, or was rejected, the controller runs cleanup and retention enforcement, then stops.
-3. **Etcd health**: Fetches the etcd `StatefulSet` in the HCP namespace and verifies all replicas are ready. If unhealthy, the controller sets `BackupCompleted` to `Status=False` with reason `EtcdUnhealthy` and requeues the backup for retry.
+3. **Etcd health**: Checks **all** etcd shard StatefulSets in the HCP namespace (default shard + any configured non-EmptyDir shards) and verifies all replicas are ready. If any shard is unhealthy, the backup is rejected with reason `EtcdUnhealthy`.
 4. **Serial execution**: Scans for active backup Jobs targeting the same HCP namespace. If another backup is running, the new one is rejected with reason `BackupRejected`. This check is idempotent: it runs after checking for the current backup's own Job.
 5. **Credentials**: Verifies the credential Secret referenced in the backup spec exists in the HO namespace.
 
@@ -22967,6 +22967,8 @@ The controller creates temporary resources required for the backup Job to access
 | `ServiceAccount` | HO namespace | Identity for the backup Job pods |
 | `Role` | HCP namespace | Grants read access to `etcd-client-tls` Secret and `etcd-ca` ConfigMap |
 | `RoleBinding` | HCP namespace | Binds the HO ServiceAccount to the HCP Role |
+| `Role` | HO namespace | Grants the Job's ServiceAccount create/update access to exactly its result ConfigMap (named after the `HCPEtcdBackup`) |
+| `RoleBinding` | HO namespace | Binds the ServiceAccount to the result Role |
 | `NetworkPolicy` | HCP namespace | Allows ingress on port 2379 from the HO namespace to etcd pods |
 
 ### 3.3 Backup Job
@@ -22976,16 +22978,18 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 | Container | Type | Image | Purpose |
 | ----------- | ------ | ------- | --------- |
 | `fetch-certs` | Init container | control-plane-operator | Runs `fetch-etcd-certs`: copies etcd TLS certificates from the HCP namespace using the cross-namespace RBAC |
-| `snapshot` | Init container | etcd | Runs `etcdctl snapshot save`: connects to etcd on port 2379 using the fetched TLS certificates and creates a local snapshot file |
-| `upload` | Main container | control-plane-operator | Runs `etcd-upload`: uploads the snapshot file to S3 or Azure Blob using the mounted credentials. Writes the final snapshot URL to the container's termination message |
+| `snapshot` | Init container | etcd | Runs `etcdctl snapshot save` for **every** PV-backed shard concurrently (one background process per shard from a single container), writing one snapshot file per shard. EmptyDir-backed shards are skipped. Any failing shard fails the container, naming the shard |
+| `upload` | Main container | control-plane-operator | Runs `etcd-upload`: `--snapshot-path` for single-shard clusters (backward compatible with older CPO images), `--snapshot-dir` for multi-shard clusters, uploading each shard-named file as a separate object. Single-shard results (a plain URL) go to the pod termination message; multi-shard results (a JSON array of per-shard URLs) are stored in a result ConfigMap in the HO namespace, which has no size limits |
 
 **Job configuration:**
 
 | Setting | Value | Reason |
 | --------- | ------- | -------- |
 | `backoffLimit` | 0 | No retries on failure |
-| `activeDeadlineSeconds` | 900 (15 min) | Prevents indefinitely running Jobs |
+| `activeDeadlineSeconds` | Scales with shard count and provider: 900 s base for S3 (1200 s for Azure Blob) plus 120 s per additional shard (300 s for Azure Blob); a single-shard S3 backup keeps the original 900 s (15 min) | Prevents indefinitely running Jobs while leaving headroom for multi-shard snapshots and slower providers. The values are initial estimates to be validated and tuned through E2E runs; the OADP plugin's backup completion timeout must always be kept larger than the maximum Job deadline |
 | `ttlSecondsAfterFinished` | 600 (10 min) | Automatic Job cleanup |
+
+When the Job is created, the controller also records `HCPEtcdBackup.Status.AttemptKeyPrefix` — the object key prefix (`<keyPrefix>/<unix-timestamp>`) used by this attempt — before the Job runs. Objects written by the attempt are `<attemptKeyPrefix>.db` (single shard) or `<attemptKeyPrefix>/<shard>.db` (multi shard).
 
 **Shared volumes:**
 
@@ -22997,7 +23001,7 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 
 On subsequent reconcile loops, the controller checks the Job status:
 
-- **Succeeded**: Extracts the snapshot URL from the `upload` container's termination message. Persists it to `HostedCluster.Status.LastSuccessfulEtcdBackupURL` using a retry-on-conflict pattern. Marks the `HCPEtcdBackup` as `BackupSucceeded`.
+- **Succeeded**: Extracts the per-shard snapshot results — from the result ConfigMap (multi-shard Jobs; read with a quorum read so a freshly written ConfigMap is already visible), falling back to the `upload` container's termination message (single-shard Jobs and older images). Transient extraction failures (API errors, pod status lag) are retried with a bound before the backup is failed. The extracted results must contain exactly one valid entry per shard the Job was built to snapshot — recorded on the Job at creation — otherwise the backup fails with reason `BackupResultIncomplete` rather than reporting success with missing shards. Once the results are persisted to the backup status, the result ConfigMap is deleted. On success, populates `HCPEtcdBackup.Status.ShardSnapshots` with all shard entries and sets `Status.SnapshotURL` to the default shard's URL for backward compatibility. Persists the default shard URL to `HostedCluster.Status.LastSuccessfulEtcdBackupURL` using a retry-on-conflict pattern. Marks the `HCPEtcdBackup` as `BackupSucceeded`.
 - **Failed**: Marks the `HCPEtcdBackup` as `BackupFailed`.
 - **Running**: Requeues reconciliation after 10 seconds.
 
@@ -23031,8 +23035,14 @@ graph LR
     ANNOTATION -.->|read during restore| RESTORE[Restore plugin]
 ```
 
-- **HostedCluster status**: Persists across `HCPEtcdBackup` CR deletions (retention). Available for operational reference.
-- **Backup annotation**: Stored inside the Velero backup archive. This is the path used during restore, since Velero strips status fields.
+- **HostedCluster status**: Persists across `HCPEtcdBackup` CR deletions (retention). Available for operational reference. Both the single-shard compatibility URL (`lastSuccessfulEtcdBackupURL`) and the versioned per-shard mapping (`lastSuccessfulEtcdShardBackupURLs`, one entry per persistent shard keyed by its public identity) are persisted, so named-shard URLs survive retention.
+- **Backup annotation**: Stored inside the Velero backup archive. This is the path used during restore, since Velero strips status fields. The OADP plugin archives the per-shard mapping alongside the single URL and, during restore, validates it against `spec.etcd.managed.shards` (failing when a persistent shard has no entry) and injects a per-shard `restoreSnapshotURL`.
+
+## Failed Backups Leave Objects Behind
+
+Multi-shard uploads are not transactional: each shard is uploaded as a separate object, and the per-shard snapshot init containers run before the upload container. A failure partway through — a later shard's upload failing or the Job exceeding its deadline — can leave some or all snapshot objects in cloud storage even though the backup failed.
+
+The controller does **not** delete backup objects automatically. Operators are responsible for cleaning up objects left behind by failed attempts. To identify the affected objects without handling signed URLs, read `HCPEtcdBackup.Status.AttemptKeyPrefix`: every object written by that attempt lives under that prefix (`<attemptKeyPrefix>.db` for single-shard backups, `<attemptKeyPrefix>/<shard>.db` for multi-shard).
 
 ## Error Scenarios
 
@@ -23042,10 +23052,13 @@ graph LR
 | Another backup already running for this HCP | `BackupCompleted` = `BackupRejected` | Wait for the active backup to complete |
 | Credential Secret not found in HO namespace | Backup fails immediately | Verify the OADP plugin correctly copied the BSL credentials |
 | Backup Job fails (etcdctl error, upload error) | `BackupCompleted` = `BackupFailed` | Check Job pod logs, verify etcd connectivity and storage permissions |
-| Backup Job exceeds 15 min deadline | Job killed, `BackupCompleted` = `BackupFailed` | Investigate network or storage latency |
+| Backup Job exceeds its deadline (base + per-shard allowance; 15 min for a single-shard S3 backup) | Job killed, `BackupCompleted` = `BackupFailed` | Investigate network or storage latency |
+| Shard snapshot results incomplete (missing, duplicate, or unexpected shard entry) | `BackupCompleted` = `BackupResultIncomplete` | Check the result ConfigMap (or the legacy termination message) and the shard set recorded on the Job; a mismatch between the deployed CPO image and the configured shards can cause this |
+| Shard snapshot results could not be extracted (result ConfigMap and pod termination message both gone) | `BackupCompleted` = `BackupResultExtractionFailed` after bounded retries | Check whether the result ConfigMap and Job pod were deleted before the controller read them |
 | Plugin verification timeout (30s) | Plugin returns error, Velero marks backup failed | Check HyperShift Operator logs for controller issues |
 | Plugin completion timeout (10 min) | Plugin returns error, Velero marks backup failed | Check backup Job status and pod logs |
 | `HCPEtcdBackup` CRD not installed | Plugin fails with explicit error | Enable the `HCPEtcdBackup` feature gate and ensure CRDs are deployed |
+| Multi-shard backup on a CPO image without multi-shard support (capability label absent on the HCP) | `BackupCompleted` = `BackupWaitingForCPOCapability` (non-terminal) | Upgrade the control plane operator; the backup proceeds automatically once the label appears |
 
 ## Platform-specific Notes
 
@@ -23209,7 +23222,7 @@ The `HCPEtcdBackup` CR represents a one-shot backup request for etcd. Key charac
 - **Storage backends**: S3 (AWS) or Azure Blob, configured as a discriminated union.
 - **Encryption**: Optional KMS key ARN (AWS) or Key Vault URL (Azure). Immutable once set.
 - **Status**: Tracks completion via `BackupCompleted` condition with reasons: `BackupInProgress`, `BackupSucceeded`, `BackupFailed`, `BackupRejected`, `EtcdUnhealthy`.
-- **Snapshot URL**: On success, `Status.SnapshotURL` contains the URL where the snapshot was uploaded.
+- **Snapshot URL**: On success, `Status.SnapshotURL` contains the default shard's snapshot URL (backward compat). `Status.ShardSnapshots` contains per-shard snapshot URLs when etcd sharding is enabled.
 
 ### Credential Handling
 
@@ -23224,7 +23237,7 @@ During **restore**, no credential copying is needed. The plugin reads the `etcd-
 | `HCPEtcdBackup` | `BackupCompleted` | Tracks backup lifecycle (InProgress, Succeeded, Failed, Rejected, EtcdUnhealthy) |
 | `HostedControlPlane` | `EtcdSnapshotRestored` | Set to True after etcd is restored from snapshot |
 | `HostedControlPlane` | `EtcdBackupSucceeded` | Bubbled from HCPEtcdBackup, indicates most recent backup result |
-| `HostedCluster` | `Status.LastSuccessfulEtcdBackupURL` | Persists the last snapshot URL. Set by the HO controller after successful backup. Read by the OADP plugin to inject as annotation during backup. Survives HCPEtcdBackup CR deletion via retention |
+| `HostedCluster` | `Status.LastSuccessfulEtcdBackupURL` | Persists the last default shard snapshot URL. Set by the HO controller after successful backup. Read by the OADP plugin to inject as annotation during backup. Survives HCPEtcdBackup CR deletion via retention |
 | `HostedCluster` | Annotation `etcd-snapshot-url` | Injected by OADP plugin during backup (from Status field). Read by OADP plugin during restore to set RestoreSnapshotURL |
 | `HostedCluster` | Annotation `restored-from-backup` | Set during restore, removed once `HostedClusterRestoredFromBackup` condition becomes True |
 
@@ -23760,12 +23773,14 @@ Once the `HostedControlPlane` is created with `RestoreSnapshotURL` set, the Cont
 
 ### 4.1 Init Container Injection
 
-The CPO checks two conditions:
+The CPO checks two conditions for each etcd StatefulSet (default and named shards):
 
-1. `RestoreSnapshotURL` is non-empty.
+1. `RestoreSnapshotURL` is non-empty (from `ManagedEtcdStorageSpec` for the default shard, or from `ManagedEtcdShardSpec` for named shards).
 2. `EtcdSnapshotRestored` condition is not yet `True`.
 
-If both are met, an `etcd-init` init container is injected into the etcd StatefulSet spec. The container receives the snapshot URL via environment variable `RESTORE_URL_ETCD`.
+If both are met, an `etcd-init` init container is injected into the StatefulSet spec. The container receives the snapshot URL via environment variable `RESTORE_URL_ETCD`.
+
+EmptyDir-backed shards are not restored (they hold ephemeral data), and the API rejects `restoreSnapshotURL` on EmptyDir shards via CEL validation.
 
 ### 4.2 Snapshot Download and Restore
 
@@ -23806,11 +23821,12 @@ The `etcd-init` container runs the `etcd-init.sh` script, which executes the fol
 
 ### 4.3 Post-Restore Reconciliation
 
-After the etcd pod starts successfully with restored data:
+After the etcd pods start successfully with restored data:
 
-1. The CPO sets the `EtcdSnapshotRestored` condition to `True` on the `HostedControlPlane`.
-2. On the next reconciliation loop, the CPO detects `EtcdSnapshotRestored = True` and removes the `etcd-init` container from the StatefulSet. This prevents the init container from running on subsequent pod restarts.
-3. The `HostedCluster` controller detects the `restored-from-backup` annotation and monitors the restore completion. Once the `HostedClusterRestoredFromBackup` condition becomes `True`, the annotation is removed.
+1. Restore is **all-or-nothing**: once any persistent shard has a `restoreSnapshotURL`, every persistent shard must have one. An incomplete mapping sets `EtcdSnapshotRestored` to `False` with reason `EtcdRestoreIncomplete` and a message naming the missing shards, instead of silently starting them with empty data directories (the pre-multi-shard OADP flow injected a URL for the default shard only; the plugin is being updated to inject per-shard URLs).
+2. The CPO checks restore completion across **all** shard StatefulSets that have a `restoreSnapshotURL` configured. The `EtcdSnapshotRestored` condition is set to `True` only when all shards with restore URLs report their `etcd-init` containers have completed successfully.
+3. On the next reconciliation loop, the CPO detects `EtcdSnapshotRestored = True` and removes the `etcd-init` container from all StatefulSets. This prevents the init container from running on subsequent pod restarts.
+4. The `HostedCluster` controller detects the `restored-from-backup` annotation and monitors the restore completion. Once the `HostedClusterRestoredFromBackup` condition becomes `True`, the annotation is removed.
 
 ## Pre-Restore Checklist
 
@@ -23887,6 +23903,450 @@ After the restore completes:
 - Restore is only supported on the same management cluster where the backup was created.
 - VMs are recreated after restore (not preserved from backup).
 - Worker nodes will be reprovisioned.
+
+
+---
+
+## Source: docs/content/how-to/disaster-recovery/methods/etcd-snapshot/shard-backup-plan.md
+
+# Etcd Shard Backup Integration Plan
+
+## Problem
+
+The `HCPEtcdBackup` controller (CNTRLPLANE-2677/2678, merged April 2026) is hardcoded
+to snapshot only the default etcd instance. When etcd sharding is enabled
+(OCPSTRAT-3150, merged July 2026), resources routed to non-default shards are
+**not backed up**, and there is no mechanism to restore shard snapshots. Both
+features are behind `TechPreviewNoUpgrade` feature gates, but backup and restore
+support must be closed before `EtcdSharding` can promote beyond TechPreview.
+
+### What's hardcoded today
+
+| Component | Hardcoded to default etcd | File |
+|-----------|--------------------------|------|
+| Health check | `StatefulSet "etcd"` only | `reconciler.go:checkEtcdHealth` |
+| Snapshot init container | `etcd-client.<ns>.svc:2379` only | `reconciler.go:createBackupJob` |
+| RBAC (fetch-certs) | `etcd-client-tls` secret only | `reconciler.go:ensureRBAC` |
+| Status | Single `snapshotURL` | `etcdbackup_types.go:HCPEtcdBackupStatus` |
+| HostedCluster status | Single `LastSuccessfulEtcdBackupURL` | `hostedcluster_types.go` |
+| HostedCluster shard mapping | New: `LastSuccessfulEtcdShardBackupURLs` persists a versioned per-shard mapping (one entry per persistent shard, keyed by public identity) so named-shard URLs survive HCPEtcdBackup retention; restores validate it via `MissingPersistentShards` and fail when a persistent shard is missing | `hostedcluster_types.go` |
+| Restore | Single `RestoreSnapshotURL` on `ManagedEtcdStorageSpec` | `hostedcluster_types.go` |
+| Restore init container | Only injected on default `etcd` StatefulSet | `statefulset.go:adaptStatefulSet` |
+| Restore condition | Only checks default `etcd` StatefulSet pods | `hostedcontrolplane_controller.go:etcdRestoredCondition` |
+
+### What shards share vs. what differs
+
+| Resource | Shared across shards? | Notes |
+|----------|----------------------|-------|
+| CA (`etcd-ca` ConfigMap) | ✅ Yes | Single CA signs all certs |
+| Client TLS (`etcd-client-tls`) | ✅ Yes | Shards reuse default client cert |
+| Peer/Server TLS | ❌ No | Per-shard: `etcd-<name>-peer-tls`, `etcd-<name>-server-tls` |
+| Client service | ❌ No | Default: `etcd-client`, shard: `etcd-client-<name>` |
+| StatefulSet | ❌ No | Default: `etcd`, shard: `etcd-<name>` |
+
+**Key insight**: Since shards reuse `etcd-client-tls`, the existing `fetch-certs`
+init container and RBAC already provide the credentials needed to connect to any
+shard. No RBAC changes are needed.
+
+## Design
+
+### Approach: Concurrent snapshots per shard in a single Job
+
+Rather than spawning parallel Jobs (which adds complexity around serial execution
+guards, partial failure semantics, and credential/NetworkPolicy lifecycle), the
+backup Job snapshots every etcd endpoint **concurrently** within a single Pod —
+one background `etcdctl snapshot save` process per shard, so cross-shard skew is
+bounded by the slowest snapshot instead of the sum of all snapshot durations.
+This preserves the existing single-Job-per-backup model (see the snapshot
+consistency model under Job construction).
+
+### Changes by layer
+
+#### 1. API (`api/hypershift/v1beta1/etcdbackup_types.go`)
+
+Add per-shard snapshot tracking to `HCPEtcdBackupStatus`:
+
+```go
+// shardSnapshots contains the snapshot URLs for each etcd shard that was
+// backed up. When etcd sharding is not enabled, this list contains a single
+// entry for the default shard. Each entry maps a shard name to its snapshot URL.
+// It contains between 1 and 11 entries (1 default shard plus up to 10 named
+// shards). When omitted, no backup has completed yet: the field is only
+// populated by the backup controller after a successful upload.
+// +optional
+// +listType=map
+// +listMapKey=name
+// +kubebuilder:validation:MaxItems=11
+ShardSnapshots []HCPEtcdShardSnapshot `json:"shardSnapshots,omitempty"`
+```
+
+The controller receives this list through a result ConfigMap in the HyperShift
+operator namespace. The Job builder derives the ConfigMap name deterministically
+from the `HCPEtcdBackup` and grants the Job's service account create/update
+access to exactly that ConfigMap; the upload container writes the JSON array
+there, and the controller reads it (with a quorum read) on completion and
+deletes it once the results are persisted to the backup status. A ConfigMap has
+no size budget, so the full result set always fits — unlike the pod termination
+message, which kubelet truncates at 4096 bytes per container and divides a
+12288-byte pod-level budget across all containers. The termination message
+remains the channel for single-shard backups (a plain URL) and for images built
+before the result ConfigMap was introduced.
+
+```go
+type HCPEtcdShardSnapshot struct {
+    // name is the public shard identity: "default" for the default shard,
+    // or the exact ManagedEtcdShardSpec.name for a named shard (e.g., "events").
+    // +required
+    Name string `json:"name"`
+
+    // snapshotURL is the URL of the snapshot in cloud storage.
+    // +required
+    SnapshotURL string `json:"snapshotURL"`
+}
+```
+
+The existing `SnapshotURL` field remains for backward compatibility and is set to
+the **default shard's** snapshot URL. New consumers should prefer `ShardSnapshots`.
+
+#### 2. Controller (`hypershift-operator/controllers/etcdbackup/reconciler.go`)
+
+##### a. Shard discovery
+
+Add a helper that resolves the list of etcd shards to back up. Shards backed by
+`EmptyDir` storage are skipped — they hold ephemeral data that is not worth
+backing up — and the same filtered list is used for shard discovery, health
+checks, and Job construction so no snapshot init container is ever created for
+an excluded shard:
+
+```go
+func etcdShards(hcp *hyperv1.HostedControlPlane) []etcdShardInfo {
+    // name is the internal CPO resource name (StatefulSet/Service);
+    // identity is the public shard identity reported in shardSnapshots.
+    shards := []etcdShardInfo{{
+        name: "etcd",
+        identity: "default",
+        endpoint: fmt.Sprintf("https://%s.%s.svc:%d",
+            etcdutil.ClientServiceName("etcd"), hcp.Namespace, supportconfig.EtcdClientPort),
+    }}
+    if hcp.Spec.Etcd.Managed != nil {
+        for _, s := range hcp.Spec.Etcd.Managed.Shards {
+            if s.Storage.Type == hyperv1.EmptyDirEtcdShardStorage {
+                continue
+            }
+            shardName := fmt.Sprintf("etcd-%s", s.Name)
+            shards = append(shards, etcdShardInfo{
+                name:     shardName,
+                endpoint: fmt.Sprintf("https://%s.%s.svc:%d",
+                    etcdutil.ClientServiceName(shardName), hcp.Namespace, supportconfig.EtcdClientPort),
+            })
+        }
+    }
+    return shards
+}
+```
+
+##### b. Health check (`checkEtcdHealth`)
+
+Change from checking a single StatefulSet to checking **all** shard StatefulSets:
+
+```go
+func (r *HCPEtcdBackupReconciler) checkEtcdHealth(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, string, error) {
+    for _, shard := range r.etcdShards(hcp) {
+        sts := &appsv1.StatefulSet{}
+        if err := r.Get(ctx, types.NamespacedName{Name: shard.name, Namespace: hcp.Namespace}, sts); err != nil {
+            if apierrors.IsNotFound(err) {
+                return false, fmt.Sprintf("etcd StatefulSet %q not found", shard.name), nil
+            }
+            return false, "", err
+        }
+        desired := ptr.Deref(sts.Spec.Replicas, 1)
+        if sts.Status.ReadyReplicas < desired {
+            return false, fmt.Sprintf("etcd StatefulSet %q not fully ready: %d/%d",
+                shard.name, sts.Status.ReadyReplicas, desired), nil
+        }
+    }
+    return true, "", nil
+}
+```
+
+##### c. Job construction (`createBackupJob`)
+
+Replace the single `snapshot` init container with one init container **per shard**,
+each writing to a shard-named snapshot file:
+
+```text
+Init containers:
+  fetch-certs          (unchanged — shared client TLS works for all shards)
+  snapshot             one container, one background etcdctl per shard:
+                         etcdctl --endpoints=etcd-client.<ns>:2379 snapshot save /backup/default.db &
+                         etcdctl --endpoints=etcd-client-events.<ns>:2379 snapshot save /backup/events.db &
+                         wait; fail (naming the shard) if any snapshot failed
+
+Main container:
+  upload               control-plane-operator etcd-upload --snapshot-dir /backup/ ...
+```
+
+##### Snapshot consistency model
+
+Each shard's snapshot is taken with `etcdctl snapshot save`, which produces an
+individually consistent point-in-time copy of that shard's data (etcd quorum
+semantics). All shards are snapshotted **concurrently** from a single init
+container, so across shards the copies are approximately simultaneous: the
+cross-shard skew is bounded by the duration of the slowest single snapshot,
+not by the sum of all snapshot durations. Cross-shard point-in-time
+consistency is not guaranteed — there is no coordinated multi-shard snapshot
+protocol — so resources routed to different shards can represent materially
+adjacent, but not identical, moments. This is the same guarantee the
+single-shard backup has trivially (one shard, no skew), and it is the
+consistency model under which the feature is consumable.
+
+The upload command changes from `--snapshot-path` (single file) to `--snapshot-dir`
+(directory of shard-named files), uploading each as a separate object with the
+shard name in the key. Because older CPO images only support `--snapshot-path`,
+multi-shard backup Jobs require a CPO image with `--snapshot-dir` support.
+
+This is enforced rather than assumed: the CPO sets a capability label
+(`hypershift.openshift.io/control-plane-operator-supports-multishard-etcd-backup`)
+on the HostedControlPlane when the deployed image supports the multi-shard
+backup flags, and the backup controller gates multi-shard Job creation on it.
+While the label is absent the backup waits in a non-terminal
+`BackupWaitingForCPOCapability` condition (feature gates control API exposure,
+but do not prove the deployed image supports the flags) and proceeds once a
+capable CPO is deployed. The backup controller also resolves the CPO image for
+the backup Job with the same override chain as the CPO deployment itself
+(annotation, platform/version overrides, release payload), so the Job always
+runs the image actually deployed for the control plane.
+
+##### d. NetworkPolicy (`ensureNetworkPolicy`)
+
+The current policy selects pods with `app: etcd`. However, shard pods carry
+`app: etcd-<name>` (e.g., `app: etcd-events`) because the StatefulSet template
+uses `app: {{ .Name }}` where `.Name` is `etcd-events`, not `etcd`. The
+NetworkPolicy must be widened.
+
+Option A (recommended): Use a `matchExpressions` selector listing the exact
+`app` values for every shard. Since shards are known at Job creation time, the
+controller can build the list (note that `LabelSelectorOpIn` matches exact
+label values — it does not perform prefix matching):
+
+```go
+np.Spec.PodSelector = metav1.LabelSelector{
+    MatchExpressions: []metav1.LabelSelectorRequirement{{
+        Key:      "app",
+        Operator: metav1.LabelSelectorOpIn,
+        Values:   shardAppLabels, // ["etcd", "etcd-events", ...]
+    }},
+}
+```
+
+Option B: Add a shared label (e.g., `hypershift.openshift.io/etcd-component: "true"`)
+to all etcd shard StatefulSets in the CPOv2 shard component and select on that.
+This requires a change in the shard component code but is more future-proof.
+
+##### e. Status update (`handleJobStatus`)
+
+After successful upload, parse per-shard snapshot URLs from the upload container's
+termination message (JSON array instead of single string) and populate both
+`SnapshotURL` (default shard, backward compat) and `ShardSnapshots`.
+
+#### 3. Upload command (`control-plane-operator/etcd-upload`)
+
+Extend the `etcd-upload` subcommand:
+
+- Add `--snapshot-dir` flag (mutually exclusive with existing `--snapshot-path`)
+- When `--snapshot-dir` is set, iterate over `*.db` files in the directory
+- Upload each with key `<prefix>/<timestamp>/<shard-name>.db`
+- Store JSON in the result ConfigMap: `{"shardSnapshots": "[{\"name\":\"default\",\"url\":\"s3://...\"},{\"name\":\"events\",\"url\":\"s3://...\"}]"}`
+
+The existing `--snapshot-path` continues to work for the single-shard case so
+older CPO images remain compatible.
+
+#### 4. Documentation and API warnings
+
+- Remove the `WARNING` from `ManagedEtcdShardSpec.Shards` godoc
+- Remove the `TODO(etcd-sharding)` from `shard.go`
+- Update `docs/content/how-to/disaster-recovery/etcd-snapshot-backup/` to cover
+  multi-shard backup behavior
+
+### Restore: per-shard snapshot restore
+
+Restore (via `restoreSnapshotURL`) is currently single-shard only. The default
+etcd StatefulSet's `adaptStatefulSet` injects an `etcd-init` container that
+curls the snapshot URL and runs `etcdutl snapshot restore`, gated by the
+`EtcdSnapshotRestored` condition. The shard component (`adaptStatefulSetForShard`)
+has **no restore logic at all**.
+
+Backup without restore is incomplete DR — the backed-up shard snapshots would be
+useless without a restore path. Both must ship together.
+
+#### Restore approach
+
+The existing restore mechanism is a one-shot, creation-time bootstrap: the user
+sets an immutable URL on the HostedCluster, the etcd init container downloads and
+restores it on first boot (when `/var/lib/data` is empty), and the
+`EtcdSnapshotRestored` condition gates removal of the init container.
+
+Multi-shard restore follows the same pattern with minimal new machinery:
+
+##### a. API: add `restoreSnapshotURL` to `ManagedEtcdShardSpec`
+
+```go
+type ManagedEtcdShardSpec struct {
+    // ... existing fields ...
+
+    // restoreSnapshotURL allows an optional URL to be provided where an etcd
+    // snapshot for this shard can be downloaded. This snapshot will be restored
+    // on initial startup, only when the shard's PV is empty.
+    // When set, it must be between 1 and 1024 characters.
+    // When omitted, the shard starts with an empty data directory and no
+    // snapshot is restored.
+    // It must be a URL with scheme https: s3:// URLs must be presigned to
+    // https before being injected (the OADP plugin does this automatically),
+    // because the restore init container fetches the snapshot with curl.
+    // It is not allowed when storage.type is EmptyDir, because EmptyDir shards
+    // are ephemeral and a restored snapshot would be lost on pod restart.
+    // It cannot be added or removed after creation.
+    // +optional
+    // +kubebuilder:validation:MinLength=1
+    // +kubebuilder:validation:MaxLength=1024
+    // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="restoreSnapshotURL is immutable"
+    // +kubebuilder:validation:XValidation:rule="self.matches('^https://.*')",message="restoreSnapshotURL must be a valid URL with scheme https"
+    RestoreSnapshotURL string `json:"restoreSnapshotURL,omitempty"`
+}
+```
+
+Using a single `string` rather than `[]string` (like the parent spec) avoids the
+legacy MaxItems=1 list pattern. The field is immutable via CEL and only valid for
+PersistentVolume-backed shards — an additional CEL rule on `ManagedEtcdShardSpec`
+rejects `restoreSnapshotURL` when `storage.type` is `EmptyDir`:
+
+```go
+// +kubebuilder:validation:XValidation:rule="!has(self.restoreSnapshotURL) || !has(self.storage) || self.storage.type != 'EmptyDir'",message="restoreSnapshotURL is not supported for EmptyDir shards"
+// +kubebuilder:validation:XValidation:rule="has(oldSelf.restoreSnapshotURL) == has(self.restoreSnapshotURL)",message="restoreSnapshotURL cannot be added or removed after creation"
+```
+
+##### b. Shard component: inject `etcd-init` container
+
+`adaptStatefulSetForShard` gains the same pattern as `adaptStatefulSet`:
+
+```go
+if shard.RestoreSnapshotURL != "" && !snapshotRestored {
+    sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers,
+        buildEtcdInitContainer(shard.RestoreSnapshotURL, hcp.Namespace,
+            initialCluster, discoveryService),
+    )
+}
+```
+
+`buildEtcdInitContainer` takes the namespace, the initial cluster string, and
+the shard's discovery service name (`ETCD_DISCOVERY_SERVICE`), so each pod
+restores a uniquely identified member of the correct default or named shard.
+`etcd-init.sh` is otherwise shard-agnostic: it rejects `s3://` restore URLs
+(they must be presigned to https), curls the URL, and restores into
+`/var/lib/data`, which is the volume mount point for every shard's PVC.
+
+##### c. Restore condition: extend `etcdRestoredCondition`
+
+The HCP controller's `reconcileEtcdStatus` currently checks only the default
+etcd StatefulSet for restore completion. It must be extended to check **all**
+shard StatefulSets that have a `restoreSnapshotURL` configured:
+
+```go
+// For the default etcd, check RestoreSnapshotURL from managed storage spec.
+// For each shard, check RestoreSnapshotURL from the shard spec.
+// Restore is all-or-nothing: once any persistent shard has a restore URL,
+// every persistent shard must have one (MissingPersistentShards semantics);
+// an incomplete mapping fails with reason EtcdRestoreIncomplete naming the
+// missing shards.
+// EtcdSnapshotRestored is set to True only when ALL shards with restore URLs
+// have completed their etcd-init containers successfully.
+```
+
+The `EtcdSnapshotRestored` condition remains a single boolean on the HCP — it's
+not set to True until **all** shards (default + named) with restore URLs report
+their init containers ready, and it is set to False (not ignored) when the
+restore mapping is incomplete. This preserves the existing gate: the init container
+is removed from all StatefulSets only once the aggregate condition is True.
+
+##### d. EmptyDir shards: no restore
+
+EmptyDir-backed shards (e.g., events, leases) are ephemeral by design — data is
+lost on pod restart. Restoring a snapshot into tmpfs is pointless and wasteful.
+The API validation rejects `restoreSnapshotURL` on EmptyDir shards, and the
+backup controller skips EmptyDir shards when building snapshot init containers
+(their data is expendable).
+
+##### e. Backup: skip EmptyDir shards
+
+For consistency, the backup Job should also skip EmptyDir-backed shards. These
+hold ephemeral data (events, leases) that regenerates naturally and doesn't need
+to survive a disaster recovery scenario. The `etcdShards()` discovery helper
+should filter based on storage type:
+
+```go
+func (r *HCPEtcdBackupReconciler) etcdShards(hcp *hyperv1.HostedControlPlane) []etcdShardInfo {
+    shards := []etcdShardInfo{{...}} // default shard always included
+    if hcp.Spec.Etcd.Managed != nil {
+        for _, s := range hcp.Spec.Etcd.Managed.Shards {
+            if s.Storage.Type == hyperv1.EmptyDirEtcdShardStorage {
+                continue // skip ephemeral shards
+            }
+            // ...
+        }
+    }
+    return shards
+}
+```
+
+## Test plan
+
+1. **Unit tests** (`reconciler_test.go`):
+   - Health check fails if any shard StatefulSet is unhealthy
+   - Job contains correct number of snapshot init containers for N shards
+   - EmptyDir shards are excluded from snapshot init containers
+   - Status correctly populates `ShardSnapshots` from the result ConfigMap JSON
+   - Backward compat: single-shard HCP still produces single `SnapshotURL`
+
+2. **Unit tests** (`shard_test.go`):
+   - `adaptStatefulSetForShard` injects `etcd-init` when `RestoreSnapshotURL` is set and `EtcdSnapshotRestored` is not True
+   - `adaptStatefulSetForShard` omits `etcd-init` when `EtcdSnapshotRestored` is True
+   - `adaptStatefulSetForShard` omits `etcd-init` when `RestoreSnapshotURL` is empty
+
+3. **Unit tests** (`hostedcontrolplane_controller_test.go`):
+   - `etcdRestoredCondition` requires all shards with restore URLs to complete
+   - `etcdRestoredCondition` ignores shards without restore URLs
+   - `EtcdSnapshotRestored` not set True until all shard init containers succeed
+
+4. **Envtest** (CEL validation):
+   - `HCPEtcdBackupStatus.ShardSnapshots` validates correctly
+   - `SnapshotURL` and `ShardSnapshots` can coexist
+   - `ManagedEtcdShardSpec.RestoreSnapshotURL` is immutable
+   - `RestoreSnapshotURL` rejected on EmptyDir shards
+   - `RestoreSnapshotURL` accepted on PersistentVolume shards
+
+5. **E2E** (`test/e2e/`):
+   - Existing backup e2e test continues to pass (no sharding configured)
+   - When sharding e2e is added: verify backup includes shard snapshots
+   - When sharding e2e is added: verify restore with per-shard URLs
+
+## Task breakdown
+
+| # | Task | Scope |
+|---|------|-------|
+| 1 | Add `ShardSnapshots` to `HCPEtcdBackupStatus` API, regenerate | API |
+| 2 | Add `RestoreSnapshotURL` to `ManagedEtcdShardSpec` + CEL rules, regenerate | API |
+| 3 | Add `etcdShards()` discovery helper (skip EmptyDir shards) | Controller |
+| 4 | Update `checkEtcdHealth` for multi-shard | Controller |
+| 5 | Update `createBackupJob` to emit per-shard snapshot init containers | Controller |
+| 6 | Extend `etcd-upload` to support `--snapshot-dir` | CPO CLI |
+| 7 | Update `handleJobStatus` to parse the result ConfigMap JSON | Controller |
+| 8 | Verify NetworkPolicy pod selector covers shard pods | Controller |
+| 9 | Inject `etcd-init` in `adaptStatefulSetForShard` for PV-backed shards | CPO |
+| 10 | Extend `reconcileEtcdStatus` / `etcdRestoredCondition` for shard StatefulSets | CPO |
+| 11 | Unit tests for all above | Tests |
+| 12 | Envtest CEL tests for new API fields | Tests |
+| 13 | Remove WARNING/TODO from sharding code | Cleanup |
+| 14 | Update docs | Docs |
 
 
 ---
@@ -53626,7 +54086,28 @@ string
 <td>
 <em>(Optional)</em>
 <p>snapshotURL is the URL of the completed backup snapshot in cloud storage.
+This field contains the default shard&rsquo;s snapshot URL for backward compatibility.
+New consumers should prefer shardSnapshots.
 Must be a valid URL with scheme https or s3.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>shardSnapshots</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot">
+[]HCPEtcdShardSnapshot
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>shardSnapshots contains the snapshot URLs for each etcd shard that was
+backed up. When etcd sharding is not enabled, this list contains a single
+entry for the default shard. Each entry maps a shard name to its snapshot URL.
+It contains between 1 and 11 entries (1 default shard plus up to 10 named
+shards). When omitted, no backup has completed yet: the field is only
+populated by the backup controller after a successful upload.</p>
 </td>
 </tr>
 <tr>
@@ -53642,6 +54123,23 @@ HCPEtcdBackupEncryptionMetadata
 <em>(Optional)</em>
 <p>encryptionMetadata contains metadata about the encryption of the backup.
 When present, at least one platform-specific encryption block must be set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>attemptKeyPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>attemptKeyPrefix is the object key prefix used by the most recent
+backup attempt for this HCPEtcdBackup. Objects written by the attempt
+are <attemptKeyPrefix>/<shard>.db for multi-shard backups, or
+<attemptKeyPrefix>.db for single-shard backups. The field lets
+operators identify and clean up objects left behind by failed
+attempts, which are not deleted automatically.</p>
 </td>
 </tr>
 </tbody>
@@ -53731,6 +54229,51 @@ Required when storageType is &ldquo;AzureBlob&rdquo;, and forbidden otherwise.</
 <td><p>S3BackupStorage indicates that the backup is stored in AWS S3.</p>
 </td>
 </tr></tbody>
+</table>
+###HCPEtcdShardSnapshot { #hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">HCPEtcdBackupStatus</a>,
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>)
+</p>
+<p>
+<p>HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the public shard identity: &ldquo;default&rdquo; for the default shard,
+or the exact ManagedEtcdShardSpec.name for a named shard
+(e.g., &ldquo;events&rdquo;).
+It must be between 1 and 63 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>snapshotURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>snapshotURL is the URL of the snapshot in cloud storage.
+Must be a valid URL with scheme https or s3, and between 1 and 2048 characters.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###HostedClusterSpec { #hypershift.openshift.io/v1beta1.HostedClusterSpec }
 <p>
@@ -54541,6 +55084,29 @@ string
 <p>lastSuccessfulEtcdBackupURL is the cloud storage URL of the most recent
 successful etcd backup snapshot. Persisted here because HCPEtcdBackup CRs
 are ephemeral and may be deleted by retention policies.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>lastSuccessfulEtcdShardBackupURLs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot">
+[]HCPEtcdShardSnapshot
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>lastSuccessfulEtcdShardBackupURLs is the versioned per-shard snapshot
+URL mapping (mapping format v1) from the most recent successful etcd
+backup: one entry per persistent shard, keyed by the public shard
+identity (&ldquo;default&rdquo; for the default shard, or the
+ManagedEtcdShardSpec.name for named shards). This is the multi-shard
+equivalent of lastSuccessfulEtcdBackupURL and, like it, is persisted on
+the HostedCluster because HCPEtcdBackup CRs are ephemeral and may be
+deleted by retention policies. Restores must validate the mapping
+against spec.etcd.managed.shards and fail when a persistent shard has
+no entry (see MissingPersistentShards).</p>
 </td>
 </tr>
 <tr>
@@ -58063,9 +58629,12 @@ string
 <td>
 <p>name is a unique identifier for this shard. It is used to derive
 resource names (e.g., StatefulSet &ldquo;etcd-{name}&rdquo;, Service
-&ldquo;etcd-client-{name}&rdquo;).
+&ldquo;etcd-client-{name}&rdquo;), and it is the identity reported for the shard in
+HCPEtcdBackup.status.shardSnapshots (the default shard is reported as
+&ldquo;default&rdquo; instead).
 Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
 starting and ending with an alphanumeric character), max 48 characters.
+Must not be &ldquo;default&rdquo;, which is reserved for the default shard.
 Immutable once set.</p>
 </td>
 </tr>
@@ -58132,6 +58701,31 @@ EtcdShardSchedulingSpec
 <p>scheduling configures per-shard pod placement constraints. These
 constraints are merged with the framework&rsquo;s control plane node
 isolation settings (nodeSelector, tolerations, topology spread).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>restoreSnapshotURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>restoreSnapshotURL allows an optional URL to be provided where an etcd
+snapshot for this shard can be downloaded. This snapshot will be restored
+on initial startup, only when the shard&rsquo;s PV is empty.
+When set, it must be between 1 and 2048 characters, matching the maximum
+length of a snapshot URL recorded in HCPEtcdBackup status (presigned URLs
+with signature query parameters can be long).
+When omitted, the shard starts with an empty data directory and no
+snapshot is restored.
+It must be a URL with scheme https: s3:// URLs must be presigned to
+https before being injected (the OADP plugin does this automatically),
+because the restore init container fetches the snapshot with curl.
+It is not allowed when storage.type is EmptyDir, because EmptyDir shards
+are ephemeral and a restored snapshot would be lost on pod restart.
+It cannot be added or removed after creation.</p>
 </td>
 </tr>
 </tbody>
@@ -58298,9 +58892,6 @@ each deployed as an independent StatefulSet and ControlPlaneComponent.
 Minimum 1, maximum 10 entries. Resources must not overlap across
 shards. Immutable after creation: shards cannot be added, removed,
 or reordered.</p>
-<p>WARNING: In the current TechPreview implementation, shard data is NOT
-included in HCPEtcdBackup. Resources routed to shards will not be
-backed up. This will be addressed before promotion beyond TechPreview.</p>
 </td>
 </tr>
 </tbody>
@@ -58365,7 +58956,10 @@ availability configuration).</p>
 an etcd snapshot can be downloaded, for example a pre-signed URL
 referencing a storage service.
 This snapshot will be restored on initial startup, only when the etcd PV
-is empty.</p>
+is empty.
+The URL must use the https scheme: s3:// URLs must be presigned to https
+before being injected (the OADP plugin does this automatically), because
+the restore init container fetches the snapshot with curl.</p>
 </td>
 </tr>
 </tbody>

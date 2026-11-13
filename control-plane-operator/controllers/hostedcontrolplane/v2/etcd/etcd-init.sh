@@ -5,6 +5,17 @@ mkdir -p /var/lib/data
 RESTORE_URL_VAR="RESTORE_URL_ETCD"
 RESTORE_URL=${!RESTORE_URL_VAR}
 
+# Defense in depth: the API requires https restore URLs because this script
+# fetches the snapshot with curl, which cannot speak the s3 protocol. An
+# unpresigned s3:// URL reaching this point would otherwise hang or fail
+# confusingly, so fail with an actionable message instead.
+case "${RESTORE_URL}" in
+  s3://*)
+    echo "ERROR: restore URL uses the s3:// scheme, which curl cannot fetch."       "Presign the URL to https:// before setting restoreSnapshotURL"       "(the OADP plugin does this automatically)."
+    exit 1
+    ;;
+esac
+
 # When downloading from S3, curl can succeed even if the object doesn't exist
 # and also when a pre-signed URL is expired.
 # In this case we get an XML file which can be detected with `file` so we show
@@ -14,10 +25,11 @@ head -c 5 /tmp/snapshot | grep -q '<?xml' && cat /tmp/snapshot && exit 1
 
 # etcd 3.6+ (OCP 4.21+) moved snapshot restore/status from etcdctl to etcdutl.
 # Restore to a staging directory first so a mid-write failure does not corrupt /var/lib/data.
-# HOSTNAME, HCP_NAMESPACE, and ETCD_INITIAL_CLUSTER are injected by buildEtcdInitContainer
-# so each pod restores a uniquely identified member rather than the same
-# 1-member default, which would cause a split-brain cluster.
-PEER_URL="https://${HOSTNAME}.etcd-discovery.${HCP_NAMESPACE}.svc:2380"
+# HOSTNAME, HCP_NAMESPACE, ETCD_INITIAL_CLUSTER, and ETCD_DISCOVERY_SERVICE are
+# injected by buildEtcdInitContainer so each pod restores a uniquely identified
+# member in the correct default or named shard rather than the same 1-member
+# default, which would cause a split-brain cluster.
+PEER_URL="https://${HOSTNAME}.${ETCD_DISCOVERY_SERVICE}.${HCP_NAMESPACE}.svc:2380"
 
 rm -rf /var/lib/restore
 if [ -x /usr/bin/etcdutl ]; then

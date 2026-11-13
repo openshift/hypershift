@@ -2,9 +2,17 @@ package etcdupload
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 )
 
 func TestNewStartCommand(t *testing.T) {
@@ -17,10 +25,16 @@ func TestNewStartCommand(t *testing.T) {
 
 	t.Run("When created it should register all required flags", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		requiredFlags := []string{"snapshot-path", "storage-type", "key-prefix"}
+		requiredFlags := []string{"storage-type", "key-prefix"}
 		for _, name := range requiredFlags {
 			g.Expect(cmd.Flags().Lookup(name)).ToNot(BeNil(), "expected flag %q to exist", name)
 		}
+	})
+
+	t.Run("When created it should register snapshot path and dir flags", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		g.Expect(cmd.Flags().Lookup("snapshot-path")).ToNot(BeNil())
+		g.Expect(cmd.Flags().Lookup("snapshot-dir")).ToNot(BeNil())
 	})
 
 	t.Run("When created it should register all optional flags", func(t *testing.T) {
@@ -64,5 +78,239 @@ func TestKeyGeneration(t *testing.T) {
 		g := NewGomegaWithT(t)
 		snapshotPath := createTempSnapshot(t)
 		g.Expect(snapshotPath).To(HaveSuffix(".db"))
+	})
+}
+
+func TestRun(t *testing.T) {
+	t.Run("When neither snapshot-path nor snapshot-dir is set it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		opts := options{
+			storageType: "S3",
+			keyPrefix:   "test",
+		}
+		err := run(context.Background(), opts)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("either --snapshot-path or --snapshot-dir must be specified"))
+	})
+
+	t.Run("When both snapshot-path and snapshot-dir are set it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		opts := options{
+			snapshotPath: "/tmp/snapshot.db",
+			snapshotDir:  "/tmp/snapshots",
+			storageType:  "S3",
+			keyPrefix:    "test",
+		}
+		err := run(context.Background(), opts)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("mutually exclusive"))
+	})
+}
+
+func TestRunDir(t *testing.T) {
+	t.Run("When snapshot directory is empty it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		opts := options{
+			snapshotDir: dir,
+			storageType: "S3",
+			keyPrefix:   "test",
+		}
+		uploader := &fakeUploader{}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("no .db files found"))
+	})
+
+	t.Run("When snapshot directory has .db files it should upload each", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		// Create test snapshot files
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+		g.Expect(writeTestFile(dir, "etcd-events.db")).To(Succeed())
+		g.Expect(writeTestFile(dir, "not-a-snapshot.txt")).To(Succeed()) // should be ignored
+
+		uploader := &fakeUploader{}
+		store := &fakeStore{}
+		opts := options{
+			snapshotDir:     dir,
+			keyPrefix:       "backups/test",
+			resultConfigMap: "etcd-backup-result-clusters-test-backup",
+			store:           store,
+		}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(uploader.uploads).To(HaveLen(2))
+		g.Expect(store.name).To(Equal("etcd-backup-result-clusters-test-backup")) // Verify all shard names are present (order depends on filesystem)
+		var keys []string
+		for _, u := range uploader.uploads {
+			keys = append(keys, u.key)
+		}
+		g.Expect(keys).To(ContainElement(ContainSubstring("etcd.db")))
+		g.Expect(keys).To(ContainElement(ContainSubstring("etcd-events.db")))
+	})
+
+	t.Run("When snapshot directory does not exist it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		opts := options{
+			snapshotDir: "/nonexistent/dir",
+			keyPrefix:   "test",
+		}
+		uploader := &fakeUploader{}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to read snapshot directory"))
+	})
+
+	t.Run("When --result-configmap is omitted it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+
+		uploader := &fakeUploader{}
+		opts := options{
+			snapshotDir: dir,
+			keyPrefix:   "test",
+		}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("--result-configmap is required"))
+	})
+
+	t.Run("When storing the results fails it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+
+		uploader := &fakeUploader{}
+		store := &fakeStore{err: fmt.Errorf("simulated ConfigMap write failure")}
+		opts := options{
+			snapshotDir:     dir,
+			keyPrefix:       "test",
+			resultConfigMap: "etcd-backup-result-clusters-test-backup",
+			store:           store,
+		}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("simulated ConfigMap write failure"))
+	})
+
+	t.Run("When results are large it should still store them (no termination-message size limit)", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+		g.Expect(writeTestFile(dir, "etcd-events.db")).To(Succeed())
+
+		uploader := &fakeUploader{}
+		// URLs far beyond the old 945-byte pod-level termination-message
+		// budget for an 11-shard Job.
+		uploader.url = "s3://bucket/" + strings.Repeat("a", 2000)
+		store := &fakeStore{}
+		opts := options{
+			snapshotDir:     dir,
+			keyPrefix:       "test",
+			resultConfigMap: "etcd-backup-result-clusters-test-backup",
+			store:           store,
+		}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(len(store.value)).To(BeNumerically(">", 4000))
+		g.Expect(store.value).To(ContainSubstring(`"name":"etcd-events"`))
+		g.Expect(store.value).To(ContainSubstring(`"name":"etcd"`))
+	})
+
+	t.Run("When attemptTimestamp is set it should be used in object keys", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+		g.Expect(writeTestFile(dir, "etcd-events.db")).To(Succeed())
+
+		uploader := &fakeUploader{}
+		opts := options{
+			snapshotDir:      dir,
+			keyPrefix:        "backups/test",
+			attemptTimestamp: 1700000000,
+			resultConfigMap:  "etcd-backup-result-clusters-test-backup",
+			store:            &fakeStore{},
+		}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(uploader.uploads).To(HaveLen(2))
+		for _, u := range uploader.uploads {
+			g.Expect(u.key).To(HavePrefix("backups/test/1700000000/"))
+		}
+	})
+
+}
+
+type uploadRecord struct {
+	path string
+	key  string
+}
+
+type fakeUploader struct {
+	uploads []uploadRecord
+	url     string
+}
+
+func (f *fakeUploader) Upload(_ context.Context, snapshotPath string, key string) (*UploadResult, error) {
+	f.uploads = append(f.uploads, uploadRecord{path: snapshotPath, key: key})
+	url := f.url
+	if url == "" {
+		url = "s3://bucket/" + key
+	}
+	return &UploadResult{URL: url}, nil
+}
+
+// fakeStore records the last stored result.
+type fakeStore struct {
+	name  string
+	value string
+	err   error
+}
+
+func (f *fakeStore) Store(_ context.Context, name, value string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.name = name
+	f.value = value
+	return nil
+}
+
+func writeTestFile(dir, name string) error {
+	return os.WriteFile(filepath.Join(dir, name), []byte("test-data"), 0644)
+}
+
+func TestConfigMapStore_Store(t *testing.T) {
+	t.Run("When the result ConfigMap is pre-created it should be updated, not created", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		// The backup Job's service account only has get/update/patch on the
+		// one ConfigMap; a create-first flow would be rejected with a 403
+		// because Kubernetes cannot authorize create by resource name.
+		clientset := kubefake.NewSimpleClientset(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "result-cm", Namespace: "default"},
+		})
+		store := configMapStore{client: clientset, namespace: "default"}
+
+		err := store.Store(context.Background(), "result-cm", `[{"name":"default"}]`)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cm, err := clientset.CoreV1().ConfigMaps("default").Get(context.Background(), "result-cm", metav1.GetOptions{})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(cm.Data[resultConfigMapKey]).To(Equal(`[{"name":"default"}]`))
+	})
+
+	t.Run("When the result ConfigMap does not exist it should be created", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		clientset := kubefake.NewSimpleClientset()
+		store := configMapStore{client: clientset, namespace: "default"}
+
+		err := store.Store(context.Background(), "result-cm", `[{"name":"default"}]`)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cm, err := clientset.CoreV1().ConfigMaps("default").Get(context.Background(), "result-cm", metav1.GetOptions{})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(cm.Data[resultConfigMapKey]).To(Equal(`[{"name":"default"}]`))
 	})
 }

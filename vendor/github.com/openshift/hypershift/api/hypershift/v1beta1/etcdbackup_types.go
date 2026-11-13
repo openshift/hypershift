@@ -26,6 +26,19 @@ const (
 	BackupRejectedReason              string = "BackupRejected"
 	BackupWaitingForCredentialsReason string = "BackupWaitingForCredentials"
 	EtcdUnhealthyReason               string = "EtcdUnhealthy"
+	// BackupResultIncompleteReason indicates the backup Job succeeded but the
+	// shard snapshot results it reported do not contain exactly one valid
+	// entry per expected shard (missing, duplicate, or unexpected entries).
+	BackupResultIncompleteReason string = "BackupResultIncomplete"
+	// BackupResultExtractionFailedReason indicates the shard snapshot results
+	// could not be extracted from the completed backup Job (for example the
+	// pod or its termination message is gone), after bounded retries.
+	BackupResultExtractionFailedReason string = "BackupResultExtractionFailed"
+	// BackupWaitingForCPOCapabilityReason indicates a multi-shard backup is
+	// waiting because the deployed control plane operator image does not (yet)
+	// advertise multi-shard etcd backup support on the HostedControlPlane
+	// (the multi-shard backup capability label is absent).
+	BackupWaitingForCPOCapabilityReason string = "BackupWaitingForCPOCapability"
 )
 
 // HCPEtcdBackupStorageType is the type of storage for etcd backups.
@@ -206,6 +219,8 @@ type HCPEtcdBackupStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// snapshotURL is the URL of the completed backup snapshot in cloud storage.
+	// This field contains the default shard's snapshot URL for backward compatibility.
+	// New consumers should prefer shardSnapshots.
 	// Must be a valid URL with scheme https or s3.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
@@ -213,10 +228,84 @@ type HCPEtcdBackupStatus struct {
 	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="snapshotURL must be a valid URL with scheme https or s3"
 	SnapshotURL string `json:"snapshotURL,omitempty"`
 
+	// shardSnapshots contains the snapshot URLs for each etcd shard that was
+	// backed up. When etcd sharding is not enabled, this list contains a single
+	// entry for the default shard. Each entry maps a shard name to its snapshot URL.
+	// It contains between 1 and 11 entries (1 default shard plus up to 10 named
+	// shards). When omitted, no backup has completed yet: the field is only
+	// populated by the backup controller after a successful upload.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=11
+	ShardSnapshots []HCPEtcdShardSnapshot `json:"shardSnapshots,omitempty"`
+
 	// encryptionMetadata contains metadata about the encryption of the backup.
 	// When present, at least one platform-specific encryption block must be set.
 	// +optional
 	EncryptionMetadata HCPEtcdBackupEncryptionMetadata `json:"encryptionMetadata,omitzero"`
+
+	// attemptKeyPrefix is the object key prefix used by the most recent
+	// backup attempt for this HCPEtcdBackup. Objects written by the attempt
+	// are <attemptKeyPrefix>/<shard>.db for multi-shard backups, or
+	// <attemptKeyPrefix>.db for single-shard backups. The field lets
+	// operators identify and clean up objects left behind by failed
+	// attempts, which are not deleted automatically.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	AttemptKeyPrefix string `json:"attemptKeyPrefix,omitempty"`
+}
+
+// MissingPersistentShards returns the public shard identities of the
+// persistent (non-EmptyDir) shards in the given ManagedEtcdSpec that have no
+// entry in the per-shard backup mapping; the default shard is always
+// expected. An empty result means every persistent shard is represented.
+// Consumers of the mapping during restore (the OADP HyperShift plugin, and
+// the restore validation in the control plane operator) use this to fail a
+// restore whose archived mapping does not cover every persistent shard,
+// instead of silently starting those shards with empty data directories.
+func MissingPersistentShards(mapping []HCPEtcdShardSnapshot, managed *ManagedEtcdSpec) []string {
+	covered := make(map[string]struct{}, len(mapping))
+	for _, entry := range mapping {
+		covered[entry.Name] = struct{}{}
+	}
+	var missing []string
+	if _, ok := covered["default"]; !ok {
+		missing = append(missing, "default")
+	}
+	if managed != nil {
+		for _, shard := range managed.Shards {
+			if shard.Storage.Type == EmptyDirEtcdShardStorage {
+				continue
+			}
+			if _, ok := covered[shard.Name]; !ok {
+				missing = append(missing, shard.Name)
+			}
+		}
+	}
+	return missing
+}
+
+// HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.
+type HCPEtcdShardSnapshot struct {
+	// name is the public shard identity: "default" for the default shard,
+	// or the exact ManagedEtcdShardSpec.name for a named shard
+	// (e.g., "events").
+	// It must be between 1 and 63 characters.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name,omitempty"`
+
+	// snapshotURL is the URL of the snapshot in cloud storage.
+	// Must be a valid URL with scheme https or s3, and between 1 and 2048 characters.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="snapshotURL must be a valid URL with scheme https or s3"
+	SnapshotURL string `json:"snapshotURL,omitempty"`
 }
 
 // HCPEtcdBackupEncryptionMetadata contains platform-specific metadata about the

@@ -1246,6 +1246,33 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			},
 		},
 		{
+			name: "When HostedCluster has control-plane-operator-image annotation it should propagate to HCP",
+			// Mirrored so the etcd backup controller resolves the same CPO image
+			// for backup Jobs that is deployed in the control plane namespace.
+			hcAnnotations: map[string]string{
+				hyperv1.ControlPlaneOperatorImageAnnotation: "quay.io/hypershift/branch-cpo:test",
+			},
+			hcpAnnotations: map[string]string{},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.ControlPlaneOperatorImageAnnotation:        "quay.io/hypershift/branch-cpo:test",
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name:          "When control-plane-operator-image annotation is removed from HostedCluster it should be removed from HCP",
+			hcAnnotations: map[string]string{},
+			hcpAnnotations: map[string]string{
+				hyperv1.ControlPlaneOperatorImageAnnotation: "quay.io/hypershift/branch-cpo:test",
+			},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
 			name:                              "When AWS node termination handler is needed, it should not set disable annotation",
 			isAWSNodeTerminationHandlerNeeded: true,
 			hcAnnotations:                     map[string]string{},
