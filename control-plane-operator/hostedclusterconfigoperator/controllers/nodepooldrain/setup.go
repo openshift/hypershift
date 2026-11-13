@@ -27,9 +27,10 @@ const ControllerName = "nodepooldrain"
 
 func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
 	r := &reconciler{
-		mgtClusterClient:   opts.CPCluster.GetClient(),  // management cluster (HCP namespace)
-		guestClient:        opts.Manager.GetClient(),    // guest, cached (nodes/PDBs are watched)
-		guestAPIReader:     opts.Manager.GetAPIReader(), // guest, UNCACHED (pods: avoid a fleet-wide informer)
+		mgtClusterClient: opts.CPCluster.GetClient(),  // management cluster (HCP namespace)
+		guestClient:      opts.Manager.GetClient(),    // guest, cached (nodes/PDBs are watched)
+		guestAPIReader:   opts.Manager.GetAPIReader(), // guest, UNCACHED (pods: avoid a fleet-wide informer)
+		//nolint:staticcheck // SA1019: the rest of HCCO still uses the legacy record.EventRecorder API; stay consistent with it.
 		recorder:           opts.Manager.GetEventRecorderFor(ControllerName),
 		hcpNamespace:       opts.Namespace,
 		hcpName:            opts.HCPName,

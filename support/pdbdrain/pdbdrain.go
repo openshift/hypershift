@@ -61,10 +61,23 @@ func PlatformNamespacePrefixes(additional string) []string {
 // drain indefinitely regardless of workload health. Precision over recall: transiently
 // blocking PDBs (e.g. minAvailable with some pods already unhealthy) are deliberately NOT
 // flagged here — those are the PodDisruptionBudgetLimitSRE alert's domain.
+//
+// It returns false when the PDB status has not yet observed the current spec, because the
+// reported counts cannot be trusted. Callers that must distinguish "not blocking" from
+// "status not yet observed" (e.g. to decide whether an unobserved PDB is even relevant
+// before aborting a scan) should check ObservedGeneration themselves and use
+// StructurallyBlockingFromStatus.
 func IsStructurallyBlocking(pdb *policyv1.PodDisruptionBudget) bool {
 	if pdb.Status.ObservedGeneration < pdb.Generation {
 		return false
 	}
+	return StructurallyBlockingFromStatus(pdb)
+}
+
+// StructurallyBlockingFromStatus applies the structural test to the PDB's currently reported
+// status counts WITHOUT checking whether that status has observed the current spec. Prefer
+// IsStructurallyBlocking unless you are handling the unobserved case explicitly.
+func StructurallyBlockingFromStatus(pdb *policyv1.PodDisruptionBudget) bool {
 	return pdb.Status.ExpectedPods >= 1 && pdb.Status.DesiredHealthy >= pdb.Status.ExpectedPods
 }
 

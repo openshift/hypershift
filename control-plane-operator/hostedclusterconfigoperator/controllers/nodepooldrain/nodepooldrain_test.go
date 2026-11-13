@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr/funcr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/pdbdrain"
 	"github.com/openshift/hypershift/support/statuspatching"
@@ -21,12 +20,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/go-logr/logr/funcr"
 )
 
 func node(name, pool string) *corev1.Node {
@@ -95,6 +97,7 @@ func pod(ns, name, nodeName string, labels map[string]string, ownerKind string) 
 	return p
 }
 
+//nolint:gocyclo // table-driven test aggregating many computeDrain scenarios.
 func TestComputeDrain(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -334,71 +337,81 @@ func TestComputeDrain(t *testing.T) {
 			t.Fatalf("computeDrain error = %v, want unobserved PDB status", err)
 		}
 	})
-}
 
-func TestComputeDrain_NilSelectorIgnored(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	_ = policyv1.AddToScheme(scheme)
-	_ = capiv1.AddToScheme(scheme)
-
-	nilSelPDB := &policyv1.PodDisruptionBudget{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "team-x", Name: "nilsel", Generation: 2},
-		Spec:       policyv1.PodDisruptionBudgetSpec{Selector: nil},
-		Status:     policyv1.PodDisruptionBudgetStatus{ExpectedPods: 1, DesiredHealthy: 1, ObservedGeneration: 1},
-	}
-	objs := []runtime.Object{node("node-a1", "pool-a"), nilSelPDB}
-
-	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
-	r := &reconciler{guestClient: c, guestAPIReader: c, platformNSPrefixes: pdbdrain.DefaultPlatformNamespacePrefixes}
-
-	drain, blocking, err := computeDrainWithMachines(t, r, context.Background())
-	if err != nil {
-		t.Fatalf("computeDrain: %v", err)
-	}
-	if len(blocking) != 0 {
-		t.Errorf("nil-selector PDB must not block, got %v", blocking)
-	}
-	if len(drain) != 1 {
-		t.Errorf("nil-selector PDB must leave the pool drainable, got %+v", drain)
-	}
-	for _, e := range drain {
-		if e.State != hyperv1.NodePoolDrainStateDrainable {
-			t.Errorf("no pool should be blocked, got %+v", e)
+	t.Run("When an unobserved PDB does not look structurally blocking, it should skip it instead of blanking the scan", func(t *testing.T) {
+		// An unrelated customer PDB mid-edit whose reported status is non-structural must not
+		// mark every pool Unknown; it is skipped and re-evaluated once its status settles.
+		pdb := structuralPDB("team-x", "web", webSel)
+		pdb.Generation = 2
+		pdb.Status.ObservedGeneration = 1
+		pdb.Status.DesiredHealthy = 1 // reported headroom -> not structurally blocking
+		guest := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(
+			node("node-a1", "pool-a"), pdb,
+		).Build()
+		r := &reconciler{guestClient: guest, guestAPIReader: guest, platformNSPrefixes: pdbdrain.DefaultPlatformNamespacePrefixes}
+		drain, blocking, err := computeDrainWithMachines(t, r, t.Context())
+		if err != nil {
+			t.Fatalf("computeDrain error = %v, want no error", err)
 		}
-	}
-}
+		if len(blocking) != 0 {
+			t.Errorf("unobserved non-structural PDB must not block, got %v", blocking)
+		}
+		if len(drain) != 1 || drain[0].State != hyperv1.NodePoolDrainStateDrainable {
+			t.Errorf("pool should remain drainable, got %+v", drain)
+		}
+	})
 
-func TestComputeDrain_AmbiguousNodePoolIncarnation(t *testing.T) {
-	scheme := reconcileScheme(t)
-	guest := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		node("old-node", "pool-a"), node("new-node", "pool-a"),
-	).Build()
-	mgmt := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testMachine("old-node", "pool-a", "old-uid", "clusters-foo"),
-		testMachine("new-node", "pool-a", "new-uid", "clusters-foo"),
-	).Build()
-	r := &reconciler{mgtClusterClient: mgmt, guestClient: guest, guestAPIReader: guest,
-		hcpNamespace: "clusters-foo", platformNSPrefixes: pdbdrain.DefaultPlatformNamespacePrefixes}
-	drain, _, err := r.computeDrain(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(drain) != 0 {
-		t.Fatalf("mixed NodePool UIDs must be unverified, got %+v", drain)
-	}
+	t.Run("When a PDB selector is nil, it should ignore the PDB", func(t *testing.T) {
+		nilSelPDB := &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "team-x", Name: "nilsel", Generation: 2},
+			Spec:       policyv1.PodDisruptionBudgetSpec{Selector: nil},
+			Status:     policyv1.PodDisruptionBudgetStatus{ExpectedPods: 1, DesiredHealthy: 1, ObservedGeneration: 1},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(node("node-a1", "pool-a"), nilSelPDB).Build()
+		r := &reconciler{guestClient: c, guestAPIReader: c, platformNSPrefixes: pdbdrain.DefaultPlatformNamespacePrefixes}
+		drain, blocking, err := computeDrainWithMachines(t, r, context.Background())
+		if err != nil {
+			t.Fatalf("computeDrain: %v", err)
+		}
+		if len(blocking) != 0 {
+			t.Errorf("nil-selector PDB must not block, got %v", blocking)
+		}
+		if len(drain) != 1 || drain[0].State != hyperv1.NodePoolDrainStateDrainable {
+			t.Errorf("nil-selector PDB must leave the pool drainable, got %+v", drain)
+		}
+	})
 
-	// Even a lone orphan with no current CAPI Machine must not report Drainable.
-	if err := mgmt.Delete(t.Context(), testMachine("old-node", "pool-a", "old-uid", "clusters-foo")); err != nil {
-		t.Fatal(err)
-	}
-	drain, _, err = r.computeDrain(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(drain) != 0 {
-		t.Fatalf("orphan Node must leave the pool unverified, got %+v", drain)
-	}
+	t.Run("When a pool has mixed NodePool UIDs or an orphan Node, it should be unverified", func(t *testing.T) {
+		rscheme := reconcileScheme(t)
+		guest := fake.NewClientBuilder().WithScheme(rscheme).WithObjects(
+			node("old-node", "pool-a"), node("new-node", "pool-a"),
+		).Build()
+		mgmt := fake.NewClientBuilder().WithScheme(rscheme).WithObjects(
+			testMachine("old-node", "pool-a", "old-uid", "clusters-foo"),
+			testMachine("new-node", "pool-a", "new-uid", "clusters-foo"),
+		).Build()
+		r := &reconciler{mgtClusterClient: mgmt, guestClient: guest, guestAPIReader: guest,
+			hcpNamespace: "clusters-foo", platformNSPrefixes: pdbdrain.DefaultPlatformNamespacePrefixes}
+		drain, _, err := r.computeDrain(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(drain) != 0 {
+			t.Fatalf("mixed NodePool UIDs must be unverified, got %+v", drain)
+		}
+
+		// Even a lone orphan with no current CAPI Machine must not report Drainable.
+		if err := mgmt.Delete(t.Context(), testMachine("old-node", "pool-a", "old-uid", "clusters-foo")); err != nil {
+			t.Fatal(err)
+		}
+		drain, _, err = r.computeDrain(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(drain) != 0 {
+			t.Fatalf("orphan Node must leave the pool unverified, got %+v", drain)
+		}
+	})
 }
 
 func reconcileScheme(t *testing.T) *runtime.Scheme {
@@ -442,6 +455,8 @@ func (r *capturingRecorder) AnnotatedEventf(object runtime.Object, annotations m
 	r.events[len(r.events)-1].annotations = annotations
 }
 
+//nolint:gocyclo // table-driven test aggregating many Reconcile scenarios.
+//nolint:hypershiftlinter // reconciler.Reconcile has several focused scenario tests; kept separate for readability rather than one giant canonical test.
 func TestReconcile_PatchesStatusAndEmitsEventOnce(t *testing.T) {
 	scheme := reconcileScheme(t)
 	webSel := map[string]string{"app": "web"}
@@ -589,6 +604,8 @@ func byPoolState(entries []hyperv1.NodePoolDrain, pool string) hyperv1.NodePoolD
 	return ""
 }
 
+//nolint:gocyclo // table-driven test aggregating many Reconcile staleness scenarios.
+//nolint:hypershiftlinter // reconciler.Reconcile has several focused scenario tests; kept separate for readability rather than one giant canonical test.
 func TestReconcile_StaleMarksUpToDateFalse(t *testing.T) {
 	scheme := reconcileScheme(t)
 	var logText strings.Builder

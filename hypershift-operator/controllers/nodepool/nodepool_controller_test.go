@@ -4015,7 +4015,7 @@ func TestEnqueueNodePoolsForCloudConfig(t *testing.T) {
 	}
 }
 
-func TestNodePoolReconciler_enqueueNodePoolsForHostedControlPlane(t *testing.T) {
+func TestNodePoolReconciler_EnqueueNodePoolsForHostedControlPlane(t *testing.T) {
 	objects := []client.Object{
 		&hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "clusters-a"}, Spec: hyperv1.NodePoolSpec{ClusterName: "first"}},
 		&hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "other-cluster", Namespace: "clusters-a"}, Spec: hyperv1.NodePoolSpec{ClusterName: "second"}},
@@ -4089,11 +4089,10 @@ func TestNodePoolDrainStatusChanged(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When the probe timestamp advances, it should enqueue NodePools",
+			name: "When only the probe timestamp advances, it should ignore the update",
 			mutate: func(h *hyperv1.HostedControlPlane) {
 				h.Status.NodePoolDrainLastProbeTime = ptr.To(metav1.NewTime(h.Status.NodePoolDrainLastProbeTime.Add(time.Minute)))
 			},
-			want: true,
 		},
 		{
 			name:   "When the up-to-date status changes, it should enqueue NodePools",

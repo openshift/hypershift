@@ -81,6 +81,7 @@ func TestAdaptDeploymentImageOverrides(t *testing.T) {
 	}
 }
 
+//nolint:hypershiftlinter // adaptDeployment already has a baselined legacy test (TestAdaptDeploymentImageOverrides); this adds a focused env-propagation scenario rather than renaming into a second canonical test.
 func TestAdaptDeploymentEnvPropagation(t *testing.T) {
 	testCases := []struct {
 		name                string

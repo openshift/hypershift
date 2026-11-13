@@ -34,7 +34,7 @@ import (
 	"github.com/blang/semver"
 )
 
-func TestDrainBlockedConditionFreshness(t *testing.T) {
+func TestNodePoolReconciler_DrainBlockedCondition(t *testing.T) {
 	now := time.Now()
 	fresh := metav1.NewTime(now.Add(-5 * time.Minute))
 	stale := metav1.NewTime(now.Add(-30 * time.Minute))
@@ -144,6 +144,7 @@ func TestDrainBlockedConditionFreshness(t *testing.T) {
 	}
 }
 
+//nolint:hypershiftlinter // exercises the drain-readiness requeue across reconcile()'s early returns; no single canonical function-under-test.
 func TestDrainBlockedExpiryRequeueSurvivesEarlyValidationReturn(t *testing.T) {
 	t.Setenv("ENABLE_NODEPOOL_DRAIN_READINESS", "1")
 	probeTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))

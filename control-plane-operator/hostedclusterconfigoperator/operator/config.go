@@ -81,7 +81,11 @@ func guestCacheByObject(ingressEnabled bool) map[client.Object]cache.ByObject {
 		// Needed for inplace upgrader and NodePool drain readiness.
 		&corev1.Node{}: allSelector,
 
-		// Customer PDBs do not carry the HCCO managed label.
+		// Customer PDBs do not carry the HCCO managed label, so the drain-readiness
+		// controller needs the unfiltered selector. This entry is inert until that
+		// (feature-gated) controller registers its PDB watch: controller-runtime
+		// informers are lazy, so no cluster-wide customer-PDB informer starts when
+		// ENABLE_NODEPOOL_DRAIN_READINESS is unset.
 		&policyv1.PodDisruptionBudget{}: allSelector,
 
 		// Needed for resource cleanup.

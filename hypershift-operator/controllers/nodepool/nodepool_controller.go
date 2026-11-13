@@ -325,17 +325,18 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	var drainReadinessRequeueAt time.Time
 	defer func() {
 		// Keep the freshness deadline even when later validation returns early.
-		// Errors and immediate requeues already cause another reconcile.
-		if err == nil && !result.Requeue && !drainReadinessRequeueAt.IsZero() {
-			remaining := time.Until(drainReadinessRequeueAt)
-			if remaining <= 0 {
-				result.Requeue = true
-				result.RequeueAfter = 0
-				return
-			}
-			if result.RequeueAfter == 0 || remaining < result.RequeueAfter {
-				result.RequeueAfter = remaining
-			}
+		// Errors already cause another reconcile, so only extend successful results.
+		if err != nil || drainReadinessRequeueAt.IsZero() {
+			return
+		}
+		remaining := time.Until(drainReadinessRequeueAt)
+		if remaining <= 0 {
+			// Already expired; requeue promptly. A tiny positive RequeueAfter is used
+			// instead of the deprecated Result.Requeue bool.
+			remaining = time.Second
+		}
+		if result.RequeueAfter == 0 || remaining < result.RequeueAfter {
+			result.RequeueAfter = remaining
 		}
 	}()
 
@@ -1192,14 +1193,20 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedControlPlane(ctx context.C
 // nodePoolDrainStatusChanged ignores HCP status updates unrelated to drain
 // readiness. Create and delete events still reach the mapper through the
 // predicate's default behavior.
+//
+// A bare NodePoolDrainLastProbeTime bump (HCCO refreshes it every probe, ~once a
+// minute, even when the per-pool result is unchanged) is deliberately NOT a
+// trigger: a timestamp-only refresh cannot change the DrainBlocked condition, and
+// freshness expiry is already handled by the self-scheduled requeue in
+// drainBlockedCondition. Keying on it would reconcile every NodePool in every
+// opted-in cluster once a minute for no state change.
 func nodePoolDrainStatusChanged(e event.UpdateEvent) bool {
 	oldHCP, oldOK := e.ObjectOld.(*hyperv1.HostedControlPlane)
 	newHCP, newOK := e.ObjectNew.(*hyperv1.HostedControlPlane)
 	if !oldOK || !newOK {
 		return false
 	}
-	if !equality.Semantic.DeepEqual(oldHCP.Status.NodePoolDrain, newHCP.Status.NodePoolDrain) ||
-		!equality.Semantic.DeepEqual(oldHCP.Status.NodePoolDrainLastProbeTime, newHCP.Status.NodePoolDrainLastProbeTime) {
+	if !equality.Semantic.DeepEqual(oldHCP.Status.NodePoolDrain, newHCP.Status.NodePoolDrain) {
 		return true
 	}
 	oldCondition := meta.FindStatusCondition(oldHCP.Status.Conditions, hyperv1.HostedControlPlaneNodePoolDrainUpToDate)
