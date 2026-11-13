@@ -94,7 +94,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 	}
 	cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 		BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-		AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities, featureSet, releaseVersion),
+		AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities, releaseVersion),
 	}
 	clusterVersionJSON, err := json.Marshal(cv)
 	if err != nil {
