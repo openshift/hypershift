@@ -73,6 +73,7 @@ import (
 	routerutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
 	snapshotcontrollerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/snapshotcontroller"
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	ignitionmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
@@ -315,13 +316,28 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		snapshotcontrollerv2.NewComponent(),
 		registryoperatorv2.NewComponent(),
 		konnectivityv2.NewComponent(),
-		ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
-		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
+	)
+
+	// The ignition serving components are reconciled by the CPO only in the legacy model. When the
+	// IgnitionPayloadSystem feature set is active (propagated to the CPO via HYPERSHIFT_FEATURESET) the
+	// HyperShift Operator owns the re-architected, same-named ignition components, so the CPO stands them
+	// down — feature-set mutual exclusion, one owner at a time, never a cross-owner delete. They are
+	// registered before the router so the router's HAProxy config includes ignition-server's route on the
+	// first reconcile pass.
+	if !featuregates.Gate().Enabled(featuregates.IgnitionPayloadSystem) {
+		r.components = append(r.components,
+			ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
+			ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
+		)
+	}
+
+	r.components = append(r.components,
 		endpointresolverv2.NewComponent(),
 		metricsproxyv2.NewComponent(r.DefaultIngressDomain),
 		routerv2.NewComponent(),
 		kubestorageversionmigratorv2.NewComponent(),
 	)
+
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
 	)
