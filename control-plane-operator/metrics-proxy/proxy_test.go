@@ -1,6 +1,8 @@
 package metricsproxy
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -9,13 +11,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 )
 
 type fakeComponentProvider struct {
@@ -296,6 +302,217 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 		g.Expect(rec.Code).To(Equal(http.StatusOK))
 	})
 
+	// The following subtests cover gzip response compression on the success write
+	// path, and confirm the error/empty-targets paths are never gzipped.
+
+	// A single shared fake metrics server and handler, so the injected `instance`
+	// label (which embeds the server's ephemeral port) is identical across requests
+	// and response bodies can be compared. Use t.Cleanup rather than defer: the
+	// parallel subtests run after this function returns, so a deferred Close would
+	// shut the server down before they execute.
+	const metricsFixture = "# HELP test_metric A test metric\n" +
+		"# TYPE test_metric gauge\n" +
+		"test_metric 42\n"
+	fakeMetrics := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if _, err := io.WriteString(w, metricsFixture); err != nil {
+			t.Errorf("failed to write fake metrics fixture: %v", err)
+		}
+	}))
+	t.Cleanup(fakeMetrics.Close)
+
+	fakeHost, fakePort := parseHostPort(t, fakeMetrics.URL)
+	handler := newTestHandler(
+		map[string]ComponentConfig{
+			"etcd": {
+				MetricsPort:   fakePort,
+				MetricsPath:   "/metrics",
+				MetricsScheme: "http",
+				Selector:      map[string]string{"app": "etcd"},
+			},
+		},
+		&fakeTargetDiscoverer{
+			targets: []ScrapeTarget{{PodName: "etcd-0", PodIP: fakeHost, Port: fakePort}},
+		},
+	)
+
+	serve := func(t *testing.T, acceptEncoding string) *httptest.ResponseRecorder {
+		t.Helper()
+		g := NewWithT(t)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd", nil)
+		g.Expect(err).NotTo(HaveOccurred())
+		if acceptEncoding != "" {
+			req.Header.Set("Accept-Encoding", acceptEncoding)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// Baseline: uncompressed response (no Accept-Encoding).
+	g := NewWithT(t)
+	plainRec := serve(t, "")
+	g.Expect(plainRec.Code).To(Equal(http.StatusOK))
+	g.Expect(plainRec.Header().Get("Content-Encoding")).To(BeEmpty())
+	plainBody := plainRec.Body.Bytes()
+	plainContentType := plainRec.Header().Get("Content-Type")
+	g.Expect(plainContentType).NotTo(BeEmpty())
+	g.Expect(plainBody).To(ContainSubstring("test_metric"))
+
+	t.Run("When Accept-Encoding advertises gzip, the body gunzips to the uncompressed response and Content-Type is unchanged", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rec := serve(t, "gzip")
+
+		g.Expect(rec.Code).To(Equal(http.StatusOK))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(Equal("gzip"))
+		// Content-Type must be preserved.
+		g.Expect(rec.Header().Get("Content-Type")).To(Equal(plainContentType))
+
+		// The gzip body must decode to the same exposition content as the plain body.
+		gr, err := gzip.NewReader(bytes.NewReader(rec.Body.Bytes()))
+		g.Expect(err).NotTo(HaveOccurred())
+		decoded, err := io.ReadAll(gr)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(gr.Close()).To(Succeed())
+
+		g.Expect(canonicalizeExposition(t, decoded)).To(Equal(canonicalizeExposition(t, plainBody)))
+		g.Expect(decoded).To(ContainSubstring("test_metric"))
+	})
+
+	t.Run("When Accept-Encoding is mixed-case among multiple encodings, it should still gzip", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rec := serve(t, "deflate, GZip")
+
+		g.Expect(rec.Code).To(Equal(http.StatusOK))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(Equal("gzip"))
+	})
+
+	t.Run("When Accept-Encoding is absent, it should return plain text with no Content-Encoding", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rec := serve(t, "")
+
+		g.Expect(rec.Code).To(Equal(http.StatusOK))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		g.Expect(rec.Body.String()).To(ContainSubstring("test_metric"))
+		g.Expect(canonicalizeExposition(t, rec.Body.Bytes())).To(Equal(canonicalizeExposition(t, plainBody)))
+	})
+
+	t.Run("When Accept-Encoding does not include gzip, it should return plain text", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rec := serve(t, "deflate, br")
+
+		g.Expect(rec.Code).To(Equal(http.StatusOK))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		g.Expect(canonicalizeExposition(t, rec.Body.Bytes())).To(Equal(canonicalizeExposition(t, plainBody)))
+	})
+
+	t.Run("When Accept-Encoding sets gzip;q=0, it should not gzip (explicitly rejected)", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rec := serve(t, "gzip;q=0")
+
+		g.Expect(rec.Code).To(Equal(http.StatusOK))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		g.Expect(canonicalizeExposition(t, rec.Body.Bytes())).To(Equal(canonicalizeExposition(t, plainBody)))
+	})
+
+	t.Run("When Accept-Encoding sets gzip with a non-zero q-value, it should gzip", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rec := serve(t, "gzip;q=0.5")
+
+		g.Expect(rec.Code).To(Equal(http.StatusOK))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(Equal("gzip"))
+	})
+
+	t.Run("When a target error path is hit with Accept-Encoding gzip, the error response is not gzipped", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		handler := newTestHandler(
+			map[string]ComponentConfig{
+				"etcd": {MetricsPort: 2381, Selector: map[string]string{"app": "etcd"}},
+			},
+			&fakeTargetDiscoverer{err: fmt.Errorf("endpoint-resolver unreachable")},
+		)
+
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd", nil)
+		g.Expect(err).NotTo(HaveOccurred())
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		g.Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		g.Expect(rec.Body.String()).To(ContainSubstring("failed to discover targets"))
+	})
+
+	t.Run("When the empty-targets path is hit with Accept-Encoding gzip, the response is not gzipped", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		handler := newTestHandler(
+			map[string]ComponentConfig{
+				"etcd": {MetricsPort: 2381, Selector: map[string]string{"app": "etcd"}},
+			},
+			&fakeTargetDiscoverer{targets: []ScrapeTarget{}},
+		)
+
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/etcd", nil)
+		g.Expect(err).NotTo(HaveOccurred())
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		g.Expect(rec.Code).To(Equal(http.StatusOK))
+		g.Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
+		g.Expect(rec.Body.Len()).To(Equal(0))
+	})
+}
+
+// canonicalizeExposition parses Prometheus exposition text and re-encodes it with
+// the labels of each series sorted by name. Labeler.Inject appends labels by
+// ranging over a Go map, so the proxy emits them in a nondeterministic order;
+// canonicalizing makes response comparisons insensitive to that ordering while
+// still detecting any change to metric names, sample values, or labels.
+func canonicalizeExposition(t *testing.T, body []byte) string {
+	t.Helper()
+	g := NewWithT(t)
+
+	parser := expfmt.NewTextParser(model.LegacyValidation)
+	families, err := parser.TextToMetricFamilies(bytes.NewReader(body))
+	g.Expect(err).NotTo(HaveOccurred())
+
+	names := make([]string, 0, len(families))
+	for name := range families {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	var buf bytes.Buffer
+	enc := expfmt.NewEncoder(&buf, expfmt.NewFormat(expfmt.TypeTextPlain))
+	for _, name := range names {
+		mf := families[name]
+		for _, m := range mf.Metric {
+			slices.SortFunc(m.Label, func(a, b *dto.LabelPair) int {
+				return strings.Compare(a.GetName(), b.GetName())
+			})
+		}
+		g.Expect(enc.Encode(mf)).To(Succeed())
+	}
+	return buf.String()
 }
 
 func TestBuildScrapeErrorMetric(t *testing.T) {

@@ -2,8 +2,10 @@ package metricsproxy
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -110,8 +112,62 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", string(format))
+
+	// Prometheus requests gzip by default on scrapes (scrape config
+	// enable_compression, default true since v2.49). The guest-side
+	// control-plane-metrics-forwarder is a TCP (TLS passthrough) proxy, so gzip is
+	// negotiated end to end between Prometheus and this handler and shrinks the
+	// on-the-wire bytes on both the cross-AZ and PrivateLink legs. The exposition
+	// text compresses by roughly 30-45x. See OCPBUGS-132731.
+	if acceptsGzip(r) {
+		// Content-Encoding must be set before WriteHeader; the gzip writer streams
+		// the body, so no (now-stale) Content-Length is set.
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusOK)
+		gz := gzip.NewWriter(w)
+		if _, err := gz.Write(buf.Bytes()); err != nil {
+			h.log.Error(err, "failed to write gzip response body")
+		}
+		// Close flushes any buffered data and writes the gzip trailer.
+		if err := gz.Close(); err != nil {
+			h.log.Error(err, "failed to close gzip writer")
+		}
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(buf.Bytes())
+}
+
+// acceptsGzip reports whether the request's Accept-Encoding header accepts gzip.
+// It matches the gzip content-coding case-insensitively and honors an explicit
+// "q=0", which marks the coding as not acceptable (RFC 9110 §12.5.3). Full
+// q-value ranking is intentionally not implemented: Prometheus sends a plain
+// "gzip", and we only need a yes/no decision, not a preferred-coding selection.
+func acceptsGzip(r *http.Request) bool {
+	for part := range strings.SplitSeq(r.Header.Get("Accept-Encoding"), ",") {
+		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if !strings.EqualFold(strings.TrimSpace(coding), "gzip") {
+			continue
+		}
+		return !hasZeroQValue(params)
+	}
+	return false
+}
+
+// hasZeroQValue reports whether an Accept-Encoding parameter string sets the
+// quality value to zero (e.g. "q=0" or "q=0.000"), disabling the coding.
+func hasZeroQValue(params string) bool {
+	for p := range strings.SplitSeq(params, ";") {
+		k, v, ok := strings.Cut(strings.TrimSpace(p), "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(k), "q") {
+			continue
+		}
+		if q, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && q == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // buildScrapeErrorMetric creates a synthetic metrics_aggregator_pod_scrape_errors_total
