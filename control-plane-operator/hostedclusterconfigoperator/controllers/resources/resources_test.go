@@ -1726,6 +1726,98 @@ region = us-east-1
 	}
 }
 
+func TestReconciler_ReconcileCloudCredentialSecrets(t *testing.T) {
+	tests := []struct {
+		name                 string
+		capabilities         *hyperv1.Capabilities
+		missingCredentials   bool
+		expectRegistrySecret bool
+	}{
+		{
+			name:                 "When capabilities are unset on OpenStack, it should create registry credentials",
+			expectRegistrySecret: true,
+		},
+		{
+			name:                 "When capabilities are empty on OpenStack, it should create registry credentials",
+			capabilities:         &hyperv1.Capabilities{},
+			expectRegistrySecret: true,
+		},
+		{
+			name:                 "When ImageRegistry is enabled on OpenStack, it should create registry credentials",
+			capabilities:         &hyperv1.Capabilities{Enabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}},
+			expectRegistrySecret: true,
+		},
+		{
+			name:         "When ImageRegistry is disabled on OpenStack, it should skip registry credentials even if the namespace exists",
+			capabilities: &hyperv1.Capabilities{Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}},
+		},
+		{
+			name:               "When OpenStack credentials are missing, it should return an error",
+			missingCredentials: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-openstack"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Capabilities: tt.capabilities,
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.OpenStackPlatform,
+						OpenStack: &hyperv1.OpenStackPlatformSpec{
+							IdentityRef: hyperv1.OpenStackIdentityReference{Name: "cloud-credentials", CloudName: "openstack"},
+						},
+					},
+				},
+			}
+			credentials := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "cloud-credentials"},
+				Data:       map[string][]byte{"clouds.yaml": []byte("clouds:\n  openstack:\n    auth_type: v3applicationcredential\n")},
+			}
+			cpClientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if !tt.missingCredentials {
+				cpClientBuilder.WithObjects(credentials)
+			}
+			otherSecrets := []client.ObjectKey{
+				{Namespace: "openshift-cluster-csi-drivers", Name: "openstack-cloud-credentials"},
+				{Namespace: "openshift-cluster-csi-drivers", Name: "manila-cloud-credentials"},
+				{Namespace: "openshift-manila-csi-driver", Name: "manila-cloud-credentials"},
+				{Namespace: "openshift-cloud-network-config-controller", Name: "cloud-credentials"},
+			}
+			guestObjects := []client.Object{&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-image-registry"}}}
+			for _, namespace := range []string{"openshift-cluster-csi-drivers", "openshift-manila-csi-driver", "openshift-cloud-network-config-controller"} {
+				guestObjects = append(guestObjects, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}})
+			}
+			r := &reconciler{
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(guestObjects...).Build(),
+				cpClient:               cpClientBuilder.Build(),
+			}
+			errs := r.reconcileCloudCredentialSecrets(t.Context(), hcp, logr.Discard())
+			if tt.missingCredentials {
+				g.Expect(errs).To(HaveLen(1))
+				g.Expect(errs[0]).To(MatchError(ContainSubstring("failed to get cloud credentials secret in hcp namespace")))
+				return
+			}
+			for _, err := range errs {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			registrySecret := &corev1.Secret{}
+			err := r.client.Get(t.Context(), client.ObjectKey{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}, registrySecret)
+			if tt.expectRegistrySecret {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(registrySecret.Data["clouds.yaml"]).To(Equal(credentials.Data["clouds.yaml"]))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+			for _, key := range otherSecrets {
+				g.Expect(r.client.Get(t.Context(), key, &corev1.Secret{})).To(Succeed())
+			}
+		})
+	}
+}
+
 func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
