@@ -9,7 +9,9 @@ RUN make hypershift \
   && make hypershift-no-cgo \
   && make hypershift-operator \
   && make product-cli \
-  && make karpenter-operator
+  && make karpenter-operator \
+  && make control-plane-operator \
+  && make control-plane-pki-operator
 
 FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
@@ -17,9 +19,19 @@ COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/karpenter-operator \
+                    /hypershift/bin/control-plane-operator \
+                    /hypershift/bin/control-plane-pki-operator \
      /usr/bin/
 
 ENTRYPOINT ["/usr/bin/hypershift"]
+
+# TEMPORARY (cpo-from-image branch, DO NOT MERGE): turn CPO-from-main on for 4.20 so the
+# e2e-from-pr-aws release-matrix job exercises the feature with a plain `hypershift install`.
+# The HO reads these at runtime (os.Getenv); CPO_FROM_MAIN_IMAGE is deliberately unset so
+# from-main falls back to this image, which now bundles control-plane-operator. Remove before
+# merge; the feature must stay off by default.
+ENV ENABLE_CPO_FROM_MAIN=1
+ENV CPO_FROM_MAIN_VERSIONS=4.20
 
 LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
 LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true
