@@ -26,11 +26,12 @@ func deleteChildOperator(d *dataTreeNavigator, context Context, expressionNode *
 		candidatePath := candidate.GetPath()
 		childPath := candidatePath[len(candidatePath)-1]
 
-		if parentNode.Kind == MappingNode {
+		switch parentNode.Kind {
+		case MappingNode:
 			deleteFromMap(candidate.Parent, childPath)
-		} else if parentNode.Kind == SequenceNode {
+		case SequenceNode:
 			deleteFromArray(candidate.Parent, childPath)
-		} else {
+		default:
 			return Context{}, fmt.Errorf("cannot delete nodes from parent of tag %v", parentNode.Tag)
 		}
 	}
@@ -44,7 +45,7 @@ func removeFromContext(context Context, candidate *CandidateNode) (Context, erro
 		if nodeInContext != candidate {
 			newResults.PushBack(nodeInContext)
 		} else {
-			log.Info("Need to delete this %v", NodeToString(nodeInContext))
+			log.Infof("Need to delete this %v", NodeToString(nodeInContext))
 		}
 	}
 	return context.ChildContext(newResults), nil
@@ -68,6 +69,30 @@ func deleteFromMap(node *CandidateNode, childPath interface{}) {
 		}
 	}
 	node.Content = newContents
+	normaliseEmptyCollectionMapKeyComment(node)
+}
+
+func normaliseEmptyCollectionMapKeyComment(node *CandidateNode) {
+	if (node.Kind != SequenceNode && node.Kind != MappingNode) || len(node.Content) != 0 || node.LineComment != "" {
+		return
+	}
+
+	key := node.Key
+	if node.Parent != nil && node.Parent.Kind == MappingNode {
+		for index := 0; index < len(node.Parent.Content)-1; index += 2 {
+			if node.Parent.Content[index+1] == node {
+				key = node.Parent.Content[index]
+				break
+			}
+		}
+	}
+	if key == nil || key.LineComment == "" {
+		return
+	}
+
+	node.LineComment = key.LineComment
+	key.LineComment = ""
+	node.Style = FlowStyle
 }
 
 func deleteFromArray(node *CandidateNode, childPath interface{}) {
@@ -81,8 +106,10 @@ func deleteFromArray(node *CandidateNode, childPath interface{}) {
 		shouldDelete := fmt.Sprintf("%v", index) == fmt.Sprintf("%v", childPath)
 
 		if !shouldDelete {
+			value.Key.Value = fmt.Sprintf("%v", len(newContents))
 			newContents = append(newContents, value)
 		}
 	}
 	node.Content = newContents
+	normaliseEmptyCollectionMapKeyComment(node)
 }

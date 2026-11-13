@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"container/list"
 	"regexp"
+	"strings"
 )
 
 type commentOpPreferences struct {
@@ -13,11 +14,21 @@ type commentOpPreferences struct {
 	FootComment bool
 }
 
+func structuralLeadingContent(content string) string {
+	var preserved strings.Builder
+	for _, line := range strings.SplitAfter(content, "\n") {
+		if strings.TrimSpace(line) == "$yqDocSeparator$" || yamlDirectiveLineRe.MatchString(line) {
+			preserved.WriteString(line)
+		}
+	}
+	return preserved.String()
+}
+
 func assignCommentsOperator(d *dataTreeNavigator, context Context, expressionNode *ExpressionNode) (Context, error) {
 
 	log.Debugf("AssignComments operator!")
 
-	lhs, err := d.GetMatchingNodes(context, expressionNode.LHS)
+	lhs, err := d.GetMatchingNodes(context.WritableClone(), expressionNode.LHS)
 
 	if err != nil {
 		return Context{}, err
@@ -62,7 +73,7 @@ func assignCommentsOperator(d *dataTreeNavigator, context Context, expressionNod
 		}
 		if preferences.HeadComment {
 			candidate.HeadComment = comment
-			candidate.LeadingContent = "" // clobber the leading content, if there was any.
+			candidate.LeadingContent = structuralLeadingContent(candidate.LeadingContent)
 		}
 		if preferences.FootComment {
 			candidate.FootComment = comment

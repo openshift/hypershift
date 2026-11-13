@@ -42,10 +42,13 @@ func (*StringFormatRule) Name() string {
 	return "string-format"
 }
 
+var _ lint.ConfigurableRule = (*StringFormatRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
 func (r *StringFormatRule) Configure(arguments lint.Arguments) error {
+	r.rules = nil
 	for i, argument := range arguments {
 		scopes, regex, negated, errorMessage, err := r.parseArgument(argument, i)
 		if err != nil {
@@ -304,6 +307,7 @@ func (r *stringFormatSubrule) generateFailure(node ast.Node) {
 	}
 
 	r.onFailure(lint.Failure{
+		Category:   lint.FailureCategoryContent,
 		Confidence: 1,
 		Failure:    failure,
 		Node:       node,
