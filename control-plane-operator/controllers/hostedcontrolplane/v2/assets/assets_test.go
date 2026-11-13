@@ -536,3 +536,20 @@ func TestLoadManifestTemplated(t *testing.T) {
 		})
 	}
 }
+
+// TestGMPAssetsAreNotEmbedded guards the staging contract for the GMP
+// PodMonitoring tree. The manifests live in v2/gmpassets, beside this package,
+// and are intentionally outside the embedded FS: anything embedded here is
+// reconciled by the component framework, and the GMP runtime reconciliation is a
+// separate, gated follow-up. Moving or copying them into v2/assets would
+// activate them silently, so fail loudly instead.
+func TestGMPAssetsAreNotEmbedded(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	entries, err := manifestsAssets.ReadDir(".")
+	g.Expect(err).ToNot(HaveOccurred())
+	for _, entry := range entries {
+		g.Expect(entry.Name()).ToNot(Equal("gmpassets"), "v2/gmpassets must stay outside the embedded asset tree; the component framework would reconcile it unconditionally")
+	}
+}
