@@ -13,17 +13,23 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
+	supportutil "github.com/openshift/hypershift/support/util"
 	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/image/docker10"
+	imagev1 "github.com/openshift/api/image/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,9 +45,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/coreos/stream-metadata-go/stream/rhcos"
 	"github.com/go-logr/logr/testr"
+	"github.com/vincent-petithory/dataurl"
 	"go.uber.org/mock/gomock"
 )
 
@@ -2908,4 +2916,152 @@ func TestReconcileTaintConfigMap(t *testing.T) {
 		g.Expect(ok).To(BeTrue())
 		g.Expect(taint["key"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Key))
 	})
+}
+
+func TestBuildConfigGenerator(t *testing.T) {
+	const (
+		releasePayloadHAProxyImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:282ea1c0ee4f4cfb47b2565de68de7d5bdcca102a9f3fcbd8d7d55d25630d506"
+		releaseImagePullSpec       = "quay.io/openshift-release-dev/ocp-release:4.22.19-x86_64"
+	)
+
+	testCases := map[string]struct {
+		platform             hyperv1.PlatformSpec
+		expectedHAProxyImage string
+	}{
+		"When the HostedCluster uses shared ingress, it should use the shared ingress HAProxy image": {
+			platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					Topology: hyperv1.AzureTopologyPublic,
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+					},
+				},
+			},
+			expectedHAProxyImage: images.DefaultSharedIngressHAProxyImage,
+		},
+		"When the HostedCluster does not use shared ingress, it should use the release payload HAProxy image": {
+			platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{Region: "us-east-1"},
+			},
+			expectedHAProxyImage: releasePayloadHAProxyImage,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			t.Setenv(images.SharedIngressHAProxyEnvVar, "")
+
+			releaseImage := &releaseinfo.ReleaseImage{
+				ImageStream: &imagev1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.22.19"},
+					Spec: imagev1.ImageStreamSpec{
+						Tags: []imagev1.TagReference{
+							{Name: haproxy.HAProxyImageNames[0], From: &corev1.ObjectReference{Name: releasePayloadHAProxyImage}},
+							{Name: "hypershift", From: &corev1.ObjectReference{Name: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cpo"}},
+						},
+					},
+				},
+			}
+			mockCtrl := gomock.NewController(t)
+			mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+			mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(releaseImage, nil).AnyTimes()
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: testNamespace},
+				Spec: hyperv1.HostedClusterSpec{
+					Release:   hyperv1.Release{Image: releaseImagePullSpec},
+					ClusterID: "test-cluster-id",
+					Platform:  tc.platform,
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					},
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					KubeConfig: &corev1.LocalObjectReference{Name: "admin-kubeconfig"},
+				},
+			}
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "karpenter-test", Namespace: testNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					Release: hyperv1.Release{Image: releaseImagePullSpec},
+				},
+			}
+
+			pullSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: testNamespace},
+				Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+			}
+			kubeconfigSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "admin-kubeconfig", Namespace: testNamespace},
+				Data: map[string][]byte{"kubeconfig": []byte(`apiVersion: v1
+clusters:
+- cluster:
+    server: https://api.test-cluster.example.com:6443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+  name: cluster
+current-context: cluster
+kind: Config`)},
+			}
+			sharedIngressService := sharedingress.RouterPublicService()
+			sharedIngressService.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{IP: "10.0.0.100"}}
+			coreConfigs := []client.Object{}
+			for _, name := range []string{"core-ignition-config-1", "core-ignition-config-2"} {
+				coreConfigs = append(coreConfigs, &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      name,
+						Namespace: testNamespace,
+						Labels:    map[string]string{"hypershift.openshift.io/core-ignition-config": "true"},
+					},
+				})
+			}
+
+			fakeManagementClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(append(coreConfigs, pullSecret, kubeconfigSecret, sharedIngressService)...).
+				WithStatusSubresource(sharedIngressService).
+				Build()
+
+			r := &KarpenterIgnitionReconciler{
+				ManagementClient: fakeManagementClient,
+				ReleaseProvider:  mockedReleaseProvider,
+				// The CPO skips HAProxy config generation, so the ignition config generated here includes it.
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
+					Labels: map[string]string{haproxy.ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel: "true"},
+				}}},
+				HypershiftOperatorImage: "test-hypershift-operator-image",
+			}
+
+			ctx := log.IntoContext(t.Context(), testr.New(t))
+			cg, err := r.buildConfigGenerator(ctx, hostedCluster, nodePool, testNamespace)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			compressedConfig, err := cg.CompressedAndEncoded()
+			g.Expect(err).NotTo(HaveOccurred())
+			config, err := supportutil.DecodeAndDecompress(compressedConfig.Bytes())
+			g.Expect(err).NotTo(HaveOccurred())
+
+			var kubeAPIServerProxyManifest string
+			for _, manifest := range strings.Split(config.String(), "\n---\n") {
+				machineConfig := &mcfgv1.MachineConfig{}
+				g.Expect(yaml.Unmarshal([]byte(manifest), machineConfig)).To(Succeed())
+				ignitionConfig := &ignitionapi.Config{}
+				g.Expect(yaml.Unmarshal(machineConfig.Spec.Config.Raw, ignitionConfig)).To(Succeed())
+				for _, file := range ignitionConfig.Storage.Files {
+					if file.Path == "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml" {
+						contents, err := dataurl.DecodeString(*file.Contents.Source)
+						g.Expect(err).NotTo(HaveOccurred())
+						kubeAPIServerProxyManifest = string(contents.Data)
+					}
+				}
+			}
+			g.Expect(kubeAPIServerProxyManifest).To(ContainSubstring("image: " + tc.expectedHAProxyImage))
+		})
+	}
 }

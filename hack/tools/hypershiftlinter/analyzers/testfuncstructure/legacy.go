@@ -393,8 +393,6 @@ var legacyExceptions = sets.Set[string]{
 	"control-plane-operator/controllers/hostedcontrolplane/v2/cloud_credential_operator/deployment_test.go|TestAdaptDeploymentTLS":                                                                                {},
 	"control-plane-operator/controllers/hostedcontrolplane/v2/cloud_credential_operator/deployment_test.go|TestAdaptDeploymentUpdatesContainer":                                                                   {},
 	"control-plane-operator/controllers/hostedcontrolplane/v2/configoperator/deployment_test.go|TestAdaptDeploymentIBMCloudControllerSelection":                                                                   {},
-	"control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator/deployment_test.go|TestAdaptDeploymentImageOverrides":                                                                          {},
-	"control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator/deployment_test.go|TestAdaptDeploymentWatchListClientEnv":                                                                      {},
 	"control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt/config_test.go|TestAdaptConfigMapConsistentOrdering":                                                                                   {},
 	"control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt/config_test.go|TestAdaptConfigMapEmptyMappings":                                                                                        {},
 	"control-plane-operator/controllers/hostedcontrolplane/v2/cvo/deployment_test.go|TestAdaptDeployment":                                                                                                         {},
