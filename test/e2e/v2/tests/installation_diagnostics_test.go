@@ -93,13 +93,20 @@ func ValidateManagementClusterResourcePressureTest(getTestCtx internal.TestConte
 	})
 }
 
-// SchedulingFailureInjectionTest injects a scheduling failure by tainting only
-// the nodes where this hosted cluster's control plane pods run, then deleting
-// a control plane pod so its replacement cannot schedule.
+// SchedulingFailureInjectionTest injects a scheduling failure by tainting all
+// nodes in the management cluster with NoSchedule, then deleting a control
+// plane pod so its replacement cannot be scheduled anywhere.
 //
-// Only nodes hosting pods from this HC's control plane namespace are tainted,
-// limiting blast radius to this cluster. Pods already running on those nodes
-// are unaffected by NoSchedule — only new scheduling attempts are blocked.
+// All nodes are tainted — not just those currently running this HC's pods —
+// because the management cluster (especially nested CI clusters) may have
+// additional worker nodes. If only the "current" nodes were tainted, the
+// scheduler could place the replacement pod on an untainted node, the pod
+// would never become Unschedulable, and the detection chain would never fire.
+//
+// NoSchedule only affects new scheduling decisions; pods already running on
+// tainted nodes continue to run unaffected. This means tainting all nodes is
+// safe for other workloads — including the CPO, etcd, and other hosted
+// clusters' control planes — because their existing pods keep running.
 //
 // The full detection chain exercised:
 //  1. Pod pending with PodScheduled=False, Reason=Unschedulable
@@ -119,7 +126,7 @@ func SchedulingFailureInjectionTest(getTestCtx internal.TestContextGetter) {
 		Expect(cond).NotTo(BeNil(), "ManagementClusterResourcePressure should exist before injection")
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse), "ManagementClusterResourcePressure should be False before injection")
 
-		By("listing control plane pods to find target and node set")
+		By("listing control plane pods to find a target pod for deletion")
 		podList := &corev1.PodList{}
 		Expect(tc.MgmtClient.List(ctx, podList, crclient.InNamespace(cpNamespace))).To(Succeed())
 		Expect(podList.Items).NotTo(BeEmpty(), "expected pods in control plane namespace %s", cpNamespace)
@@ -141,23 +148,16 @@ func SchedulingFailureInjectionTest(getTestCtx internal.TestContextGetter) {
 			return false
 		}
 
-		// Collect the set of nodes running this HC's control plane pods
-		// and find a target pod for deletion.
-		cpNodeNames := make(map[string]struct{})
 		var targetPod *corev1.Pod
 		for i := range podList.Items {
 			p := &podList.Items[i]
-			if p.Spec.NodeName != "" {
-				cpNodeNames[p.Spec.NodeName] = struct{}{}
-			}
 			if targetPod == nil && p.Status.Phase == corev1.PodRunning && isTargetComponentPod(p.Name) {
 				targetPod = p
 			}
 		}
 		Expect(targetPod).NotTo(BeNil(), "expected at least one running CPC-owned pod in %s", cpNamespace)
-		Expect(cpNodeNames).NotTo(BeEmpty(), "expected at least one node running control plane pods")
 
-		By("tainting only nodes hosting this cluster's control plane pods")
+		By("tainting all management cluster nodes to block scheduling")
 		taintKey := "installation-diagnostics-e2e/block-scheduling"
 		taint := corev1.Taint{
 			Key:    taintKey,
@@ -176,9 +176,6 @@ func SchedulingFailureInjectionTest(getTestCtx internal.TestContextGetter) {
 		var taintedCount int
 		for i := range nodeList.Items {
 			node := &nodeList.Items[i]
-			if _, ok := cpNodeNames[node.Name]; !ok {
-				continue
-			}
 			patch := crclient.MergeFrom(node.DeepCopy())
 			node.Spec.Taints = append(node.Spec.Taints, taint)
 			Expect(tc.MgmtClient.Patch(ctx, node, patch)).To(Succeed())
