@@ -124,6 +124,9 @@ type HyperShiftOperatorInstallOptions struct {
 	EnableSizeTagging                      bool
 	EnableDedicatedRequestServingIsolation bool
 	EnableCPOOverrides                     bool
+	CPOFromMain                            bool
+	CPOFromMainVersions                    string
+	CPOFromMainImage                       string
 	EnableEtcdRecovery                     bool
 	DisableCAPIMigration                   bool
 	DryRun                                 bool

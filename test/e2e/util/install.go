@@ -75,6 +75,9 @@ func getInstallOptions(opts HyperShiftOperatorInstallOptions) install.Options {
 	installOpts.EnableSizeTagging = opts.EnableSizeTagging
 	installOpts.EnableDedicatedRequestServingIsolation = opts.EnableDedicatedRequestServingIsolation
 	installOpts.EnableCPOOverrides = opts.EnableCPOOverrides
+	installOpts.CPOFromMain = opts.CPOFromMain
+	installOpts.CPOFromMainVersions = opts.CPOFromMainVersions
+	installOpts.CPOFromMainImage = opts.CPOFromMainImage
 	installOpts.EnableEtcdRecovery = opts.EnableEtcdRecovery
 	installOpts.DisableCAPIMigration = opts.DisableCAPIMigration
 
