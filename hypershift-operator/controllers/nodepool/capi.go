@@ -28,7 +28,7 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1beta2 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1511,7 +1511,7 @@ func (c *CAPI) listMachineTemplates() ([]client.Object, error) {
 			return nil, err
 		}
 	case hyperv1.OpenStackPlatform:
-		gvk, err = apiutil.GVKForObject(&capiopenstackv1beta1.OpenStackMachineTemplate{}, api.Scheme)
+		gvk, err = apiutil.GVKForObject(&capiopenstackv1beta2.OpenStackMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}

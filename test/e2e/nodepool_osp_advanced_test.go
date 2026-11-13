@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
-	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1beta2 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -124,22 +124,22 @@ func (o OpenStackAdvancedTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 	}
 
 	e2eutil.EventuallyObjects(t, o.ctx, "OpenStackServers to be created with the correct number of ports",
-		func(ctx context.Context) ([]*capiopenstackv1beta1.OpenStackMachine, error) {
-			list := &capiopenstackv1beta1.OpenStackMachineList{}
+		func(ctx context.Context) ([]*capiopenstackv1beta2.OpenStackMachine, error) {
+			list := &capiopenstackv1beta2.OpenStackMachineList{}
 			err := o.managementClient.List(ctx, list, crclient.InNamespace(o.hostedControlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: nodePool.Name})
-			oms := make([]*capiopenstackv1beta1.OpenStackMachine, len(list.Items))
+			oms := make([]*capiopenstackv1beta2.OpenStackMachine, len(list.Items))
 			for i := range list.Items {
 				oms[i] = &list.Items[i]
 			}
 			return oms, err
 		},
-		[]e2eutil.Predicate[[]*capiopenstackv1beta1.OpenStackMachine]{
-			func(machines []*capiopenstackv1beta1.OpenStackMachine) (done bool, reasons string, err error) {
+		[]e2eutil.Predicate[[]*capiopenstackv1beta2.OpenStackMachine]{
+			func(machines []*capiopenstackv1beta2.OpenStackMachine) (done bool, reasons string, err error) {
 				return len(machines) == int(*nodePool.Spec.Replicas), fmt.Sprintf("expected %d OpenStackMachines, got %d", *nodePool.Spec.Replicas, len(machines)), nil
 			},
 		},
-		[]e2eutil.Predicate[*capiopenstackv1beta1.OpenStackMachine]{
-			func(machine *capiopenstackv1beta1.OpenStackMachine) (done bool, reasons string, err error) {
+		[]e2eutil.Predicate[*capiopenstackv1beta2.OpenStackMachine]{
+			func(machine *capiopenstackv1beta2.OpenStackMachine) (done bool, reasons string, err error) {
 				server := &capiopenstackv1alpha1.OpenStackServer{}
 				err = o.managementClient.Get(o.ctx, crclient.ObjectKey{Name: machine.Name, Namespace: o.hostedControlPlaneNamespace}, server)
 				// The number of ports for a machine is 1 + the number of additional ports in the nodepool.
@@ -177,22 +177,22 @@ func (o OpenStackAdvancedTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 	)
 	if globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName != "" {
 		e2eutil.EventuallyObjects(t, o.ctx, "OpenStackServers to be created with the correct image",
-			func(ctx context.Context) ([]*capiopenstackv1beta1.OpenStackMachine, error) {
-				list := &capiopenstackv1beta1.OpenStackMachineList{}
+			func(ctx context.Context) ([]*capiopenstackv1beta2.OpenStackMachine, error) {
+				list := &capiopenstackv1beta2.OpenStackMachineList{}
 				err := o.managementClient.List(ctx, list, crclient.InNamespace(o.hostedControlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: nodePool.Name})
-				oms := make([]*capiopenstackv1beta1.OpenStackMachine, len(list.Items))
+				oms := make([]*capiopenstackv1beta2.OpenStackMachine, len(list.Items))
 				for i := range list.Items {
 					oms[i] = &list.Items[i]
 				}
 				return oms, err
 			},
-			[]e2eutil.Predicate[[]*capiopenstackv1beta1.OpenStackMachine]{
-				func(machines []*capiopenstackv1beta1.OpenStackMachine) (done bool, reasons string, err error) {
+			[]e2eutil.Predicate[[]*capiopenstackv1beta2.OpenStackMachine]{
+				func(machines []*capiopenstackv1beta2.OpenStackMachine) (done bool, reasons string, err error) {
 					return len(machines) == int(*nodePool.Spec.Replicas), fmt.Sprintf("expected %d OpenStackMachines, got %d", *nodePool.Spec.Replicas, len(machines)), nil
 				},
 			},
-			[]e2eutil.Predicate[*capiopenstackv1beta1.OpenStackMachine]{
-				func(machine *capiopenstackv1beta1.OpenStackMachine) (done bool, reasons string, err error) {
+			[]e2eutil.Predicate[*capiopenstackv1beta2.OpenStackMachine]{
+				func(machine *capiopenstackv1beta2.OpenStackMachine) (done bool, reasons string, err error) {
 					server := &capiopenstackv1alpha1.OpenStackServer{}
 					err = o.managementClient.Get(o.ctx, crclient.ObjectKey{Name: machine.Name, Namespace: o.hostedControlPlaneNamespace}, server)
 					if err != nil {

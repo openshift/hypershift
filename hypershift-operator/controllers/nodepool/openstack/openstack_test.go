@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1beta2 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/google/go-cmp/cmp"
@@ -26,7 +26,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 		name                string
 		nodePool            hyperv1.NodePoolSpec
 		nodePoolAnnotations map[string]string
-		expected            *capiopenstackv1beta1.OpenStackMachineTemplateSpec
+		expected            *capiopenstackv1beta2.OpenStackMachineTemplateSpec
 		checkError          func(*testing.T, error)
 	}{
 		{
@@ -47,12 +47,16 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 				Release: hyperv1.Release{},
 			},
 
-			expected: &capiopenstackv1beta1.OpenStackMachineTemplateSpec{
-				Template: capiopenstackv1beta1.OpenStackMachineTemplateResource{
-					Spec: capiopenstackv1beta1.OpenStackMachineSpec{
-						Flavor: ptr.To(flavor),
-						Image: capiopenstackv1beta1.ImageParam{
-							Filter: &capiopenstackv1beta1.ImageFilter{
+			expected: &capiopenstackv1beta2.OpenStackMachineTemplateSpec{
+				Template: capiopenstackv1beta2.OpenStackMachineTemplateResource{
+					Spec: capiopenstackv1beta2.OpenStackMachineSpec{
+						Flavor: capiopenstackv1beta2.FlavorParam{
+							Filter: &capiopenstackv1beta2.FlavorFilter{
+								Name: ptr.To(flavor),
+							},
+						},
+						Image: capiopenstackv1beta2.ImageParam{
+							Filter: &capiopenstackv1beta2.ImageFilter{
 								Name: ptr.To(imageName),
 							},
 						},
@@ -85,20 +89,24 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 				Release: hyperv1.Release{},
 			},
 
-			expected: &capiopenstackv1beta1.OpenStackMachineTemplateSpec{
-				Template: capiopenstackv1beta1.OpenStackMachineTemplateResource{
-					Spec: capiopenstackv1beta1.OpenStackMachineSpec{
-						Flavor: ptr.To(flavor),
-						Image: capiopenstackv1beta1.ImageParam{
-							Filter: &capiopenstackv1beta1.ImageFilter{
+			expected: &capiopenstackv1beta2.OpenStackMachineTemplateSpec{
+				Template: capiopenstackv1beta2.OpenStackMachineTemplateResource{
+					Spec: capiopenstackv1beta2.OpenStackMachineSpec{
+						Flavor: capiopenstackv1beta2.FlavorParam{
+							Filter: &capiopenstackv1beta2.FlavorFilter{
+								Name: ptr.To(flavor),
+							},
+						},
+						Image: capiopenstackv1beta2.ImageParam{
+							Filter: &capiopenstackv1beta2.ImageFilter{
 								Name: ptr.To(imageName),
 							},
 						},
-						Ports: []capiopenstackv1beta1.PortOpts{
+						Ports: []capiopenstackv1beta2.PortOpts{
 							{},
 							{
 								Description: ptr.To("Additional port for Hypershift node pool tests"),
-								Network: &capiopenstackv1beta1.NetworkParam{
+								Network: &capiopenstackv1beta2.NetworkParam{
 									ID: ptr.To("123"),
 								},
 							},
@@ -134,25 +142,29 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 				Release: hyperv1.Release{},
 			},
 
-			expected: &capiopenstackv1beta1.OpenStackMachineTemplateSpec{
-				Template: capiopenstackv1beta1.OpenStackMachineTemplateResource{
-					Spec: capiopenstackv1beta1.OpenStackMachineSpec{
-						Flavor: ptr.To(flavor),
-						Image: capiopenstackv1beta1.ImageParam{
-							Filter: &capiopenstackv1beta1.ImageFilter{
+			expected: &capiopenstackv1beta2.OpenStackMachineTemplateSpec{
+				Template: capiopenstackv1beta2.OpenStackMachineTemplateResource{
+					Spec: capiopenstackv1beta2.OpenStackMachineSpec{
+						Flavor: capiopenstackv1beta2.FlavorParam{
+							Filter: &capiopenstackv1beta2.FlavorFilter{
+								Name: ptr.To(flavor),
+							},
+						},
+						Image: capiopenstackv1beta2.ImageParam{
+							Filter: &capiopenstackv1beta2.ImageFilter{
 								Name: ptr.To(imageName),
 							},
 						},
-						Ports: []capiopenstackv1beta1.PortOpts{
+						Ports: []capiopenstackv1beta2.PortOpts{
 							{},
 							{
 								Description: ptr.To("Additional port for Hypershift node pool tests"),
-								Network: &capiopenstackv1beta1.NetworkParam{
+								Network: &capiopenstackv1beta2.NetworkParam{
 									ID: ptr.To("123"),
 								},
-								ResolvedPortSpecFields: capiopenstackv1beta1.ResolvedPortSpecFields{
-									DisablePortSecurity: ptr.To(true),
-									VNICType:            ptr.To("direct"),
+								ResolvedPortSpecFields: capiopenstackv1beta2.ResolvedPortSpecFields{
+									EnablePortSecurity: ptr.To(false),
+									VNICType:           ptr.To("direct"),
 								},
 							},
 						},

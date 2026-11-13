@@ -53,6 +53,7 @@ import (
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1beta2 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2"
 	capiaddonsv1beta1 "sigs.k8s.io/cluster-api/api/addons/v1beta1"
 	capiaddonsv1beta2 "sigs.k8s.io/cluster-api/api/addons/v1beta2"
 	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
@@ -159,6 +160,7 @@ func init() {
 		_ = machinev1beta1.AddToScheme(scheme)
 		_ = capiopenstackv1alpha1.AddToScheme(scheme)
 		_ = capiopenstackv1beta1.AddToScheme(scheme)
+		_ = capiopenstackv1beta2.AddToScheme(scheme)
 		_ = secretsstorev1.AddToScheme(scheme)
 		_ = kcpv1.AddToScheme(scheme)
 		_ = orcv1alpha1.AddToScheme(scheme)
