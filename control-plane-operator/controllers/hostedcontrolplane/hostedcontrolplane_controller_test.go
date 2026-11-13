@@ -1,6 +1,7 @@
 package hostedcontrolplane
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
@@ -8,10 +9,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -40,6 +44,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
@@ -259,44 +264,138 @@ func TestReconcileEtcdCerts(t *testing.T) {
 			}
 		})
 	}
+}
 
-	// The CA-only mirror exists only to satisfy GMP's Secret-only TLS references,
-	// so it must be created when GMP monitoring is enabled and absent otherwise.
-	mirrorTests := []struct {
-		name      string
-		enableGMP bool
+func TestReconcilePKI(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		enableGMP  bool
+		failSecret string
 	}{
-		{
-			name:      "When GMP monitoring is enabled, it should mirror the etcd CA into a Secret",
-			enableGMP: true,
-		},
-		{
-			name: "When GMP monitoring is disabled, it should not create the etcd CA mirror",
-		},
+		{name: "When GMP monitoring is enabled, it should create and refresh both CA mirrors and produce every generated TLS Secret", enableGMP: true},
+		{name: "When GMP monitoring is disabled, it should leave both CA mirrors absent"},
+		{name: "When writing the root CA mirror fails, it should return the error", enableGMP: true, failSecret: "root-ca-cert"},
+		{name: "When writing the etcd CA mirror fails, it should return the error", enableGMP: true, failSecret: "etcd-ca-cert"},
 	}
-	for _, tc := range mirrorTests {
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			hcp := newEtcdTestHCP(hyperv1.Managed)
-			r, _ := newEtcdTestReconciler(hcp, nil)
-			r.EnableGMPMonitoring = tc.enableGMP
-			p := &pki.PKIParams{OwnerRef: config.OwnerRefFrom(hcp)}
+			hcp.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}}
+			hcp.Spec.DNS.BaseDomain = "example.com"
+			writeErr := fmt.Errorf("mirror write failed")
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+					if _, isSecret := obj.(*corev1.Secret); isSecret && obj.GetName() == tc.failSecret {
+						return writeErr
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			}).Build()
+			r := &HostedControlPlaneReconciler{Client: c, EnableGMPMonitoring: tc.enableGMP}
+			r.setup(upsert.New(false).CreateOrUpdate)
+			infraStatus := infra.InfrastructureStatus{APIHost: "api.test.example.com", OAuthHost: "oauth.test.example.com", KonnectivityHost: "konnectivity.test.example.com"}
 
-			g.Expect(r.reconcileEtcdCerts(t.Context(), hcp, p, r.createOrUpdate(hcp))).To(Succeed())
-
-			mirror := manifests.EtcdCACertSecret(hcp.Namespace)
-			err := r.Client.Get(t.Context(), client.ObjectKeyFromObject(mirror), mirror)
-			if !tc.enableGMP {
-				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the etcd CA mirror must not exist when GMP monitoring is disabled")
+			err := r.reconcilePKI(t.Context(), hcp, infraStatus, r.createOrUpdate(hcp))
+			if tc.failSecret != "" {
+				g.Expect(err).To(MatchError(writeErr))
+				g.Expect(err).To(MatchError(ContainSubstring("CA mirror secret")))
 				return
 			}
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(mirror.Type).To(Equal(corev1.SecretTypeOpaque))
-			g.Expect(mirror.Data).To(HaveKey(certs.CASignerCertMapKey))
-			g.Expect(mirror.Data[certs.CASignerCertMapKey]).NotTo(BeEmpty())
-			g.Expect(mirror.OwnerReferences).To(Equal([]metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}))
+			mirrors := []struct {
+				secret *corev1.Secret
+				source *corev1.ConfigMap
+				signer *corev1.Secret
+				rotate func(*corev1.Secret, config.OwnerRef) error
+			}{
+				{manifests.RootCACertSecret(hcp.Namespace), manifests.RootCAConfigMap(hcp.Namespace), manifests.RootCASecret(hcp.Namespace), pki.ReconcileRootCA},
+				{manifests.EtcdCACertSecret(hcp.Namespace), manifests.EtcdSignerCAConfigMap(hcp.Namespace), manifests.EtcdSignerSecret(hcp.Namespace), pki.ReconcileEtcdSignerSecret},
+			}
+			originalBundles := map[string]string{}
+			for _, mirror := range mirrors {
+				err := c.Get(t.Context(), client.ObjectKeyFromObject(mirror.secret), mirror.secret)
+				if !tc.enableGMP {
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "%s must be absent with GMP disabled", mirror.secret.Name)
+					continue
+				}
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(mirror.source), mirror.source)).To(Succeed())
+				bundle := mirror.source.Data[certs.CASignerCertMapKey]
+				g.Expect(bundle).NotTo(BeEmpty())
+				g.Expect(mirror.secret.Data).To(Equal(map[string][]byte{certs.CASignerCertMapKey: []byte(bundle)}))
+				g.Expect(mirror.secret.Type).To(Equal(corev1.SecretTypeOpaque))
+				g.Expect(mirror.secret.OwnerReferences).To(Equal([]metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}))
+				originalBundles[mirror.secret.Name] = bundle
+			}
+			if !tc.enableGMP {
+				return
+			}
+			assertGeneratedGMPTLSSecrets(t, c, hcp)
+
+			for _, mirror := range mirrors {
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(mirror.signer), mirror.signer)).To(Succeed())
+				mirror.signer.Data = nil
+				g.Expect(mirror.rotate(mirror.signer, config.OwnerRefFrom(hcp))).To(Succeed())
+				g.Expect(c.Update(t.Context(), mirror.signer)).To(Succeed())
+				mirror.secret.Data[certs.CASignerKeyMapKey] = []byte("stale private key")
+				g.Expect(c.Update(t.Context(), mirror.secret)).To(Succeed())
+			}
+
+			g.Expect(r.reconcilePKI(t.Context(), hcp, infraStatus, r.createOrUpdate(hcp))).To(Succeed())
+
+			for _, mirror := range mirrors {
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(mirror.source), mirror.source)).To(Succeed())
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(mirror.secret), mirror.secret)).To(Succeed())
+				bundle := mirror.source.Data[certs.CASignerCertMapKey]
+				g.Expect(bundle).NotTo(Equal(originalBundles[mirror.secret.Name]), "%s should have a changed CA bundle", mirror.source.Name)
+				g.Expect(mirror.secret.Data).To(Equal(map[string][]byte{certs.CASignerCertMapKey: []byte(bundle)}))
+				g.Expect(mirror.secret.OwnerReferences).To(Equal([]metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}))
+			}
 		})
 	}
+}
+
+func assertGeneratedGMPTLSSecrets(t *testing.T, c client.Client, hcp *hyperv1.HostedControlPlane) {
+	t.Helper()
+	g := NewWithT(t)
+	paths, err := filepath.Glob("v2/gmpassets/*/podmonitoring.yaml")
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(paths).NotTo(BeEmpty())
+	references := 0
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		g.Expect(err).NotTo(HaveOccurred())
+		tmpl, err := template.New(path).Option("missingkey=error").Parse(string(raw))
+		g.Expect(err).NotTo(HaveOccurred())
+		var rendered bytes.Buffer
+		g.Expect(tmpl.Execute(&rendered, map[string]string{"Name": "etcd", "ClientServiceName": "etcd-client"})).To(Succeed())
+		var monitor gmpmonitoring.PodMonitoring
+		g.Expect(yaml.UnmarshalStrict(rendered.Bytes(), &monitor)).To(Succeed(), path)
+		for _, endpoint := range monitor.Spec.Endpoints {
+			if endpoint.TLS == nil {
+				continue
+			}
+			for _, selector := range []*gmpmonitoring.SecretSelector{endpoint.TLS.CA, endpoint.TLS.Cert, endpoint.TLS.Key} {
+				if selector == nil {
+					continue
+				}
+				g.Expect(selector.Secret).NotTo(BeNil(), path)
+				reference := selector.Secret
+				namespace := reference.Namespace
+				if namespace == "" {
+					namespace = hcp.Namespace
+				}
+				secret := &corev1.Secret{}
+				g.Expect(c.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: reference.Name}, secret)).To(Succeed(), "%s references an unreconciled TLS Secret", path)
+				g.Expect(secret.Data[reference.Key]).NotTo(BeEmpty(), "%s references missing key %s in %s", path, reference.Key, secret.Name)
+				g.Expect(secret.OwnerReferences).To(Equal([]metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}))
+				references++
+			}
+		}
+	}
+	g.Expect(references).NotTo(BeZero(), "at least one generated TLS reference must be checked")
 }
 
 func TestReconcileUnmanagedEtcd(t *testing.T) {
