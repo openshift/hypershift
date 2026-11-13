@@ -1,5 +1,18 @@
-// SPDX-License-Identifier: Apache-2.0
-// Copyright 2021 The Kubernetes Authors
+/*
+Copyright 2021 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package env
 
@@ -10,7 +23,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -121,9 +134,10 @@ func (e *Env) ListVersions(ctx context.Context) {
 		if !e.Version.Matches(set.Version) {
 			continue
 		}
-		sort.Slice(set.Platforms, func(i, j int) bool {
-			return orderPlatforms(set.Platforms[i].Platform, set.Platforms[j].Platform)
+		slices.SortStableFunc(set.Platforms, func(i, j versions.PlatformItem) int {
+			return orderPlatforms(i.Platform, j.Platform)
 		})
+
 		for _, plat := range set.Platforms {
 			if e.Platform.Matches(plat.Platform) {
 				fmt.Fprintf(out, "(available)\tv%s\t%s\n", set.Version, plat)
@@ -246,7 +260,7 @@ func (e *Env) EnsureVersionIsSet(ctx context.Context) {
 	serverVer, platform := e.LatestVersion(ctx)
 
 	// if we're not forcing a download, and we have a newer local version, just use that
-	if !e.ForceDownload && localVer != nil && localVer.NewerThan(serverVer) {
+	if !e.ForceDownload && localVer != nil && localVer.Compare(serverVer) > 0 {
 		e.Platform.Platform = localPlat // update our data with hash
 		e.Version.MakeConcrete(*localVer)
 		return
