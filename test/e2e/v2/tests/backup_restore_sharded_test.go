@@ -19,6 +19,7 @@ package tests
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -659,8 +660,19 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 			Expect(err).NotTo(HaveOccurred(), "failed to render target cluster manifests")
 
 			By("Injecting the per-shard restore URLs into the rendered HostedCluster")
+			// The rendered manifests carry a NEW etcd encryption key, but the
+			// restored etcd data is encrypted with the SOURCE cluster's key —
+			// without the source's key, the kube-apiserver cannot decrypt any
+			// restored secret and never becomes ready. OADP's restore
+			// preserves the key because the encryption-key Secret is part of
+			// its backup; replicate that here.
+			srcEncKey := &corev1.Secret{}
+			Expect(e.testCtx.MgmtClient.Get(e.testCtx.Context, types.NamespacedName{
+				Namespace: "clusters",
+				Name:      e.sourceCluster + "-etcd-encryption-key",
+			}, srcEncKey)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(e.testCtx.ArtifactDir, "target-cluster-rendered.yaml"), rendered, 0644)).To(Succeed())
-			applyRestoredShardedCluster(e.testCtx, rendered, defaultURL, namedURL, shardedE2EShardName)
+			applyRestoredShardedCluster(e.testCtx, rendered, defaultURL, namedURL, shardedE2EShardName, srcEncKey.Data["key"])
 
 			By("Waiting for EtcdSnapshotRestored=True on the target control plane")
 			hcpNamespace := "clusters-" + e.targetCluster
@@ -706,8 +718,9 @@ func parseS3URL(url string) (bucket, key string) {
 }
 
 // applyRestoredShardedCluster splits the rendered multi-document YAML, injects
-// the restore URLs into the HostedCluster document, and applies every object.
-func applyRestoredShardedCluster(testCtx *internal.TestContext, rendered []byte, defaultURL, namedURL, shardName string) {
+// the restore URLs into the HostedCluster document and the source cluster's
+// etcd encryption key into the encryption-key Secret, and applies every object.
+func applyRestoredShardedCluster(testCtx *internal.TestContext, rendered []byte, defaultURL, namedURL, shardName string, sourceEncryptionKey []byte) {
 	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
 	for {
 		var raw map[string]interface{}
@@ -721,6 +734,11 @@ func applyRestoredShardedCluster(testCtx *internal.TestContext, rendered []byte,
 			continue
 		}
 		obj := &unstructured.Unstructured{Object: raw}
+		if obj.GetKind() == "Secret" && strings.HasSuffix(obj.GetName(), "-etcd-encryption-key") {
+			// Replace the freshly generated key with the source cluster's so
+			// the kube-apiserver can decrypt the restored secrets.
+			Expect(unstructured.SetNestedField(obj.Object, base64.StdEncoding.EncodeToString(sourceEncryptionKey), "data", "key")).To(Succeed())
+		}
 		if obj.GetKind() == "HostedCluster" {
 			// Default shard restore URL (legacy storage field).
 			Expect(unstructured.SetNestedStringSlice(obj.Object, []string{defaultURL}, "spec", "etcd", "managed", "storage", "restoreSnapshotURL")).To(Succeed())
