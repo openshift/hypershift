@@ -99,6 +99,8 @@ CAPI_PROVIDERS := agent aws azure gcp ibmcloud kubevirt openstack
 .PHONY: update
 update: api-deps workspace-sync capi-sync gmp-sync deps api api-docs clients docs-aggregate
 	$(MAKE) ownership-rules
+	# GMP assets are generated from the CoreOS monitors, so run after code generation.
+	$(MAKE) generate-gmp-config
 
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
 $(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
@@ -131,7 +133,7 @@ precommit-api-lint-fix: $(GOLANGCI_LINT)
 	cd api && $(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(patsubst api/%,%,$(FILES))
 
 .PHONY: lint
-lint: generate verify-capi-sync verify-gmp-sync $(HYPERSHIFTLINTER_PLUGIN)
+lint: generate verify-capi-sync verify-gmp-sync verify-gmp-config $(HYPERSHIFTLINTER_PLUGIN)
 	$(MAKE) api-lint; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
@@ -263,6 +265,14 @@ $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
 .PHONY: generate
 generate: $(MOCKGEN) $(CONTROLLER_GEN)
 	$(GO) generate ./...
+
+.PHONY: generate-gmp-config
+generate-gmp-config: ## Regenerate GMP PodMonitoring assets from CoreOS ServiceMonitor/PodMonitor assets.
+	$(GO) run ./hack/gmp-config-gen
+
+.PHONY: verify-gmp-config
+verify-gmp-config: ## Fail when generated GMP PodMonitoring assets are stale.
+	$(GO) run ./hack/gmp-config-gen --verify
 
 .PHONY: gmp-sync
 gmp-sync: $(CONTROLLER_GEN)
