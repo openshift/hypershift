@@ -119,6 +119,7 @@
     {"pattern": "hack/**", "group": "Tooling", "why": "not part of any binary"},
     {"pattern": "hypershift-ci-python/**", "group": "Tooling", "why": "not part of any binary"},
     {"pattern": "hypershift-operator/**", "group": "HO", "why": "package of make hypershift-operator"},
+    {"pattern": "ignition-payload-controller/**", "group": "HO", "why": "imported only by HO binaries"},
     {"pattern": "ignition-server/**", "group": "HO", "why": "shared by CPO, HO binaries"},
     {"pattern": "karpenter-operator/**", "group": "HO", "why": "package of make karpenter-operator"},
     {"pattern": "kas-bootstrap/**", "group": "CPO", "why": "imported only by CPO binaries"},
