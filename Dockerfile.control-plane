@@ -31,3 +31,4 @@ LABEL io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubecon
 LABEL io.openshift.hypershift.control-plane-operator-supports-gcp-resource-tags=true
 LABEL io.openshift.hypershift.control-plane-operator.v2-isdefault=true
 LABEL io.openshift.hypershift.control-plane-operator-supports-deterministic-lb=true
+LABEL io.openshift.hypershift.control-plane-operator-supports-ignition-payload-system=true

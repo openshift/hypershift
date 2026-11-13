@@ -35,3 +35,4 @@ LABEL io.openshift.hypershift.control-plane-pki-operator-signs-csrs=true
 LABEL io.openshift.hypershift.hosted-cluster-config-operator-reports-node-count=true
 LABEL io.openshift.hypershift.control-plane-operator.v2-isdefault=true
 LABEL io.openshift.hypershift.control-plane-operator-supports-deterministic-lb=true
+LABEL io.openshift.hypershift.control-plane-operator-supports-ignition-payload-system=true
