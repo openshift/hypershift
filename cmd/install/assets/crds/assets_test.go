@@ -160,14 +160,14 @@ func TestGetCustomResourceDefinition(t *testing.T) {
 			crd := getCustomResourceDefinition(CRDS, "cluster-api-provider-openstack/"+tc.file, CAPICRDOverrides())
 			g.Expect(crd.Labels).To(HaveKeyWithValue(capiLabel, tc.version))
 			g.Expect(crd.Spec.Versions).To(HaveLen(tc.versions))
-			// The storage version carries the active schema HyperShift serves.
-			var version apiextensionsv1.CustomResourceDefinitionVersion
+			var version *apiextensionsv1.CustomResourceDefinitionVersion
 			for i := range crd.Spec.Versions {
 				if crd.Spec.Versions[i].Name == tc.version {
-					version = crd.Spec.Versions[i]
+					version = &crd.Spec.Versions[i]
+					break
 				}
 			}
-			g.Expect(version.Name).To(Equal(tc.version))
+			g.Expect(version).ToNot(BeNil(), "missing version %s", tc.version)
 			g.Expect(version.Served).To(BeTrue())
 			g.Expect(version.Storage).To(BeTrue())
 			for _, properties := range tc.properties {
