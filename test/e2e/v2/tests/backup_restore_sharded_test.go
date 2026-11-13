@@ -78,6 +78,11 @@ type shardedE2E struct {
 
 	sourceCluster string
 	targetCluster string
+
+	// sourceEncryptionKey is the source cluster's etcd encryption key,
+	// captured while the source still exists (it is destroyed before the
+	// restore) so the restored target can decrypt the source's etcd data.
+	sourceEncryptionKey []byte
 }
 
 // runCLI executes the hypershift CLI with the given args, streaming output to
@@ -575,6 +580,14 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 				g.Expect(mapping).To(HaveKeyWithValue(shardedE2EShardName, byIdentity[shardedE2EShardName]))
 			}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
+			By("Capturing the source cluster's etcd encryption key")
+			srcEncKey := &corev1.Secret{}
+			Expect(e.testCtx.MgmtClient.Get(e.testCtx.Context, types.NamespacedName{
+				Namespace: "clusters",
+				Name:      e.sourceCluster + "-etcd-encryption-key",
+			}, srcEncKey)).To(Succeed())
+			e.sourceEncryptionKey = srcEncKey.Data["key"]
+
 			By("Verifying the S3 objects exist and are distinct")
 			cfg, err := awsConfigFromSecret(e.testCtx.Context, credsSecret, bslRegion)
 			Expect(err).NotTo(HaveOccurred())
@@ -665,14 +678,11 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 			// without the source's key, the kube-apiserver cannot decrypt any
 			// restored secret and never becomes ready. OADP's restore
 			// preserves the key because the encryption-key Secret is part of
-			// its backup; replicate that here.
-			srcEncKey := &corev1.Secret{}
-			Expect(e.testCtx.MgmtClient.Get(e.testCtx.Context, types.NamespacedName{
-				Namespace: "clusters",
-				Name:      e.sourceCluster + "-etcd-encryption-key",
-			}, srcEncKey)).To(Succeed())
+			// its backup; replicate that here using the key captured during
+			// the backup (the source cluster is already destroyed).
+			Expect(e.sourceEncryptionKey).NotTo(BeEmpty(), "source encryption key should have been captured during the backup")
 			Expect(os.WriteFile(filepath.Join(e.testCtx.ArtifactDir, "target-cluster-rendered.yaml"), rendered, 0644)).To(Succeed())
-			applyRestoredShardedCluster(e.testCtx, rendered, defaultURL, namedURL, shardedE2EShardName, srcEncKey.Data["key"])
+			applyRestoredShardedCluster(e.testCtx, rendered, defaultURL, namedURL, shardedE2EShardName, e.sourceEncryptionKey)
 
 			By("Waiting for EtcdSnapshotRestored=True on the target control plane")
 			hcpNamespace := "clusters-" + e.targetCluster
