@@ -65462,14 +65462,15 @@ In all standard installation methods -- including MCE (Multicluster Engine) and 
 
 Starting with OCP 4.21, the upstream CAPI v1.11 bump introduced the `v1beta2` API version. Since HyperShift did not support CAPI `v1beta2` until 5.0, a backward compatibility mechanism pins specific CAPI images to their 4.20.10 equivalents (which ship CAPI v1.10 / `v1beta1` only) for releases 4.21 and 4.22.
 
-Separately, on `main` and `release-5.0+` (where HyperShift compiles against CAPI v1.11+), hosted clusters running OCP **below 4.19** ship a CAPI controller that writes status via `v1beta1`. The `v1beta1`→`v1beta2` conversion webhook drops the `status.phase` field, leaving it permanently empty. To fix this, the core CAPI manager image is pinned to a known-good OCP 4.22 build that writes status through `v1beta2` natively.
+Separately, on `main` and `release-5.0+` (where HyperShift compiles against CAPI v1.11+), hosted clusters running OCP **below 4.21** ship a CAPI controller that writes status via `v1beta1`. The `v1beta1`→`v1beta2` conversion webhook drops the `status.phase` field, leaving it permanently empty. Additionally, on large environments this causes congestion on the API server due to high conversion volumes.
+To fix this, the core CAPI manager image is pinned to a known-good OCP 4.22 build that writes status through `v1beta2` natively. This removes the need for conversion.
 
 ### Implementation
 
 The pinning is implemented in `support/backwardcompat/backwardcompat.go` via the `GetBackwardCompatibleCAPIImage()` function. The behaviour depends on the branch and the hosted cluster's payload version:
 
 - **release-4.21 / release-4.22** -- for payload version >= 4.21.0, the function extracts the CAPI images from a pinned 4.20.10 release instead of the hosted cluster's own payload.
-- **main / release-5.0+** -- for payload version < 4.19.0, the function returns a pinned OCP 4.22 `cluster-capi-controllers` image. For versions >= 4.19.0 it returns an empty string and the standard image resolution priority applies.
+- **main / release-5.0+** -- for payload version < 4.21.0, the function returns a pinned OCP 4.22 `cluster-capi-controllers` image. For versions >= 4.21.0 it returns an empty string and the standard image resolution priority applies.
 
 In both cases an explicit `hypershift.openshift.io/capi-manager-image` annotation on the HostedCluster takes priority over the pinned image.
 
@@ -65504,24 +65505,25 @@ The following platforms are **not affected** by pinning on any branch: PowerVS, 
 | release-4.20 | No | -- | Not needed -- already ships CAPI v1.10 |
 | release-4.21 | Yes | `cluster-capi-controllers`, CAPA (AWS), CAPZ (Azure) | Pins to 4.20.10 for payloads >= 4.21 |
 | release-4.22 | Yes | `cluster-capi-controllers`, CAPA (AWS), CAPZ (Azure) | Pins to 4.20.10 for payloads >= 4.21 |
-| release-5.0+ | Yes | `cluster-capi-controllers` | Pins to OCP 4.22 CAPI manager for payloads < 4.19 |
-| main | Yes | `cluster-capi-controllers` | Pins to OCP 4.22 CAPI manager for payloads < 4.19 |
+| release-5.0+ | Yes | `cluster-capi-controllers` | Pins to OCP 4.22 CAPI manager for payloads < 4.21 |
+| main | Yes | `cluster-capi-controllers` | Pins to OCP 4.22 CAPI manager for payloads < 4.21 |
 
 !!! note
-    The 4.20.10 pinning was removed once HyperShift gained the ability to compile with CAPI v1.11+, tracked under CNTRLPLANE-2207. The related `v1beta2` client migration is tracked separately under CNTRLPLANE-1200. On `main` and `release-5.0+` the 4.20.10 pinning is replaced by the < 4.19 phase-conversion pinning.
+    The 4.20.10 pinning was removed once HyperShift gained the ability to compile with CAPI v1.11+, tracked under CNTRLPLANE-2207. The related `v1beta2` client migration is tracked separately under CNTRLPLANE-1200. On `main` and `release-5.0+` the 4.20.10 pinning is replaced by the < 4.21 phase-conversion + congestion avoidance pinning.
 
 ### Introducing PRs
 
 - OCPBUGS-74247: CAPI image overrides aware of registry config -- initial implementation (merged to main)
 - OCPBUGS-86295: CAPI image overrides aware of registry config -- backport to release-4.21
 - OCPBUGS-123171: CAPI manager pinning below 4.19 to fix phase conversion -- OCP 4.22 CAPI manager pinning for payloads < 4.19
+- OCPBUGS-140990: fix(capi): extend CAPI manager override up to 4.20 -- OCP 4.22 CAPI manager pinning extended from < 4.19 to < 4.21
 
 ### Known Issues
 
 In disconnected environments, pinned images are not part of the hosted cluster payload's `image-references`, so `oc-mirror` does not discover them automatically:
 
 - On **release-4.21/4.22**: users must manually mirror the 4.20.10 release. Tracked under OCPBUGS-74263 and OCPBUGS-86056.
-- On **main/5.0+**: users must manually mirror the OCP 4.22 `cluster-capi-controllers` image listed above. Tracked under OCPBUGS-123171.
+- On **main/5.0+**: users must manually mirror the OCP 4.22 `cluster-capi-controllers` image listed above. Tracked under OCPBUGS-123171 and OCPBUGS-140990.
 
 ## Related Files
 
