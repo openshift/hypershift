@@ -11806,6 +11806,21 @@ after the infrastructure is ready.</p>
 </tr>
 <tr>
 <td>
+<code>sharedIngressWorkerAPIEndpoint</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.APIEndpoint">
+APIEndpoint
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>sharedIngressWorkerAPIEndpoint is the observed address workers use to reach
+the API through shared ingress. It is absent when unavailable or not applicable.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>oauthCallbackURLTemplate</code></br>
 <em>
 string

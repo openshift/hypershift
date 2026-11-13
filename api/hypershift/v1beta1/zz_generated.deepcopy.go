@@ -3033,6 +3033,11 @@ func (in *HostedControlPlaneStatus) DeepCopyInto(out *HostedControlPlaneStatus) 
 		**out = **in
 	}
 	out.ControlPlaneEndpoint = in.ControlPlaneEndpoint
+	if in.SharedIngressWorkerAPIEndpoint != nil {
+		in, out := &in.SharedIngressWorkerAPIEndpoint, &out.SharedIngressWorkerAPIEndpoint
+		*out = new(APIEndpoint)
+		**out = **in
+	}
 	in.ControlPlaneVersion.DeepCopyInto(&out.ControlPlaneVersion)
 	if in.VersionStatus != nil {
 		in, out := &in.VersionStatus, &out.VersionStatus
