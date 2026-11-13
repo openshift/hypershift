@@ -128,6 +128,16 @@ func (tc *TestContext) GetHostedClusterRESTConfig(hc *hyperv1.HostedCluster) (*r
 // GetHostedClusterClient returns a controller-runtime client for the hosted
 // cluster. Returns an error if the kubeconfig or client setup fails.
 func (tc *TestContext) GetHostedClusterClient(hc *hyperv1.HostedCluster) (crclient.Client, error) {
+	return tc.GetHostedClusterClientWithContext(context.Background(), hc)
+}
+
+// GetHostedClusterClientWithContext is GetHostedClusterClient with caller
+// cancellation support. The poll context is checked before constructing the
+// client so a canceled reconciliation stops promptly.
+func (tc *TestContext) GetHostedClusterClientWithContext(ctx context.Context, hc *hyperv1.HostedCluster) (crclient.Client, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	restConfig, err := tc.GetHostedClusterRESTConfig(hc)
 	if err != nil {
 		return nil, err

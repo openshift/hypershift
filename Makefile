@@ -470,7 +470,7 @@ test: generate test-e2ev2-unit
 # ./test/e2e/v2/tests, which are the Ginkgo suites that require a live cluster.
 .PHONY: test-e2ev2-unit
 test-e2ev2-unit:
-	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/cmd/... ./test/e2e/v2/lifecycle
+	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/cmd/... ./test/e2e/v2/lifecycle ./test/e2e/v2/util/deterministiclb
 	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m -run '^(TestComponentSupportsTLSConfig|TestVerifyIntermediateTLSConnectivityAfterDowngrade|TestImageMirroring.*|TestRequiredGCPFile|TestMatchesRouterForwardingRule|TestEventTTLMatches)$$' ./test/e2e/v2/tests
 
 # Run tests only for Go packages with changes relative to PULL_BASE_SHA.
