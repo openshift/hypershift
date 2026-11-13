@@ -2,6 +2,7 @@ package controlplanecomponent
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/omnicpo"
 	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -69,6 +70,16 @@ func (b *controlPlaneWorkloadBuilder[T]) WithTemplateData(data map[string]string
 
 func (b *controlPlaneWorkloadBuilder[T]) WithAdaptFunction(adapt func(cpContext WorkloadContext, obj T) error) *controlPlaneWorkloadBuilder[T] {
 	b.workload.adapt = adapt
+	return b
+}
+
+// WithOmniCPOTransforms registers declarative OMNI-CPO drift adjustments applied to the rendered
+// Deployment after adapt, when a main-built control-plane-operator drives an older control plane.
+// Each transform runs only when OMNI-CPO is enabled and the driven control-plane version falls in
+// its range; see support/omnicpo. A no-op when OMNI-CPO is off. Only valid on Deployment
+// components (the only workload type OMNI-CPO drives today).
+func (b *controlPlaneWorkloadBuilder[T]) WithOmniCPOTransforms(transforms ...omnicpo.Transform[*appsv1.Deployment]) *controlPlaneWorkloadBuilder[T] {
+	b.workload.omniCPOTransforms = append(b.workload.omniCPOTransforms, transforms...)
 	return b
 }
 
