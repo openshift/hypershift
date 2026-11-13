@@ -188,7 +188,7 @@ func newCAPIConversionRegistry(scheme *runtime.Scheme) (conversion.Registry, err
 	for groupKind, newConverter := range map[schema.GroupKind]func(*runtime.Scheme) (conversion.Converter, error){
 		{Group: "cluster.x-k8s.io", Kind: "Cluster"}:                          capiconversion.Cluster,
 		{Group: "cluster.x-k8s.io", Kind: "ClusterClass"}:                     capiconversion.ClusterClass,
-		{Group: "cluster.x-k8s.io", Kind: "Machine"}:                          capiconversion.Machine,
+		{Group: "cluster.x-k8s.io", Kind: "Machine"}:                          capiMachineConverter,
 		{Group: "cluster.x-k8s.io", Kind: "MachineSet"}:                       capiconversion.MachineSet,
 		{Group: "cluster.x-k8s.io", Kind: "MachineDeployment"}:                capiconversion.MachineDeployment,
 		{Group: "cluster.x-k8s.io", Kind: "MachinePool"}:                      capiconversion.MachinePool,
