@@ -40,6 +40,15 @@ func EtcdSignerCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
+// RootCACertSecret is the CA-only mirror of the root-ca ConfigMap. GMP TLS
+// configuration accepts only Secret references, and the root-ca signer Secret
+// also holds the CA private key, so the GMP collector reads this mirror instead.
+func RootCACertSecret(ns string) *corev1.Secret { return secretFor(ns, "root-ca-cert") }
+
+// EtcdCACertSecret is the CA-only mirror of the etcd-ca ConfigMap, for the same
+// reason as RootCACertSecret.
+func EtcdCACertSecret(ns string) *corev1.Secret { return secretFor(ns, "etcd-ca-cert") }
+
 func EtcdMetricsSignerCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

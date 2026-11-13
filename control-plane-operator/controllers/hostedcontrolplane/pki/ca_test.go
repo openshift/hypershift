@@ -947,3 +947,81 @@ func TestReconcileTotalClientCA_SequentialRotation(t *testing.T) {
 		t.Errorf("expected 4 certs after sequential rotation, got %d: %v", countCertsInPEM(bundleAfterC), cnsAfterC)
 	}
 }
+
+func TestReconcileCASecretMirror(t *testing.T) {
+	tests := []struct {
+		name        string
+		configMap   *corev1.ConfigMap
+		secret      *corev1.Secret
+		expectError bool
+		expected    map[string][]byte
+	}{
+		{
+			name: "When the CA ConfigMap has a ca.crt bundle, it should mirror it into the Secret",
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "root-ca", Namespace: "test"},
+				Data:       map[string]string{certs.CASignerCertMapKey: "root-ca-pem"},
+			},
+			secret:   &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
+			expected: map[string][]byte{certs.CASignerCertMapKey: []byte("root-ca-pem")},
+		},
+		{
+			name: "When the Secret already has data, it should replace it with the mirrored CA",
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "etcd-ca", Namespace: "test"},
+				Data:       map[string]string{certs.CASignerCertMapKey: "etcd-ca-pem"},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "etcd-ca-cert", Namespace: "test"},
+				Data:       map[string][]byte{"stale-key": []byte("stale")},
+			},
+			expected: map[string][]byte{certs.CASignerCertMapKey: []byte("etcd-ca-pem")},
+		},
+		{
+			name: "When the CA ConfigMap has no ca.crt key, it should return an error",
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "root-ca", Namespace: "test"},
+			},
+			secret:      &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
+			expectError: true,
+		},
+		{
+			name: "When the ca.crt value is empty, it should return an error",
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "root-ca", Namespace: "test"},
+				Data:       map[string]string{certs.CASignerCertMapKey: ""},
+			},
+			secret:      &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ReconcileCASecretMirror(tc.secret, tc.configMap, newOwnerRef())
+			if tc.expectError {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.secret.Type != corev1.SecretTypeOpaque {
+				t.Errorf("expected Secret type %q, got %q", corev1.SecretTypeOpaque, tc.secret.Type)
+			}
+			if len(tc.secret.Data) != len(tc.expected) {
+				t.Fatalf("expected Secret data %v, got %v", tc.expected, tc.secret.Data)
+			}
+			for key, value := range tc.expected {
+				if string(tc.secret.Data[key]) != string(value) {
+					t.Errorf("expected Secret key %q to be %q, got %q", key, value, tc.secret.Data[key])
+				}
+			}
+			if len(tc.secret.OwnerReferences) != 1 || tc.secret.OwnerReferences[0].Name != "test" {
+				t.Errorf("expected the owner reference to be applied, got %+v", tc.secret.OwnerReferences)
+			}
+		})
+	}
+}

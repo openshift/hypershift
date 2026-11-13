@@ -259,6 +259,44 @@ func TestReconcileEtcdCerts(t *testing.T) {
 			}
 		})
 	}
+
+	// The CA-only mirror exists only to satisfy GMP's Secret-only TLS references,
+	// so it must be created when GMP monitoring is enabled and absent otherwise.
+	mirrorTests := []struct {
+		name      string
+		enableGMP bool
+	}{
+		{
+			name:      "When GMP monitoring is enabled, it should mirror the etcd CA into a Secret",
+			enableGMP: true,
+		},
+		{
+			name: "When GMP monitoring is disabled, it should not create the etcd CA mirror",
+		},
+	}
+	for _, tc := range mirrorTests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := newEtcdTestHCP(hyperv1.Managed)
+			r, _ := newEtcdTestReconciler(hcp, nil)
+			r.EnableGMPMonitoring = tc.enableGMP
+			p := &pki.PKIParams{OwnerRef: config.OwnerRefFrom(hcp)}
+
+			g.Expect(r.reconcileEtcdCerts(t.Context(), hcp, p, r.createOrUpdate(hcp))).To(Succeed())
+
+			mirror := manifests.EtcdCACertSecret(hcp.Namespace)
+			err := r.Client.Get(t.Context(), client.ObjectKeyFromObject(mirror), mirror)
+			if !tc.enableGMP {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the etcd CA mirror must not exist when GMP monitoring is disabled")
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(mirror.Type).To(Equal(corev1.SecretTypeOpaque))
+			g.Expect(mirror.Data).To(HaveKey(certs.CASignerCertMapKey))
+			g.Expect(mirror.Data[certs.CASignerCertMapKey]).NotTo(BeEmpty())
+			g.Expect(mirror.OwnerReferences).To(Equal([]metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}))
+		})
+	}
 }
 
 func TestReconcileUnmanagedEtcd(t *testing.T) {
