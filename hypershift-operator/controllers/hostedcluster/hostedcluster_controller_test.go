@@ -22,6 +22,7 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/util"
+	hostedcontrolplanecontroller "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	capimanagerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager"
 	capiproviderv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider"
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
@@ -10224,10 +10225,23 @@ func TestDestroyGracePeriod(t *testing.T) {
 }
 
 func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
+	// hcpDeprecationMessage is an opaque placeholder standing in for any message the HCP
+	// controller reports; this test only verifies that such a message is folded into the
+	// HostedCluster condition, not its exact text.
 	const hcpDeprecationMessage = "The deprecated annotation is set; migrate to the field"
+
+	// The remaining messages reference the single source of truth in their producing
+	// controllers so the text is not duplicated here.
+	metricsForwardingMessage := fmt.Sprintf(deprecatedMetricsForwardingMessageFmt, hyperv1.EnableMetricsForwarding)
+	serviceDeprecationMessage := fmt.Sprintf(hostedcontrolplanecontroller.DeprecatedServiceEntryMessageFmt, hyperv1.OVNSbDb) + "; " + fmt.Sprintf(hostedcontrolplanecontroller.DeprecatedServiceEntryMessageFmt, hyperv1.OIDC)
+	multiArchDeprecationMessage := hostedcontrolplanecontroller.DeprecatedMultiArchMessage
+	aescbcBackupKeyDeprecationMessage := hostedcontrolplanecontroller.DeprecatedAESCBCBackupKeyMessage
+	awsKMSBackupKeyDeprecationMessage := hostedcontrolplanecontroller.DeprecatedAWSKMSBackupKeyMessage
+	azureKMSBackupKeyDeprecationMessage := hostedcontrolplanecontroller.DeprecatedAzureKMSBackupKeyMessage
 
 	testCases := []struct {
 		name            string
+		hcAnnotations   map[string]string
 		hcp             *hyperv1.HostedControlPlane
 		expectedStatus  metav1.ConditionStatus
 		expectedReason  string
@@ -10239,6 +10253,33 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.StatusUnknownReason,
 			expectedMessage: "The hosted control plane is not found",
+		},
+		{
+			name:            "When a HostedCluster-only deprecated annotation is set, it should set the condition to True without an HCP round-trip",
+			hcAnnotations:   map[string]string{hyperv1.EnableMetricsForwarding: "true"},
+			hcp:             nil,
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: metricsForwardingMessage,
+		},
+		{
+			name:          "When both a HostedCluster-only and an HCP-detected deprecation are present, it should aggregate both messages",
+			hcAnnotations: map[string]string{hyperv1.EnableMetricsForwarding: "true"},
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: hcpDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: metricsForwardingMessage + "; " + hcpDeprecationMessage,
 		},
 		{
 			name: "When the HCP reports a deprecated configuration, it should aggregate the message and set the condition to True",
@@ -10257,6 +10298,96 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			expectedStatus:  metav1.ConditionTrue,
 			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
 			expectedMessage: hcpDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports deprecated no-op service entries, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: serviceDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: serviceDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports deprecated multiArch configuration, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: multiArchDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: multiArchDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports a deprecated AESCBC backup key, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: aescbcBackupKeyDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: aescbcBackupKeyDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports a deprecated AWS KMS backup key, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: awsKMSBackupKeyDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: awsKMSBackupKeyDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports a deprecated Azure KMS backup key, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: azureKMSBackupKeyDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: azureKMSBackupKeyDeprecationMessage,
 		},
 		{
 			name: "When the HCP reports no deprecated configuration, it should set the condition to False",
@@ -10289,7 +10420,7 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			g := NewWithT(t)
 
 			hcluster := &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Generation: 9},
+				ObjectMeta: metav1.ObjectMeta{Generation: 9, Annotations: tc.hcAnnotations},
 			}
 			r := &HostedClusterReconciler{}
 			r.reconcileDeprecatedConfigurationStatus(hcluster, tc.hcp)
