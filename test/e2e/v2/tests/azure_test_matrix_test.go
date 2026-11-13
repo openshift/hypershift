@@ -47,6 +47,7 @@ func TestAzureTestMatrix(t *testing.T) {
 		"oauth-lb":         {"sequential:oauth-lb"},
 		"external-oidc":    {"sequential:external-oidc"},
 		"upgrade":          {"sequential:upgrade-and-chaos"},
+		"etcd-sharded":     {"sequential:etcd-sharding"},
 	}
 	g.Expect(variantLanes).To(Equal(expectedVariantLanes),
 		"every Azure variant must be assigned to its intended execution lane")
