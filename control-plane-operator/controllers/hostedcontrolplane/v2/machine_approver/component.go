@@ -40,6 +40,7 @@ func (a *machineApprover) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &machineApprover{}).
 		WithAdaptFunction(adaptDeployment).
+		WithOmniCPOTransforms(omniCPOTransforms()...).
 		WithPredicate(predicate).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		Build()

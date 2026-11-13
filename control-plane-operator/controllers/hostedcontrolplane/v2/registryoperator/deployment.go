@@ -4,6 +4,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/omnicpo"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 
@@ -42,4 +43,19 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	})
 
 	return nil
+}
+
+// omniCPOTransforms lists the drift adjustments a main-built CPO applies to the
+// cluster-image-registry-operator Deployment when it drives an older control plane. See
+// support/omnicpo.
+func omniCPOTransforms() []omnicpo.Transform[*appsv1.Deployment] {
+	return []omnicpo.Transform[*appsv1.Deployment]{
+		{
+			// --config arrived at 4.22; a pre-4.22 image-registry-operator rejects it. The flag
+			// lives inside the operator's -c shell script, so strip that line.
+			Reason: "pre-4.22 cluster-image-registry-operator rejects --config",
+			When:   omnicpo.Below(config.Version422),
+			Do:     omnicpo.StripShellScriptArgLines(ComponentName, "--config="),
+		},
+	}
 }

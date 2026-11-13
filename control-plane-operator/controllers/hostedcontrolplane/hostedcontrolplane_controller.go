@@ -780,6 +780,13 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
+	// OMNI-CPO: a main-built CPO running in omni mode must only manage a control-plane
+	// version it explicitly supports; fail loud rather than render flags an older payload
+	// rejects (which would CrashLoop opaquely). No-op when OMNI-CPO is off.
+	if err := config.OmniCPOCheckVersion(releaseImage.Version()); err != nil {
+		return reconcile.Result{}, err
+	}
+
 	// This runs after LookupReleaseImage so we can use the version and resolved
 	// digest from the release image metadata.
 	if err := r.reconcileControlPlaneVersionStatus(ctx, hostedControlPlane, originalHostedControlPlane, releaseImage); err != nil {
