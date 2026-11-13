@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/pkg/manifests"
 	pkgetcdrecovery "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
@@ -227,10 +228,39 @@ func (r *HostedClusterReconciler) findFailingEtcdPod(ctx context.Context, log lo
 			}
 		}
 
+		// Check how long the pod has been unready.
+		//
+		// A member whose container repeatedly fails to create may never
+		// advance RestartCount, so the restart threshold below would never
+		// fire for it. Sustained unreadiness recovers it before another
+		// member failure can cause quorum loss.
+		//
+		// Measured per episode from the pod Ready condition's
+		// lastTransitionTime. Shared with the recovery job's classifyEtcdPods.
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == corev1.PodReady &&
+				cond.Status == corev1.ConditionFalse &&
+				r.now().Sub(cond.LastTransitionTime.Time) > etcdrecovery.EtcdUnreadyDwellThreshold {
+				log.Info("detected etcd pod unready beyond dwell threshold",
+					"name", pod.Name, "namespace", pod.Namespace,
+					"unreadySince", cond.LastTransitionTime.Time.String())
+				return &pod, nil
+			}
+		}
+
 		// Existing check: pod is crash-looping on a reachable node.
+		// Require sustained failure (>= EtcdFailingRestartThreshold restarts,
+		// shared with the recovery job's classifyEtcdPods) rather than a single
+		// transient restart, which recovery would only make worse. The Waiting
+		// reason is deliberately not restricted, as sustained start-failure
+		// loops may never report CrashLoopBackOff. Known limitation:
+		// RestartCount is lifetime-cumulative, so a member with historical
+		// restarts can cross the threshold from a single transient restart.
 		for _, containerStatus := range pod.Status.ContainerStatuses {
-			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 && containerStatus.Name == "etcd" {
-				log.Info("detected etcd failing pod", "name", pod.Name, "namespace", pod.Namespace)
+			if containerStatus.State.Waiting != nil &&
+				containerStatus.RestartCount >= etcdrecovery.EtcdFailingRestartThreshold &&
+				containerStatus.Name == "etcd" {
+				log.Info("detected etcd failing pod", "name", pod.Name, "namespace", pod.Namespace, "restartCount", containerStatus.RestartCount)
 				return &pod, nil
 			}
 		}
