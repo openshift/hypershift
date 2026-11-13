@@ -14,6 +14,16 @@ var _ component.ComponentOptions = &etcd{}
 type etcd struct {
 }
 
+// Replicas resolves the number of etcd members for the default (non-sharded)
+// cluster from the HostedControlPlane spec. This is the single authority for
+// etcd member count: the StatefulSet sizes itself with it and the peer-cert
+// reconciler enumerates one per-member SAN per replica with it, so the two can
+// never drift. Sharded etcd uses the per-shard ManagedEtcdShardSpec.Replicas
+// field instead.
+func Replicas(hcp *hyperv1.HostedControlPlane) int32 {
+	return component.DefaultReplicas(hcp, &etcd{}, ComponentName)
+}
+
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
 func (e *etcd) IsRequestServing() bool {
 	return false
