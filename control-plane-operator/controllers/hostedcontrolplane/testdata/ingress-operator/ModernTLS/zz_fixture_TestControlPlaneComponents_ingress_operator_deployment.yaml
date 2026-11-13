@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: c0039e3e10053aa11f9ef7ce92881e237058f88bdb9aa6f2c3235fe51de4f85a
+    hypershift.openshift.io/desired-state-hash: a21455c8d5518e5d85f4d31eda9c6b38cc31e38b1b7904d0b871f2ccae90e2a5
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ingress-operator
@@ -156,6 +156,8 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         - --kubeconfig=/var/kubeconfig/kubeconfig
         - --required-api=route.openshift.io,v1,Route
         image: availability-prober
@@ -164,6 +166,9 @@ spec:
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
         - mountPath: /var/kubeconfig
           name: service-account-kubeconfig
       - args:
@@ -226,6 +231,12 @@ spec:
       - emptyDir:
           medium: Memory
         name: cloud-token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}

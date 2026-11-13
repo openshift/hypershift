@@ -742,3 +742,33 @@ func TestEnforceRestrictedSecurityContextToContainers_InvalidCapabilities(t *tes
 		})
 	}
 }
+
+func TestAvailabilityProber(t *testing.T) {
+	t.Parallel()
+	t.Run("When configuring an availability prober, it should mount the root CA only once", func(t *testing.T) {
+		g := NewWithT(t)
+
+		spec := &corev1.PodSpec{}
+		AvailabilityProber("https://kube-apiserver:6443/readyz", "prober-image", spec)
+
+		g.Expect(spec.InitContainers).To(HaveLen(1))
+		c := spec.InitContainers[0]
+		g.Expect(c.Name).To(Equal("availability-prober"))
+		g.Expect(c.Command).To(ContainElement("--ca-file"))
+		g.Expect(c.Command).To(ContainElement(availabilityProberCAFilePath))
+		g.Expect(c.VolumeMounts).To(ContainElement(corev1.VolumeMount{
+			Name:      availabilityProberCAVolumeName,
+			MountPath: availabilityProberCAMountPath,
+			ReadOnly:  true,
+		}))
+
+		vol := FindVolume(availabilityProberCAVolumeName, spec.Volumes)
+		g.Expect(vol).ToNot(BeNil())
+		g.Expect(vol.ConfigMap).ToNot(BeNil())
+		g.Expect(vol.ConfigMap.Name).To(Equal(availabilityProberRootCAConfigMap))
+		g.Expect(vol.ConfigMap.Items).To(ContainElement(corev1.KeyToPath{Key: "ca.crt", Path: "ca.crt"}))
+
+		AvailabilityProber("https://kube-apiserver:6443/readyz", "prober-image", spec)
+		g.Expect(spec.Volumes).To(HaveLen(1))
+	})
+}
