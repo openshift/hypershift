@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,33 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestValidateGeneratedPodMonitoring(t *testing.T) {
+	t.Parallel()
+	doc := &podMonitoringDoc{
+		APIVersion: gmpAPIVersion,
+		Kind:       "PodMonitoring",
+		Metadata:   metadataDoc{Name: "test-component"},
+		Spec:       specDoc{Selector: labelSelectorDoc{MatchLabels: map[string]string{"app": "test-component"}}},
+	}
+	source := "v2/assets/test-component/podmonitor.yaml"
+	raw, err := marshalDoc(doc, source)
+	require.NoError(t, err)
+
+	t.Run("When the generated document matches the pinned API, it should accept it", func(t *testing.T) {
+		require.NoError(t, validateGeneratedPodMonitoring(raw, source))
+	})
+	t.Run("When a generated field is absent from the pinned API, it should reject it and identify the source", func(t *testing.T) {
+		invalid := bytes.Replace(raw, []byte("spec:\n"), []byte("spec:\n  unsupportedField: true\n"), 1)
+		require.NotEqual(t, raw, invalid)
+
+		err := validateGeneratedPodMonitoring(invalid, source)
+
+		require.ErrorContains(t, err, source)
+		require.ErrorContains(t, err, "does not match the GMP API")
+		require.ErrorContains(t, err, `unknown field "unsupportedField"`)
+	})
+}
 
 func TestVerifyResult(t *testing.T) {
 	testCases := []struct {

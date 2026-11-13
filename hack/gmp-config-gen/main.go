@@ -401,8 +401,15 @@ func marshalDoc(doc *podMonitoringDoc, source string) ([]byte, error) {
 	}
 	// The document types are hand-written, so decode the output into the pinned
 	// GMP API to catch a field it does not define before the file is committed.
-	if err := strictUnmarshal(buf.Bytes(), &gmpmonitoring.PodMonitoring{}); err != nil {
-		return nil, fmt.Errorf("generated PodMonitoring for %s does not match the GMP API: %w", source, err)
+	if err := validateGeneratedPodMonitoring(buf.Bytes(), source); err != nil {
+		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func validateGeneratedPodMonitoring(raw []byte, source string) error {
+	if err := strictUnmarshal(raw, &gmpmonitoring.PodMonitoring{}); err != nil {
+		return fmt.Errorf("generated PodMonitoring for %s does not match the GMP API: %w", source, err)
+	}
+	return nil
 }
