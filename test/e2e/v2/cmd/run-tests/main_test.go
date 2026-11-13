@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 )
 
 func TestRunTestBinary(t *testing.T) {
@@ -17,7 +19,7 @@ func TestRunTestBinary(t *testing.T) {
 	t.Run("When the synthetic suite has a blocking failure, it should fail and honor the JUnit contract", func(t *testing.T) {
 		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "true")
 		junitPath := filepath.Join(t.TempDir(), "junit.xml")
-		err := runTestBinary(binary, "synthetic-cluster", "clusters", "", "", junitPath)
+		err := runTestBinary(binary, "synthetic-cluster", "clusters", lifecycle.TestGroup{}, junitPath)
 		if err == nil {
 			t.Fatal("expected the synthetic suite to fail")
 		}
@@ -28,7 +30,7 @@ func TestRunTestBinary(t *testing.T) {
 	t.Run("When the synthetic suite has only informing failures, it should succeed", func(t *testing.T) {
 		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "false")
 		junitPath := filepath.Join(t.TempDir(), "junit.xml")
-		if err := runTestBinary(binary, "synthetic-cluster", "clusters", "", "", junitPath); err != nil {
+		if err := runTestBinary(binary, "synthetic-cluster", "clusters", lifecycle.TestGroup{}, junitPath); err != nil {
 			t.Fatalf("expected informing failures not to fail the suite: %v", err)
 		}
 
@@ -53,7 +55,7 @@ func TestRunTestBinary(t *testing.T) {
 	t.Run("When a label filter selects one test, it should omit the other discovered tests", func(t *testing.T) {
 		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "false")
 		junitPath := filepath.Join(t.TempDir(), "junit.xml")
-		if err := runTestBinary(binary, "synthetic-cluster", "clusters", "leaf-label", "", junitPath); err != nil {
+		if err := runTestBinary(binary, "synthetic-cluster", "clusters", lifecycle.TestGroup{LabelFilter: "leaf-label"}, junitPath); err != nil {
 			t.Fatalf("expected the selected test to pass: %v", err)
 		}
 
@@ -65,6 +67,33 @@ func TestRunTestBinary(t *testing.T) {
 			t.Fatalf("unexpected selected testcase: %#v", report.Suites[0].TestCases[0])
 		}
 		assertNoLifecycle(t, report.Suites[0].TestCases[0])
+	})
+
+	t.Run("When a label filter selects no tests and FailOnEmpty is not set, it should succeed", func(t *testing.T) {
+		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "false")
+		junitPath := filepath.Join(t.TempDir(), "junit.xml")
+		group := lifecycle.TestGroup{LabelFilter: "no-such-label"}
+		if err := runTestBinary(binary, "synthetic-cluster", "clusters", group, junitPath); err != nil {
+			t.Fatalf("expected an empty selection to pass by default: %v", err)
+		}
+	})
+
+	t.Run("When a label filter selects no tests and FailOnEmpty is set, it should fail", func(t *testing.T) {
+		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "false")
+		junitPath := filepath.Join(t.TempDir(), "junit.xml")
+		group := lifecycle.TestGroup{LabelFilter: "no-such-label", FailOnEmpty: true}
+		if err := runTestBinary(binary, "synthetic-cluster", "clusters", group, junitPath); err == nil {
+			t.Fatal("expected an empty selection to fail with FailOnEmpty")
+		}
+	})
+
+	t.Run("When a label filter selects a test and FailOnEmpty is set, it should succeed", func(t *testing.T) {
+		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "false")
+		junitPath := filepath.Join(t.TempDir(), "junit.xml")
+		group := lifecycle.TestGroup{LabelFilter: "leaf-label", FailOnEmpty: true}
+		if err := runTestBinary(binary, "synthetic-cluster", "clusters", group, junitPath); err != nil {
+			t.Fatalf("expected a non-empty selection to pass with FailOnEmpty: %v", err)
+		}
 	})
 
 	t.Run("When the legacy Ginkgo JUnit flag is used, it should write the v2 E2E JUnit contract", func(t *testing.T) {
@@ -123,7 +152,7 @@ func testRequiredWIF(t *testing.T, binary string) {
 			t.Setenv("JUNIT_FIXTURE_VERSION", tt.version)
 			t.Setenv("JUNIT_FIXTURE_MUTATION", tt.mutation)
 			junitPath := filepath.Join(t.TempDir(), "junit.xml")
-			err := runTestBinary(binary, "synthetic-cluster", "clusters", "required-wif", "", junitPath)
+			err := runTestBinary(binary, "synthetic-cluster", "clusters", lifecycle.TestGroup{LabelFilter: "required-wif"}, junitPath)
 			if (err != nil) != (tt.wantFailure != "") {
 				t.Fatalf("unexpected process result: %v, expected failure: %q", err, tt.wantFailure)
 			}

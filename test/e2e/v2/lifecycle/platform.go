@@ -31,6 +31,12 @@ type TestGroup struct {
 	Variant     string `json:"variant"`
 	LabelFilter string `json:"labelFilter"`
 	Skip        string `json:"skip,omitempty"`
+	// FailOnEmpty fails the group when its label filter selects no specs
+	// (Ginkgo --fail-on-empty). Ginkgo passes an empty selection by default,
+	// so without it a dedicated job whose specs are missing, or whose label
+	// drifted, reports green without running anything. Opt-in, because broad
+	// default plans may legitimately select nothing on some platforms.
+	FailOnEmpty bool `json:"failOnEmpty,omitempty"`
 }
 
 // JUnitFile returns the deterministic JUnit XML filename for this
