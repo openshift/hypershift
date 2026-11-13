@@ -165,8 +165,8 @@ func TestReconcile(t *testing.T) {
 						},
 					},
 					Spec: hyperv1.HostedControlPlaneSpec{
-						Labels: map[string]string{
-							"test-label": "test",
+						Labels: map[string]hyperv1.LabelValue{
+							"test-label": hyperv1.LabelValue("test"),
 						},
 						Tolerations: []corev1.Toleration{{
 							Key:      "custom-key",
