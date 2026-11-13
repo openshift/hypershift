@@ -15,14 +15,14 @@ Versions used while writing this doc:
 
 !!! important
 
-    To configure a different CNI provider for the Hosted Cluster, you must adjust the `hostedcluster.spec.networking.networkType` to `Other`. By doing so, the Control Plane Operator will skip the deployment of the default CNI provider.
+    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer. `Other` is currently required when using `allocateNodeCIDRs: Enabled` or `disableMultiNetwork: true`.
 
 ## Calico
 ### Deployment
 
 In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the [docs](https://docs.tigera.io/calico/latest/getting-started/kubernetes/openshift/installation#generate-the-install-manifests) by Tigera to deploy Calico on OpenShift.
 
-1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
+1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Calico`.
 
 2. Wait for the HostedCluster's API to be ready. Once it's ready, get the admin kubeconfig.
 
@@ -146,7 +146,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 
 In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the [docs](https://docs.cilium.io/en/stable/installation/k8s-install-openshift-okd/) by Cilium project to deploy Cilium on OpenShift.
 
-1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
+1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Cilium`.
 
 2. Wait for the HostedCluster's API to be ready. Once it's ready, get the admin kubeconfig.
 

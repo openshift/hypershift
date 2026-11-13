@@ -3003,11 +3003,11 @@ spec:
                   allocateNodeCIDRs:
                     description: |-
                       allocateNodeCIDRs controls whether the kube-controller-manager manages node CIDR allocation.
-                      When using networkType=Other, it is recommended to set this field to "Enabled"
-                      if Flannel is used as the CNI, as it relies on this behavior.
+                      When networkType is "Other", it is recommended to set this field to "Enabled" if Flannel is
+                      used as the CNI, as it relies on this behavior.
                       Default is "Disabled".
-                      This field can only be set to "Enabled" when NetworkType is "Other". Setting it to "Enabled"
-                      with any other NetworkType will result in a validation error during cluster creation.
+                      This field can only be set to "Enabled" when networkType is "Other". Setting it to "Enabled"
+                      with any other networkType will result in a validation error during cluster creation.
                     enum:
                     - Enabled
                     - Disabled
@@ -3138,18 +3138,36 @@ spec:
                   networkType:
                     default: OVNKubernetes
                     description: |-
-                      networkType specifies the SDN provider used for cluster networking.
+                      networkType specifies the network provider used for cluster networking.
+                      HyperShift recognizes exactly "OVNKubernetes" and "OpenShiftSDN" as built-in providers.
+                      OpenShiftSDN is deprecated; new clusters can use it only on the PowerVS platform, and
+                      clusters using it cannot be upgraded to a new minor version.
+                      Any other value names a third-party CNI that HyperShift does not deploy; the cluster
+                      administrator is responsible for installing it. Set this field to the actual CNI provider
+                      name, such as "Calico" or "Cilium". The value "Other" remains supported for compatibility.
+                      The value must be 1-63 characters, start and end with a letter or digit, and contain only
+                      letters, digits, '.', '_' or '-'. Provider names are case-sensitive. Case variants of the
+                      built-in names, such as "ovnkubernetes", are rejected. The value "Other" is currently
+                      required when allocateNodeCIDRs is "Enabled" or when
+                      spec.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork is true.
+                      This field is authoritative for the cluster network type. Setting networkType within
+                      spec.configuration.network has no effect; this field alone determines the network type
+                      propagated to the cluster-network-operator.
                       Defaults to OVNKubernetes.
-                      This field is required and immutable.
-                    enum:
-                    - OpenShiftSDN
-                    - Calico
-                    - OVNKubernetes
-                    - Other
+                      This field is immutable.
+                    maxLength: 63
+                    minLength: 1
                     type: string
                     x-kubernetes-validations:
                     - message: networkType is immutable
                       rule: self == oldSelf
+                    - message: networkType must start and end with a letter or digit
+                        and contain only letters, digits, '.', '_' or '-'
+                      rule: self.matches('^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$')
+                    - message: networkType must use the exact spelling OVNKubernetes
+                        or OpenShiftSDN when selecting a built-in provider
+                      rule: self in ['OVNKubernetes','OpenShiftSDN'] || !(self.lowerAscii()
+                        in ['ovnkubernetes','openshiftsdn'])
                   serviceNetwork:
                     default:
                     - cidr: 172.31.0.0/16
@@ -3229,8 +3247,9 @@ spec:
                           guest cluster and the multus-admission-controller in the management cluster.
                           Default is false (Multus is enabled).
                           This field is immutable.
-                          This field can only be set to true when NetworkType is "Other". Setting it to true
-                          with any other NetworkType will result in a validation error during cluster creation.
+                          This field can only be set to true when networkType is "Other". Other third-party provider
+                          names are not accepted here for rollback compatibility. Setting it to true with any other
+                          networkType will result in a validation error during cluster creation.
                         type: boolean
                         x-kubernetes-validations:
                         - message: disableMultiNetwork is immutable
