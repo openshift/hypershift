@@ -189,6 +189,26 @@ func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, ro
 	return reconcileAggregateCA(cm, ownerRef, sources...)
 }
 
+// ReconcileCASecretMirror copies the public CA bundle from a CA ConfigMap into a
+// CA-only Secret. GMP TLS configuration accepts only Secret references, and the
+// signer Secrets that hold the same CA also hold its private key, so the GMP
+// collector must read this mirror rather than the signer. The mirror is
+// recomputed from the ConfigMap on every reconcile, so it follows CA rotation.
+func ReconcileCASecretMirror(secret *corev1.Secret, configMap *corev1.ConfigMap, ownerRef config.OwnerRef) error {
+	caCert, ok := configMap.Data[certs.CASignerCertMapKey]
+	if !ok || caCert == "" {
+		return fmt.Errorf("CA configmap %s/%s has no %q value to mirror", configMap.Namespace, configMap.Name, certs.CASignerCertMapKey)
+	}
+
+	ownerRef.ApplyTo(secret)
+	secret.Type = corev1.SecretTypeOpaque
+	// Replace the data instead of merging so a removed key cannot linger.
+	secret.Data = map[string][]byte{
+		certs.CASignerCertMapKey: []byte(caCert),
+	}
+	return nil
+}
+
 // FilterCACertificates parses a PEM bundle and returns only the certificates
 // that are valid CAs (IsCA=true). Malformed or non-CA certificates are
 // skipped.
