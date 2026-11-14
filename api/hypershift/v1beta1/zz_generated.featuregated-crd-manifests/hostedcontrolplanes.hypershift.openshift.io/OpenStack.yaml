@@ -7869,6 +7869,68 @@ spec:
               nodeCount:
                 description: nodeCount tracks the number of nodes in the HostedControlPlane.
                 type: integer
+              nodePoolDrain:
+                description: |-
+                  nodePoolDrain reports per-NodePool drain readiness computed from guest-cluster
+                  PodDisruptionBudgets by the HCCO. Status-only; does not gate rollout in HyperShift.
+                  Carries only a pool name and UID, state, reason, and count — never customer workload identifiers.
+                items:
+                  description: |-
+                    NodePoolDrain reports whether a NodePool's nodes can currently be drained during an upgrade.
+
+                    It carries no customer workload identifiers (namespace/PDB/pod names). The NodePool UID
+                    distinguishes recreated pools with the same name. A generic in-guest Event reports transitions.
+                  properties:
+                    blockingCount:
+                      description: blockingCount is the number of PodDisruptionBudgets
+                        contributing to state=Blocked.
+                      format: int32
+                      type: integer
+                    nodePoolName:
+                      description: |-
+                        nodePoolName is the NodePool these nodes belong to, from the node label
+                        hypershift.openshift.io/nodePool.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    nodePoolUID:
+                      description: |-
+                        nodePoolUID is the UID of the NodePool incarnation that owns these nodes.
+                        Consumers must treat absent or mismatched UIDs as unverified.
+                      maxLength: 128
+                      minLength: 1
+                      type: string
+                    reason:
+                      description: reason is a bounded machine-readable reason, e.g.
+                        BlockedByPodDisruptionBudget or Drainable.
+                      maxLength: 64
+                      minLength: 1
+                      type: string
+                    state:
+                      description: |-
+                        state is Blocked when a structurally blocking customer PodDisruptionBudget would prevent
+                        eviction of a drain candidate Pod on this pool's nodes; otherwise it is Drainable.
+                      enum:
+                      - Blocked
+                      - Drainable
+                      type: string
+                  required:
+                  - nodePoolName
+                  - state
+                  type: object
+                maxItems: 500
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - nodePoolName
+                x-kubernetes-list-type: map
+              nodePoolDrainLastProbeTime:
+                description: |-
+                  nodePoolDrainLastProbeTime is the start time of the last successful guest-cluster
+                  drain-readiness computation. Consumers must expire nodePoolDrain data when this
+                  timestamp is absent or too old. Each result's NodePool UID identifies its incarnation.
+                format: date-time
+                type: string
               oauthCallbackURLTemplate:
                 description: |-
                   oauthCallbackURLTemplate contains a template for the URL to use as a callback

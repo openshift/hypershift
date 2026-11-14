@@ -37,7 +37,9 @@ import (
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,6 +58,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -164,6 +167,13 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 1*time.Minute),
 			MaxConcurrentReconciles: 10,
 		})
+	if os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") == "1" {
+		bldr.Watches(&hyperv1.HostedControlPlane{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedControlPlane),
+			builder.WithPredicates(predicate.And(
+				reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()),
+				predicate.Funcs{UpdateFunc: nodePoolDrainStatusChanged},
+			)))
+	}
 	for _, managedResource := range r.managedResources() {
 		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
 	}
@@ -310,8 +320,25 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 }
 
 //nolint:gocyclo
-func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
+func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (result ctrl.Result, err error) {
 	log := ctrl.LoggerFrom(ctx)
+	var drainReadinessRequeueAt time.Time
+	defer func() {
+		// Keep the freshness deadline even when later validation returns early.
+		// Errors already cause another reconcile, so only extend successful results.
+		if err != nil || drainReadinessRequeueAt.IsZero() {
+			return
+		}
+		remaining := time.Until(drainReadinessRequeueAt)
+		if remaining <= 0 {
+			// Already expired; requeue promptly. A tiny positive RequeueAfter is used
+			// instead of the deprecated Result.Requeue bool.
+			remaining = time.Second
+		}
+		if result.RequeueAfter == 0 || remaining < result.RequeueAfter {
+			result.RequeueAfter = remaining
+		}
+	}()
 
 	// HostedCluster owns NodePools. This should ensure orphan NodePools are garbage collected when cascading deleting.
 	nodePool.OwnerReferences = util.EnsureOwnerRef(nodePool.OwnerReferences, metav1.OwnerReference{
@@ -326,6 +353,16 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		nodePool.Annotations = make(map[string]string)
 	}
 
+	// Drain readiness is status-only. Check it before validations that can stop
+	// reconciliation so an old True condition is still cleared on expiry. When
+	// disabled, remove any condition left by a previous enabled deployment.
+	drainReadinessEnabled := os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") == "1" && hcluster.Annotations[hyperv1.NodePoolDrainReadinessAnnotation] == "true"
+	if drainReadinessEnabled {
+		drainReadinessRequeueAt = r.drainBlockedCondition(ctx, nodePool, hcluster)
+	} else if FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolDrainBlockedConditionType) != nil {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolDrainBlockedConditionType)
+	}
+
 	// Get HostedCluster deps.
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	infraID := hcluster.Spec.InfraID
@@ -335,6 +372,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		log.Error(err, "Failed to get Machines for status aggregation")
 	} else {
+		if drainReadinessEnabled {
+			if err := r.annotateNodePoolMachinesForDrainReadiness(ctx, nodePool, machines); err != nil {
+				log.Error(err, "Failed to mark Machines for drain readiness")
+				retryAt := time.Now().Add(time.Minute)
+				if drainReadinessRequeueAt.IsZero() || retryAt.Before(drainReadinessRequeueAt) {
+					drainReadinessRequeueAt = retryAt
+				}
+			}
+		}
 		// Aggregate node version and health information into NodesInfo status.
 		// This is done before the conditions loop so that nodesInfo stays accurate
 		// even when later validations (e.g. release image) short-circuit the reconcile.
@@ -531,6 +577,30 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// annotateNodePoolMachinesForDrainReadiness marks Machines in place, avoiding a
+// MachineDeployment or MachineSet template change that would roll the pool. A
+// Machine from an older NodePool with the same name must retain its old identity.
+func (r *NodePoolReconciler) annotateNodePoolMachinesForDrainReadiness(ctx context.Context, nodePool *hyperv1.NodePool, machines []*capiv1.Machine) error {
+	if nodePool.UID == "" || nodePool.CreationTimestamp.IsZero() {
+		return nil
+	}
+	for _, machine := range machines {
+		if machine.Annotations[hyperv1.NodePoolUIDAnnotation] != "" ||
+			!machine.CreationTimestamp.After(nodePool.CreationTimestamp.Time) {
+			continue
+		}
+		original := machine.DeepCopy()
+		if machine.Annotations == nil {
+			machine.Annotations = map[string]string{}
+		}
+		machine.Annotations[hyperv1.NodePoolUIDAnnotation] = string(nodePool.UID)
+		if err := r.Patch(ctx, machine, client.MergeFrom(original)); err != nil {
+			return fmt.Errorf("mark CAPI Machine with NodePool UID: %w", err)
+		}
+	}
+	return nil
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {
@@ -1119,6 +1189,60 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(ctx context.Contex
 	}
 
 	return result
+}
+
+func (r *NodePoolReconciler) enqueueNodePoolsForHostedControlPlane(ctx context.Context, obj client.Object) []reconcile.Request {
+	hcp, ok := obj.(*hyperv1.HostedControlPlane)
+	if !ok {
+		panic(fmt.Sprintf("Expected a HostedControlPlane but got a %T", obj))
+	}
+	hcKey := supportutil.ParseNamespacedName(hcp.Annotations[k8sutil.HostedClusterAnnotation])
+	if hcKey.Namespace == "" || hcKey.Name != hcp.Name || manifests.HostedControlPlaneNamespace(hcKey.Namespace, hcKey.Name) != hcp.Namespace {
+		return nil
+	}
+
+	nodePoolList := &hyperv1.NodePoolList{}
+	if err := r.List(ctx, nodePoolList, client.InNamespace(hcKey.Namespace)); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "Failed to list nodePools")
+		return nil
+	}
+
+	var result []reconcile.Request
+	for key := range nodePoolList.Items {
+		np := &nodePoolList.Items[key]
+		if np.Spec.ClusterName == hcKey.Name {
+			result = append(result, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(np)})
+		}
+	}
+
+	return result
+}
+
+// nodePoolDrainStatusChanged ignores HCP status updates unrelated to drain
+// readiness. Create and delete events still reach the mapper through the
+// predicate's default behavior.
+//
+// A bare NodePoolDrainLastProbeTime bump (HCCO refreshes it every probe, ~once a
+// minute, even when the per-pool result is unchanged) is deliberately NOT a
+// trigger: a timestamp-only refresh cannot change the DrainBlocked condition, and
+// freshness expiry is already handled by the self-scheduled requeue in
+// drainBlockedCondition. Keying on it would reconcile every NodePool in every
+// opted-in cluster once a minute for no state change.
+func nodePoolDrainStatusChanged(e event.UpdateEvent) bool {
+	oldHCP, oldOK := e.ObjectOld.(*hyperv1.HostedControlPlane)
+	newHCP, newOK := e.ObjectNew.(*hyperv1.HostedControlPlane)
+	if !oldOK || !newOK {
+		return false
+	}
+	if !equality.Semantic.DeepEqual(oldHCP.Status.NodePoolDrain, newHCP.Status.NodePoolDrain) {
+		return true
+	}
+	oldCondition := meta.FindStatusCondition(oldHCP.Status.Conditions, hyperv1.HostedControlPlaneNodePoolDrainUpToDate)
+	newCondition := meta.FindStatusCondition(newHCP.Status.Conditions, hyperv1.HostedControlPlaneNodePoolDrainUpToDate)
+	if oldCondition == nil || newCondition == nil {
+		return oldCondition != newCondition
+	}
+	return oldCondition.Status != newCondition.Status
 }
 
 func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj client.Object) []reconcile.Request {
