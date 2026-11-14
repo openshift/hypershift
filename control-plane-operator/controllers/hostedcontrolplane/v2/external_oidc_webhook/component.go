@@ -5,13 +5,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
-
-	"k8s.io/utils/ptr"
 )
 
 const (
-	ComponentName             = "external-oidc-webhook"
-	httpKonnectivityProxyPort = 8092
+	ComponentName = "external-oidc-webhook"
 )
 
 var _ component.ComponentOptions = &externalOIDCWebhook{}
@@ -58,18 +55,6 @@ func NewComponent() component.ControlPlaneComponent {
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
 		).
-		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
-			Mode: component.Dual,
-			Socks5Options: component.Socks5Options{
-				ResolveFromGuestClusterDNS:      ptr.To(true),
-				ResolveFromManagementClusterDNS: ptr.To(true),
-			},
-			HTTPSOptions: component.HTTPSOptions{
-				ServingPort:                     httpKonnectivityProxyPort,
-				ConnectDirectlyToCloudAPIs:      ptr.To(true),
-				ResolveFromManagementClusterDNS: ptr.To(true),
-			},
-		}).
 		Build()
 }
 
