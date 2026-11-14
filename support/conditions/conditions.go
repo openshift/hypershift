@@ -102,8 +102,8 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 			}
 		}
 		if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AWSPlatform) {
-			// in the e2e we're using a filesystem VolumeMode by default for the VMs,
-			// thus the PVC is RWO and VMs are expected to be non-live-migratable
+			// in the e2e the VM root volumes are backed by a storage class that only
+			// offers RWO, thus VMs are expected to be non-live-migratable
 			conditions[hyperv1.KubeVirtNodesLiveMigratable] = metav1.ConditionFalse
 		}
 		if hostedCluster.Spec.Platform.Kubevirt != nil && hostedCluster.Spec.Platform.Kubevirt.Credentials != nil {

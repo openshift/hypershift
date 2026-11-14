@@ -126,4 +126,73 @@ func TestExpectedHCConditions(t *testing.T) {
 		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
 		g.Expect(ExpectedHCConditions(hc)[hyperv1.ValidGCPCredentials]).To(Equal(metav1.ConditionTrue))
 	})
+
+	newKubeVirtHC := func(managementPlatform string, networkType hyperv1.NetworkType, credentials *hyperv1.KubevirtPlatformCredentials) *hyperv1.HostedCluster {
+		hc := &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Networking: hyperv1.ClusterNetworking{
+					NetworkType: networkType,
+				},
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.KubevirtPlatform,
+					Kubevirt: &hyperv1.KubevirtPlatformSpec{
+						Credentials: credentials,
+					},
+				},
+			},
+		}
+		if managementPlatform != "" {
+			hc.Annotations = map[string]string{hyperv1.ManagementPlatformAnnotation: managementPlatform}
+		}
+		return hc
+	}
+
+	// hasCondition reports whether the condition is expected at all, which is distinct from
+	// being expected with a False status.
+	hasCondition := func(conditions map[hyperv1.ConditionType]metav1.ConditionStatus, conditionType hyperv1.ConditionType) bool {
+		_, ok := conditions[conditionType]
+		return ok
+	}
+
+	t.Run("When KubeVirt runs on an AWS management cluster, it should expect jumbo frames and non-live-migratable nodes", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AWSPlatform), hyperv1.OVNKubernetes, nil))
+		g.Expect(got[hyperv1.ValidKubeVirtInfraNetworkMTU]).To(Equal(metav1.ConditionTrue))
+		// the CI storage class only offers RWO, so the VMs cannot live migrate
+		g.Expect(got[hyperv1.KubeVirtNodesLiveMigratable]).To(Equal(metav1.ConditionFalse))
+	})
+
+	t.Run("When KubeVirt runs on an Azure management cluster, it should not expect jumbo frames nor the live migratable condition", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AzurePlatform), hyperv1.OVNKubernetes, nil))
+		g.Expect(got[hyperv1.ValidKubeVirtInfraNetworkMTU]).To(Equal(metav1.ConditionFalse))
+		g.Expect(hasCondition(got, hyperv1.KubeVirtNodesLiveMigratable)).To(BeFalse())
+	})
+
+	t.Run("When KubeVirt has no management platform annotation, it should expect neither the MTU nor the live migratable condition", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC("", hyperv1.OVNKubernetes, nil))
+		g.Expect(hasCondition(got, hyperv1.ValidKubeVirtInfraNetworkMTU)).To(BeFalse())
+		g.Expect(hasCondition(got, hyperv1.KubeVirtNodesLiveMigratable)).To(BeFalse())
+	})
+
+	t.Run("When KubeVirt does not use OVNKubernetes on AWS, it should skip the MTU condition but still expect non-live-migratable nodes", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AWSPlatform), hyperv1.Other, nil))
+		g.Expect(hasCondition(got, hyperv1.ValidKubeVirtInfraNetworkMTU)).To(BeFalse())
+		g.Expect(got[hyperv1.KubeVirtNodesLiveMigratable]).To(Equal(metav1.ConditionFalse))
+	})
+
+	t.Run("When KubeVirt external infra credentials are configured, it should expect the network policy RBAC condition", func(t *testing.T) {
+		g := NewWithT(t)
+		credentials := &hyperv1.KubevirtPlatformCredentials{InfraNamespace: "kubevirt-infra"}
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AWSPlatform), hyperv1.OVNKubernetes, credentials))
+		g.Expect(got[hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC]).To(Equal(metav1.ConditionTrue))
+	})
+
+	t.Run("When KubeVirt external infra credentials are absent, it should not expect the network policy RBAC condition", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AWSPlatform), hyperv1.OVNKubernetes, nil))
+		g.Expect(hasCondition(got, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)).To(BeFalse())
+	})
 }
