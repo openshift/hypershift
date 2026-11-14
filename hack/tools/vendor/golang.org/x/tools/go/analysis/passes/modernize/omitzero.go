@@ -24,7 +24,7 @@ var OmitZeroAnalyzer = &analysis.Analyzer{
 	Doc:      analyzerutil.MustExtractDoc(doc, "omitzero"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      omitzero,
-	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#omitzero",
+	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_omitzero",
 }
 
 // The omitzero pass searches for instances of "omitempty" in a json field tag on a
@@ -36,7 +36,7 @@ func omitzero(pass *analysis.Pass) (any, error) {
 	// any comment in the package, since it has its own
 	// interpretation of what omitzero means; see go.dev/issue/76649.
 	// It is computed once, on demand.
-	usesKubebuilder := sync.OnceValue[bool](func() bool {
+	usesKubebuilder := sync.OnceValue(func() bool {
 		for _, file := range pass.Files {
 			for _, comment := range file.Comments {
 				if strings.Contains(comment.Text(), "+kubebuilder:") {
