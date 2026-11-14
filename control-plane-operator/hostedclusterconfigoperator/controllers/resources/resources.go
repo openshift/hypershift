@@ -2039,14 +2039,28 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 
 // reconcileOpenStackCredentialsSecret is a wrapper used to reconcile the OpenStack credentials secrets.
 func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, platformSpec *hyperv1.OpenStackPlatformSpec, namespace, name string, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
+	// Like AWS and GCP, defer credentials until the operand namespace exists.
+	// In particular, CSO creates the Manila namespace but waits for HCCO's initial
+	// reconciliation to succeed. Namespace events and periodic reconciliation
+	// ensure the credentials are synchronized once the namespace is created.
+	ns := &corev1.Namespace{}
+	if err := r.client.Get(ctx, client.ObjectKey{Name: namespace}, ns); err != nil {
+		if apierrors.IsNotFound(err) {
+			ctrl.LoggerFrom(ctx).Info("WARNING: cannot sync cloud credential secret because namespace does not exist", "secret", client.ObjectKey{Namespace: namespace, Name: name})
+			return nil
+		}
+		return fmt.Errorf("failed to get secret namespace %s: %w", namespace, err)
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Data: credentialsSecret.Data,
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
+		// Apply credentials after CreateOrUpdate fetches the existing secret.
+		secret.Data = credentialsSecret.DeepCopy().Data
 		return openstack.ReconcileCloudConfigSecret(platformSpec, secret, credentialsSecret, caCertData, machineNetwork)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile secret %s/%s: %w", secret.Namespace, secret.Name, err)
