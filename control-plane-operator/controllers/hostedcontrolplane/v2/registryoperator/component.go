@@ -34,6 +34,7 @@ func (r *imageRegistryOperator) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &imageRegistryOperator{}).
 		WithAdaptFunction(adaptDeployment).
+		WithOmniCPOTransforms(omniCPOTransforms()...).
 		WithPredicate(isImageRegistryCapabilityEnabled).
 		WithManifestAdapter(
 			"podmonitor.yaml",

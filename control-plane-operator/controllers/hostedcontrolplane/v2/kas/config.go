@@ -21,6 +21,7 @@ import (
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/omnicpo"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -60,6 +61,9 @@ func adaptKubeAPIServerConfig(cpContext component.WorkloadContext, config *corev
 	if err != nil {
 		return err
 	}
+	if err := omnicpo.Apply(cpContext, kasConfig, kasConfigTransforms(featureGates)); err != nil {
+		return err
+	}
 	serializedConfig, err := json.Marshal(kasConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize kube apiserver config: %w", err)
@@ -70,6 +74,29 @@ func adaptKubeAPIServerConfig(cpContext component.WorkloadContext, config *corev
 	}
 	config.Data[KubeAPIServerConfigKey] = string(serializedConfig)
 	return nil
+}
+
+// kasConfigTransforms lists the OMNI-CPO adjustments a main-built CPO applies to the rendered
+// kube-apiserver config when it drives an older control plane. See support/omnicpo.
+func kasConfigTransforms(featureGates []string) []omnicpo.Transform[*kcpv1.KubeAPIServerConfig] {
+	return []omnicpo.Transform[*kcpv1.KubeAPIServerConfig]{
+		{
+			// MutatingAdmissionPolicy is served at admissionregistration.k8s.io/v1alpha1 until it
+			// graduated to v1beta1 at 4.23 (k8s 1.36). main no longer emits the v1alpha1
+			// runtime-config, so a main-built CPO driving an older control plane would enable the
+			// gate without serving its API, and the KAS never finishes starting (the informer for
+			// v1alpha1.MutatingAdmissionPolicy never syncs). Re-emit it for the older operand.
+			Reason: "pre-4.23 MutatingAdmissionPolicy is served at v1alpha1",
+			When:   omnicpo.Below(hcpconfig.Version423),
+			Do: func(_ omnicpo.ResolveContext, cfg *kcpv1.KubeAPIServerConfig) error {
+				if slices.Contains(featureGates, "MutatingAdmissionPolicy=true") {
+					cfg.APIServerArguments["runtime-config"] = append(
+						cfg.APIServerArguments["runtime-config"], "admissionregistration.k8s.io/v1alpha1=true")
+				}
+				return nil
+			},
+		},
+	}
 }
 
 func kubernetesVersionForFeatureGates(featureGates []string, releaseImageProvider imageprovider.ReleaseImageProvider) (string, error) {

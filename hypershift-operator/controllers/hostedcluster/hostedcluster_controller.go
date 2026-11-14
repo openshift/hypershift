@@ -49,6 +49,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
@@ -3298,6 +3299,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 		OpenShiftRegistryOverrides:  imageregistry.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
 		DefaultIngressDomain:        defaultIngressDomain,
 		FeatureSet:                  r.FeatureSet,
+		CPOFromMain:                 controlplaneoperatoroverrides.ShouldUseFromMain(releaseVersion),
 	})
 
 	if err := cpo.Reconcile(cpContext); err != nil {

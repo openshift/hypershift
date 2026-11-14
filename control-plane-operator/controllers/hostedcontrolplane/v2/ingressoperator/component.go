@@ -41,6 +41,7 @@ func (r *ingressOperator) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &ingressOperator{}).
 		WithAdaptFunction(adaptDeployment).
+		WithOmniCPOTransforms(omniCPOTransforms()...).
 		WithPredicate(isIngressCapabilityEnabled).
 		WithManifestAdapter(
 			"podmonitor.yaml",

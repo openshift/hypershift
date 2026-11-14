@@ -154,6 +154,14 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 				},
 			)
 		}
+		if cpo.CPOFromMain {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  config.OmniCPOEnvVar,
+					Value: "1",
+				},
+			)
+		}
 
 		if watchListClient := os.Getenv("KUBE_FEATURE_WatchListClient"); watchListClient != "" {
 			c.Env = append(c.Env,

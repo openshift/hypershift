@@ -28,6 +28,10 @@ type ControlPlaneOperatorOptions struct {
 	DefaultIngressDomain        string
 
 	FeatureSet configv1.FeatureSet
+
+	// CPOFromMain indicates this CPO deployment was given a from-main image for a
+	// configured older release, so it must run in OMNI-CPO mode (see support/config).
+	CPOFromMain bool
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.

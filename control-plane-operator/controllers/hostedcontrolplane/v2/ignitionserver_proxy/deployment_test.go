@@ -8,8 +8,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/omnicpo"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/testutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -100,6 +103,37 @@ func TestAdaptDeployment(t *testing.T) {
 			}
 		})
 	}
+
+	// OMNI-CPO drift gating: a main-built CPO driving a pre-4.23 control plane must select the
+	// haproxy-router image older payloads ship, not haproxy-router-haproxy32 (which arrived at 4.23).
+	// 4.23 and 5.0 are the same release.
+	omniHCP := &hyperv1.HostedControlPlane{}
+	t.Run("When OMNI-CPO drives a pre-4.23 control plane, it should use the haproxy-router image", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv(config.OmniCPOEnvVar, "1")
+		cpContext := component.WorkloadContext{HCP: omniHCP}
+		cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion("4.20.0"))
+		deployment, err := assets.LoadDeploymentManifest(ComponentName)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(adaptDeployment(cpContext, deployment)).ToNot(HaveOccurred())
+		g.Expect(omnicpo.Apply(cpContext, deployment, omniCPOTransforms())).ToNot(HaveOccurred())
+		c := podspec.FindContainer("haproxy", deployment.Spec.Template.Spec.Containers)
+		g.Expect(c).ToNot(BeNil())
+		g.Expect(c.Image).To(Equal("haproxy-router"))
+	})
+	t.Run("When OMNI-CPO drives a 4.23/5.0 control plane, it should use the haproxy-router-haproxy32 image", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv(config.OmniCPOEnvVar, "1")
+		cpContext := component.WorkloadContext{HCP: omniHCP}
+		cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion("5.0.0"))
+		deployment, err := assets.LoadDeploymentManifest(ComponentName)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(adaptDeployment(cpContext, deployment)).ToNot(HaveOccurred())
+		g.Expect(omnicpo.Apply(cpContext, deployment, omniCPOTransforms())).ToNot(HaveOccurred())
+		c := podspec.FindContainer("haproxy", deployment.Spec.Template.Spec.Containers)
+		g.Expect(c).ToNot(BeNil())
+		g.Expect(c.Image).To(Equal("haproxy-router-haproxy32"))
+	})
 }
 
 func TestAdaptDeploymentWithProxyEnvVars(t *testing.T) {

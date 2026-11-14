@@ -153,6 +153,9 @@ type Options struct {
 	EnableSizeTagging                         bool
 	EnableEtcdRecovery                        bool
 	EnableCPOOverrides                        bool
+	CPOFromMain                               bool
+	CPOFromMainVersions                       string
+	CPOFromMainImage                          string
 	EnableStandaloneKarpenterOperator         bool
 	AroHCPKeyVaultUsersClientID               string
 	TechPreviewNoUpgrade                      bool
@@ -519,6 +522,9 @@ func NewCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableEtcdRecovery, "enable-etcd-recovery", opts.EnableEtcdRecovery, "If true, the HyperShift operator checks for failed etcd pods and attempts a recovery if possible")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCPOOverrides, "enable-cpo-overrides", opts.EnableCPOOverrides, "If true, the HyperShift operator uses a set of static overrides for the CPO image given specific release versions")
+	cmd.PersistentFlags().BoolVar(&opts.CPOFromMain, "cpo-from-main", opts.CPOFromMain, "If true, the HyperShift operator drives the Control Plane Operator from its own main build for the releases in --cpo-from-main-versions, instead of the CPO shipped in the release payload")
+	cmd.PersistentFlags().StringVar(&opts.CPOFromMainVersions, "cpo-from-main-versions", opts.CPOFromMainVersions, "Comma-separated MAJOR.MINOR OpenShift releases for which the CPO is driven from main (e.g. \"4.20\"). Only used when --cpo-from-main is set")
+	cmd.PersistentFlags().StringVar(&opts.CPOFromMainImage, "cpo-from-main-image", opts.CPOFromMainImage, "The CPO image to use for --cpo-from-main-versions releases. Defaults to the HyperShift operator's own image when empty")
 	cmd.PersistentFlags().BoolVar(&opts.EnableStandaloneKarpenterOperator, "enable-standalone-karpenter-operator", opts.EnableStandaloneKarpenterOperator, "If true, the HyperShift operator deploys the standalone karpenter-operator binary instead of the karpenter-operator embedded in the HO image (default false)")
 	cmd.PersistentFlags().StringVar(&opts.AroHCPKeyVaultUsersClientID, "aro-hcp-key-vault-users-client-id", opts.AroHCPKeyVaultUsersClientID, "The client ID of the managed identity which can access the Azure Key Vaults, in an AKS management cluster, to retrieve secrets and certificates.")
 	// TODO: Would it make sense to deprecate this flag in favor of a new flag like `--feature-set=TechPreviewNoUpgrade`
@@ -1428,6 +1434,9 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableSizeTagging:                       opts.EnableSizeTagging,
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
 		EnableCPOOverrides:                      opts.EnableCPOOverrides,
+		CPOFromMain:                             opts.CPOFromMain,
+		CPOFromMainVersions:                     opts.CPOFromMainVersions,
+		CPOFromMainImage:                        opts.CPOFromMainImage,
 		EnableKarpenterOperator:                 opts.EnableStandaloneKarpenterOperator,
 		AdditionalOperatorEnvVars:               opts.AdditionalOperatorEnvVars,
 		AROHCPKeyVaultUsersClientID:             opts.AroHCPKeyVaultUsersClientID,

@@ -44,6 +44,7 @@ func (r *clusterStorageOperator) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &clusterStorageOperator{}).
 		WithAdaptFunction(adaptDeployment).
+		WithOmniCPOTransforms(omniCPOTransforms()...).
 		WithPredicate(isStorageAndCSIManaged).
 		WithManifestAdapter(
 			"azure-disk-csi-config.yaml",

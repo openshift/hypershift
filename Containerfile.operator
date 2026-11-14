@@ -12,7 +12,9 @@ COPY --chown=default . .
 
 RUN make hypershift \
   && make hypershift-operator \
-  && make karpenter-operator
+  && make karpenter-operator \
+  && make control-plane-operator \
+  && make control-plane-pki-operator
 
 # Render release-manifests/image-references.template.yaml, which documents what
 # oc adm release info --changelog does with the result. Only the build-specific
@@ -34,6 +36,8 @@ FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest
 COPY --from=builder /hypershift/bin/hypershift \
   /hypershift/bin/hypershift-operator \
   /hypershift/bin/karpenter-operator \
+  /hypershift/bin/control-plane-operator \
+  /hypershift/bin/control-plane-pki-operator \
   /usr/bin/
 
 # Must stay the last layer that writes to the filesystem: oc only scans the
@@ -42,6 +46,14 @@ COPY --from=builder /hypershift/bin/hypershift \
 COPY --from=builder /tmp/release-manifests/ /release-manifests/
 
 ENTRYPOINT ["/usr/bin/hypershift"]
+
+# TEMPORARY (cpo-from-image branch, DO NOT MERGE): turn CPO-from-main on for 4.20 so the
+# e2e-from-pr-aws release-matrix job exercises the feature with a plain `hypershift install`.
+# The HO reads these at runtime (os.Getenv); CPO_FROM_MAIN_IMAGE is deliberately unset so
+# from-main falls back to this image, which now bundles control-plane-operator. Remove before
+# merge; the feature must stay off by default.
+ENV ENABLE_CPO_FROM_MAIN=1
+ENV CPO_FROM_MAIN_VERSIONS=4.20
 
 LABEL name="multicluster-engine/hypershift-operator"
 LABEL cpe="cpe:/a:redhat:multicluster_engine:5.0::el9"

@@ -7,6 +7,7 @@ import (
 
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/omnicpo"
 	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -21,8 +22,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	if err != nil {
 		return err
 	}
-
-	// Curve preferences are supported by machine-approver, but not all TLSArgs consumers.
+	// Render for main: machine-approver also takes --tls-curve-preferences (added at 5.1). OMNI-CPO
+	// strips the TLS min-version/cipher args and/or the curve preferences on older operands (see
+	// omniCPOTransforms).
 	curveIDs, err := config.CurvePreferences(cpContext, profile)
 	if err != nil {
 		return err
@@ -44,4 +46,24 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	})
 
 	return nil
+}
+
+// omniCPOTransforms lists the drift adjustments a main-built CPO applies to the machine-approver
+// Deployment when it drives an older control plane. See support/omnicpo.
+func omniCPOTransforms() []omnicpo.Transform[*appsv1.Deployment] {
+	return []omnicpo.Transform[*appsv1.Deployment]{
+		{
+			// --tls-min-version/--tls-cipher-suites arrived at 4.23; a pre-4.23 machine-approver
+			// rejects them.
+			Reason: "pre-4.23 machine-approver rejects --tls-min-version/--tls-cipher-suites",
+			When:   omnicpo.Below(config.Version423),
+			Do:     omnicpo.StripArgs(ComponentName, "--tls-min-version", "--tls-cipher-suites"),
+		},
+		{
+			// --tls-curve-preferences arrived at 5.1; a pre-5.1 machine-approver rejects it.
+			Reason: "pre-5.1 machine-approver rejects --tls-curve-preferences",
+			When:   omnicpo.Below(config.Version510),
+			Do:     omnicpo.StripArgs(ComponentName, "--tls-curve-preferences"),
+		},
+	}
 }
