@@ -7,7 +7,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/gobwas/glob v0.2.3
 	github.com/golangci/golangci-lint/v2 v2.11.4
-	github.com/google/cel-go v0.26.1
+	github.com/google/cel-go v0.30.0
 	github.com/mikefarah/yq/v4 v4.44.5
 	github.com/onsi/gomega v1.39.1
 	github.com/openshift/api/tools v0.0.0-20250915151906-94481d71bb6f
@@ -248,7 +248,6 @@ require (
 	github.com/spf13/viper v1.20.0 // indirect
 	github.com/ssgreg/nlreturn/v2 v2.2.1 // indirect
 	github.com/stbenjam/no-sprintf-host-port v0.3.1 // indirect
-	github.com/stoewer/go-strcase v1.3.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
@@ -333,7 +332,7 @@ replace sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0
 
 // pin these versions to match the main module even if golangci-lint v2 wants newer versions
 replace (
-	github.com/google/cel-go => github.com/google/cel-go v0.26.0
+	github.com/google/cel-go => github.com/google/cel-go v0.30.0
 	k8s.io/api => k8s.io/api v0.34.2
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.34.2
 	k8s.io/apimachinery => k8s.io/apimachinery v0.34.2
