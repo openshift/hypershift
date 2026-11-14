@@ -283,6 +283,20 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 		return p.dialDirectWithProxy(network, requestAddress)
 	}
 
+	// Resolve hostname to IPs when needed (HTTPS proxy path).
+	// Resolve() stores fallback IPs in ctx for the loop below.
+	tunnelAddress := requestAddress
+	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
+		log.Info("Host name must be resolved before dialing", "host", requestHost)
+		var ip net.IP
+		ctx, ip, err = p.Resolve(ctx, requestHost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve name %s: %w", requestHost, err)
+		}
+		log.Info("Host name resolved", "ip", ip.String())
+		tunnelAddress = net.JoinHostPort(ip.String(), requestPort)
+	}
+
 	// return a dial direct function ignoring any proxy environment settings
 	// Check if konnectivity is unhealthy (based on DNS resolution failures)
 	// IMPORTANT: Never bypass konnectivity for DNS connections (port 53), as we need to
@@ -294,24 +308,11 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 		return p.dialDirectWithoutProxy(ctx, network, requestAddress)
 	}
 
-	// Resolve hostname to IPs when needed (HTTPS proxy path).
-	// Resolve() stores fallback IPs in ctx for the loop below.
-	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
-		log.Info("Host name must be resolved before dialing", "host", requestHost)
-		var ip net.IP
-		ctx, ip, err = p.Resolve(ctx, requestHost)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve name %s: %w", requestHost, err)
-		}
-		log.Info("Host name resolved", "ip", ip.String())
-		requestAddress = net.JoinHostPort(ip.String(), requestPort)
-	}
-
 	// Build address list: primary address + any fallback IPs from context.
 	// Fallback IPs are populated by Resolve() — either called above (HTTPS)
 	// or by the socks5 library before calling DialContext (SOCKS5).
 	const maxFallbacks = 3
-	addresses := buildAddressList(requestAddress, fallbackIPsFromContext(ctx), requestPort, maxFallbacks)
+	addresses := buildAddressList(tunnelAddress, fallbackIPsFromContext(ctx), requestPort, maxFallbacks)
 	if len(addresses) > 1 {
 		log.Info("Resolved addresses for fallback", "using", len(addresses))
 	}
