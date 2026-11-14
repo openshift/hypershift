@@ -6,6 +6,12 @@ import (
 
 const (
 	systemNodeCriticalPriorityClass = "system-node-critical"
+
+	// AgentSecretHashAnnotation is set on the konnectivity-agent DaemonSet pod template.
+	// Its value is a hash of the agent client certificate Secret data in the hosted cluster.
+	// The proxy-agent reads its client certificate only at startup, so a change of this
+	// value rolls the DaemonSet and makes the agents load the rotated certificate.
+	AgentSecretHashAnnotation = "hypershift.openshift.io/konnectivity-agent-secret-hash"
 )
 
 type KonnectivityParams struct {
@@ -14,6 +20,12 @@ type KonnectivityParams struct {
 	ExternalPort    int32
 
 	AdditionalAnnotations map[string]string
+
+	// AgentSecretHash is the hash of the konnectivity-agent Secret data that was
+	// successfully written to the hosted cluster. When empty, for example because
+	// the Secret could not be read or written, the hash already present on the
+	// DaemonSet pod template is kept so that the agents are not rolled.
+	AgentSecretHash string
 }
 
 func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32) *KonnectivityParams {
