@@ -27,14 +27,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/configuration"
 	gcpresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/gcp"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/integration"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kubeadminpassword"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/monitoring"
 	networkoperator "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/network"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/oapi"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/olm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/rbac"
 	dr "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/recovery"
@@ -43,7 +42,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
-	pkgoauth "github.com/openshift/hypershift/pkg/oauth"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -534,15 +532,8 @@ func (r *reconciler) reconcileStorageAndMisc(ctx context.Context, log logr.Logge
 	}
 
 	log.Info("reconciling observed configuration")
-	if err := configuration.ReconcileObserved(ctx, configuration.NewHostedCluster(r.client, r.CreateOrUpdate), configuration.NewControlPlane(r.cpClient, r.CreateOrUpdate), configuration.ObservedConfigParams{Namespace: hcp.Namespace, OwnerRef: config.OwnerRefFrom(hcp)}); err != nil {
-		// Keep observed errors as individual entries in the root aggregate.
-		var aggregate utilerrors.Aggregate
-		if errors.As(err, &aggregate) {
-			errs = append(errs, aggregate.Errors()...)
-		} else {
-			errs = append(errs, err)
-		}
-	}
+	// Keep observed errors as individual entries in the root aggregate.
+	errs = appendAggregateErrors(errs, configuration.ReconcileObserved(ctx, configuration.NewHostedCluster(r.client, r.CreateOrUpdate), configuration.NewControlPlane(r.cpClient, r.CreateOrUpdate), configuration.ObservedConfigParams{Namespace: hcp.Namespace, OwnerRef: config.OwnerRefFrom(hcp)}))
 
 	return errs
 }
@@ -833,28 +824,11 @@ func (r *reconciler) reconcileAPIServicesAndOAuth(ctx context.Context, hcp *hype
 		errs = append(errs, fmt.Errorf("failed to update ControlPlaneConnectionAvailable condition: %w", err))
 	}
 
-	log.Info("reconciling openshift apiserver apiservices")
-	if err := r.reconcileOpenshiftAPIServerAPIServices(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver service: %w", err))
-	}
-
-	log.Info("reconciling openshift apiserver service")
-	openshiftAPIServerService := manifests.OpenShiftAPIServerClusterService()
-	if _, err := r.CreateOrUpdate(ctx, r.client, openshiftAPIServerService, func() error {
-		oapi.ReconcileClusterService(openshiftAPIServerService)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver service: %w", err))
-	}
-
-	log.Info("reconciling openshift apiserver endpoints")
-	if err := r.reconcileOpenshiftAPIServerEndpoints(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
-	}
-
-	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
-		errs = append(errs, r.reconcileOAuthAPIServerResources(ctx, hcp, log)...)
-	}
+	errs = appendAggregateErrors(errs, integration.Reconcile(ctx,
+		integration.NewHostedCluster(r.client, r.CreateOrUpdate),
+		integration.NewControlPlane(r.cpClient, r.CreateOrUpdate),
+		integration.ParamsFor(hcp, r.oauthAddress, r.oauthPort),
+		integration.APIServiceProjections))
 
 	log.Info("reconciling kube apiserver service monitor")
 	kasServiceMonitor := manifests.KubeAPIServerServiceMonitor()
@@ -872,34 +846,17 @@ func (r *reconciler) reconcileAPIServicesAndOAuth(ctx context.Context, hcp *hype
 	return errs
 }
 
-func (r *reconciler) reconcileOAuthAPIServerResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) []error {
-	var errs []error
-
-	log.Info("reconciling openshift oauth apiserver apiservices")
-	if err := r.reconcileOpenshiftOAuthAPIServerAPIServices(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver apiservices: %w", err))
+// appendAggregateErrors keeps a domain aggregate's entries as individual root aggregate entries,
+// so the root error list and the reconciliation condition message keep their shape.
+func appendAggregateErrors(errs []error, err error) []error {
+	if err == nil {
+		return errs
 	}
-
-	log.Info("reconciling openshift oauth apiserver service")
-	openshiftOAuthAPIServerService := manifests.OpenShiftOAuthAPIServerClusterService()
-	if _, err := r.CreateOrUpdate(ctx, r.client, openshiftOAuthAPIServerService, func() error {
-		oapi.ReconcileClusterService(openshiftOAuthAPIServerService)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver service: %w", err))
+	var aggregate utilerrors.Aggregate
+	if errors.As(err, &aggregate) {
+		return append(errs, aggregate.Errors()...)
 	}
-
-	log.Info("reconciling openshift oauth apiserver endpoints")
-	if err := r.reconcileOpenshiftOAuthAPIServerEndpoints(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver endpoints: %w", err))
-	}
-
-	log.Info("reconciling kubeadmin password hash secret")
-	if err := r.reconcileKubeadminPasswordHashSecret(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile kubeadmin password hash secret: %w", err))
-	}
-
-	return errs
+	return append(errs, err)
 }
 
 func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger, pullSecret *corev1.Secret) []error {
@@ -947,51 +904,11 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy CA bundle: %w", err))
 	}
 
-	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
-		log.Info("reconciling oauth serving cert ca bundle")
-		if err := r.reconcileOAuthServingCertCABundle(ctx, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert CA bundle: %w", err))
-		}
-
-		log.Info("reconciling oauth browser client")
-		oauthBrowserClient := manifests.OAuthServerBrowserClient()
-		if _, err := r.CreateOrUpdate(ctx, r.client, oauthBrowserClient, func() error {
-			return oauth.ReconcileBrowserClient(oauthBrowserClient, r.oauthAddress, r.oauthPort)
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile oauth browser client: %w", err))
-		}
-
-		log.Info("reconciling oauth challenging client")
-		oauthChallengingClient := hccomanifests.OAuthServerChallengingClient()
-		if _, err := r.CreateOrUpdate(ctx, r.client, oauthChallengingClient, func() error {
-			return oauth.ReconcileChallengingClient(oauthChallengingClient, r.oauthAddress, r.oauthPort)
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile oauth challenging client: %w", err))
-		}
-
-		log.Info("reconciling oauth cli client")
-		oauthCLIClient := manifests.OAuthServerCLIClient()
-		if _, err := r.CreateOrUpdate(ctx, r.client, oauthCLIClient, func() error {
-			return oauth.ReconcileCLIClient(oauthCLIClient, r.oauthAddress, r.oauthPort)
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile oauth cli client: %w", err))
-		}
-
-		log.Info("reconciling oauth serving cert rbac")
-		oauthServingCertRole := manifests.OAuthServingCertRole()
-		if _, err := r.CreateOrUpdate(ctx, r.client, oauthServingCertRole, func() error {
-			return oauth.ReconcileOauthServingCertRole(oauthServingCertRole)
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert role: %w", err))
-		}
-
-		oauthServingCertRoleBinding := manifests.OAuthServingCertRoleBinding()
-		if _, err := r.CreateOrUpdate(ctx, r.client, oauthServingCertRoleBinding, func() error {
-			return oauth.ReconcileOauthServingCertRoleBinding(oauthServingCertRoleBinding)
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert rolebinding: %w", err))
-		}
-	}
+	errs = appendAggregateErrors(errs, integration.Reconcile(ctx,
+		integration.NewHostedCluster(r.client, r.CreateOrUpdate),
+		integration.NewControlPlane(r.cpClient, r.CreateOrUpdate),
+		integration.ParamsFor(hcp, r.oauthAddress, r.oauthPort),
+		integration.OAuthProjections))
 
 	log.Info("reconciling cloud credential secrets")
 	errs = append(errs, r.reconcileCloudCredentialSecrets(ctx, hcp, log)...)
@@ -1682,42 +1599,6 @@ func (r *reconciler) reconcileControlPlaneConnectionAvailable(ctx context.Contex
 	return r.patchHCPStatusCondition(ctx, hcp, condition)
 }
 
-func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return fmt.Errorf("failed to get root ca from control plane: %w", err)
-	}
-	var errs []error
-	for _, apiSvcGroup := range manifests.OpenShiftAPIServerAPIServiceGroups() {
-		apiSvc := manifests.OpenShiftAPIServerAPIService(apiSvcGroup)
-		if _, err := r.CreateOrUpdate(ctx, r.client, apiSvc, func() error {
-			oapi.ReconcileAPIService(apiSvc, manifests.OpenShiftAPIServerClusterService(), rootCA, apiSvcGroup)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver apiservice (%s): %w", apiSvcGroup, err))
-		}
-	}
-	return utilerrors.NewAggregate(errs)
-}
-
-func (r *reconciler) reconcileOpenshiftOAuthAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return fmt.Errorf("failed to get root ca from control plane: %w", err)
-	}
-	var errs []error
-	for _, apiSvcGroup := range manifests.OpenShiftOAuthAPIServerAPIServiceGroups() {
-		apiSvc := manifests.OpenShiftOAuthAPIServerAPIService(apiSvcGroup)
-		if _, err := r.CreateOrUpdate(ctx, r.client, apiSvc, func() error {
-			oapi.ReconcileAPIService(apiSvc, manifests.OpenShiftOAuthAPIServerClusterService(), rootCA, apiSvcGroup)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver apiservice (%s): %w", apiSvcGroup, err))
-		}
-	}
-	return utilerrors.NewAggregate(errs)
-}
-
 func (r *reconciler) reconcileKASEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 
@@ -1748,98 +1629,6 @@ func (r *reconciler) reconcileKASEndpoints(ctx context.Context, hcp *hyperv1.Hos
 		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoint slice: %w", err))
 	}
 	return utilerrors.NewAggregate(errs)
-}
-
-func (r *reconciler) reconcileOpenshiftAPIServerEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	cpService := manifests.OpenShiftAPIServerService(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService); err != nil {
-		return fmt.Errorf("failed to get openshift apiserver service from control plane: %w", err)
-	}
-	if len(cpService.Spec.ClusterIP) == 0 {
-		return fmt.Errorf("openshift apiserver service in control plane does not yet have a cluster IP")
-	}
-	openshiftAPIServerEndpoints := manifests.OpenShiftAPIServerClusterEndpoints()
-	_, err := r.CreateOrUpdate(ctx, r.client, openshiftAPIServerEndpoints, func() error {
-		oapi.ReconcileEndpoints(openshiftAPIServerEndpoints, cpService.Spec.ClusterIP)
-		return nil
-	})
-	return err
-}
-
-func (r *reconciler) reconcileOpenshiftOAuthAPIServerEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	cpService := manifests.OpenShiftOAuthAPIServerService(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService); err != nil {
-		return fmt.Errorf("failed to get openshift oauth apiserver service from control plane: %w", err)
-	}
-	if len(cpService.Spec.ClusterIP) == 0 {
-		return fmt.Errorf("openshift oauth apiserver service in control plane does not yet have a cluster IP")
-	}
-	openshiftOAuthAPIServerEndpoints := manifests.OpenShiftOAuthAPIServerClusterEndpoints()
-	_, err := r.CreateOrUpdate(ctx, r.client, openshiftOAuthAPIServerEndpoints, func() error {
-		oapi.ReconcileEndpoints(openshiftOAuthAPIServerEndpoints, cpService.Spec.ClusterIP)
-		return nil
-	})
-	return err
-}
-
-func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	kubeadminPasswordSecret := hccomanifests.KubeadminPasswordSecret(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			// kubeAdminPasswordHash should not exist when a user specifies an explicit oauth config
-			// delete kubeAdminPasswordHash if it exist
-			return r.deleteKubeadminPasswordHashSecret(ctx)
-		}
-		return fmt.Errorf("failed to get kubeadmin password secret: %w", err)
-	}
-
-	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
-	if _, err := r.CreateOrUpdate(ctx, r.client, kubeadminPasswordHashSecret, func() error {
-		return kubeadminpassword.ReconcileKubeadminPasswordHashSecret(kubeadminPasswordHashSecret, kubeadminPasswordSecret)
-	}); err != nil {
-		return err
-	}
-
-	if _, err := r.CreateOrUpdate(ctx, r.cpClient, kubeadminPasswordSecret, func() error {
-		if kubeadminPasswordSecret.Annotations == nil {
-			kubeadminPasswordSecret.Annotations = map[string]string{}
-		}
-		kubeadminPasswordSecret.Annotations[pkgoauth.KubeadminSecretHashAnnotation] = string(kubeadminPasswordHashSecret.Data["kubeadmin"])
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to annotate kubeadmin-password secret in hcp namespace: %w", err)
-	}
-
-	return nil
-}
-
-func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context) error {
-	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordHashSecret), kubeadminPasswordHashSecret); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return err
-		}
-	} else {
-		if err := r.client.Delete(ctx, kubeadminPasswordHashSecret); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	sourceBundle := cpomanifests.OpenShiftOAuthMasterCABundle(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceBundle), sourceBundle); err != nil {
-		return fmt.Errorf("cannot get oauth master ca bundle: %w", err)
-	}
-	caBundle := manifests.OAuthCABundle()
-	if _, err := r.CreateOrUpdate(ctx, r.client, caBundle, func() error {
-		return oauth.ReconcileOAuthServerCertCABundle(caBundle, sourceBundle)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile oauth server cert ca bundle: %w", err)
-	}
-	return nil
 }
 
 func buildAWSWebIdentityCredentials(roleArn, region string) (string, error) {

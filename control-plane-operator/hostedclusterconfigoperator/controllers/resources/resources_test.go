@@ -42,6 +42,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	clientset "k8s.io/client-go/kubernetes"
@@ -744,152 +745,6 @@ func fakeOperatorHub() *configv1.OperatorHub {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cluster",
 		},
-	}
-}
-
-func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
-	t.Parallel()
-	testNamespace := "master-cluster1"
-	testHCPName := "cluster1"
-
-	tests := map[string]struct {
-		inputHCP                                 *hyperv1.HostedControlPlane
-		inputObjects                             []client.Object
-		existingHashSecret                       *corev1.Secret
-		expectKubeadminPasswordHashSecretToExist bool
-		expectHashPreserved                      bool
-	}{
-		"When kubeadminPasswordSecret exists, it should create the hash secret": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects: []client.Object{
-				&corev1.Secret{
-					ObjectMeta: hccomanifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
-					Data: map[string][]byte{
-						"password": []byte(`adminpass`),
-					},
-				},
-				&appsv1.Deployment{
-					ObjectMeta: hccomanifests.OAuthDeployment(testNamespace).ObjectMeta,
-				},
-			},
-			expectKubeadminPasswordHashSecretToExist: true,
-		},
-		"When existing hash does not match the password it should regenerate the hash": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects: []client.Object{
-				&corev1.Secret{
-					ObjectMeta: hccomanifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
-					Data: map[string][]byte{
-						"password": []byte(`adminpass`),
-					},
-				},
-				&appsv1.Deployment{
-					ObjectMeta: hccomanifests.OAuthDeployment(testNamespace).ObjectMeta,
-				},
-			},
-			existingHashSecret: &corev1.Secret{
-				ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
-				Data: map[string][]byte{
-					"kubeadmin": []byte("stale-non-matching-hash"),
-				},
-			},
-			expectKubeadminPasswordHashSecretToExist: true,
-		},
-		"When hash already matches password it should not regenerate": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects: []client.Object{
-				&corev1.Secret{
-					ObjectMeta: hccomanifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
-					Data: map[string][]byte{
-						"password": []byte(`adminpass`),
-					},
-				},
-				&appsv1.Deployment{
-					ObjectMeta: hccomanifests.OAuthDeployment(testNamespace).ObjectMeta,
-				},
-			},
-			existingHashSecret: &corev1.Secret{
-				ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
-				Data: map[string][]byte{
-					"kubeadmin": func() []byte {
-						h, _ := bcrypt.GenerateFromPassword([]byte("adminpass"), bcrypt.MinCost)
-						return h
-					}(),
-				},
-			},
-			expectKubeadminPasswordHashSecretToExist: true,
-			expectHashPreserved:                      true,
-		},
-		"When kubeadminPasswordSecret does not exist, it should not create the hash secret": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects: []client.Object{
-				&appsv1.Deployment{
-					ObjectMeta: hccomanifests.OAuthDeployment(testNamespace).ObjectMeta,
-				},
-			},
-			expectKubeadminPasswordHashSecretToExist: false,
-		},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-			guestClientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
-			if test.existingHashSecret != nil {
-				guestClientBuilder = guestClientBuilder.WithObjects(test.existingHashSecret)
-			}
-			r := &reconciler{
-				client:                 guestClientBuilder.Build(),
-				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
-				hcpName:                testHCPName,
-				hcpNamespace:           testNamespace,
-			}
-			err := r.reconcileKubeadminPasswordHashSecret(t.Context(), test.inputHCP)
-			g.Expect(err).To(BeNil())
-			if test.expectKubeadminPasswordHashSecretToExist {
-				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
-				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
-				g.Expect(err).To(BeNil())
-				g.Expect(actualKubeAdminSecret.Data["kubeadmin"]).ToNot(BeEmpty())
-				if test.expectHashPreserved {
-					g.Expect(actualKubeAdminSecret.Data["kubeadmin"]).To(Equal(test.existingHashSecret.Data["kubeadmin"]))
-				}
-				passwordSecret := hccomanifests.KubeadminPasswordSecret(testNamespace)
-				err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(passwordSecret), passwordSecret)
-				g.Expect(err).To(BeNil())
-				g.Expect(bcrypt.CompareHashAndPassword(
-					actualKubeAdminSecret.Data["kubeadmin"],
-					passwordSecret.Data["password"],
-				)).To(BeNil())
-			} else {
-				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
-				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
-				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			}
-			actualOauthDeployment := hccomanifests.OAuthDeployment(testNamespace)
-			err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
-			g.Expect(err).To(BeNil())
-		})
 	}
 }
 
@@ -4203,6 +4058,32 @@ func TestReconcileConfigOperatorReconciliationCondition(t *testing.T) {
 			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
 			g.Expect(condition.Message).To(Equal(tc.expectedMessage))
 			g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
+		})
+	}
+}
+
+func TestAppendAggregateErrors(t *testing.T) {
+	existing := fmt.Errorf("existing failure")
+	first, second := fmt.Errorf("first failure"), fmt.Errorf("second failure")
+	for _, tc := range []struct {
+		name     string
+		err      error
+		expected []error
+	}{
+		{name: "When the domain error is nil, it should keep the root errors unchanged", err: nil, expected: []error{existing}},
+		{name: "When the domain error is an aggregate, it should append each entry individually and in order", err: utilerrors.NewAggregate([]error{first, second}), expected: []error{existing, first, second}},
+		{name: "When the domain aggregate has one entry, it should append that entry rather than the aggregate", err: utilerrors.NewAggregate([]error{first}), expected: []error{existing, first}},
+		{name: "When the domain error is not an aggregate, it should append it as one entry", err: second, expected: []error{existing, second}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			errs := appendAggregateErrors([]error{existing}, tc.err)
+
+			g.Expect(errs).To(HaveLen(len(tc.expected)))
+			for index, expected := range tc.expected {
+				g.Expect(errs[index]).To(BeIdenticalTo(expected))
+			}
 		})
 	}
 }

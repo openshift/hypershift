@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -205,5 +206,116 @@ func TestReconcile(t *testing.T) {
 			assert.Expect(found).To(BeNumerically(">", previous), "operation %s; trace: %v", operation, operations)
 			previous = found
 		}
+	})
+
+	t.Run("When control-plane integration projections run or fail, it should keep their phase positions and individual root aggregate entries", func(t *testing.T) {
+		assert := NewWithT(t)
+		newRoot := func(failures map[string]error) (*reconciler, client.Client, *[]string) {
+			var attempts []string
+			controlPlaneObjects := make([]client.Object, 0, len(cpObjects))
+			for _, object := range cpObjects {
+				controlPlaneObjects = append(controlPlaneObjects, object.DeepCopyObject().(client.Object))
+			}
+			controlPlaneClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(controlPlaneObjects...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			return &reconciler{
+				client:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
+				uncachedClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				cpClient:       controlPlaneClient,
+				platformType:   hyperv1.NonePlatform, clusterSignerCA: "foobar", hcpName: "foo", hcpNamespace: "bar",
+				oauthAddress: "oauth.example.com", oauthPort: 443,
+				releaseProvider:       &fakereleaseprovider.FakeReleaseProvider{Components: map[string]string{"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake"}},
+				ImageMetaDataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
+				CreateOrUpdateProvider: foundationUpserter{func(ctx context.Context, target client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+					cluster := "hosted"
+					if target == controlPlaneClient {
+						cluster = "control-plane"
+					}
+					key := fmt.Sprintf("%T %s/%s", obj, obj.GetNamespace(), obj.GetName())
+					attempts = append(attempts, fmt.Sprintf("upsert %s %s", cluster, key))
+					if failure := failures[key]; failure != nil {
+						return controllerutil.OperationResultNone, failure
+					}
+					return controllerutil.CreateOrUpdate(ctx, target, obj, mutate)
+				}},
+			}, controlPlaneClient, &attempts
+		}
+		aggregateErrors := func(err error) []error {
+			if err == nil {
+				return nil
+			}
+			var aggregate utilerrors.Aggregate
+			assert.Expect(errors.As(err, &aggregate)).To(BeTrue())
+			return aggregate.Errors()
+		}
+
+		baseline, _, baselineAttempts := newRoot(nil)
+		_, baselineErr := baseline.Reconcile(t.Context(), controllerruntime.Request{})
+		baselineErrors := aggregateErrors(baselineErr)
+		assert.Expect(integrationErrors(baselineErrors)).To(BeEmpty())
+
+		ordered := []string{
+			"upsert hosted *v1.Secret openshift-kube-apiserver-operator/kube-control-plane-signer",
+			"upsert hosted *v1.ConfigMap openshift-config-managed/kubelet-serving-ca",
+			"upsert hosted *v1.DaemonSet kube-system/konnectivity-agent",
+			"upsert hosted *v1.Deployment kube-system/kas-connection-checker",
+		}
+		for _, group := range manifests.OpenShiftAPIServerAPIServiceGroups() {
+			ordered = append(ordered, fmt.Sprintf("upsert hosted *v1.APIService /v1.%s.openshift.io", group))
+		}
+		ordered = append(ordered, "upsert hosted *v1.Service default/openshift-apiserver", "upsert hosted *v1.Endpoints default/openshift-apiserver")
+		for _, group := range manifests.OpenShiftOAuthAPIServerAPIServiceGroups() {
+			ordered = append(ordered, fmt.Sprintf("upsert hosted *v1.APIService /v1.%s.openshift.io", group))
+		}
+		ordered = append(ordered,
+			"upsert hosted *v1.Service default/openshift-oauth-apiserver",
+			"upsert hosted *v1.Endpoints default/openshift-oauth-apiserver",
+			"upsert hosted *v1.Secret kube-system/kubeadmin",
+			"upsert control-plane *v1.Secret bar/kubeadmin-password",
+			"upsert hosted *v1.ServiceMonitor openshift-kube-apiserver/openshift-kube-apiserver",
+			"upsert hosted *v1.Network /cluster",
+			"upsert hosted *v1.Secret openshift/pull-secret",
+			"upsert hosted *v1.ConfigMap openshift-config-managed/oauth-serving-cert",
+			"upsert hosted *v1.OAuthClient /openshift-browser-client",
+			"upsert hosted *v1.OAuthClient /openshift-challenging-client",
+			"upsert hosted *v1.OAuthClient /openshift-cli-client",
+			"upsert hosted *v1.Role openshift-config-managed/system:openshift:oauth-servercert-trust",
+			"upsert hosted *v1.RoleBinding openshift-config-managed/system:openshift:oauth-servercert-trust",
+			"upsert hosted *v1.ConfigMap openshift-controller-manager/openshift-service-ca",
+		)
+		previous := -1
+		for _, expected := range ordered {
+			found := slices.Index((*baselineAttempts)[previous+1:], expected)
+			assert.Expect(found).To(BeNumerically(">=", 0), "attempt %q after index %d; attempts: %v", expected, previous, *baselineAttempts)
+			previous += found + 1
+		}
+
+		apiServiceFailure, endpointsFailure, hashFailure, browserFailure, roleFailure := errors.New("apiservice failure"), errors.New("endpoints failure"), errors.New("hash failure"), errors.New("browser failure"), errors.New("role failure")
+		failing, controlPlaneClient, _ := newRoot(map[string]error{
+			"*v1.APIService /v1.apps.openshift.io":                                      apiServiceFailure,
+			"*v1.Endpoints default/openshift-apiserver":                                 endpointsFailure,
+			"*v1.Secret kube-system/kubeadmin":                                          hashFailure,
+			"*v1.OAuthClient /openshift-browser-client":                                 browserFailure,
+			"*v1.Role openshift-config-managed/system:openshift:oauth-servercert-trust": roleFailure,
+		})
+		_, err := failing.Reconcile(t.Context(), controllerruntime.Request{})
+		assert.Expect(err).To(HaveOccurred())
+		failingErrors := aggregateErrors(err)
+		assert.Expect(errorMessages(integrationErrors(failingErrors))).To(Equal([]string{
+			"failed to reconcile openshift apiserver service: failed to reconcile openshift apiserver apiservice (apps): apiservice failure",
+			"failed to reconcile openshift apiserver endpoints: endpoints failure",
+			"failed to reconcile kubeadmin password hash secret: hash failure",
+			"failed to reconcile oauth browser client: browser failure",
+			"failed to reconcile oauth serving cert role: role failure",
+		}))
+		assert.Expect(failingErrors).To(HaveLen(len(baselineErrors) + 5))
+		for _, failure := range []error{apiServiceFailure, endpointsFailure, hashFailure, browserFailure, roleFailure} {
+			assert.Expect(errors.Is(err, failure)).To(BeTrue())
+		}
+		persistedHCP := &hyperv1.HostedControlPlane{}
+		assert.Expect(controlPlaneClient.Get(t.Context(), client.ObjectKeyFromObject(fakeHCP()), persistedHCP)).To(Succeed())
+		condition := meta.FindStatusCondition(persistedHCP.Status.Conditions, string(hyperv1.ConfigOperatorReconciliationSucceeded))
+		assert.Expect(condition).NotTo(BeNil())
+		assert.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+		assert.Expect(condition.Message).To(Equal(err.Error()))
 	})
 }
