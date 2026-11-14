@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/openshift/hypershift/cmd/log"
 
@@ -82,6 +83,9 @@ func bindOptions(cmd *cobra.Command) *CreateIAMOptions {
 func (o *CreateIAMOptions) ValidateInputs() error {
 	if o.InfraID == "" {
 		return fmt.Errorf("infra-id is required")
+	}
+	if o.InfraID == "gcp" || strings.HasPrefix(o.InfraID, "gcp-") {
+		return fmt.Errorf("infra-id cannot be gcp or start with gcp-: generated IAM IDs would use a reserved prefix")
 	}
 	if o.ProjectID == "" {
 		return fmt.Errorf("project-id is required")

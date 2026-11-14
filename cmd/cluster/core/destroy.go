@@ -53,6 +53,7 @@ type DestroyOptions struct {
 	AWSPlatform           AWSPlatformDestroyOptions
 	AzurePlatform         AzurePlatformDestroyOptions
 	PowerVSPlatform       PowerVSPlatformDestroyOptions
+	GCPPlatform           GCPPlatformDestroyOptions
 	InfraID               string
 	DestroyCloudResources bool
 	Log                   logr.Logger
@@ -99,6 +100,10 @@ type PowerVSPlatformDestroyOptions struct {
 	PER                    bool
 	TransitGatewayLocation string
 	TransitGateway         string
+}
+
+type GCPPlatformDestroyOptions struct {
+	PreserveInfra bool
 }
 
 func GetCluster(ctx context.Context, c client.Client, o *DestroyOptions) (*hyperv1.HostedCluster, error) {

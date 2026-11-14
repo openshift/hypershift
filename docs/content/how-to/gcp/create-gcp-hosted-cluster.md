@@ -177,22 +177,43 @@ For advanced scenarios (custom bucket, pre-existing bucket, troubleshooting WIF 
 
 ## Destroy Hosted Cluster
 
+Destroy the hosted cluster and its associated CLI-created networking and IAM
+resources:
+
 ```bash
 hypershift destroy cluster gcp \
   --name=<cluster-name> \
   --namespace=<namespace>
 ```
 
-After the cluster is destroyed, clean up the infrastructure and IAM resources:
+Cloud cleanup uses the same
+[Application Default Credentials (ADC)](https://docs.cloud.google.com/docs/authentication/application-default-credentials)
+as the standalone infrastructure and IAM commands.
+
+To retain both networking and IAM resources and skip cloud cleanup, add
+`--preserve-infra`:
+
+```bash
+hypershift destroy cluster gcp \
+  --name=<cluster-name> \
+  --namespace=<namespace> \
+  --preserve-infra
+```
+
+If cleanup fails, fix the reported problem and retry the same command.
+
+If the `HostedCluster` has already been removed, use the standalone cleanup
+commands with the IDs originally passed to `create infra gcp` and `create iam gcp`,
+respectively. These IDs may differ:
 
 ```bash
 hypershift destroy infra gcp \
-  --infra-id=<infra-id> \
+  --infra-id=<network-infra-id> \
   --project-id=<hosted-cluster-project-id> \
   --region=<region>
 
 hypershift destroy iam gcp \
-  --infra-id=<infra-id> \
+  --infra-id=<iam-infra-id> \
   --project-id=<hosted-cluster-project-id>
 ```
 

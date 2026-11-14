@@ -27840,22 +27840,43 @@ For advanced scenarios (custom bucket, pre-existing bucket, troubleshooting WIF 
 
 ## Destroy Hosted Cluster
 
+Destroy the hosted cluster and its associated CLI-created networking and IAM
+resources:
+
 ```bash
 hypershift destroy cluster gcp \
   --name=<cluster-name> \
   --namespace=<namespace>
 ```
 
-After the cluster is destroyed, clean up the infrastructure and IAM resources:
+Cloud cleanup uses the same
+Application Default Credentials (ADC)
+as the standalone infrastructure and IAM commands.
+
+To retain both networking and IAM resources and skip cloud cleanup, add
+`--preserve-infra`:
+
+```bash
+hypershift destroy cluster gcp \
+  --name=<cluster-name> \
+  --namespace=<namespace> \
+  --preserve-infra
+```
+
+If cleanup fails, fix the reported problem and retry the same command.
+
+If the `HostedCluster` has already been removed, use the standalone cleanup
+commands with the IDs originally passed to `create infra gcp` and `create iam gcp`,
+respectively. These IDs may differ:
 
 ```bash
 hypershift destroy infra gcp \
-  --infra-id=<infra-id> \
+  --infra-id=<network-infra-id> \
   --project-id=<hosted-cluster-project-id> \
   --region=<region>
 
 hypershift destroy iam gcp \
-  --infra-id=<infra-id> \
+  --infra-id=<iam-infra-id> \
   --project-id=<hosted-cluster-project-id>
 ```
 
@@ -27899,7 +27920,7 @@ This guide explains how to create Workload Identity Federation (WIF) resources f
 ## Prerequisites
 
 - The `hypershift` CLI built from the repository
-- `gcloud` CLI authenticated with IAM permissions in the hosted cluster GCP project
+- Application Default Credentials (ADC) configured with IAM permissions in the hosted cluster GCP project
 - An RSA keypair for OIDC service account token signing
 
 ## Generate RSA Keypair
@@ -28069,7 +28090,8 @@ This guide explains how to create network infrastructure for GCP hosted clusters
 ## Prerequisites
 
 - The `hypershift` CLI built from the repository
-- `gcloud` CLI authenticated with permissions in the hosted cluster GCP project
+- The `gcloud` CLI installed and authenticated with permissions to enable APIs in the hosted cluster GCP project
+- Application Default Credentials (ADC) configured with permissions in the hosted cluster GCP project
 - A GCP project for the hosted cluster with required APIs enabled:
 
 ```bash
@@ -28107,7 +28129,7 @@ hypershift create infra gcp \
 
 !!! warning "Infra ID constraints"
 
-    The `--infra-id` value must not start with `gcp-` (reserved by GCP for Workload Identity Pool IDs). Use the same `--infra-id` value across all `hypershift create` commands (`infra`, `iam`, `cluster`).
+    `hypershift create iam gcp` rejects `gcp` and IDs starting with `gcp-`, which would produce reserved Workload Identity pool and provider IDs. Infrastructure and cluster provisioning IDs may differ from the IAM provisioning ID.
 
 ### Flags
 
@@ -28198,7 +28220,12 @@ message.
 
 ## Destroy Infrastructure
 
-To clean up infrastructure resources:
+`hypershift destroy cluster gcp` cleans up associated CLI-created networking and
+IAM by default. Use `--preserve-infra` to retain both.
+
+To clean up standalone infrastructure, use its original provisioning ID. Cleanup
+validates the VPC and its resource references and skips networking when the VPC
+is already absent:
 
 !!! warning "Delete the hosted cluster first"
 
@@ -28218,7 +28245,7 @@ To clean up infrastructure resources:
 
 ```bash
 hypershift destroy infra gcp \
-  --infra-id=<infra-id> \
+  --infra-id=<network-infra-id> \
   --project-id=<hosted-cluster-project-id> \
   --region=<region>
 ```
