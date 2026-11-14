@@ -53,6 +53,9 @@ type Platform interface {
 	// Implementations should use the given input and client to create and update the desired state of the
 	// platform infrastructure CAPI CR, which will then be referenced by the CAPI Cluster CR.
 	// TODO (alberto): Pass createOrUpdate construct instead of client.
+	// A nil object with no error means that no infrastructure CR is needed yet,
+	// either because the platform has none or because its prerequisites are not ready.
+	// Callers must continue reconciliation without creating the CAPI Cluster.
 	ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error)
 
 	// CAPIProviderDeploymentSpec is called during HostedCluster reconciliation prior to reconciling

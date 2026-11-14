@@ -53,6 +53,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -2217,7 +2218,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 				t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
 			}
-			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
+			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}, &hyperv1.HostedControlPlane{}).Build()}
 			r := &HostedClusterReconciler{
 				Client:            client,
 				Clock:             clock.RealClock{},
@@ -2254,6 +2255,19 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hostedCluster.Namespace, Name: testCase.hostedCluster.Name}})
 			if err != nil {
 				t.Fatalf("Reconcile failed: %v", err)
+			}
+
+			if testCase.platform == "agent" {
+				g := NewGomegaWithT(t)
+				hcp := &hyperv1.HostedControlPlane{}
+				g.Expect(client.Get(ctx, crclient.ObjectKey{
+					Namespace: hcpmanifests.HostedControlPlaneNamespace(testCase.hostedCluster.Namespace, testCase.hostedCluster.Name),
+					Name:      testCase.hostedCluster.Name,
+				}, hcp)).To(Succeed())
+				hcp.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{Host: "api.example.com", Port: 6443}
+				g.Expect(client.Status().Update(ctx, hcp)).To(Succeed())
+				_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: crclient.ObjectKeyFromObject(testCase.hostedCluster)})
+				g.Expect(err).NotTo(HaveOccurred())
 			}
 
 			t.Setenv("PLATFORMS_INSTALLED", testCase.platform)
@@ -9529,6 +9543,67 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 		verifyRecovery  func(t *testing.T, r *HostedClusterReconciler, hc *hyperv1.HostedCluster)
 	}{
 		{
+			name: "When Agent ignition is ready before the API endpoint, it should deploy CPO and reconcile infrastructure after the endpoint is ready",
+			mutateHC: func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client) {
+				NewGomegaWithT(t).Expect(client.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agents"}})).To(Succeed())
+				NewGomegaWithT(t).Expect(client.Create(t.Context(), &configv1.Network{
+					ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+					Spec: configv1.NetworkSpec{
+						NetworkType:    "OVNKubernetes",
+						ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14", HostPrefix: 23}},
+						ServiceNetwork: []string{"172.30.0.0/16"},
+					},
+				})).To(Succeed())
+				hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform, Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agents"}}
+				for index := range hc.Spec.Services {
+					if hc.Spec.Services[index].Service == hyperv1.Ignition {
+						hc.Spec.Services[index].Route = &hyperv1.RoutePublishingStrategy{Hostname: "ignition.test.example.com"}
+					}
+				}
+			},
+			createOrUpdateOverride: func(reconcile.Request) upsert.CreateOrUpdateFN {
+				return func(ctx context.Context, client crclient.Client, object crclient.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+					return upsert.New(false).CreateOrUpdate(ctx, client, object, func() error {
+						if err := mutate(); err != nil {
+							return err
+						}
+						if cluster, ok := object.(*agentv1.AgentCluster); ok && (cluster.Spec.ControlPlaneEndpoint.Host == "" || cluster.Spec.ControlPlaneEndpoint.Port == 0) {
+							return fmt.Errorf("AgentCluster write attempted before the API endpoint is ready")
+						}
+						return nil
+					})
+				}
+			},
+			verifyResources: func(t *testing.T, client crclient.Client, hcpNamespace, hcName string) {
+				assertions := NewGomegaWithT(t)
+				hosted := &hyperv1.HostedCluster{}
+				assertions.Expect(client.Get(t.Context(), crclient.ObjectKey{Namespace: "test-ns", Name: hcName}, hosted)).To(Succeed())
+				assertions.Expect(hosted.Status.IgnitionEndpoint).To(Equal("ignition.test.example.com"))
+				hcp := &hyperv1.HostedControlPlane{}
+				assertions.Expect(client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hcName}, hcp)).To(Succeed())
+				assertions.Expect(hcp.Status.ControlPlaneEndpoint).To(BeZero())
+				clusters := &agentv1.AgentClusterList{}
+				assertions.Expect(client.List(t.Context(), clusters)).To(Succeed())
+				assertions.Expect(clusters.Items).To(BeEmpty())
+				assertions.Expect(client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "control-plane-operator"}, &appsv1.Deployment{})).To(Succeed())
+			},
+			verifyRecovery: func(t *testing.T, r *HostedClusterReconciler, hc *hyperv1.HostedCluster) {
+				assertions := NewGomegaWithT(t)
+				hcpNamespace := hcpmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+				hcp := &hyperv1.HostedControlPlane{}
+				assertions.Expect(r.Client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hc.Name}, hcp)).To(Succeed())
+				hcp.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{Host: "api.test.example.com", Port: 6443}
+				assertions.Expect(r.Client.Status().Update(t.Context(), hcp)).To(Succeed())
+				_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hc)})
+				assertions.Expect(err).NotTo(HaveOccurred())
+				cluster := &agentv1.AgentCluster{}
+				assertions.Expect(r.Client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hc.Name}, cluster)).To(Succeed())
+				assertions.Expect(cluster.Spec.ControlPlaneEndpoint.Host).To(Equal(hcp.Status.ControlPlaneEndpoint.Host))
+				assertions.Expect(cluster.Spec.ControlPlaneEndpoint.Port).To(Equal(hcp.Status.ControlPlaneEndpoint.Port))
+				assertions.Expect(r.Client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hc.Spec.InfraID}, &capiv1.Cluster{})).To(Succeed())
+			},
+		},
+		{
 			name: "When GCP resource tags are unsupported, it should still sync secrets and create HCP but block deployments",
 			mutateHC: func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client) {
 				hc.Spec.Platform = hyperv1.PlatformSpec{
@@ -9863,7 +9938,7 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
 				WithObjects(hcluster, pullSecret, ingress).
-				WithStatusSubresource(hcluster, &capigcp.GCPCluster{}, &capiv1.Cluster{}).
+				WithStatusSubresource(hcluster, &hyperv1.HostedControlPlane{}, &agentv1.AgentCluster{}, &capigcp.GCPCluster{}, &capiv1.Cluster{}).
 				Build()
 
 			// Apply test-specific mutations (fault injection)
@@ -9902,11 +9977,10 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 
 			_, err := r.Reconcile(ctrl.LoggerInto(t.Context(), log), req)
 
-			if err == nil {
-				t.Fatalf("expected reconcile to return an error containing %q, but got nil", tc.expectedErrSubstring)
-			}
-			if !strings.Contains(err.Error(), tc.expectedErrSubstring) {
-				t.Errorf("expected aggregated error to contain %q, got: %v", tc.expectedErrSubstring, err)
+			if tc.expectedErrSubstring == "" {
+				NewGomegaWithT(t).Expect(err).NotTo(HaveOccurred())
+			} else {
+				NewGomegaWithT(t).Expect(err).To(MatchError(ContainSubstring(tc.expectedErrSubstring)))
 			}
 
 			tc.verifyResources(t, fakeClient, hcpNamespace, hcName)

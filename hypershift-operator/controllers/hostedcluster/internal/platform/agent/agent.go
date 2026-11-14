@@ -13,7 +13,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
 
-	agentcapicore "github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta1"
+	agentcapicore "github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta2"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -59,6 +59,10 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 	// https://github.com/openshift/assisted-service/blob/241ad46db74add5f16e153f5f7ba0a5496fb06ba/pkg/validating-webhooks/hiveextension/v1beta1/agentclusterinstall_admission_hook.go#L185
 	// https://github.com/openshift/cluster-api-provider-agent/blob/master/controllers/agentcluster_controller.go#L126
 	if hcluster.Status.IgnitionEndpoint == "" {
+		return nil, nil
+	}
+	// The upstream API permits partial endpoints, but the provider requires both fields before it can become ready.
+	if apiEndpoint.Host == "" || apiEndpoint.Port == 0 {
 		return nil, nil
 	}
 
