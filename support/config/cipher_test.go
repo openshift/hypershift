@@ -1,12 +1,18 @@
 package config
 
 import (
+	"bytes"
+	"context"
 	"crypto/tls"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	configv1 "github.com/openshift/api/config/v1"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 func TestSetMinTLSVersionUsingAPIServer(t *testing.T) {
@@ -378,6 +384,186 @@ func TestCipherSuites(t *testing.T) {
 			g.Expect(result).To(Equal(tc.expected))
 		})
 	}
+}
+
+func TestSetCurvePreferencesUsingAPIServer(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		apiServer         *configv1.APIServer
+		expectError       bool
+		expectUnchanged   bool
+		expectedCurvePref []tls.CurveID
+	}{
+		{
+			name:            "When TLSSecurityProfile is nil, it should not change curve preferences",
+			apiServer:       &configv1.APIServer{},
+			expectUnchanged: true,
+		},
+		{
+			name: "When using intermediate profile, it should set curve preferences from the profile",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileIntermediateType,
+					},
+				},
+			},
+			expectedCurvePref: []tls.CurveID{
+				tls.X25519MLKEM768,
+				tls.X25519,
+				tls.CurveP256,
+				tls.CurveP384,
+			},
+		},
+		{
+			name: "When using custom profile without groups, it should not change curve preferences",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+						Custom: &configv1.CustomTLSProfile{
+							TLSProfileSpec: configv1.TLSProfileSpec{
+								MinTLSVersion: configv1.VersionTLS12,
+								Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+							},
+						},
+					},
+				},
+			},
+			expectUnchanged: true,
+		},
+		{
+			name: "When using custom profile with groups, it should set configured curves",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+						Custom: &configv1.CustomTLSProfile{
+							TLSProfileSpec: configv1.TLSProfileSpec{
+								MinTLSVersion: configv1.VersionTLS12,
+								Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+								Groups: []configv1.TLSGroup{
+									configv1.TLSGroupX25519,
+									configv1.TLSGroupSecP256r1,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCurvePref: []tls.CurveID{tls.X25519, tls.CurveP256},
+		},
+		{
+			name: "When using custom profile with nil Custom field, it should return error",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "When using custom profile with unknown groups, it should apply recognized groups only",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+						Custom: &configv1.CustomTLSProfile{
+							TLSProfileSpec: configv1.TLSProfileSpec{
+								Groups: []configv1.TLSGroup{
+									configv1.TLSGroupX25519,
+									"unknown",
+									configv1.TLSGroupSecP256r1,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCurvePref: []tls.CurveID{tls.X25519, tls.CurveP256},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			ctx := context.Background()
+
+			setter, err := SetCurvePreferencesUsingAPIServer(ctx, test.apiServer)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(setter).To(BeNil())
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(setter).ToNot(BeNil())
+
+			tlsConfig := &tls.Config{CurvePreferences: []tls.CurveID{tls.CurveP521}}
+			setter(tlsConfig)
+
+			if test.expectUnchanged {
+				g.Expect(tlsConfig.CurvePreferences).To(Equal([]tls.CurveID{tls.CurveP521}))
+				return
+			}
+
+			g.Expect(tlsConfig.CurvePreferences).To(Equal(test.expectedCurvePref))
+		})
+	}
+}
+
+func TestSetCurvePreferencesUsingAPIServer_FIPS(t *testing.T) {
+	if !libgocrypto.IsFIPSEnabled() {
+		t.Skip("Go FIPS mode is not enabled in this test environment")
+	}
+
+	t.Parallel()
+	g := NewWithT(t)
+
+	apiServer := &configv1.APIServer{
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+		},
+	}
+	setter, err := SetCurvePreferencesUsingAPIServer(context.Background(), apiServer)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	tlsConfig := &tls.Config{}
+	setter(tlsConfig)
+	g.Expect(tlsConfig.CurvePreferences).To(Equal([]tls.CurveID{tls.CurveP256, tls.CurveP384}))
+}
+
+func TestSetCurvePreferencesUsingAPIServer_logsUnrecognizedGroups(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	var logs bytes.Buffer
+	logger := zap.New(zap.WriteTo(&logs), zap.JSONEncoder())
+	ctx := ctrl.LoggerInto(context.Background(), logger)
+
+	apiServer := &configv1.APIServer{
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						Groups: []configv1.TLSGroup{configv1.TLSGroupX25519, "unknown"},
+					},
+				},
+			},
+		},
+	}
+	setter, err := SetCurvePreferencesUsingAPIServer(ctx, apiServer)
+	g.Expect(err).ToNot(HaveOccurred())
+	setter(&tls.Config{})
+	g.Expect(logs.String()).To(ContainSubstring("unknown"))
 }
 
 func TestSupportedEtcdCipherSuites(t *testing.T) {

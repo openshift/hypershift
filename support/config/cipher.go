@@ -139,3 +139,34 @@ func SetCipherSuitesUsingAPIServer(apiServerConfig *configv1.APIServer) (func(*t
 		tlsConfig.CipherSuites = suites
 	}, nil
 }
+
+// SetCurvePreferencesUsingAPIServer returns a function capable of setting curve
+// preferences on a tls.Config using the hub cluster APIServer TLS security
+// profile. When groups are unset on the profile, the returned setter is a no-op
+// so Go's default curve preferences are unchanged.
+func SetCurvePreferencesUsingAPIServer(ctx context.Context, apiServerConfig *configv1.APIServer) (func(*tls.Config), error) {
+	profile := apiServerConfig.Spec.TLSSecurityProfile
+	if profile == nil {
+		return func(*tls.Config) {}, nil
+	}
+	if profile.Type == configv1.TLSProfileCustomType {
+		if profile.Custom == nil {
+			return nil, fmt.Errorf("TLS profile type is Custom but Custom field is nil")
+		}
+		if len(profile.Custom.Groups) == 0 {
+			return func(*tls.Config) {}, nil
+		}
+	}
+
+	curveIDs, err := CurvePreferences(ctx, profile)
+	if err != nil {
+		return nil, err
+	}
+	if len(curveIDs) == 0 {
+		return func(*tls.Config) {}, nil
+	}
+
+	return func(tlsConfig *tls.Config) {
+		tlsConfig.CurvePreferences = curveIDs
+	}, nil
+}
