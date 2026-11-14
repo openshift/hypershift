@@ -19,6 +19,48 @@ func TestParseRetryAfterDuration(t *testing.T) {
 		expectedMaxDur time.Duration
 	}{
 		{
+			name: "When Retry-After HTTP-date exceeds a duration, it should return false",
+			err: &azcore.ResponseError{
+				StatusCode: 429,
+				RawResponse: &http.Response{Header: http.Header{
+					"Retry-After": {"Fri, 31 Dec 9999 23:59:59 GMT"},
+				}},
+			},
+			expectedOK: false,
+		},
+		{
+			name: "When Retry-After seconds overflow a duration, it should return false",
+			err: &azcore.ResponseError{
+				StatusCode: 429,
+				RawResponse: &http.Response{Header: http.Header{
+					"Retry-After": {"9223372036854775807"},
+				}},
+			},
+			expectedOK: false,
+		},
+		{
+			name: "When Retry-After exceeds the largest whole duration seconds, it should return false",
+			err: &azcore.ResponseError{
+				StatusCode: 429,
+				RawResponse: &http.Response{Header: http.Header{
+					"Retry-After": {"9223372037"},
+				}},
+			},
+			expectedOK: false,
+		},
+		{
+			name: "When Retry-After is the largest whole duration seconds, it should parse safely",
+			err: &azcore.ResponseError{
+				StatusCode: 429,
+				RawResponse: &http.Response{Header: http.Header{
+					"Retry-After": {"9223372036"},
+				}},
+			},
+			expectedOK:     true,
+			expectedMinDur: 9223372036 * time.Second,
+			expectedMaxDur: 9223372036 * time.Second,
+		},
+		{
 			name:       "When error is nil it should return false",
 			err:        nil,
 			expectedOK: false,
