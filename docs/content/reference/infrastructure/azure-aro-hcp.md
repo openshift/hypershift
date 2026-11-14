@@ -112,6 +112,54 @@ The control plane identities are provided in a JSON file with the following form
 }
 ```
 
+The control-plane `imageRegistry` identity and data-plane `imageRegistryMSIClientID` are
+required when the `ImageRegistry` capability is enabled. When it is disabled, unstructured
+HostedCluster input and identity input files may omit both fields. Typed Go clients emit an
+explicit empty `imageRegistryMSIClientID` while omitting the control-plane `imageRegistry` field.
+HyperShift accepts either representation and skips the Azure role assignments and runtime registry
+resources.
+
+#### Rollback and older-client (N-1) compatibility
+
+The data-plane `imageRegistryMSIClientID` is serialized without `omitempty`, so it is always
+present on the wire; it emits an explicit empty string only when the field itself is unset.
+Disabling the `ImageRegistry` capability permits that empty value but does not require it — a
+supplied, unused non-empty ID is still serialized as given. Because the field is always present, a
+previous ("N-1") typed Go client reads and rewrites this data-plane leaf unchanged in both
+directions; that round-trip guarantee is limited to the leaf, not to the enclosing object.
+
+The nested control-plane `managedIdentities.controlPlane.imageRegistry` and
+`workloadIdentities.imageRegistry` identities are serialized with `omitzero`, so HyperShift omits
+them only when they are zero-valued. Disabling the `ImageRegistry` capability permits that omission
+but does not itself force it — a supplied, unused identity is still serialized. This leaves one
+known, still-deferred rollback limitation:
+
+- A previous typed Go client whose struct declares `imageRegistry` without `omitzero`/`omitempty`
+  decodes an omitted identity as a zero-value struct.
+- If that client then submits a whole-object update — for example a controller that only adds a
+  finalizer or edits `metadata` — it re-serializes the zero-value `imageRegistry` as an
+  empty-but-present object.
+- The nested identity's own sub-fields are required (for example `clientID`, plus `objectEncoding`
+  and `credentialsSecretName` on the control-plane identity), so admission rejects the resurrected
+  empty identity on structural validation and fails the entire update, including metadata- or
+  finalizer-only changes.
+
+This affects only previous typed-client reconcilers that perform whole-object updates against an
+object that newer code already admitted with the registry identity omitted. Unstructured clients
+(which preserve the omission), read-only access, current clients, and the data-plane
+`imageRegistryMSIClientID` leaf above are not affected.
+
+!!! warning
+
+    Downgrading or reverting the stored CRD schema to a previous version has not been validated as
+    a mitigation for this path, and no workaround is documented here. Only the data-plane leaf has
+    been fixed for N-1 round-tripping; the nested-identity whole-object behavior is deferred and
+    separately scoped. A separate follow-up tracking reference is still needed; none has been
+    provided or identified for this PR. Follow-up coverage should use the previous Go types to read an object with the
+    registry identities omitted, re-serialize the whole object, and submit it as a whole-object
+    admission update for both the control-plane and workload identities, including metadata and
+    finalizer changes.
+
 ### Data Plane Identities
 
 Data plane identities are Azure managed identities with federated credentials for components running on worker nodes. Each managed identity is assigned an Azure built-in role that grants the specific permissions required by that component:

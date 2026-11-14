@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 
 	"k8s.io/utils/ptr"
@@ -22,6 +24,9 @@ type IdentityManager struct {
 	subscriptionID string
 	creds          azcore.TokenCredential
 	cloud          string
+	// transport, when set, overrides the ARM client HTTP transport. It is used by tests to
+	// inject a fake Azure SDK transport; it is nil in production (SDK default transport).
+	transport policy.Transporter
 }
 
 // NewIdentityManager creates a new IdentityManager
@@ -44,7 +49,7 @@ func (i *IdentityManager) deleteFederatedIdentityCredential(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
 	}
-	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig, Transport: i.transport}}
 
 	client, err := armmsi.NewFederatedIdentityCredentialsClient(i.subscriptionID, i.creds, clientOptions)
 	if err != nil {
@@ -80,7 +85,7 @@ func (i *IdentityManager) deleteManagedIdentity(ctx context.Context, l logr.Logg
 	if err != nil {
 		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
 	}
-	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig, Transport: i.transport}}
 
 	client, err := armmsi.NewUserAssignedIdentitiesClient(i.subscriptionID, i.creds, clientOptions)
 	if err != nil {
@@ -121,7 +126,7 @@ func (i *IdentityManager) createManagedIdentity(ctx context.Context, l logr.Logg
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to get Azure cloud configuration: %w", err)
 	}
-	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig, Transport: i.transport}}
 
 	client, err := armmsi.NewUserAssignedIdentitiesClient(i.subscriptionID, i.creds, clientOptions)
 	if err != nil {
@@ -177,6 +182,9 @@ type WorkloadIdentityOptions struct {
 	// IncludeKarpenter controls whether the Karpenter workload identity is included.
 	// Set to true when AutoNode/Karpenter is enabled for the cluster.
 	IncludeKarpenter bool
+
+	// DisableImageRegistry excludes the image registry identity and its federated credentials.
+	DisableImageRegistry bool
 }
 
 // GetWorkloadIdentityDefinitions returns all workload identity definitions for a cluster.
@@ -287,6 +295,15 @@ func GetWorkloadIdentityDefinitions(clusterName string, opts WorkloadIdentityOpt
 			},
 		},
 	}
+	if opts.DisableImageRegistry {
+		filtered := definitions[:0]
+		for _, definition := range definitions {
+			if definition.ComponentName != "imageRegistry" {
+				filtered = append(filtered, definition)
+			}
+		}
+		definitions = filtered
+	}
 
 	if opts.Topology != string(hyperv1.AzureTopologyPublic) {
 		definitions = append(definitions, WorkloadIdentityDefinition{
@@ -347,7 +364,7 @@ func (i *IdentityManager) createFederatedIdentityCredential(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
 	}
-	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig, Transport: i.transport}}
 
 	client, err := armmsi.NewFederatedIdentityCredentialsClient(i.subscriptionID, i.creds, clientOptions)
 	if err != nil {
@@ -384,14 +401,24 @@ type IAMOutput struct {
 	KarpenterClientID string `json:"karpenterClientID,omitempty"`
 }
 
+// workloadIdentityOptions translates the IAM create options, including any disabled cluster
+// capabilities, into the workload identity selection used to create identities and federated
+// credentials. Only the ImageRegistry capability affects identity creation: disabling it skips
+// the image registry identity and its federated credentials; other disabled capabilities are
+// accepted but leave the identity set unchanged.
+func (o *CreateIAMOptions) workloadIdentityOptions() WorkloadIdentityOptions {
+	return WorkloadIdentityOptions{
+		IncludeKMS:           o.EnableKMS,
+		IncludeKarpenter:     o.EnableKarpenter,
+		DisableImageRegistry: slices.Contains(o.DisableClusterCapabilities, string(hyperv1.ImageRegistryCapability)),
+	}
+}
+
 // CreateWorkloadIdentitiesFromIAMOptions creates all managed identities and federated credentials
 // for workload identity using CreateIAMOptions. This is used by the standalone IAM create command.
 func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Context, l logr.Logger, opts *CreateIAMOptions, resourceGroupName string) (*IAMOutput, error) {
 	output := &IAMOutput{}
-	definitions := GetWorkloadIdentityDefinitions(opts.Name, WorkloadIdentityOptions{
-		IncludeKMS:       opts.EnableKMS,
-		IncludeKarpenter: opts.EnableKarpenter,
-	})
+	definitions := GetWorkloadIdentityDefinitions(opts.Name, opts.workloadIdentityOptions())
 
 	for _, def := range definitions {
 		identityName := opts.Name + def.IdentityNameSuffix
@@ -410,7 +437,7 @@ func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Con
 		case "file":
 			output.File.ClientID = hyperv1.AzureClientID(clientID)
 		case "imageRegistry":
-			output.ImageRegistry.ClientID = hyperv1.AzureClientID(clientID)
+			output.ImageRegistry = hyperv1.WorkloadIdentity{ClientID: hyperv1.AzureClientID(clientID)}
 		case "ingress":
 			output.Ingress.ClientID = hyperv1.AzureClientID(clientID)
 		case "cloudProvider":
