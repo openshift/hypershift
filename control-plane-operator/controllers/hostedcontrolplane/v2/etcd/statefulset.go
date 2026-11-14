@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/blang/semver"
 	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
 )
 
@@ -62,6 +63,31 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	}
 	cipherSuites := config.SupportedEtcdCipherSuites(cpContext, ciphers)
 
+	payloadVersion, err := semver.Parse(cpContext.ReleaseImageProvider.Version())
+	if err != nil {
+		return fmt.Errorf("failed to parse release image version: %w", err)
+	}
+
+	var curvePreferences string
+	if config.VersionSupportsTLSGroups(payloadVersion) {
+		enabled, err := config.TLSGroupsFeatureGateEnabled(cpContext.Context, cpContext.Client, cpContext.HCP.Namespace)
+		if err != nil {
+			return fmt.Errorf("failed to check TLS groups feature gate: %w", err)
+		} else if enabled {
+			curves, err := config.CurvePreferences(cpContext, profile)
+			if err != nil {
+				return fmt.Errorf("failed to get curve preferences: %w", err)
+			}
+			curves = config.SupportedEtcdCurvePreferences(cpContext, curves)
+
+			curveNames := make([]string, len(curves))
+			for i, curve := range curves {
+				curveNames[i] = curve.String()
+			}
+			curvePreferences = strings.Join(curveNames, ",")
+		}
+	}
+
 	replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
 	var members []string
 	for i := range replicas {
@@ -87,6 +113,13 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 			podspec.UpsertEnvVar(c, corev1.EnvVar{
 				Name:  "ETCD_CIPHER_SUITES",
 				Value: strings.Join(cipherSuites, ","),
+			})
+		}
+
+		if curvePreferences != "" {
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
+				Name:  "ETCD_LISTEN_CURVE_PREFERENCES",
+				Value: curvePreferences,
 			})
 		}
 
@@ -133,12 +166,20 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 		if len(cipherSuites) > 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--listen-cipher-suites=%s", strings.Join(cipherSuites, ",")))
 		}
+
+		if curvePreferences != "" {
+			c.Args = append(c.Args, fmt.Sprintf("--listen-curve-preferences=%s", curvePreferences))
+		}
 	})
 
 	podspec.UpdateContainer("healthz", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args, fmt.Sprintf("--listen-tls-min-version=%s", tlsMinVersion))
 		if len(cipherSuites) > 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--listen-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
+
+		if curvePreferences != "" {
+			c.Args = append(c.Args, fmt.Sprintf("--listen-curve-preferences=%s", curvePreferences))
 		}
 	})
 
