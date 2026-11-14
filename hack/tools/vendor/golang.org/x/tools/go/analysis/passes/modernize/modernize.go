@@ -19,13 +19,12 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/refactor"
-	"golang.org/x/tools/internal/typesinternal/typeindex"
-
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/packagepath"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 //go:embed doc.go
@@ -45,8 +44,10 @@ var Suite = []*analysis.Analyzer{
 	OmitZeroAnalyzer,
 	PlusBuildAnalyzer,
 	RangeIntAnalyzer,
+	reflectTypeAssertAnalyzer, // awaiting public symbol
 	ReflectTypeForAnalyzer,
 	slicesBackwardAnalyzer, // awaiting public symbol
+	slicesClipAnalyzer,     // awaiting public symbol
 	SlicesContainsAnalyzer,
 	SlicesSortAnalyzer,
 	StdIteratorsAnalyzer,
@@ -122,7 +123,7 @@ func filesUsingGoVersion(pass *analysis.Pass, version string) iter.Seq[inspector
 // specified standard packages or their dependencies.
 func within(pass *analysis.Pass, pkgs ...string) bool {
 	path := pass.Pkg.Path()
-	return packagepath.IsStdPackage(path) &&
+	return packagepath.MaybeStdPackage(path) &&
 		moreiters.Contains(stdlib.Dependencies(pkgs...), path)
 }
 
@@ -136,6 +137,7 @@ var (
 	builtinMake    = types.Universe.Lookup("make")
 	builtinNew     = types.Universe.Lookup("new")
 	builtinNil     = types.Universe.Lookup("nil")
+	builtinRecover = types.Universe.Lookup("recover")
 	builtinString  = types.Universe.Lookup("string")
 	builtinTrue    = types.Universe.Lookup("true")
 	byteSliceType  = types.NewSlice(types.Typ[types.Byte])
@@ -184,4 +186,17 @@ func isLocal(obj types.Object) bool {
 		depth++
 	}
 	return depth >= 4
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
+}
+
+func cond[T any](cond bool, t, f T) T {
+	if cond {
+		return t
+	} else {
+		return f
+	}
 }

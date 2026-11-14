@@ -19,6 +19,7 @@ import (
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
@@ -32,7 +33,7 @@ var BLoopAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: bloop,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#bloop",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_bloop",
 }
 
 // bloop updates benchmarks that use "for range b.N", replacing it
@@ -72,14 +73,13 @@ func bloop(pass *analysis.Pass) (any, error) {
 			}
 			if call, ok := stmt.X.(*ast.CallExpr); ok {
 				obj := typeutil.Callee(info, call)
-				if typesinternal.IsMethodNamed(obj, "testing", "B", "StopTimer", "StartTimer", "ResetTimer") {
-					// Delete call statement.
-					// TODO(adonovan): delete following newline, or
-					// up to start of next stmt? (May delete a comment.)
-					edits = append(edits, analysis.TextEdit{
-						Pos: stmt.Pos(),
-						End: stmt.End(),
-					})
+				// Check that this is the same b before deleting the timer call.
+				if typesinternal.IsMethodNamed(obj, "testing", "B", "StopTimer", "StartTimer", "ResetTimer") &&
+					astutil.EqualSyntax(ast.Unparen(call.Fun).(*ast.SelectorExpr).X, b) {
+					// Delete call statement, including its line.
+					// This also deletes any comment on the same
+					// line as the call statement.
+					edits = append(edits, refactor.DeleteStmt(pass.Fset.File(stmt.Pos()), cur)...)
 				}
 			}
 			return true

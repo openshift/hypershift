@@ -24,7 +24,7 @@ import (
 var NewExprAnalyzer = &analysis.Analyzer{
 	Name:      "newexpr",
 	Doc:       analyzerutil.MustExtractDoc(doc, "newexpr"),
-	URL:       "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#newexpr",
+	URL:       "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_newexpr",
 	Requires:  []*analysis.Analyzer{inspect.Analyzer},
 	Run:       run,
 	FactTypes: []analysis.Fact{&newLike{}},
@@ -92,9 +92,7 @@ func run(pass *analysis.Pass) (any, error) {
 								//
 								// The inliner will not inline a newer callee body into an
 								// older Go file; see https://go.dev/issue/75726.
-								//
-								// TODO(adonovan): use ast.ParseDirective when go1.26 is assured.
-								if !slices.ContainsFunc(astutil.Directives(decl.Doc), func(d *astutil.Directive) bool {
+								if !slices.ContainsFunc(astutil.Directives(decl.Doc), func(d ast.Directive) bool {
 									return d.Tool == "go" && d.Name == "fix" && d.Args == "inline"
 								}) {
 									edits = append(edits, analysis.TextEdit{
