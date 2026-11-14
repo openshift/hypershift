@@ -436,7 +436,7 @@ func TestDialDirectWithProxy(t *testing.T) {
 		t.Setenv("HTTPS_PROXY", fmt.Sprintf("http://%s", proxyLn.Addr().String()))
 
 		p := &konnectivityProxy{}
-		conn, err := p.dialDirectWithProxy("tcp", echo.Addr().String())
+		conn, err := p.dialDirectWithProxy(t.Context(), "tcp", echo.Addr().String())
 		g.Expect(err).NotTo(HaveOccurred(), "dialDirectWithProxy should succeed")
 		defer conn.Close()
 		g.Expect(conn.SetDeadline(time.Now().Add(testTimeout))).To(Succeed())
@@ -461,7 +461,7 @@ func TestDialDirectWithProxy(t *testing.T) {
 		t.Setenv("NO_PROXY", "")
 
 		p := &konnectivityProxy{}
-		conn, err := p.dialDirectWithProxy("tcp", echo.Addr().String())
+		conn, err := p.dialDirectWithProxy(t.Context(), "tcp", echo.Addr().String())
 		g.Expect(err).NotTo(HaveOccurred(), "dialDirectWithProxy should succeed")
 		defer conn.Close()
 		g.Expect(conn.SetDeadline(time.Now().Add(testTimeout))).To(Succeed())
