@@ -2560,7 +2560,7 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 
 	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
 		log.Info("Ensuring image registry storage is removed")
-		removed, err := r.ensureImageRegistryStorageRemoved(ctx)
+		removed, err := r.ensureImageRegistryStorageRemoved(ctx, hcp)
 		if err != nil {
 			if isConnectionError(err) {
 				hasConnectionError = true
@@ -2958,7 +2958,7 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 	return false, nil
 }
 
-func (r *reconciler) ensureImageRegistryStorageRemoved(ctx context.Context) (bool, error) {
+func (r *reconciler) ensureImageRegistryStorageRemoved(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	registryConfig := manifests.Registry()
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(registryConfig), registryConfig); err != nil {
@@ -2967,6 +2967,24 @@ func (r *reconciler) ensureImageRegistryStorageRemoved(ctx context.Context) (boo
 			return true, nil
 		}
 		return false, fmt.Errorf("failed to get registry operator configuration: %w", err)
+	}
+	// If the HostedCluster is annotated to preserve the image registry backing storage on deletion, set the
+	// storage managementState to Unmanaged instead of removing it. The in-guest image registry operator then
+	// relinquishes ownership of the backing bucket (it tears down the registry but does not delete the bucket),
+	// so a restored cluster can readopt the same storage. Report done so cluster deletion is not blocked.
+	if hcp.Annotations[hyperv1.PreserveImageRegistryStorageOnDeleteAnnotation] == "true" {
+		if registryConfig.Spec.Storage.ManagementState == imageregistryv1.StorageManagementStateUnmanaged {
+			log.Info("Image registry storage is already Unmanaged, preserving backing storage per annotation")
+			return true, nil
+		}
+		log.Info("Preserving image registry backing storage per annotation, setting storage managementState to Unmanaged")
+		if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
+			registryConfig.Spec.Storage.ManagementState = imageregistryv1.StorageManagementStateUnmanaged
+			return nil
+		}); err != nil {
+			return false, fmt.Errorf("failed to set image registry storage managementState to Unmanaged: %w", err)
+		}
+		return true, nil
 	}
 	// If storage has already been removed, nothing to do
 	// When the registry operator has been removed, management state in status is currently cleared.
