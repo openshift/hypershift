@@ -7,7 +7,7 @@ require sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
 require (
 	github.com/IBM/go-sdk-core/v5 v5.21.2 // indirect
 	github.com/IBM/vpc-go-sdk v0.76.2 // indirect
-	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
+	github.com/emicklei/go-restful/v3 v3.14.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.11 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
