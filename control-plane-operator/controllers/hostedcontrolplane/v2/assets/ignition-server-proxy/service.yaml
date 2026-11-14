@@ -3,6 +3,7 @@ kind: Service
 metadata:
   name: ignition-server-proxy
 spec:
+  ipFamilyPolicy: PreferDualStack
   ports:
   - name: https
     port: 443

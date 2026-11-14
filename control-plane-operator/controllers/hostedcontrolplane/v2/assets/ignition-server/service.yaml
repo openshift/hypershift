@@ -5,6 +5,7 @@ metadata:
   labels:
     app: ignition-server
 spec:
+  ipFamilyPolicy: PreferDualStack
   ports:
   - name: https
     port: 443
