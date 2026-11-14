@@ -661,11 +661,6 @@ github.com/gabriel-vasile/mimetype/internal/scan
 # github.com/go-errors/errors v1.5.1
 ## explicit; go 1.14
 github.com/go-errors/errors
-# github.com/go-jose/go-jose/v3 v3.0.5
-## explicit; go 1.12
-github.com/go-jose/go-jose/v3
-github.com/go-jose/go-jose/v3/cipher
-github.com/go-jose/go-jose/v3/json
 # github.com/go-jose/go-jose/v4 v4.1.4
 ## explicit; go 1.24.0
 github.com/go-jose/go-jose/v4
@@ -1502,7 +1497,6 @@ golang.org/x/crypto/hkdf
 golang.org/x/crypto/internal/alias
 golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/nacl/secretbox
-golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
 golang.org/x/crypto/salsa20/salsa

@@ -48,7 +48,7 @@ require (
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/elazarl/goproxy v1.8.5
 	github.com/evanphx/json-patch/v5 v5.9.11
-	github.com/go-jose/go-jose/v3 v3.0.5
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-logr/logr v1.4.4
 	github.com/go-logr/stdr v1.2.2
 	github.com/go-logr/zapr v1.3.0
@@ -186,7 +186,6 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.11 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-openapi/analysis v0.23.0 // indirect
 	github.com/go-openapi/errors v0.22.4 // indirect
 	github.com/go-openapi/jsonpointer v1.0.0 // indirect
