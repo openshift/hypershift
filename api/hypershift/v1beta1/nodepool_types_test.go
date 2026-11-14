@@ -363,6 +363,23 @@ func TestAWSNodePoolPlatformSerializationCompatibility(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "When sourceDestCheck is set it should round-trip to N-1",
+			current: AWSNodePoolPlatform{
+				InstanceType: "m6i.large",
+				Subnet: AWSResourceReference{
+					ID: ptr.To("subnet-1234567890abcdef0"),
+				},
+				SourceDestCheck: SourceDestCheckDisabled,
+			},
+			expectedJSON: `{"instanceType":"m6i.large","subnet":{"id":"subnet-1234567890abcdef0"},"sourceDestCheck":"Disabled"}`,
+			nMinus1Result: awsNodePoolPlatformNMinus1{
+				InstanceType: "m6i.large",
+				Subnet: AWSResourceReference{
+					ID: ptr.To("subnet-1234567890abcdef0"),
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -402,6 +419,9 @@ func TestAWSNodePoolPlatformSerializationCompatibility(t *testing.T) {
 			}
 			if roundTripped.CPUOptions != (CPUOptions{}) {
 				t.Errorf("CPUOptions mismatch after N-1 round-trip: got %+v, want zero value", roundTripped.CPUOptions)
+			}
+			if roundTripped.SourceDestCheck != "" {
+				t.Errorf("SourceDestCheck mismatch after N-1 round-trip: got %q, want empty", roundTripped.SourceDestCheck)
 			}
 		})
 	}

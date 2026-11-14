@@ -34,6 +34,7 @@ type AWSNodePoolPlatformApplyConfiguration struct {
 	ResourceTags    []AWSNodePoolResourceTagApplyConfiguration `json:"resourceTags,omitempty"`
 	Placement       *PlacementOptionsApplyConfiguration        `json:"placement,omitempty"`
 	CPUOptions      *CPUOptionsApplyConfiguration              `json:"cpuOptions,omitempty"`
+	SourceDestCheck *hypershiftv1beta1.SourceDestCheck         `json:"sourceDestCheck,omitempty"`
 }
 
 // AWSNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AWSNodePoolPlatform type for use with
@@ -129,5 +130,13 @@ func (b *AWSNodePoolPlatformApplyConfiguration) WithPlacement(value *PlacementOp
 // If called multiple times, the CPUOptions field is set to the value of the last call.
 func (b *AWSNodePoolPlatformApplyConfiguration) WithCPUOptions(value *CPUOptionsApplyConfiguration) *AWSNodePoolPlatformApplyConfiguration {
 	b.CPUOptions = value
+	return b
+}
+
+// WithSourceDestCheck sets the SourceDestCheck field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the SourceDestCheck field is set to the value of the last call.
+func (b *AWSNodePoolPlatformApplyConfiguration) WithSourceDestCheck(value hypershiftv1beta1.SourceDestCheck) *AWSNodePoolPlatformApplyConfiguration {
+	b.SourceDestCheck = &value
 	return b
 }

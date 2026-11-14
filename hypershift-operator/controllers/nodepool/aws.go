@@ -113,6 +113,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 
 	applyAWSCPUOptions(nodePool, awsMachineTemplateSpec)
 	applyAWSPlacementOptions(nodePool, awsMachineTemplateSpec)
+	applyAWSSourceDestCheck(nodePool, awsMachineTemplateSpec)
 
 	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
 		awsMachineTemplateSpec.Template.Spec.PublicIP = ptr.To(true)
@@ -235,6 +236,23 @@ func applyAWSCPUOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemp
 		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicyEnabled
 	case hyperv1.NestedVirtualizationDisabled:
 		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicyDisabled
+	}
+}
+
+// applyAWSSourceDestCheck maps the NodePool's sourceDestCheck configuration onto the
+// AWSMachineTemplate. When the NodePool field is unset, the CAPA field is left empty
+// so the AWSMachineTemplate config hash stays stable for existing NodePools and no
+// rollout is triggered.
+func applyAWSSourceDestCheck(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+	if nodePool.Spec.Platform.AWS == nil {
+		return
+	}
+
+	switch nodePool.Spec.Platform.AWS.SourceDestCheck {
+	case hyperv1.SourceDestCheckEnabled:
+		spec.Template.Spec.SourceDestCheck = capiaws.SourceDestCheckEnabled
+	case hyperv1.SourceDestCheckDisabled:
+		spec.Template.Spec.SourceDestCheck = capiaws.SourceDestCheckDisabled
 	}
 }
 
