@@ -937,8 +937,8 @@ github.com/json-iterator/go
 # github.com/k-orc/openstack-resource-controller/v2 v2.6.0
 ## explicit; go 1.25.0
 github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1
-# github.com/klauspost/compress v1.19.2
-## explicit; go 1.24
+# github.com/klauspost/compress v1.20.2
+## explicit; go 1.25
 github.com/klauspost/compress
 github.com/klauspost/compress/fse
 github.com/klauspost/compress/huff0
