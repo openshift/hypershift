@@ -748,6 +748,51 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(err.Error()).To(ContainSubstring("combined ingress and cloud controller permissions"))
 		g.Expect(err.Error()).To(ContainSubstring("put policy failed"))
 	})
+
+	t.Run("When the ROSA ingress policy is invalid for separate roles, it should reject it before submission", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockIAM := awsapi.NewMockIAMAPI(ctrl)
+
+		mockOIDCProviderLookup(mockIAM)
+		mockOIDCRoleCreation(mockIAM, 7)
+
+		opts := &CreateIAMOptions{
+			InfraID:                testInfraID,
+			IssuerURL:              testIssuerURL,
+			BaseDomain:             `example.com"`,
+			UseROSAManagedPolicies: true,
+		}
+		_, err := opts.CreateOIDCResources(context.Background(), mockIAM, logr.Discard(), false)
+
+		g.Expect(err).To(MatchError(ContainSubstring("generated ROSA ingress role policy")))
+	})
+
+	t.Run("When the ROSA shared-role policy is invalid, it should reject it before submission", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockIAM := awsapi.NewMockIAMAPI(ctrl)
+
+		mockOIDCProviderLookup(mockIAM)
+		sharedRoleName := testInfraID + "-shared-role"
+		mockIAM.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, noSuchEntity())
+		mockIAM.EXPECT().CreateRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&iam.CreateRoleOutput{Role: testRole(sharedRoleName)}, nil)
+		mockIAM.EXPECT().AttachRolePolicy(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&iam.AttachRolePolicyOutput{}, nil).Times(7)
+
+		opts := &CreateIAMOptions{
+			InfraID:                testInfraID,
+			IssuerURL:              testIssuerURL,
+			BaseDomain:             `example.com"`,
+			UseROSAManagedPolicies: true,
+			SharedRole:             true,
+		}
+		_, err := opts.CreateOIDCResources(context.Background(), mockIAM, logr.Discard(), false)
+
+		g.Expect(err).To(MatchError(ContainSubstring("generated ROSA shared role policy")))
+	})
 }
 
 func TestIngressPermPolicy(t *testing.T) {

@@ -2,23 +2,16 @@ package resources
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/support/awsutil"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/util/retry"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,19 +20,6 @@ import (
 const (
 	awsLoadBalancerProgressDataKey         = "progress.json"
 	kubernetesLoadBalancerCleanupFinalizer = "service.kubernetes.io/load-balancer-cleanup"
-)
-
-type cloudResourceCleanupComponent string
-
-const (
-	cloudResourceCleanupComponentEligibility      cloudResourceCleanupComponent = "cleanup eligibility check"
-	cloudResourceCleanupComponentResourceCreation cloudResourceCleanupComponent = "resource creation blocking"
-	cloudResourceCleanupComponentImageRegistry    cloudResourceCleanupComponent = "image registry cleanup"
-	cloudResourceCleanupComponentIngress          cloudResourceCleanupComponent = "ingress controller cleanup"
-	cloudResourceCleanupComponentAWSLoadBalancers cloudResourceCleanupComponent = "AWS load balancer cleanup"
-	cloudResourceCleanupComponentLoadBalancers    cloudResourceCleanupComponent = "load balancer cleanup"
-	cloudResourceCleanupComponentPersistentVolume cloudResourceCleanupComponent = "persistent volume cleanup"
-	cloudResourceCleanupComponentVolumeSnapshot   cloudResourceCleanupComponent = "volume snapshot cleanup"
 )
 
 type awsLoadBalancerCleanupProgress struct {
@@ -94,208 +74,6 @@ type awsLoadBalancerCandidateCleanup struct {
 	describeTagsDenied   bool
 	orphanScanUnverified bool
 	orphanScanErr        error
-}
-
-type safeLoadBalancerCleanupError struct {
-	message string
-	err     error
-}
-
-func (e *safeLoadBalancerCleanupError) Error() string { return e.message }
-func (e *safeLoadBalancerCleanupError) Unwrap() error { return e.err }
-
-func newSafeLoadBalancerCleanupError(message string, err error) error {
-	return &safeLoadBalancerCleanupError{message: message, err: err}
-}
-
-type cloudResourceCleanupComponentError struct {
-	component cloudResourceCleanupComponent
-	err       error
-}
-
-func (e *cloudResourceCleanupComponentError) Error() string {
-	return fmt.Sprintf("%s failed", e.component)
-}
-
-func (e *cloudResourceCleanupComponentError) Unwrap() error { return e.err }
-
-func withCloudResourceCleanupComponent(component cloudResourceCleanupComponent, err error) error {
-	if err == nil {
-		return nil
-	}
-	return &cloudResourceCleanupComponentError{component: component, err: err}
-}
-
-func cloudResourcesDestroyedErrorMessage(err error) string {
-	return fmt.Sprintf("Error: %s", safeCloudResourcesDestroyedErrorMessage(err))
-}
-
-func safeCloudResourcesDestroyedErrorMessage(err error) string {
-	summary := cloudResourceCleanupErrorSummary{components: map[cloudResourceCleanupComponent]struct{}{}}
-	collectCloudResourceCleanupError(err, "", &summary)
-
-	if len(summary.components) == 0 {
-		if message, ok := safeLoadBalancerCleanupErrorMessage(err); ok {
-			return message
-		}
-		if summary.awsDescribeTagsDenials > 0 {
-			if summary.awsOtherFailures == 0 && summary.otherFailures == 0 {
-				return describeTagsAccessDeniedCleanupMessage
-			}
-			return mixedDescribeTagsCleanupMessage
-		}
-		return genericCloudResourceCleanupMessage
-	}
-
-	components := make([]cloudResourceCleanupComponent, 0, len(summary.components))
-	for component := range summary.components {
-		components = append(components, component)
-	}
-	sort.Slice(components, func(i, j int) bool { return components[i] < components[j] })
-	messages := make([]string, 0, len(components)+len(summary.safeMessages)+2)
-	for _, component := range components {
-		messages = appendUniqueCloudCleanupMessage(messages, fmt.Sprintf("%s failed", string(component)))
-	}
-
-	if summary.awsDescribeTagsDenials > 0 {
-		if summary.awsOtherFailures == 0 {
-			messages = appendUniqueCloudCleanupMessage(messages, describeTagsAccessDeniedCleanupMessage)
-		} else {
-			messages = appendUniqueCloudCleanupMessage(messages, mixedDescribeTagsCleanupMessage)
-		}
-	} else {
-		for _, message := range summary.safeMessages {
-			messages = appendUniqueCloudCleanupMessage(messages, message)
-		}
-	}
-
-	if summary.otherFailures > 0 || (summary.awsOtherFailures > 0 && len(summary.safeMessages) == 0) || len(messages) == len(components) {
-		messages = appendUniqueCloudCleanupMessage(messages, genericCloudResourceCleanupMessage)
-	}
-	return strings.Join(messages, "; ")
-}
-
-const (
-	describeTagsAccessDeniedCleanupMessage = "AWS load balancer ownership verification was denied; the delegated role needs elasticloadbalancing:DescribeTags, Kubernetes cleanup was requested, and AWS resources may remain"
-	mixedDescribeTagsCleanupMessage        = "AWS cleanup remains incomplete; the delegated role needs elasticloadbalancing:DescribeTags, and other cleanup failures or ownership issues may also be present"
-	genericCloudResourceCleanupMessage     = "cloud resource cleanup failed; error details were omitted to avoid exposing sensitive resource or endpoint information. " +
-		"Check hosted-cluster-config-operator logs in the control plane namespace for cleanup progress; verify the failing component's credentials, permissions, and connectivity"
-)
-
-type cloudResourceCleanupErrorSummary struct {
-	components             map[cloudResourceCleanupComponent]struct{}
-	safeMessages           []string
-	awsDescribeTagsDenials int
-	awsOtherFailures       int
-	otherFailures          int
-}
-
-func collectCloudResourceCleanupError(err error, component cloudResourceCleanupComponent, summary *cloudResourceCleanupErrorSummary) {
-	if err == nil {
-		return
-	}
-	if aggregate, ok := err.(interface{ Errors() []error }); ok {
-		children := aggregate.Errors()
-		if len(children) == 0 {
-			recordCloudResourceCleanupFailure(err, component, summary)
-			return
-		}
-		for _, child := range children {
-			collectCloudResourceCleanupError(child, component, summary)
-		}
-		return
-	}
-	if aggregate, ok := err.(interface{ Unwrap() []error }); ok {
-		children := aggregate.Unwrap()
-		if len(children) == 0 {
-			recordCloudResourceCleanupFailure(err, component, summary)
-			return
-		}
-		for _, child := range children {
-			collectCloudResourceCleanupError(child, component, summary)
-		}
-		return
-	}
-	var componentErr *cloudResourceCleanupComponentError
-	if errors.As(err, &componentErr) {
-		summary.components[componentErr.component] = struct{}{}
-		collectCloudResourceCleanupError(componentErr.err, componentErr.component, summary)
-		return
-	}
-	var safeErr *safeLoadBalancerCleanupError
-	if errors.As(err, &safeErr) {
-		if component == cloudResourceCleanupComponentAWSLoadBalancers {
-			summary.safeMessages = appendUniqueCloudCleanupMessage(summary.safeMessages, safeErr.message)
-		}
-		collectCloudResourceCleanupError(safeErr.err, component, summary)
-		return
-	}
-	if (component == cloudResourceCleanupComponentAWSLoadBalancers || component == "") && awsutil.IsOnlyDescribeTagsAccessDenied(err) {
-		summary.awsDescribeTagsDenials++
-		return
-	}
-	if wrapped, ok := err.(interface{ Unwrap() error }); ok && wrapped.Unwrap() != nil {
-		collectCloudResourceCleanupError(wrapped.Unwrap(), component, summary)
-		return
-	}
-	recordCloudResourceCleanupFailure(err, component, summary)
-}
-
-func recordCloudResourceCleanupFailure(err error, component cloudResourceCleanupComponent, summary *cloudResourceCleanupErrorSummary) {
-	if component == cloudResourceCleanupComponentAWSLoadBalancers && (awsutil.IsOnlyDescribeTagsAccessDenied(err) || errors.Is(err, awsutil.ErrDescribeTagsAccessDenied)) {
-		summary.awsDescribeTagsDenials++
-		return
-	}
-	if component == "" && (awsutil.IsOnlyDescribeTagsAccessDenied(err) || errors.Is(err, awsutil.ErrDescribeTagsAccessDenied)) {
-		summary.awsDescribeTagsDenials++
-		return
-	}
-	if component == cloudResourceCleanupComponentAWSLoadBalancers {
-		if errors.Is(err, awsutil.ErrLoadBalancerOwnershipUnverified) {
-			// Ownership failures are surfaced as pending cleanup by the candidate-verification path.
-			return
-		}
-		summary.awsOtherFailures++
-		return
-	}
-	summary.otherFailures++
-}
-
-func appendUniqueCloudCleanupMessage(messages []string, message string) []string {
-	for _, existing := range messages {
-		if existing == message {
-			return messages
-		}
-	}
-	return append(messages, message)
-}
-
-func safeLoadBalancerCleanupErrorMessage(err error) (string, bool) {
-	if err == nil {
-		return "", false
-	}
-	if aggregate, ok := err.(interface{ Errors() []error }); ok {
-		children := aggregate.Errors()
-		if len(children) != 1 {
-			return "", false
-		}
-		return safeLoadBalancerCleanupErrorMessage(children[0])
-	}
-	if multi, ok := err.(interface{ Unwrap() []error }); ok {
-		children := multi.Unwrap()
-		if len(children) != 1 {
-			return "", false
-		}
-		return safeLoadBalancerCleanupErrorMessage(children[0])
-	}
-	var safeErr *safeLoadBalancerCleanupError
-	if errors.As(err, &safeErr) {
-		return safeErr.message, true
-	}
-	if single, ok := err.(interface{ Unwrap() error }); ok {
-		return safeLoadBalancerCleanupErrorMessage(single.Unwrap())
-	}
-	return "", false
 }
 
 func (r *reconciler) reconcileAWSLoadBalancerCleanup(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
@@ -413,7 +191,7 @@ func (r *reconciler) prepareAWSLoadBalancerCleanupState(ctx context.Context, hcp
 func recordAWSLoadBalancerServiceCandidates(state *awsLoadBalancerCleanupState) error {
 	for i := range state.services {
 		service := &state.services[i]
-		if !isNonIngressLoadBalancerService(*service) || hasCustomLoadBalancerClass(*service) {
+		if service.Spec.Type != corev1.ServiceTypeLoadBalancer || hasCustomLoadBalancerClass(*service) {
 			continue
 		}
 		candidates := loadBalancerCandidatesForService(*service)
@@ -691,7 +469,7 @@ func loadBalancerServiceDeletionPlan(state *awsLoadBalancerCleanupState, cleanup
 	fallbackNeeded := false
 	for uid := range state.progress.Services {
 		service, present := state.currentServices[uid]
-		if !present || !isNonIngressLoadBalancerService(*service) {
+		if !present || service.Spec.Type != corev1.ServiceTypeLoadBalancer {
 			continue
 		}
 		if hasCustomLoadBalancerClass(*service) {
@@ -722,33 +500,6 @@ func loadBalancerServiceDeletionPlan(state *awsLoadBalancerCleanupState, cleanup
 		fallbackKeys = fallbackKeys.Difference(directDeleteKeys)
 	}
 	return fallbackKeys.Union(directDeleteKeys), fallbackKeys, fallbackNeeded
-}
-
-func (r *reconciler) retireCompletedAWSLoadBalancerCleanupProgress(ctx context.Context, state *awsLoadBalancerCleanupState, result awsutil.LoadBalancerCleanupResult, serviceCleanupComplete map[string]bool) error {
-	if !result.OrphanTargetGroupScanSuccess {
-		return nil
-	}
-	for uid := range state.progress.Services {
-		if _, present := state.currentServices[uid]; !present && serviceCleanupComplete[uid] {
-			delete(state.progress.Services, uid)
-			state.progressChanged = true
-		}
-	}
-	if !state.progressChanged {
-		return nil
-	}
-	if len(state.progress.Services) == 0 {
-		if state.progressExists {
-			if err := r.cpClient.Delete(ctx, state.progressConfigMap); err != nil && !apierrors.IsNotFound(err) {
-				return newSafeLoadBalancerCleanupError("failed to retire completed AWS load balancer cleanup progress", err)
-			}
-		}
-		return nil
-	}
-	if err := r.saveAWSLoadBalancerCleanupProgress(ctx, state.progressConfigMap, state.progressExists, state.progress); err != nil {
-		return newSafeLoadBalancerCleanupError("failed to update AWS load balancer cleanup progress", err)
-	}
-	return nil
 }
 
 func awsLoadBalancerCleanupPendingMessage(cleanup awsLoadBalancerCandidateCleanup, result awsutil.LoadBalancerCleanupResult) string {
@@ -802,131 +553,6 @@ func (r *reconciler) ensureAWSLoadBalancersRemovedWithHook(ctx context.Context, 
 		return false, newSafeLoadBalancerCleanupError(safeCloudResourcesDestroyedErrorMessage(err), err)
 	}
 	return removed && !pending, nil
-}
-
-func (r *reconciler) loadAWSLoadBalancerCleanupProgress(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*awsLoadBalancerCleanupProgress, *corev1.ConfigMap, bool, error) {
-	if hcp.UID == "" {
-		return nil, nil, false, newSafeLoadBalancerCleanupError("HostedControlPlane UID is required to load AWS load balancer cleanup progress", nil)
-	}
-	if r.cpClient == nil {
-		return nil, nil, false, newSafeLoadBalancerCleanupError("management-cluster client is unavailable for AWS load balancer cleanup progress", nil)
-	}
-	progressReader := r.cpAPIReader
-	if progressReader == nil {
-		progressReader = r.cpClient
-	}
-	configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}}
-	if err := progressReader.Get(ctx, client.ObjectKeyFromObject(configMap), configMap); err != nil {
-		if apierrors.IsNotFound(err) {
-			region := ""
-			if hcp.Spec.Platform.AWS != nil {
-				region = hcp.Spec.Platform.AWS.Region
-			}
-			return &awsLoadBalancerCleanupProgress{HCPUID: hcp.UID, InfraID: hcp.Spec.InfraID, Region: region, Services: map[string]awsLoadBalancerServiceProof{}}, configMap, false, nil
-		}
-		return nil, nil, false, newSafeLoadBalancerCleanupError("failed to read AWS load balancer cleanup progress from management cluster", err)
-	}
-	serialized := configMap.Data[awsLoadBalancerProgressDataKey]
-	progress := &awsLoadBalancerCleanupProgress{}
-	if serialized == "" {
-		return nil, nil, false, newSafeLoadBalancerCleanupError(fmt.Sprintf("progress ConfigMap has no data for key %q", awsLoadBalancerProgressDataKey), nil)
-	}
-	if err := json.Unmarshal([]byte(serialized), progress); err != nil {
-		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress is invalid", fmt.Errorf("failed to unmarshal progress ConfigMap data: %w", err))
-	}
-	region := ""
-	if hcp.Spec.Platform.AWS != nil {
-		region = hcp.Spec.Platform.AWS.Region
-	}
-	if progress.HCPUID != hcp.UID {
-		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress UID does not match the HostedControlPlane", nil)
-	}
-	if progress.InfraID != hcp.Spec.InfraID {
-		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress InfraID does not match the HostedControlPlane", nil)
-	}
-	if progress.Region != "" && progress.Region != region {
-		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress AWS region does not match the HostedControlPlane", nil)
-	}
-	if progress.VPCID != "" && hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.CloudProviderConfig != nil && progress.VPCID != hcp.Spec.Platform.AWS.CloudProviderConfig.VPC {
-		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress VPC ID does not match the HostedControlPlane", nil)
-	}
-	if progress.Services == nil {
-		progress.Services = map[string]awsLoadBalancerServiceProof{}
-	}
-	return progress, configMap, true, nil
-}
-
-func ensureAWSLoadBalancerProgressOwnerReference(configMap *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) (bool, error) {
-	if len(configMap.OwnerReferences) > 1 || (len(configMap.OwnerReferences) == 1 && configMap.OwnerReferences[0].UID != hcp.UID) {
-		return false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress ConfigMap has an unexpected owner", nil)
-	}
-
-	controller := true
-	blockOwnerDeletion := false
-	expected := metav1.OwnerReference{
-		APIVersion:         hyperv1.GroupVersion.String(),
-		Kind:               "HostedControlPlane",
-		Name:               hcp.Name,
-		UID:                hcp.UID,
-		Controller:         &controller,
-		BlockOwnerDeletion: &blockOwnerDeletion,
-	}
-	if len(configMap.OwnerReferences) == 1 {
-		current := configMap.OwnerReferences[0]
-		if current.APIVersion == expected.APIVersion && current.Kind == expected.Kind && current.Name == expected.Name && current.UID == expected.UID && current.Controller != nil && *current.Controller && current.BlockOwnerDeletion != nil && !*current.BlockOwnerDeletion {
-			return false, nil
-		}
-	}
-	configMap.OwnerReferences = []metav1.OwnerReference{expected}
-	return true, nil
-}
-
-func (r *reconciler) saveAWSLoadBalancerCleanupProgress(ctx context.Context, configMap *corev1.ConfigMap, exists bool, progress *awsLoadBalancerCleanupProgress) error {
-	serialized, err := json.Marshal(progress)
-	if err != nil {
-		return fmt.Errorf("failed to serialize AWS load balancer cleanup progress: %w", err)
-	}
-	if !exists {
-		if configMap.Data == nil {
-			configMap.Data = map[string]string{}
-		}
-		configMap.Data[awsLoadBalancerProgressDataKey] = string(serialized)
-		return r.cpClient.Create(ctx, configMap)
-	}
-
-	progressKey := client.ObjectKeyFromObject(configMap)
-	progressReader := r.cpAPIReader
-	if progressReader == nil {
-		progressReader = r.cpClient
-	}
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		latest := &corev1.ConfigMap{}
-		if err := progressReader.Get(ctx, progressKey, latest); err != nil {
-			return err
-		}
-		// A retry must not overwrite progress that changed identity or ownership
-		// after the initial validation.
-		latestProgress := &awsLoadBalancerCleanupProgress{}
-		if err := json.Unmarshal([]byte(latest.Data[awsLoadBalancerProgressDataKey]), latestProgress); err != nil {
-			return newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress is invalid", err)
-		}
-		if latestProgress.HCPUID != progress.HCPUID || latestProgress.InfraID != progress.InfraID ||
-			(latestProgress.Region != "" && latestProgress.Region != progress.Region) ||
-			(latestProgress.VPCID != "" && latestProgress.VPCID != progress.VPCID) {
-			return newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress identity changed before update", nil)
-		}
-		if len(latest.OwnerReferences) > 1 || (len(latest.OwnerReferences) == 1 && latest.OwnerReferences[0].UID != progress.HCPUID) {
-			return newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress ConfigMap has an unexpected owner", nil)
-		}
-		latest.Data[awsLoadBalancerProgressDataKey] = string(serialized)
-		latest.OwnerReferences = configMap.OwnerReferences
-		return r.cpClient.Update(ctx, latest)
-	})
-}
-
-func awsLoadBalancerProgressConfigMapName(uid types.UID) string {
-	digest := sha256.Sum256([]byte(uid))
-	return "aws-lb-cleanup-" + hex.EncodeToString(digest[:12])
 }
 
 func loadBalancerCandidatesForService(service corev1.Service) []awsLoadBalancerCandidate {

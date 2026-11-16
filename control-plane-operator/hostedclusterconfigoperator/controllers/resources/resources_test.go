@@ -1902,11 +1902,11 @@ func TestLoadAWSLoadBalancerCleanupProgress(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Namespace: progressKey.Namespace, Name: progressKey.Name},
 			Data:       data,
 		}).Build()
-		var cpClient client.Client = managementClient
+		var progressReader client.Reader = managementClient
 		if getErr != nil {
-			cpClient = &failingProgressReadClient{Client: managementClient, err: getErr}
+			progressReader = &failingProgressReadClient{Client: managementClient, err: getErr}
 		}
-		_, _, _, err := (&reconciler{cpClient: cpClient}).loadAWSLoadBalancerCleanupProgress(t.Context(), hcp)
+		_, _, _, err := (&reconciler{cpClient: managementClient, cpAPIReader: progressReader}).loadAWSLoadBalancerCleanupProgress(t.Context(), hcp)
 		return err
 	}
 
@@ -1932,6 +1932,14 @@ func TestLoadAWSLoadBalancerCleanupProgress(t *testing.T) {
 		g.Expect(err).To(MatchError("failed to read AWS load balancer cleanup progress from management cluster"))
 		g.Expect(errors.Is(err, readErr)).To(BeTrue())
 		g.Expect(err.Error()).NotTo(ContainSubstring(endpoint))
+	})
+
+	t.Run("When the uncached management reader is unavailable, it should not fall back to the cached client", func(t *testing.T) {
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		_, _, _, err := (&reconciler{cpClient: managementClient}).loadAWSLoadBalancerCleanupProgress(t.Context(), hcp)
+
+		g := NewGomegaWithT(t)
+		g.Expect(err).To(MatchError("uncached management-cluster reader is unavailable for AWS load balancer cleanup progress"))
 	})
 
 	t.Run("When persisted identity fields differ, it should identify only the mismatched field", func(t *testing.T) {
@@ -1983,6 +1991,25 @@ func TestLoadAWSLoadBalancerCleanupProgress(t *testing.T) {
 }
 
 func TestSaveAWSLoadBalancerCleanupProgress(t *testing.T) {
+	t.Run("When updating existing progress without an uncached reader, it should fail before using the cached client", func(t *testing.T) {
+		ctx := t.Context()
+		key := client.ObjectKey{Namespace: "test-hcp", Name: "aws-lb-cleanup-test"}
+		original := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: key.Namespace, Name: key.Name},
+			Data:       map[string]string{awsLoadBalancerProgressDataKey: `{"hcpUID":"hcp-uid","infraID":"infra-id","services":{}}`},
+		}
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(original).Build()
+		progress := &awsLoadBalancerCleanupProgress{HCPUID: "hcp-uid", InfraID: "infra-id", Services: map[string]awsLoadBalancerServiceProof{}}
+
+		err := (&reconciler{cpClient: managementClient}).saveAWSLoadBalancerCleanupProgress(ctx, original.DeepCopy(), true, progress)
+
+		g := NewGomegaWithT(t)
+		g.Expect(err).To(MatchError("uncached management-cluster reader is unavailable for AWS load balancer cleanup progress updates"))
+		unchanged := &corev1.ConfigMap{}
+		g.Expect(managementClient.Get(ctx, key, unchanged)).To(Succeed())
+		g.Expect(unchanged.Data).To(Equal(original.Data))
+	})
+
 	t.Run("When an update conflicts, it should reread and preserve concurrent ConfigMap data", func(t *testing.T) {
 		ctx := t.Context()
 		key := client.ObjectKey{Namespace: "test-hcp", Name: "aws-lb-cleanup-test"}
@@ -2211,6 +2238,13 @@ func TestReconciler_PrepareAWSLoadBalancerCleanupState(t *testing.T) {
 	g.Expect(updated.OwnerReferences).To(ConsistOf(testHostedControlPlaneOwnerReference(hcp)))
 }
 
+func ensureAWSLoadBalancersRemovedWithDirectTestReader(ctx context.Context, r *reconciler, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	if r.cpAPIReader == nil {
+		r.cpAPIReader = r.cpClient
+	}
+	return r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+}
+
 func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-hcp", UID: "hcp-uid"},
@@ -2246,14 +2280,14 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("failed to configure AWS load balancer clients"))
 		g.Expect(r.awsLoadBalancerClients.ELB).To(BeNil())
 		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{})).To(Succeed())
 
-		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err = ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("failed to configure AWS load balancer clients"))
 		g.Expect(factoryCalls).To(Equal(2))
@@ -2269,7 +2303,9 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			}}}},
 		}
 		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
-		removed, err := (&reconciler{client: guestClient, cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build()}).ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		r := &reconciler{client: guestClient, cpClient: managementClient}
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("failed to configure AWS load balancer clients"))
@@ -2291,7 +2327,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError(genericCloudResourceCleanupMessage))
@@ -2314,11 +2350,46 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{})).To(Succeed())
+	})
+
+	t.Run("When an ingress Service has a verified AWS load balancer, it should not wait for its CCM finalizer", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "router-default", Namespace: "openshift-ingress", UID: "ingress-service-uid",
+				Annotations: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"},
+				Finalizers:  []string{kubernetesLoadBalancerCleanupFinalizer},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "ingress-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{name: "ingress-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		r := &reconciler{
+			client:      guestClient,
+			cpClient:    managementClient,
+			cpAPIReader: managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB: elbClient, ELBV2: &progressTestELBV2Client{},
+			},
+		}
+
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(removed).To(BeTrue())
+		g.Expect(elbClient.deleteCalls).To(Equal(1))
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
+		g.Expect(remaining.Finalizers).To(ContainElement(kubernetesLoadBalancerCleanupFinalizer))
 	})
 
 	t.Run("When no load balancer Services exist, it should report cleanup complete", func(t *testing.T) {
@@ -2332,7 +2403,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 				return awsutil.LoadBalancerClients{}, nil
 			},
 		}
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
@@ -2366,7 +2437,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 		}
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcpWithoutVPC)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcpWithoutVPC)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS VPC configuration is missing; Kubernetes cleanup was requested, but AWS load balancer ownership cannot be verified and AWS resources may remain"))
@@ -2394,7 +2465,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcpWithoutVPC)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcpWithoutVPC)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS VPC configuration is missing; Kubernetes Service cleanup also failed, AWS ownership cannot be verified, and AWS resources may remain"))
@@ -2419,7 +2490,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 		}
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
@@ -2499,7 +2570,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			var logOutput bytes.Buffer
 			logCore := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&logOutput), zapcore.InfoLevel)
 			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zap.New(logCore)))
-			removed, err := r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+			removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(ctx, r, hcp)
 			g := NewGomegaWithT(t)
 			g.Expect(removed).To(BeFalse())
 			g.Expect(err).ToNot(HaveOccurred())
@@ -2533,7 +2604,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
 		r := &reconciler{client: guestClient, cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build()}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).ToNot(HaveOccurred())
@@ -2597,7 +2668,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 				ELBV2: elbv2Client,
 			},
 		}
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).ToNot(HaveOccurred())
@@ -2631,7 +2702,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
@@ -2676,7 +2747,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).ToNot(HaveOccurred())
@@ -2692,7 +2763,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		updatedService.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com"}}
 		g.Expect(guestClient.Status().Update(t.Context(), updatedService)).To(Succeed())
 
-		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err = ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(removed).To(BeTrue())
 		g.Expect(elbClient.deleteCalls).To(Equal(1))
@@ -2725,7 +2796,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		}
 		g := NewGomegaWithT(t)
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(elbClient.describeCalls).To(BeZero())
@@ -2744,7 +2815,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		}
 		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
 
-		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err = ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(elbClient.describeCalls).To(Equal(0))
@@ -2771,7 +2842,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("failed to persist AWS load balancer cleanup candidates; no AWS deletion was attempted"))
@@ -2832,7 +2903,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(ctx, r, hcp)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("failed to persist verified AWS identities; no AWS deletion was attempted"))
 		g.Expect(errors.Is(err, context.Canceled)).To(BeTrue())
@@ -2873,7 +2944,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(errors.Is(err, awsutil.ErrDescribeTagsAccessDenied)).To(BeTrue())
@@ -2913,7 +2984,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS load balancer deletion failed; resources may remain"))
@@ -2945,7 +3016,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS orphan target-group cleanup failed; resources may remain"))
@@ -2959,7 +3030,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 
 		cachedManagementClient.staleProgressConfigMapReads = true
 		g.Expect(apierrors.IsNotFound(cachedManagementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
-		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err = ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(elbClient.deleteCalls).To(Equal(1))
@@ -3014,7 +3085,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 				awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 			}
 
-			removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+			removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 			g.Expect(removed).To(BeFalse())
 			g.Expect(errors.Is(err, deleteErr)).To(BeTrue())
 			g.Expect(err.Error()).To(ContainSubstring("failed to retire"))
@@ -3024,7 +3095,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			g.Expect(persisted.Data).To(Equal(configMap.Data))
 
 			failDelete = false
-			removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+			removed, err = ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(removed).To(BeTrue())
 			g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), client.ObjectKeyFromObject(configMap), &corev1.ConfigMap{}))).To(BeTrue())
@@ -3073,7 +3144,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS orphan target-group cleanup failed; resources may remain"))
@@ -3090,7 +3161,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			Name: lbName, Type: awsutil.V2LoadBalancerResource, ARN: lbARN, VPCID: "vpc-owned",
 		}))
 
-		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err = ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(elbv2Client.deleteOrder).To(Equal([]string{"listener", "load-balancer", "target-group"}), "retrying a recorded NotFound identity must not issue a second deletion")
@@ -3125,7 +3196,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		}
 		g := NewGomegaWithT(t)
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(errors.Is(err, awsutil.ErrDescribeTagsAccessDenied)).To(BeTrue())
 		g.Expect(elbClient.deleteCalls).To(BeZero())
@@ -3143,7 +3214,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		}
 		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
 
-		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err = ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(elbClient.deleteCalls).To(BeZero())
@@ -3171,7 +3242,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS load balancer ownership could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
@@ -3201,7 +3272,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS load balancer ownership or deletion could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
@@ -3239,7 +3310,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
@@ -3251,7 +3322,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		updatedService.Finalizers = []string{"example.com/custom-lb-cleanup"}
 		g.Expect(guestClient.Update(t.Context(), updatedService)).To(Succeed())
 
-		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err = ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(elbClient.deleteCalls).To(Equal(1), "historical AWS proof must not bypass the current Service class")
@@ -3281,7 +3352,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(t.Context(), r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS load balancer ownership or deletion could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
@@ -3321,7 +3392,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+		removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(ctx, r, hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS load balancer ownership or deletion could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
@@ -3349,7 +3420,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 			g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue())
 		}
 
-		removed, err = r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+		removed, err = ensureAWSLoadBalancersRemovedWithDirectTestReader(ctx, r, hcp)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(elbClient.describeCalls).To(BeZero())
@@ -3406,7 +3477,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 				awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
 			}
 
-			removed, err := r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+			removed, err := ensureAWSLoadBalancersRemovedWithDirectTestReader(ctx, r, hcp)
 			g := NewGomegaWithT(t)
 			g.Expect(removed).To(BeFalse())
 			g.Expect(err).To(MatchError("AWS load balancer ownership or deletion could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
@@ -3525,6 +3596,7 @@ func testDestroyCloudResourcesRedactsAWSDetailsFromCondition(t *testing.T) {
 				client:                 guestClient,
 				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 				cpClient:               managementClient,
+				cpAPIReader:            managementClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
 				awsLoadBalancerClients: awsClients,
@@ -3643,8 +3715,13 @@ func TestLoadBalancerNamesFromServices(t *testing.T) {
 				{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "ingress-lb-789.us-east-1.elb.amazonaws.com"}}}}},
 				{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "ingress-label-lb-789.us-east-1.elb.amazonaws.com"}}}}},
 			},
-			want:              []string{"cluster-lb"},
-			wantNamedServices: []client.ObjectKey{{Namespace: "default", Name: "service-1"}, {Namespace: "default", Name: "service-2"}},
+			want: []string{"cluster-lb", "ingress-label-lb", "ingress-lb"},
+			wantNamedServices: []client.ObjectKey{
+				{Namespace: "default", Name: "service-1"},
+				{Namespace: "default", Name: "service-2"},
+				{Namespace: "default", Name: "service-3"},
+				{Namespace: "default", Name: "service-4"},
+			},
 		},
 		{
 			name:                "When a LoadBalancer Service has no hostname, it should be returned for Kubernetes cleanup",

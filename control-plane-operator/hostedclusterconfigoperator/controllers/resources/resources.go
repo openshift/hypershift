@@ -2994,9 +2994,10 @@ func loadBalancerNamesFromServices(services []corev1.Service) ([]string, sets.Se
 	servicesWithLoadBalancerClass := sets.New[client.ObjectKey]()
 	servicesWithoutNames := sets.New[client.ObjectKey]()
 	for _, service := range services {
-		if !isNonIngressLoadBalancerService(service) {
+		if service.Spec.Type != corev1.ServiceTypeLoadBalancer {
 			continue
 		}
+		// AWS cleanup includes ingress-owned Services because their CCM finalizer can be stuck too.
 		if hasCustomLoadBalancerClass(service) {
 			// Let the selected controller observe deletion and finalize its own cloud resources.
 			servicesWithLoadBalancerClass.Insert(client.ObjectKeyFromObject(&service))

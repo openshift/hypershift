@@ -22,35 +22,51 @@ import (
 )
 
 func TestDestroyPlatformSpecifics(t *testing.T) {
-	g := NewGomegaWithT(t)
-	originalRunDestroyInfra := runDestroyInfra
-	t.Cleanup(func() { runDestroyInfra = originalRunDestroyInfra })
-
-	infraFinished := false
-	postDeleteCalled := false
-	postDeleteObservedInfraFinished := false
-	runDestroyInfra = func(_ context.Context, _ *awsinfra.DestroyInfraOptions) error {
-		infraFinished = true
-		return errors.New("infra failure")
+	tests := []struct {
+		name     string
+		infraErr error
+	}{
+		{
+			name:     "When infrastructure deletion fails, it should run the post-delete action after the attempt",
+			infraErr: errors.New("infra failure"),
+		},
+		{
+			name: "When infrastructure deletion succeeds, it should run the post-delete action after completion",
+		},
 	}
 
-	err := destroyPlatformSpecifics(t.Context(), &core.DestroyOptions{
-		InfraID: "infra-id",
-		Name:    "cluster",
-		Log:     logr.Discard(),
-		AWSPlatform: core.AWSPlatformDestroyOptions{
-			Region:      "us-east-1",
-			PreserveIAM: true,
-			PostDeleteAction: func() {
-				postDeleteCalled = true
-				postDeleteObservedInfraFinished = infraFinished
-			},
-		},
-	}, nil)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			infraFinished := false
+			postDeleteCalled := false
+			postDeleteObservedInfraFinished := false
+			err := destroyPlatformSpecifics(t.Context(), &core.DestroyOptions{
+				InfraID: "infra-id",
+				Name:    "cluster",
+				Log:     logr.Discard(),
+				AWSPlatform: core.AWSPlatformDestroyOptions{
+					Region:      "us-east-1",
+					PreserveIAM: true,
+					PostDeleteAction: func() {
+						postDeleteCalled = true
+						postDeleteObservedInfraFinished = infraFinished
+					},
+				},
+			}, nil, func(context.Context, *awsinfra.DestroyInfraOptions) error {
+				infraFinished = true
+				return test.infraErr
+			})
 
-	g.Expect(err).To(MatchError(ContainSubstring("failed to destroy infrastructure")))
-	g.Expect(postDeleteCalled).To(BeTrue())
-	g.Expect(postDeleteObservedInfraFinished).To(BeTrue())
+			if test.infraErr != nil {
+				g.Expect(err).To(MatchError(ContainSubstring("failed to destroy infrastructure")))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			g.Expect(postDeleteCalled).To(BeTrue())
+			g.Expect(postDeleteObservedInfraFinished).To(BeTrue())
+		})
+	}
 }
 
 func TestValidateCredentialInfoWithoutClient(t *testing.T) {
