@@ -71,6 +71,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	testingclock "k8s.io/utils/clock/testing"
@@ -257,6 +258,112 @@ func TestReconcileEtcdCerts(t *testing.T) {
 					}
 				}
 			}
+		})
+	}
+}
+
+func TestHostedControlPlaneReconciler_ValidateConfigAndClusterCapabilities(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+	}{
+		{
+			name:   "When key is invalid it should drop the label without blocking validation",
+			labels: map[string]string{"not/a valid key": "platform"},
+		},
+		{
+			name:   "When value is invalid it should drop the label without blocking validation",
+			labels: map[string]string{"team": "invalid/value"},
+		},
+		{
+			name:   "When key is operator-owned it should drop the label without blocking validation",
+			labels: map[string]string{"control-plane": "attacker"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Labels: tt.labels}}
+			g := NewWithT(t)
+
+			g.Expect((&HostedControlPlaneReconciler{}).validateConfigAndClusterCapabilities(t.Context(), hcp)).To(Succeed())
+			filtered, warnings := controlplanecomponent.FilterUserLabels(hcp.Spec.Labels)
+			g.Expect(filtered).To(BeEmpty())
+			g.Expect(warnings).To(HaveLen(1))
+		})
+	}
+}
+
+func TestHostedControlPlaneReconciler_ReconcileUserLabels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		labels          map[string]string
+		useRecorder     bool
+		expectedEvent   string
+		expectedStatus  metav1.ConditionStatus
+		expectedReason  string
+		expectedMessage string
+	}{
+		{
+			name:            "When labels are valid it should report the condition as true without an event",
+			labels:          map[string]string{"team": "platform"},
+			useRecorder:     true,
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "All user labels are valid",
+		},
+		{
+			name:            "When labels are invalid it should report the condition as false and emit a warning event",
+			labels:          map[string]string{"control-plane": "attacker"},
+			useRecorder:     true,
+			expectedEvent:   `Warning InvalidUserLabels Ignoring invalid spec.labels: label "control-plane" is reserved for HyperShift control-plane use`,
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.InvalidUserLabelsReason,
+			expectedMessage: `Ignoring invalid spec.labels: label "control-plane" is reserved for HyperShift control-plane use`,
+		},
+		{
+			name:            "When no recorder is configured it should set the condition without panicking",
+			labels:          map[string]string{"control-plane": "attacker"},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.InvalidUserLabelsReason,
+			expectedMessage: `Ignoring invalid spec.labels: label "control-plane" is reserved for HyperShift control-plane use`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var fakeRecorder *record.FakeRecorder
+			var eventRecorder record.EventRecorder
+			if tt.useRecorder {
+				fakeRecorder = record.NewFakeRecorder(1)
+				eventRecorder = fakeRecorder
+			}
+			reconciler := &HostedControlPlaneReconciler{Recorder: eventRecorder}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Generation: 3},
+				Spec:       hyperv1.HostedControlPlaneSpec{Labels: tt.labels},
+			}
+
+			reconciler.reconcileUserLabels(hcp)
+
+			g := NewWithT(t)
+			condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidUserLabels))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(tt.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tt.expectedReason))
+			g.Expect(condition.Message).To(Equal(tt.expectedMessage))
+			g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
+			if tt.expectedEvent == "" {
+				if fakeRecorder != nil {
+					g.Expect(fakeRecorder.Events).To(BeEmpty())
+				}
+				return
+			}
+			g.Expect(fakeRecorder.Events).To(Receive(Equal(tt.expectedEvent)))
 		})
 	}
 }

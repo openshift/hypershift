@@ -129,6 +129,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
@@ -179,6 +180,8 @@ const (
 type HostedControlPlaneReconciler struct {
 	client.Client
 
+	Recorder record.EventRecorder
+
 	GVKAccessChecker component.GVKAccessChecker
 
 	components []component.ControlPlaneComponent
@@ -221,6 +224,7 @@ type HostedControlPlaneReconciler struct {
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
+	r.Recorder = mgr.GetEventRecorderFor("hostedcontrolplane-controller")
 	if r.clock == nil {
 		r.clock = clock.RealClock{}
 	}
@@ -752,6 +756,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
+	r.reconcileUserLabels(hostedControlPlane)
 
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
 		return r.reconcileDeletion(ctx, hostedControlPlane)
@@ -1302,6 +1307,26 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 	}
 
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileUserLabels(hcp *hyperv1.HostedControlPlane) {
+	_, warnings := component.FilterUserLabels(hcp.Spec.Labels)
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidUserLabels),
+		ObservedGeneration: hcp.Generation,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "All user labels are valid",
+	}
+	if len(warnings) > 0 {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.InvalidUserLabelsReason
+		condition.Message = fmt.Sprintf("Ignoring invalid spec.labels: %s", strings.Join(warnings, "; "))
+		if r.Recorder != nil {
+			r.Recorder.Eventf(hcp, corev1.EventTypeWarning, hyperv1.InvalidUserLabelsReason, "%s", condition.Message)
+		}
+	}
+	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 }
 
 func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {

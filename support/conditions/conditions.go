@@ -18,6 +18,7 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		hyperv1.EtcdAvailable:                         metav1.ConditionTrue,
 		hyperv1.ValidReleaseInfo:                      metav1.ConditionTrue,
 		hyperv1.ValidHostedClusterConfiguration:       metav1.ConditionTrue,
+		hyperv1.ValidUserLabels:                       metav1.ConditionTrue,
 		hyperv1.SupportedHostedCluster:                metav1.ConditionTrue,
 		hyperv1.ClusterVersionSucceeding:              metav1.ConditionTrue,
 		hyperv1.ClusterVersionAvailable:               metav1.ConditionTrue,

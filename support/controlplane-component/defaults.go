@@ -263,15 +263,22 @@ func (c *controlPlaneWorkload[T]) setLabels(podTemplate *corev1.PodTemplateSpec,
 		podTemplate.Labels = map[string]string{}
 	}
 
+	userLabels, _ := FilterUserLabels(hcp.Spec.Labels)
+	for key, value := range userLabels {
+		podTemplate.Labels[key] = value
+	}
+
 	podTemplate.Labels[hyperv1.ControlPlaneComponentLabel] = c.Name()
 	if c.NeedsManagementKASAccess() {
 		podTemplate.Labels[config.NeedManagementKASAccessLabel] = "true"
+	} else {
+		delete(podTemplate.Labels, config.NeedManagementKASAccessLabel)
 	}
 	if c.IsRequestServing() {
 		podTemplate.Labels[hyperv1.RequestServingComponentLabel] = "true"
+	} else {
+		delete(podTemplate.Labels, hyperv1.RequestServingComponentLabel)
 	}
-	// set additional Labels
-	maps.Copy(podTemplate.Labels, hcp.Spec.Labels)
 }
 
 // setControlPlaneIsolation configures tolerations and NodeAffinity rules to prefer Nodes with controlPlaneNodeLabel and clusterNodeLabel.
