@@ -16,43 +16,6 @@ limitations under the License.
 
 package v1beta1
 
-// PowerVSInstanceState describes the state of an IBM Power VS instance.
-type PowerVSInstanceState string
-
-var (
-	// PowerVSInstanceStateACTIVE is the string representing an instance in a ACTIVE state.
-	PowerVSInstanceStateACTIVE = PowerVSInstanceState("ACTIVE")
-
-	// PowerVSInstanceStateBUILD is the string representing an instance in a BUILD state.
-	PowerVSInstanceStateBUILD = PowerVSInstanceState("BUILD")
-
-	// PowerVSInstanceStateSHUTOFF is the string representing an instance in a SHUTOFF state.
-	PowerVSInstanceStateSHUTOFF = PowerVSInstanceState("SHUTOFF")
-
-	// PowerVSInstanceStateREBOOT is the string representing an instance in a REBOOT state.
-	PowerVSInstanceStateREBOOT = PowerVSInstanceState("REBOOT")
-
-	// PowerVSInstanceStateERROR is the string representing an instance in a ERROR state.
-	PowerVSInstanceStateERROR = PowerVSInstanceState("ERROR")
-)
-
-// PowerVSImageState describes the state of an IBM Power VS image.
-type PowerVSImageState string
-
-var (
-	// PowerVSImageStateACTIVE is the string representing an image in a active state.
-	PowerVSImageStateACTIVE = PowerVSImageState("active")
-
-	// PowerVSImageStateQue is the string representing an image in a queued state.
-	PowerVSImageStateQue = PowerVSImageState("queued")
-
-	// PowerVSImageStateFailed is the string representing an image in a failed state.
-	PowerVSImageStateFailed = PowerVSImageState("failed")
-
-	// PowerVSImageStateImporting is the string representing an image in a failed state.
-	PowerVSImageStateImporting = PowerVSImageState("importing")
-)
-
 // VPCLoadBalancerState describes the state of the load balancer.
 type VPCLoadBalancerState string
 

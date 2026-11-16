@@ -11,7 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/powervs/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 

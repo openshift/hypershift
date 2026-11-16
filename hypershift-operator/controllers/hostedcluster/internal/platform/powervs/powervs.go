@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/powervs/v1beta2"
 	ibmcapicore "sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,7 +48,7 @@ func (p PowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, crea
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint,
 ) (client.Object, error) {
-	ibmCluster := &capiibmv1.IBMPowerVSCluster{
+	ibmCluster := &capipowervs.IBMPowerVSCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hcluster.Name,
@@ -77,7 +77,7 @@ func (p PowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, crea
 	// downstream reconciliation of the CAPI Cluster resource.
 	ibmCluster.TypeMeta = metav1.TypeMeta{
 		Kind:       "IBMPowerVSCluster",
-		APIVersion: capiibmv1.GroupVersion.String(),
+		APIVersion: capipowervs.GroupVersion.String(),
 	}
 	return ibmCluster, nil
 }

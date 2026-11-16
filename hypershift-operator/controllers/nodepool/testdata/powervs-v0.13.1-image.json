@@ -1,0 +1,1 @@
+{"name":"workers-e6912e6a","spec":{"template":{"spec":{"serviceInstanceID":"service","image":{"id":"image-id"},"systemType":"s1122","processorType":"Shared","processors":"0.5","memoryGiB":32,"network":{}}}}}
