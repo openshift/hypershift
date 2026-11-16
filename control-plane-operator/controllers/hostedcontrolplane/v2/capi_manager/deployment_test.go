@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	"github.com/blang/semver"
 )
@@ -33,7 +34,11 @@ var staticManagerArgs = []string{
 	"--leader-elect-lease-duration=137s",
 	"--leader-elect-retry-period=26s",
 	"--leader-elect-renew-deadline=107s",
-	"--diagnostics-address=:8080",
+}
+
+// expectedDiagnosticsArgs are the args that bind the manager's diagnostics endpoint to the loopback interface.
+var expectedDiagnosticsArgs = []string{
+	"--diagnostics-address=127.0.0.1:8080",
 	"--insecure-diagnostics",
 }
 
@@ -86,29 +91,34 @@ func TestAdaptDeployment(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name             string
-		imageOverride    string
-		version          string
-		hcpAnnotations   map[string]string
-		tlsProfile       *configv1.TLSSecurityProfile
-		expectedArgs     []string
-		unexpectedArgs   []string
-		expectedImage    string
-		expectedAnnotKey string
+		name              string
+		imageOverride     string
+		version           string
+		hcpAnnotations    map[string]string
+		tlsProfile        *configv1.TLSSecurityProfile
+		expectedArgs      []string
+		unexpectedArgs    []string
+		expectedProxyArgs []string
+		expectedImage     string
+		expectedAnnotKey  string
 		// expectClientRateLimitArgs is whether the client rate limit flags must be set exactly once.
 		expectClientRateLimitArgs bool
 		// expectedFullArgs, when set, is the exact expected manager container args list.
 		expectedFullArgs []string
+		// expectNoDiagnosticsArgs is whether the manager must run without the diagnostics flags.
+		expectNoDiagnosticsArgs bool
 	}{
 		{
-			name:    "When version is 4.14.0, it should serve metrics over HTTP without the feature gate or skip CRD migration flags",
+			name:    "When version is 4.14.0 and the payload CAPI image is used, it should serve metrics through the TLS sidecar without the feature gate, skip CRD migration or diagnostics flags",
 			version: "4.14.0",
 			unexpectedArgs: []string{
 				"--feature-gates=MachineSetPreflightChecks=false",
 				"--skip-crd-migration-phases=StorageVersionMigration",
 				"--skip-crd-migration-phases=CleanupManagedFields",
 			},
-			expectedImage: "cluster-capi-controllers",
+			expectedImage:           "cluster-capi-controllers",
+			expectNoDiagnosticsArgs: true,
+			expectedFullArgs:        staticManagerArgs,
 		},
 		{
 			name:    "When version is 4.18.0, it should not add feature gate or skip CRD migration flags",
@@ -120,7 +130,7 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 			expectedImage:             "cluster-capi-controllers",
 			expectClientRateLimitArgs: false,
-			expectedFullArgs:          staticManagerArgs,
+			expectedFullArgs:          slices.Concat(staticManagerArgs, expectedDiagnosticsArgs),
 		},
 		{
 			name:    "When version is 4.19.0, it should add feature gate but not skip CRD migration phases",
@@ -172,11 +182,21 @@ func TestAdaptDeployment(t *testing.T) {
 			expectClientRateLimitArgs: true,
 		},
 		{
-			name:                      "When version is 4.22.0, it should not add TLS args",
+			name:                      "When version is 4.22.0, it should not add TLS args to the manager but should add them to the metrics sidecar",
 			version:                   "4.22.0",
 			tlsProfile:                &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
 			expectedArgs:              []string{"--feature-gates=MachineSetPreflightChecks=false"},
 			unexpectedArgs:            []string{"--tls-min-version=VersionTLS12"},
+			expectedProxyArgs:         []string{"--tls-min-version=VersionTLS12"},
+			expectedImage:             "cluster-capi-controllers",
+			expectClientRateLimitArgs: true,
+		},
+		{
+			name:                      "When the TLS profile is Modern, it should configure the metrics sidecar for TLS 1.3",
+			version:                   "5.0.0",
+			tlsProfile:                &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType, Modern: &configv1.ModernTLSProfile{}},
+			expectedArgs:              []string{"--tls-min-version=VersionTLS13"},
+			expectedProxyArgs:         []string{"--tls-min-version=VersionTLS13"},
 			expectedImage:             "cluster-capi-controllers",
 			expectClientRateLimitArgs: true,
 		},
@@ -202,7 +222,7 @@ func TestAdaptDeployment(t *testing.T) {
 			imageOverride:             backwardCompatibleCAPIImage("4.14.0"),
 			expectedImage:             backwardCompatibleCAPIImage("4.14.0"),
 			expectClientRateLimitArgs: true,
-			expectedFullArgs:          slices.Concat(staticManagerArgs, expectedClientRateLimitArgs),
+			expectedFullArgs:          slices.Concat(staticManagerArgs, expectedDiagnosticsArgs, expectedClientRateLimitArgs),
 		},
 		{
 			name:          "When version is 4.18.0 and the backward-compatible CAPI image is used, it should add the client rate limit args",
@@ -221,7 +241,7 @@ func TestAdaptDeployment(t *testing.T) {
 			imageOverride:             backwardCompatibleCAPIImage("4.20.0"),
 			expectedImage:             backwardCompatibleCAPIImage("4.20.0"),
 			expectClientRateLimitArgs: true,
-			expectedFullArgs: slices.Concat(staticManagerArgs, []string{
+			expectedFullArgs: slices.Concat(staticManagerArgs, expectedDiagnosticsArgs, []string{
 				"--feature-gates=MachineSetPreflightChecks=false",
 				"--skip-crd-migration-phases=StorageVersionMigration",
 				"--skip-crd-migration-phases=CleanupManagedFields",
@@ -255,7 +275,22 @@ func TestAdaptDeployment(t *testing.T) {
 			imageOverride:             "quay.io/custom/capi:v1.0.0",
 			expectedImage:             "quay.io/custom/capi:v1.0.0",
 			expectClientRateLimitArgs: false,
-			expectedFullArgs:          staticManagerArgs,
+			expectedFullArgs:          slices.Concat(staticManagerArgs, expectedDiagnosticsArgs),
+		},
+		{
+			name:                    "When version is 4.15.0 and a user-provided image override is set, it should not add the diagnostics flags",
+			version:                 "4.15.0",
+			imageOverride:           "quay.io/custom/capi:v1.0.0",
+			expectedImage:           "quay.io/custom/capi:v1.0.0",
+			expectNoDiagnosticsArgs: true,
+			expectedFullArgs:        staticManagerArgs,
+		},
+		{
+			name:             "When version is 4.16.0-rc.1 and a user-provided image override is set, it should add the diagnostics flags",
+			version:          "4.16.0-rc.1",
+			imageOverride:    "quay.io/custom/capi:v1.0.0",
+			expectedImage:    "quay.io/custom/capi:v1.0.0",
+			expectedFullArgs: slices.Concat(staticManagerArgs, expectedDiagnosticsArgs),
 		},
 		{
 			name:                      "When version is 4.19.0-rc.2 and a user-provided image override is set, it should not add the client rate limit args",
@@ -338,15 +373,65 @@ func TestAdaptDeployment(t *testing.T) {
 			// Check image
 			g.Expect(managerContainer.Image).To(Equal(tc.expectedImage))
 
-			// Every version serves metrics over plain HTTP on the named metrics port, so the cluster-api
-			// PodMonitor can scrape it without TokenReview/SubjectAccessReview permissions.
-			g.Expect(countArg(managerContainer.Args, "--diagnostics-address=:8080")).To(Equal(1))
-			g.Expect(countArg(managerContainer.Args, "--insecure-diagnostics")).To(Equal(1))
-			g.Expect(managerContainer.Ports).To(ConsistOf(corev1.ContainerPort{
+			// The manager serves its diagnostics over plain HTTP on the loopback interface only, so
+			// they are not reachable from outside the pod. A manager that does not register the
+			// diagnostics flags runs without them.
+			if tc.expectNoDiagnosticsArgs {
+				g.Expect(managerContainer.Args).ToNot(ContainElement(HavePrefix("--diagnostics-address")))
+				g.Expect(managerContainer.Args).ToNot(ContainElement("--insecure-diagnostics"))
+			} else {
+				g.Expect(countArg(managerContainer.Args, "--diagnostics-address=127.0.0.1:8080")).To(Equal(1))
+				g.Expect(countArg(managerContainer.Args, "--insecure-diagnostics")).To(Equal(1))
+			}
+			g.Expect(managerContainer.Args).ToNot(ContainElement("--diagnostics-address=:8080"))
+			g.Expect(managerContainer.Ports).To(BeEmpty())
+
+			// The kube-rbac-proxy sidecar is the only metrics endpoint: it serves TLS with the
+			// HyperShift-issued serving certificate, requires the metrics-client certificate and
+			// only proxies /metrics to the loopback diagnostics endpoint.
+			proxyContainer := podspec.FindContainer("kube-rbac-proxy", deployment.Spec.Template.Spec.Containers)
+			g.Expect(proxyContainer).ToNot(BeNil())
+			g.Expect(proxyContainer.Image).To(Equal("kube-rbac-proxy"))
+			g.Expect(proxyContainer.Args).To(ContainElements(
+				"--secure-listen-address=:8444",
+				"--upstream=http://127.0.0.1:8080/",
+				"--tls-cert-file=/etc/tls/private/tls.crt",
+				"--tls-private-key-file=/etc/tls/private/tls.key",
+				"--client-ca-file=/etc/tls/client/ca.crt",
+				"--config-file=/etc/kube-rbac-proxy/config.yaml",
+				"--allow-paths=/metrics",
+			))
+			g.Expect(proxyContainer.Args).To(ContainElement(HavePrefix("--tls-min-version=")))
+			g.Expect(proxyContainer.Args).ToNot(ContainElement(HavePrefix("--ignore-paths")))
+			for _, expectedArg := range tc.expectedProxyArgs {
+				g.Expect(countArg(proxyContainer.Args, expectedArg)).To(Equal(1))
+			}
+			g.Expect(proxyContainer.Ports).To(ConsistOf(corev1.ContainerPort{
 				Name:          "metrics",
-				ContainerPort: 8080,
+				ContainerPort: 8444,
 				Protocol:      corev1.ProtocolTCP,
 			}))
+			g.Expect(proxyContainer.VolumeMounts).To(ConsistOf(
+				corev1.VolumeMount{Name: "metrics-tls", MountPath: "/etc/tls/private", ReadOnly: true},
+				corev1.VolumeMount{Name: "metrics-client-ca", MountPath: "/etc/tls/client", ReadOnly: true},
+				corev1.VolumeMount{Name: "kube-rbac-proxy-config", MountPath: "/etc/kube-rbac-proxy", ReadOnly: true},
+			))
+
+			// A missing metrics certificate must never keep the manager container from starting, and
+			// only the CA is projected from the metrics-client secret, not its private key.
+			volumes := map[string]corev1.Volume{}
+			for _, v := range deployment.Spec.Template.Spec.Volumes {
+				volumes[v.Name] = v
+			}
+			g.Expect(volumes["metrics-tls"].Secret).ToNot(BeNil())
+			g.Expect(volumes["metrics-tls"].Secret.SecretName).To(Equal("cluster-api-metrics-tls"))
+			g.Expect(volumes["metrics-tls"].Secret.Optional).To(Equal(ptr.To(true)))
+			g.Expect(volumes["metrics-client-ca"].Secret).ToNot(BeNil())
+			g.Expect(volumes["metrics-client-ca"].Secret.SecretName).To(Equal("metrics-client"))
+			g.Expect(volumes["metrics-client-ca"].Secret.Items).To(ConsistOf(corev1.KeyToPath{Key: "ca.crt", Path: "ca.crt"}))
+			g.Expect(volumes["metrics-client-ca"].Secret.Optional).To(Equal(ptr.To(true)))
+			g.Expect(volumes["kube-rbac-proxy-config"].ConfigMap).ToNot(BeNil())
+			g.Expect(volumes["kube-rbac-proxy-config"].ConfigMap.Name).To(Equal("cluster-api-kube-rbac-proxy"))
 
 			// The health probe server and the webhook server are unchanged.
 			g.Expect(managerContainer.Args).ToNot(ContainElement(HavePrefix("--health-addr")))

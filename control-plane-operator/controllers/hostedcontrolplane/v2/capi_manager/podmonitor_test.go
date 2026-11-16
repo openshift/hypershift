@@ -10,11 +10,37 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/k8sutil"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
+
+// expectedTLSConfig is the scrape TLS configuration shared with the other secured hosted control
+// plane monitors: trust the root CA, present the metrics-client certificate and verify the
+// server name of the kube-rbac-proxy serving certificate.
+func expectedTLSConfig() *prometheusoperatorv1.SafeTLSConfig {
+	return &prometheusoperatorv1.SafeTLSConfig{
+		CA: prometheusoperatorv1.SecretOrConfigMap{
+			ConfigMap: &corev1.ConfigMapKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "root-ca"},
+				Key:                  "ca.crt",
+			},
+		},
+		Cert: prometheusoperatorv1.SecretOrConfigMap{
+			Secret: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "metrics-client"},
+				Key:                  "tls.crt",
+			},
+		},
+		KeySecret: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "metrics-client"},
+			Key:                  "tls.key",
+		},
+		ServerName: ptr.To(metricsServerName),
+	}
+}
 
 func TestAdaptPodMonitor(t *testing.T) {
 	t.Parallel()
@@ -73,7 +99,8 @@ func TestAdaptPodMonitor(t *testing.T) {
 			podMonitor, ok := obj.(*prometheusoperatorv1.PodMonitor)
 			g.Expect(ok).To(BeTrue(), "expected embedded podmonitor.yaml to decode into a PodMonitor, got %T", obj)
 
-			// The embedded asset defines what is scraped: the metrics port of the cluster-api pods over HTTP.
+			// The embedded asset defines what is scraped: the metrics port of the cluster-api pods over
+			// HTTPS, verified against the root CA and authenticated with the metrics-client certificate.
 			g.Expect(podMonitor.Name).To(Equal("cluster-api"))
 			g.Expect(podMonitor.Spec.Selector.MatchLabels).To(Equal(map[string]string{"app": "cluster-api"}))
 			g.Expect(podMonitor.Spec.PodMetricsEndpoints).To(HaveLen(1))
@@ -81,7 +108,8 @@ func TestAdaptPodMonitor(t *testing.T) {
 			g.Expect(endpoint.Port).To(Equal(ptr.To("metrics")))
 			g.Expect(endpoint.Path).To(Equal("/metrics"))
 			g.Expect(endpoint.Interval).To(Equal(prometheusoperatorv1.Duration("30s")))
-			g.Expect(endpoint.Scheme).To(Equal(ptr.To(prometheusoperatorv1.Scheme("http"))))
+			g.Expect(endpoint.Scheme).To(Equal(ptr.To(prometheusoperatorv1.Scheme("https"))))
+			g.Expect(endpoint.TLSConfig).To(Equal(expectedTLSConfig()))
 
 			if tc.removeEndpoints {
 				podMonitor.Spec.PodMetricsEndpoints = nil
@@ -123,7 +151,8 @@ func TestAdaptPodMonitor(t *testing.T) {
 			// Adapting must not change the scrape target defined by the asset.
 			g.Expect(adaptedEndpoint.Port).To(Equal(ptr.To("metrics")))
 			g.Expect(adaptedEndpoint.Path).To(Equal("/metrics"))
-			g.Expect(adaptedEndpoint.Scheme).To(Equal(ptr.To(prometheusoperatorv1.Scheme("http"))))
+			g.Expect(adaptedEndpoint.Scheme).To(Equal(ptr.To(prometheusoperatorv1.Scheme("https"))))
+			g.Expect(adaptedEndpoint.TLSConfig).To(Equal(expectedTLSConfig()))
 
 			if tc.expectedAnnotations == nil {
 				g.Expect(podMonitor.Annotations).ToNot(HaveKey(k8sutil.HostedClusterAnnotation))

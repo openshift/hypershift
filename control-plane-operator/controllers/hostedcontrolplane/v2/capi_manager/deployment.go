@@ -32,6 +32,20 @@ var clientRateLimitArgs = []string{
 	"--clustercache-client-burst=200",
 }
 
+// diagnosticsArgs serve the CAPI manager's diagnostics endpoint, including
+// /metrics, over plain HTTP on the loopback interface. Only the kube-rbac-proxy
+// sidecar can reach it there, and the sidecar serves it over TLS.
+var diagnosticsArgs = []string{
+	"--diagnostics-address=127.0.0.1:8080",
+	"--insecure-diagnostics",
+}
+
+// minDiagnosticsArgsVersion is the first OCP version whose CAPI manager (CAPI
+// 1.6 or later) registers the diagnostics flags. The CAPI managers of OCP 4.14
+// and 4.15 only have --metrics-bind-addr, which already defaults to plain HTTP
+// on localhost:8080. The prerelease suffix includes the 4.16 prereleases.
+var minDiagnosticsArgsVersion = semver.MustParse("4.16.0-0")
+
 func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	versionStr := cpContext.ReleaseImageProvider.Version()
 	version, err := semver.Parse(versionStr)
@@ -56,7 +70,18 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 		capi.imageOverride == backwardcompat.GetBackwardCompatibleCAPIImage(version)
 	supportsClientRateLimitArgs := version.GE(config.Version419) || usesBackwardCompatibleImage
 
+	// The diagnostics flags follow the same rule: an image that does not
+	// register them fails to start with them. Without them, an older manager
+	// still serves plain HTTP metrics on localhost:8080, which is the sidecar's
+	// upstream. A newer manager falls back to its default secure endpoint on
+	// :8443, which does not collide with the sidecar on :8444. The manager keeps
+	// running in both cases.
+	supportsDiagnosticsArgs := version.GE(minDiagnosticsArgsVersion) || usesBackwardCompatibleImage
+
 	podspec.UpdateContainer("manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		if supportsDiagnosticsArgs {
+			c.Args = append(c.Args, diagnosticsArgs...)
+		}
 		if version.GE(config.Version419) {
 			c.Args = append(c.Args, "--feature-gates=MachineSetPreflightChecks=false")
 		}
@@ -80,6 +105,12 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 		if len(capi.imageOverride) > 0 {
 			c.Image = capi.imageOverride
 		}
+	})
+
+	// The kube-rbac-proxy sidecar is the only TLS endpoint for the CAPI manager metrics, so it always
+	// follows the hosted control plane TLS security profile.
+	podspec.UpdateContainer("kube-rbac-proxy", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.Args = append(c.Args, tlsArgs...)
 	})
 
 	if deployment.Annotations == nil {

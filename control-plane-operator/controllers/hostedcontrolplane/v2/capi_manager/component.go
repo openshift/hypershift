@@ -56,6 +56,16 @@ func NewComponent(imageOverride string) component.ControlPlaneComponent {
 			component.ReconcileExisting(),
 		).
 		WithManifestAdapter(
+			"metrics-tls-secret.yaml",
+			component.WithAdaptFunction(adaptMetricsTLSSecret),
+			component.DisableIfAnnotationExist(hyperv1.DisablePKIReconciliationAnnotation),
+			component.ReconcileExisting(),
+		).
+		WithManifestAdapter(
+			"kube-rbac-proxy-config.yaml",
+			component.SetHostedClusterAnnotation(),
+		).
+		WithManifestAdapter(
 			"podmonitor.yaml",
 			component.WithAdaptFunction(adaptPodMonitor),
 		).

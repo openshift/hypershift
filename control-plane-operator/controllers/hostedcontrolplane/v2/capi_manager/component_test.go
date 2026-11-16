@@ -44,13 +44,13 @@ func TestNewComponent(t *testing.T) {
 			version:       "4.18.0",
 			imageOverride: backwardCompatibleCAPIImage("4.18.0"),
 			expectedImage: backwardCompatibleCAPIImage("4.18.0"),
-			expectedArgs:  slices.Concat(staticManagerArgs, expectedClientRateLimitArgs),
+			expectedArgs:  slices.Concat(staticManagerArgs, expectedDiagnosticsArgs, expectedClientRateLimitArgs),
 		},
 		{
 			name:          "When version is 4.22.0 and the payload CAPI image is used, it should render the client rate limit args once",
 			version:       "4.22.0",
 			expectedImage: "cluster-capi-controllers",
-			expectedArgs: slices.Concat(staticManagerArgs, []string{
+			expectedArgs: slices.Concat(staticManagerArgs, expectedDiagnosticsArgs, []string{
 				"--feature-gates=MachineSetPreflightChecks=false",
 				"--skip-crd-migration-phases=StorageVersionMigration",
 				"--skip-crd-migration-phases=CleanupManagedFields",
@@ -61,7 +61,7 @@ func TestNewComponent(t *testing.T) {
 			version:       "4.18.0",
 			imageOverride: "quay.io/custom/capi:v1.0.0",
 			expectedImage: "quay.io/custom/capi:v1.0.0",
-			expectedArgs:  staticManagerArgs,
+			expectedArgs:  slices.Concat(staticManagerArgs, expectedDiagnosticsArgs),
 		},
 	}
 
@@ -152,7 +152,7 @@ func TestNewComponent(t *testing.T) {
 		expectDeployment bool
 	}{
 		{
-			name: "When machine management is enabled, it should reconcile the cluster-api PodMonitor and the metrics port",
+			name: "When machine management is enabled, it should reconcile the cluster-api PodMonitor, the metrics TLS sidecar and its certificate and config",
 			hcpAnnotations: map[string]string{
 				k8sutil.HostedClusterAnnotation: hostedCluster,
 			},
@@ -160,12 +160,17 @@ func TestNewComponent(t *testing.T) {
 			expectDeployment: true,
 		},
 		{
-			name: "When DisableMachineManagement annotation is set and a cluster-api PodMonitor exists, it should delete the PodMonitor",
+			name: "When DisableMachineManagement annotation is set and the cluster-api resources exist, it should delete the PodMonitor, the Deployment and the metrics resources",
 			hcpAnnotations: map[string]string{
 				k8sutil.HostedClusterAnnotation:  hostedCluster,
 				hyperv1.DisableMachineManagement: "true",
 			},
-			existingObjects:  []crclient.Object{existingPodMonitor()},
+			existingObjects: []crclient.Object{
+				existingPodMonitor(),
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: ComponentName, Namespace: hcpNamespace}},
+				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "cluster-api-metrics-tls", Namespace: hcpNamespace}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cluster-api-kube-rbac-proxy", Namespace: hcpNamespace}},
+			},
 			expectPodMonitor: false,
 			expectDeployment: false,
 		},
@@ -228,7 +233,8 @@ func TestNewComponent(t *testing.T) {
 				g.Expect(endpoint.Port).To(Equal(ptr.To("metrics")))
 				g.Expect(endpoint.Path).To(Equal("/metrics"))
 				g.Expect(endpoint.Interval).To(Equal(prometheusoperatorv1.Duration("30s")))
-				g.Expect(endpoint.Scheme).To(Equal(ptr.To(prometheusoperatorv1.Scheme("http"))))
+				g.Expect(endpoint.Scheme).To(Equal(ptr.To(prometheusoperatorv1.Scheme("https"))))
+				g.Expect(endpoint.TLSConfig).To(Equal(expectedTLSConfig()))
 				clusterIDRelabel := prometheusoperatorv1.RelabelConfig{
 					TargetLabel: "_id",
 					Action:      "replace",
@@ -247,12 +253,31 @@ func TestNewComponent(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				manager := podspec.FindContainer("manager", deployment.Spec.Template.Spec.Containers)
 				g.Expect(manager).ToNot(BeNil())
-				g.Expect(manager.Ports).To(ContainElement(corev1.ContainerPort{
+				g.Expect(manager.Ports).To(BeEmpty())
+				g.Expect(manager.Args).To(ContainElements("--diagnostics-address=127.0.0.1:8080", "--insecure-diagnostics"))
+				proxy := podspec.FindContainer("kube-rbac-proxy", deployment.Spec.Template.Spec.Containers)
+				g.Expect(proxy).ToNot(BeNil())
+				g.Expect(proxy.Ports).To(ConsistOf(corev1.ContainerPort{
 					Name:          "metrics",
-					ContainerPort: 8080,
+					ContainerPort: 8444,
 					Protocol:      corev1.ProtocolTCP,
 				}))
-				g.Expect(manager.Args).To(ContainElements("--diagnostics-address=:8080", "--insecure-diagnostics"))
+			}
+
+			metricsTLSSecret := &corev1.Secret{}
+			err = fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "cluster-api-metrics-tls"}, metricsTLSSecret)
+			proxyConfig := &corev1.ConfigMap{}
+			proxyConfigErr := fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "cluster-api-kube-rbac-proxy"}, proxyConfig)
+			if !tc.expectDeployment {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected metrics TLS secret to be absent, got err=%v", err)
+				g.Expect(apierrors.IsNotFound(proxyConfigErr)).To(BeTrue(), "expected kube-rbac-proxy config to be absent, got err=%v", proxyConfigErr)
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(metricsTLSSecret.Type).To(Equal(corev1.SecretTypeTLS))
+				g.Expect(metricsTLSSecret.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, hostedCluster))
+				g.Expect(proxyConfigErr).ToNot(HaveOccurred())
+				g.Expect(proxyConfig.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, hostedCluster))
+				g.Expect(proxyConfig.Data).To(HaveKey("config.yaml"))
 			}
 		})
 	}
