@@ -399,7 +399,7 @@ cluster-api-provider-gcp: $(CONTROLLER_GEN)
 
 .PHONY: cluster-api-provider-ibmcloud
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-ibmcloud $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-ibmcloud/..."
+	$(CAPI_CRD_GEN) --module-dir $(DIR)/hack/capi-crd-vendor/ibmcloud $(DIR)/cmd/install/assets/crds/cluster-api-provider-ibmcloud $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-ibmcloud/api/..."
 
 .PHONY: cluster-api-provider-kubevirt
 cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
