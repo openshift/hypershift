@@ -198,11 +198,9 @@ func createFakeIDMS() *configv1.ImageDigestMirrorSetList {
 	}
 }
 
-func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
+func TestCommonRegistryProvider_Reconcile(t *testing.T) {
 	ctx := t.Context()
-	g := NewGomegaWithT(t)
 
-	// Define test cases
 	testCases := []struct {
 		name                      string
 		capChecker                capabilities.CapabiltyChecker
@@ -215,7 +213,7 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 		expectedErrorMatch        string
 	}{
 		{
-			name: "Test with ICSP and IDMS capabilities",
+			name: "When ICSP and IDMS capabilities are present, it should apply mirror overrides",
 			capChecker: &capabilities.MockCapabilityChecker{
 				MockHas: func(capability ...capabilities.CapabilityType) bool {
 					return slices.Contains(capability, capabilities.CapabilityICSP) || slices.Contains(capability, capabilities.CapabilityIDMS)
@@ -252,7 +250,7 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name: "Test without ICSP and IDMS capabilities",
+			name: "When ICSP and IDMS capabilities are absent, it should keep registry overrides only",
 			capChecker: &capabilities.MockCapabilityChecker{
 				MockHas: func(capability ...capabilities.CapabilityType) bool {
 					return false
@@ -271,9 +269,9 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 		},
 	}
 
-	// Run test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
 			var objs []client.Object
 
 			if tc.idms != nil {
@@ -295,7 +293,6 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 
 			provider, err := NewCommonRegistryProvider(ctx, tc.capChecker, client, tc.registryOverrides)
 
-			// Check error
 			if tc.expectedError != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorMatch))
@@ -303,21 +300,17 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 
-			// Check release provider overrides via getter
 			releaseProvider := provider.GetReleaseProvider()
 			g.Expect(releaseProvider.GetOpenShiftImageRegistryOverrides()).To(Equal(tc.expectedOverrides))
 			g.Expect(releaseProvider.GetRegistryOverrides()).To(Equal(tc.expectedRegistryOverrides))
 
-			// Check image metadata provider overrides via getter
 			metadataProvider := provider.GetMetadataProvider()
 			metadataImpl, ok := metadataProvider.(*imageregistry.RegistryClientImageMetadataProvider)
 			g.Expect(ok).To(BeTrue())
 			g.Expect(metadataImpl.GetOpenShiftImageRegistryOverrides()).To(Equal(tc.expectedOverrides))
 		})
 	}
-}
 
-func TestCommonRegistryProvider_Reconcile(t *testing.T) {
 	t.Run("When concurrent readers run during reconcile, it should not race", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
