@@ -1,16 +1,27 @@
 package capimanager
 
 import (
+	"context"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/certs"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestAdaptWebhookTLSSecret(t *testing.T) {
@@ -147,4 +158,160 @@ func TestAdaptWebhookTLSSecret(t *testing.T) {
 			tc.validate(t, g, secret, err)
 		})
 	}
+}
+
+func TestAdaptMetricsTLSSecret(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace     = "clusters-example"
+		hostedCluster = "clusters/example"
+	)
+
+	newRootCA := func(t *testing.T) *corev1.Secret {
+		t.Helper()
+		rootCA := manifests.RootCASecret(namespace)
+		if err := certs.ReconcileSelfSignedCA(rootCA, "root-ca", "openshift"); err != nil {
+			t.Fatalf("failed to generate root CA: %v", err)
+		}
+		return rootCA
+	}
+
+	// verifyServingCert asserts that the secret holds a server certificate for the PodMonitor
+	// server name that chains to the given root CA.
+	verifyServingCert := func(g *WithT, secret, rootCA *corev1.Secret) {
+		g.Expect(secret.Data).To(HaveKey(corev1.TLSCertKey))
+		g.Expect(secret.Data).To(HaveKey(corev1.TLSPrivateKeyKey))
+		g.Expect(secret.Data[corev1.TLSPrivateKeyKey]).ToNot(BeEmpty())
+
+		crtBlock, _ := pem.Decode(secret.Data[corev1.TLSCertKey])
+		g.Expect(crtBlock).ToNot(BeNil())
+		crt, err := x509.ParseCertificate(crtBlock.Bytes)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(crt.DNSNames).To(ConsistOf(metricsServerName))
+		g.Expect(crt.ExtKeyUsage).To(ConsistOf(x509.ExtKeyUsageServerAuth))
+
+		roots := x509.NewCertPool()
+		g.Expect(roots.AppendCertsFromPEM(rootCA.Data[certs.CASignerCertMapKey])).To(BeTrue())
+		_, err = crt.Verify(x509.VerifyOptions{
+			Roots:     roots,
+			DNSName:   metricsServerName,
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+	}
+
+	emptySecret := func() *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-api-metrics-tls", Namespace: namespace},
+			Type:       corev1.SecretTypeTLS,
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       {},
+				corev1.TLSPrivateKeyKey: {},
+			},
+		}
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "hcp",
+			Namespace:   namespace,
+			Annotations: map[string]string{k8sutil.HostedClusterAnnotation: hostedCluster},
+		},
+	}
+
+	t.Run("When the root CA exists, it should issue a serving certificate for the PodMonitor server name signed by the root CA", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rootCA := newRootCA(t)
+		cpContext := component.WorkloadContext{
+			Context: t.Context(),
+			HCP:     hcp,
+			Client:  fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(rootCA).Build(),
+		}
+		secret := emptySecret()
+
+		g.Expect(adaptMetricsTLSSecret(cpContext, secret)).To(Succeed())
+
+		verifyServingCert(g, secret, rootCA)
+		g.Expect(secret.Type).To(Equal(corev1.SecretTypeTLS))
+		g.Expect(secret.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, hostedCluster))
+	})
+
+	t.Run("When a valid serving certificate already exists, it should keep it", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		rootCA := newRootCA(t)
+		cpContext := component.WorkloadContext{
+			Context: t.Context(),
+			HCP:     hcp,
+			Client:  fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(rootCA).Build(),
+		}
+		secret := emptySecret()
+		g.Expect(adaptMetricsTLSSecret(cpContext, secret)).To(Succeed())
+		issuedCert := append([]byte(nil), secret.Data[corev1.TLSCertKey]...)
+		issuedKey := append([]byte(nil), secret.Data[corev1.TLSPrivateKeyKey]...)
+
+		g.Expect(adaptMetricsTLSSecret(cpContext, secret)).To(Succeed())
+
+		g.Expect(secret.Data[corev1.TLSCertKey]).To(Equal(issuedCert))
+		g.Expect(secret.Data[corev1.TLSPrivateKeyKey]).To(Equal(issuedKey))
+	})
+
+	t.Run("When the root CA does not exist yet, it should leave the secret empty without an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		cpContext := component.WorkloadContext{
+			Context: t.Context(),
+			HCP:     hcp,
+			Client:  fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		}
+		secret := emptySecret()
+
+		g.Expect(adaptMetricsTLSSecret(cpContext, secret)).To(Succeed())
+
+		g.Expect(secret.Data[corev1.TLSCertKey]).To(BeEmpty())
+		g.Expect(secret.Data[corev1.TLSPrivateKeyKey]).To(BeEmpty())
+		g.Expect(secret.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, hostedCluster))
+	})
+
+	t.Run("When reading the root CA fails, it should return the error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		cpContext := component.WorkloadContext{
+			Context: t.Context(),
+			HCP:     hcp,
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+					return errors.New("api unavailable")
+				},
+			}).Build(),
+		}
+
+		err := adaptMetricsTLSSecret(cpContext, emptySecret())
+
+		g.Expect(err).To(MatchError(ContainSubstring("api unavailable")))
+	})
+
+	t.Run("When certificate signing is skipped, it should not issue a certificate", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		cpContext := component.WorkloadContext{
+			Context:                t.Context(),
+			HCP:                    hcp,
+			Client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(newRootCA(t)).Build(),
+			SkipCertificateSigning: true,
+		}
+		secret := emptySecret()
+
+		g.Expect(adaptMetricsTLSSecret(cpContext, secret)).To(Succeed())
+
+		g.Expect(secret.Data[corev1.TLSCertKey]).To(BeEmpty())
+		g.Expect(secret.Data[corev1.TLSPrivateKeyKey]).To(BeEmpty())
+	})
 }

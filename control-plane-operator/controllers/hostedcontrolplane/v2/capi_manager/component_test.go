@@ -110,7 +110,7 @@ func TestNewComponent(t *testing.T) {
 		expectDeployment bool
 	}{
 		{
-			name: "When machine management is enabled, it should reconcile the cluster-api PodMonitor and the metrics port",
+			name: "When machine management is enabled, it should reconcile the cluster-api PodMonitor, the metrics TLS sidecar and its certificate and config",
 			hcpAnnotations: map[string]string{
 				k8sutil.HostedClusterAnnotation: hostedCluster,
 			},
@@ -186,7 +186,8 @@ func TestNewComponent(t *testing.T) {
 				g.Expect(endpoint.Port).To(Equal(ptr.To("metrics")))
 				g.Expect(endpoint.Path).To(Equal("/metrics"))
 				g.Expect(endpoint.Interval).To(Equal(prometheusoperatorv1.Duration("30s")))
-				g.Expect(endpoint.Scheme).To(Equal(ptr.To(prometheusoperatorv1.Scheme("http"))))
+				g.Expect(endpoint.Scheme).To(Equal(ptr.To(prometheusoperatorv1.Scheme("https"))))
+				g.Expect(endpoint.TLSConfig).To(Equal(expectedTLSConfig()))
 				clusterIDRelabel := prometheusoperatorv1.RelabelConfig{
 					TargetLabel: "_id",
 					Action:      "replace",
@@ -205,12 +206,31 @@ func TestNewComponent(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				manager := podspec.FindContainer("manager", deployment.Spec.Template.Spec.Containers)
 				g.Expect(manager).ToNot(BeNil())
-				g.Expect(manager.Ports).To(ContainElement(corev1.ContainerPort{
+				g.Expect(manager.Ports).To(BeEmpty())
+				g.Expect(manager.Args).To(ContainElements("--diagnostics-address=127.0.0.1:8080", "--insecure-diagnostics"))
+				proxy := podspec.FindContainer("kube-rbac-proxy", deployment.Spec.Template.Spec.Containers)
+				g.Expect(proxy).ToNot(BeNil())
+				g.Expect(proxy.Ports).To(ConsistOf(corev1.ContainerPort{
 					Name:          "metrics",
-					ContainerPort: 8080,
+					ContainerPort: 8443,
 					Protocol:      corev1.ProtocolTCP,
 				}))
-				g.Expect(manager.Args).To(ContainElements("--diagnostics-address=:8080", "--insecure-diagnostics"))
+			}
+
+			metricsTLSSecret := &corev1.Secret{}
+			err = fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "cluster-api-metrics-tls"}, metricsTLSSecret)
+			proxyConfig := &corev1.ConfigMap{}
+			proxyConfigErr := fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "cluster-api-kube-rbac-proxy"}, proxyConfig)
+			if !tc.expectDeployment {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected metrics TLS secret to be absent, got err=%v", err)
+				g.Expect(apierrors.IsNotFound(proxyConfigErr)).To(BeTrue(), "expected kube-rbac-proxy config to be absent, got err=%v", proxyConfigErr)
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(metricsTLSSecret.Type).To(Equal(corev1.SecretTypeTLS))
+				g.Expect(metricsTLSSecret.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, hostedCluster))
+				g.Expect(proxyConfigErr).ToNot(HaveOccurred())
+				g.Expect(proxyConfig.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, hostedCluster))
+				g.Expect(proxyConfig.Data).To(HaveKey("config.yaml"))
 			}
 		})
 	}

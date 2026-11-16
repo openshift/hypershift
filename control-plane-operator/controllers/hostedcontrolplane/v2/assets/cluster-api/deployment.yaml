@@ -28,7 +28,7 @@ spec:
         - --leader-elect-lease-duration=137s
         - --leader-elect-retry-period=26s
         - --leader-elect-renew-deadline=107s
-        - --diagnostics-address=:8080
+        - --diagnostics-address=127.0.0.1:8080
         - --insecure-diagnostics
         env:
         - name: MY_NAMESPACE
@@ -49,10 +49,6 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: manager
-        ports:
-        - containerPort: 8080
-          name: metrics
-          protocol: TCP
         readinessProbe:
           failureThreshold: 3
           httpGet:
@@ -72,6 +68,37 @@ spec:
         - mountPath: /tmp/k8s-webhook-server/serving-certs
           name: capi-webhooks-tls
           readOnly: true
+      - args:
+        - --secure-listen-address=:8443
+        - --upstream=http://127.0.0.1:8080/
+        - --tls-cert-file=/etc/tls/private/tls.crt
+        - --tls-private-key-file=/etc/tls/private/tls.key
+        - --client-ca-file=/etc/tls/client/ca.crt
+        - --config-file=/etc/kube-rbac-proxy/config.yaml
+        - --allow-paths=/metrics
+        image: kube-rbac-proxy
+        imagePullPolicy: IfNotPresent
+        name: kube-rbac-proxy
+        ports:
+        - containerPort: 8443
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 1m
+            memory: 15Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/tls/private
+          name: metrics-tls
+          readOnly: true
+        - mountPath: /etc/tls/client
+          name: metrics-client-ca
+          readOnly: true
+        - mountPath: /etc/kube-rbac-proxy
+          name: kube-rbac-proxy-config
+          readOnly: true
       serviceAccount: cluster-api
       serviceAccountName: cluster-api
       volumes:
@@ -79,3 +106,23 @@ spec:
         secret:
           defaultMode: 416
           secretName: capi-webhooks-tls
+      # The metrics volumes are optional so that a missing certificate only affects
+      # metrics scraping and never blocks the CAPI manager container from starting.
+      - name: metrics-tls
+        secret:
+          defaultMode: 416
+          optional: true
+          secretName: cluster-api-metrics-tls
+      - name: metrics-client-ca
+        secret:
+          defaultMode: 416
+          items:
+          - key: ca.crt
+            path: ca.crt
+          optional: true
+          secretName: metrics-client
+      - configMap:
+          defaultMode: 420
+          name: cluster-api-kube-rbac-proxy
+          optional: true
+        name: kube-rbac-proxy-config
