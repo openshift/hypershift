@@ -1,7 +1,9 @@
 package assets
 
 import (
+	"io/fs"
 	"slices"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -541,15 +543,29 @@ func TestLoadManifestTemplated(t *testing.T) {
 // PodMonitoring tree. The manifests live in v2/gmpassets, beside this package,
 // and are intentionally outside the embedded FS: anything embedded here is
 // reconciled by the component framework, and the GMP runtime reconciliation is a
-// separate, gated follow-up. Moving or copying them into v2/assets would
-// activate them silently, so fail loudly instead.
+// separate, gated follow-up. Copying them into v2/assets under any component
+// directory would activate them silently, so fail loudly instead.
 func TestGMPAssetsAreNotEmbedded(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
-	entries, err := manifestsAssets.ReadDir(".")
-	g.Expect(err).ToNot(HaveOccurred())
-	for _, entry := range entries {
-		g.Expect(entry.Name()).ToNot(Equal("gmpassets"), "v2/gmpassets must stay outside the embedded asset tree; the component framework would reconcile it unconditionally")
+	var embedded []string
+	g.Expect(fs.WalkDir(manifestsAssets, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			embedded = append(embedded, path)
+		}
+		return nil
+	})).To(Succeed())
+
+	// The walk has to see the embedded tree; an empty result would make the
+	// assertions below vacuous.
+	g.Expect(embedded).ToNot(BeEmpty())
+
+	for _, path := range embedded {
+		g.Expect(strings.Split(path, "/")).ToNot(ContainElement("gmpassets"),
+			"%s is in the embedded asset tree; the component framework would reconcile it unconditionally", path)
 	}
 }

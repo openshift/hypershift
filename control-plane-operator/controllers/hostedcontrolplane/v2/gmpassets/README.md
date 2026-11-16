@@ -7,8 +7,9 @@ backend. They are staged here, outside `v2/assets`, on purpose:
   is reconciled by the component framework (`support/controlplane-component`).
 - This directory is **not embedded and not reconciled**. Nothing in the
   control-plane-operator reads it at runtime today.
-- `TestGMPAssetsAreNotEmbedded` fails if this tree is moved into the embedded
-  asset directory.
+- `TestGMPAssetsAreNotEmbedded` fails if any manifest from this tree becomes
+  part of the embedded asset FS, which the walk in that test checks for a
+  `gmpassets` path segment at any depth.
 
 The CoreOS `ServiceMonitor` / `PodMonitor` assets under `v2/assets` remain the
 source of truth. `hack/gmp-config-gen` derives these files from them:
