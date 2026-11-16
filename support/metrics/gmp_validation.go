@@ -70,6 +70,33 @@ var targetLabelProtectedLabels = map[string]struct{}{
 	"__address__":               {},
 }
 
+// gmpRelabelActions are the relabeling actions GMP's PodMonitoring API accepts.
+// The set is the upstream action field enum (GoogleCloudPlatform/prometheus-engine
+// doc/api.md), which is also what the pinned PodMonitoring CRD validates against.
+// The empty string is included because the field is optional and defaults to
+// replace. labelmap is deliberately absent: the API documents it as not
+// permitted. A test pins the set.
+var gmpRelabelActions = map[string]struct{}{
+	"":          {},
+	"replace":   {},
+	"lowercase": {},
+	"uppercase": {},
+	"keep":      {},
+	"drop":      {},
+	"keepequal": {},
+	"dropequal": {},
+	"hashmod":   {},
+	"labeldrop": {},
+	"labelkeep": {},
+}
+
+// SupportedGMPRelabelAction reports whether GMP accepts the action. The match is
+// case-insensitive, as Prometheus lowercases the field.
+func SupportedGMPRelabelAction(action string) bool {
+	_, ok := gmpRelabelActions[strings.ToLower(action)]
+	return ok
+}
+
 // SanitizeGMPRelabelConfigs adapts CoreOS metric relabel configs to the rules
 // GMP accepts.
 //
@@ -176,9 +203,7 @@ func SanitizeGMPRelabelConfigs(source []prometheusoperatorv1.RelabelConfig) ([]p
 // labeldrop must carry a regex (the CRD's CEL enforces it); a labelkeep without
 // one is valid and is handled as a no-op above.
 func hasStructuralRelabelProblem(rule prometheusoperatorv1.RelabelConfig) bool {
-	switch strings.ToLower(rule.Action) {
-	case "", "replace", "lowercase", "uppercase", "keep", "drop", "keepequal", "dropequal", "hashmod", "labeldrop", "labelkeep":
-	default:
+	if !SupportedGMPRelabelAction(rule.Action) {
 		return true
 	}
 	if rule.Separator != nil && *rule.Separator == "" {

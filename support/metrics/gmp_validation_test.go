@@ -219,6 +219,34 @@ func TestSanitizeGMPRelabelConfigs(t *testing.T) {
 	}
 }
 
+// TestSupportedGMPRelabelAction pins the supported action set to the GMP API's
+// action enum, so the sanitizer and the generator cannot drift apart on which
+// actions they accept.
+func TestSupportedGMPRelabelAction(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When asked about every action, it should accept exactly the GMP API enum", func(t *testing.T) {
+		expected := []string{
+			"", "replace", "lowercase", "uppercase", "keep", "drop",
+			"keepequal", "dropequal", "hashmod", "labeldrop", "labelkeep",
+		}
+		actual := make([]string, 0, len(gmpRelabelActions))
+		for action := range gmpRelabelActions {
+			actual = append(actual, action)
+		}
+
+		assert.ElementsMatch(t, expected, actual)
+	})
+
+	t.Run("When asked about labelmap, it should reject it", func(t *testing.T) {
+		assert.False(t, SupportedGMPRelabelAction("labelmap"), "the GMP API documents labelmap as not permitted")
+	})
+
+	t.Run("When the action differs only by case, it should accept it", func(t *testing.T) {
+		assert.True(t, SupportedGMPRelabelAction("LabelDrop"))
+	})
+}
+
 // TestTargetLabelProtectedLabelsAreTheUnion pins the target-label set to the
 // union of the admission and collector sets so a change to either one is caught
 // here rather than in admission at apply time.
