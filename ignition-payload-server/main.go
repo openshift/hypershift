@@ -15,6 +15,8 @@ import (
 
 	librarycrypto "github.com/openshift/library-go/pkg/crypto"
 
+	corev1 "k8s.io/api/core/v1"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
@@ -23,6 +25,9 @@ import (
 )
 
 const namespaceEnvVariableName = "MY_NAMESPACE"
+
+// serverShutdownTimeout bounds graceful HTTP shutdown so a stuck connection cannot block process exit.
+const serverShutdownTimeout = 10 * time.Second
 
 var setupLog = ctrl.Log.WithName("setup")
 
@@ -111,21 +116,37 @@ func run(ctx context.Context, opts Options) error {
 		Cached:    mgr.GetClient(),
 		Uncached:  mgr.GetAPIReader(),
 		OnServed: func(ctx context.Context, owner payloadstore.OwnerRef, rolloutGeneration int64) {
-			if err := SetIgnitionReached(ctx, mgr.GetClient(), owner, rolloutGeneration); err != nil {
+			if err := SetIgnitionReached(ctx, mgr.GetClient(), mgr.GetAPIReader(), owner, rolloutGeneration); err != nil {
 				setupLog.Error(err, "failed to record IgnitionReached", "owner", owner.Namespace+"/"+owner.Name, "rolloutGeneration", rolloutGeneration)
 			}
 		},
 	}
 
+	// Register the Secret informer the cached fast path reads before starting the manager, so the
+	// cache-sync barrier below actually blocks on it: WaitForCacheSync only waits for already-registered
+	// informers, so without this the barrier is a no-op and the first served request would synchronously
+	// create and sync the informer under request load.
+	if _, err := mgr.GetCache().GetInformer(ctx, &corev1.Secret{}, cache.BlockUntilSynced(false)); err != nil {
+		return fmt.Errorf("failed to register Secret informer: %w", err)
+	}
+
+	// Tie the serving path's lifetime to the manager: if the manager exits (e.g. the metrics server
+	// fails to bind, or the cert watcher errors), cancel a child context with the cause so the cache
+	// wait and the server both unwind instead of leaving the process alive but never serving.
+	runCtx, cancelRun := context.WithCancelCause(ctx)
+	defer cancelRun(nil)
+
 	go func() {
-		if err := mgr.Start(ctx); err != nil {
+		if err := mgr.Start(runCtx); err != nil {
 			setupLog.Error(err, "manager exited")
+			cancelRun(err)
 		}
 	}()
 
-	// Wait for the informer cache before serving so the cached fast path is usable; until then a
-	// miss would otherwise fall through to the APIReader read-through regardless.
-	if !mgr.GetCache().WaitForCacheSync(ctx) {
+	if !mgr.GetCache().WaitForCacheSync(runCtx) {
+		if cause := context.Cause(runCtx); ctx.Err() == nil && cause != nil {
+			return fmt.Errorf("manager exited before caches synced: %w", cause)
+		}
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -141,9 +162,15 @@ func run(ctx context.Context, opts Options) error {
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 
+	// Drain the server when the parent context is canceled or the manager fails; signal completion so
+	// run does not return (and let the process exit) while responses are still in flight.
+	shutdownDone := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		if err := server.Shutdown(context.Background()); err != nil {
+		defer close(shutdownDone)
+		<-runCtx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
 			setupLog.Error(err, "error shutting down server")
 		}
 	}()
@@ -151,6 +178,11 @@ func run(ctx context.Context, opts Options) error {
 	setupLog.Info("listening", "addr", opts.Addr)
 	if err := server.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
+	}
+	// Wait for the drain to finish before returning so active responses are not cut off at exit.
+	<-shutdownDone
+	if cause := context.Cause(runCtx); ctx.Err() == nil && cause != nil {
+		return fmt.Errorf("manager exited: %w", cause)
 	}
 	return nil
 }

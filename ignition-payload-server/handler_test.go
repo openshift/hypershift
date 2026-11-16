@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -70,17 +71,30 @@ func seedStore(t *testing.T, gen int64) client.Client {
 	return c
 }
 
-func doGet(h http.HandlerFunc, path, token, gen string) *httptest.ResponseRecorder {
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+func newReq(method, path, token, gen string) *http.Request {
+	req := httptest.NewRequestWithContext(context.Background(), method, path, nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if gen != "" {
 		req.Header.Set(payloadstore.RolloutGenerationHeader, gen)
 	}
+	return req
+}
+
+func doGet(h http.HandlerFunc, path, token, gen string) *httptest.ResponseRecorder {
+	return doReq(h, http.MethodGet, path, token, gen)
+}
+
+func doReq(h http.HandlerFunc, method, path, token, gen string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	h(rec, req)
+	h(rec, newReq(method, path, token, gen))
 	return rec
+}
+
+// doReqWriter drives the handler with a caller-supplied ResponseWriter, used to inject a failing writer.
+func doReqWriter(h http.HandlerFunc, w http.ResponseWriter, method, path, token, gen string) {
+	h(w, newReq(method, path, token, gen))
 }
 
 func TestServe(t *testing.T) {
@@ -158,4 +172,60 @@ func TestOnServedContextHasDeadline(t *testing.T) {
 		}}
 	g.Expect(doGet(s.HandleIgnition, "/ignition/"+testName, mintToken(t, key, owner), "2").Code).To(Equal(http.StatusOK))
 	g.Eventually(done).Should(Receive(BeTrue()))
+}
+
+// failingResponseWriter records the status code but fails every body write, simulating a connection
+// dropped mid-response.
+type failingResponseWriter struct {
+	header http.Header
+	code   int
+}
+
+func (f *failingResponseWriter) Header() http.Header {
+	if f.header == nil {
+		f.header = http.Header{}
+	}
+	return f.header
+}
+func (f *failingResponseWriter) WriteHeader(code int)      { f.code = code }
+func (f *failingResponseWriter) Write([]byte) (int, error) { return 0, errors.New("connection reset") }
+
+// TestRejectsNonGET: only GET is served. Other methods get 405 with Allow: GET and never record
+// IgnitionReached — a HEAD would otherwise follow the serve path with its body suppressed.
+func TestRejectsNonGET(t *testing.T) {
+	g := NewWithT(t)
+	key := testKey(t)
+	owner := payloadstore.OwnerRef{Namespace: testNS, Name: testName}
+	withPayload := seedStore(t, testGen)
+	served := make(chan servedCall, 1)
+	s := &Server{Namespace: testNS, Verifier: payloadstore.NewTokenVerifier(&key.PublicKey),
+		Cached: withPayload, Uncached: withPayload,
+		OnServed: func(_ context.Context, o payloadstore.OwnerRef, gen int64) { served <- servedCall{o, gen} }}
+
+	tok := mintToken(t, key, owner)
+	for _, method := range []string{http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete} {
+		rec := doReq(s.HandleIgnition, method, "/ignition/"+testName, tok, "2")
+		g.Expect(rec.Code).To(Equal(http.StatusMethodNotAllowed))
+		g.Expect(rec.Header().Get("Allow")).To(Equal(http.MethodGet))
+	}
+	g.Consistently(served).ShouldNot(Receive())
+}
+
+// TestWriteFailureDoesNotRecordIgnitionReached: when the payload body write fails the node did not
+// receive the payload, so the OnServed (IgnitionReached) callback must not fire.
+func TestWriteFailureDoesNotRecordIgnitionReached(t *testing.T) {
+	g := NewWithT(t)
+	key := testKey(t)
+	owner := payloadstore.OwnerRef{Namespace: testNS, Name: testName}
+	withPayload := seedStore(t, testGen)
+	served := make(chan servedCall, 1)
+	s := &Server{Namespace: testNS, Verifier: payloadstore.NewTokenVerifier(&key.PublicKey),
+		Cached: withPayload, Uncached: withPayload,
+		OnServed: func(_ context.Context, o payloadstore.OwnerRef, gen int64) { served <- servedCall{o, gen} }}
+
+	fw := &failingResponseWriter{}
+	doReqWriter(s.HandleIgnition, fw, http.MethodGet, "/ignition/"+testName, mintToken(t, key, owner), "2")
+
+	g.Expect(fw.code).To(Equal(http.StatusOK)) // header is written before the body write fails
+	g.Consistently(served).ShouldNot(Receive())
 }

@@ -35,7 +35,7 @@ func TestSetIgnitionReached(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cr).
 			WithStatusSubresource(&hyperv1.IgnitionPayload{}).Build()
 
-		g.Expect(SetIgnitionReached(ctx, c, payloadstore.OwnerRef{Namespace: "hcp", Name: "np-1"}, 2)).To(Succeed())
+		g.Expect(SetIgnitionReached(ctx, c, c, payloadstore.OwnerRef{Namespace: "hcp", Name: "np-1"}, 2)).To(Succeed())
 
 		got := &hyperv1.IgnitionPayload{}
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(cr), got)).To(Succeed())
@@ -51,7 +51,7 @@ func TestSetIgnitionReached(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cr).
 			WithStatusSubresource(&hyperv1.IgnitionPayload{}).Build()
 
-		g.Expect(SetIgnitionReached(ctx, c, payloadstore.OwnerRef{Namespace: "hcp", Name: "np-2"}, 1)).To(Succeed())
+		g.Expect(SetIgnitionReached(ctx, c, c, payloadstore.OwnerRef{Namespace: "hcp", Name: "np-2"}, 1)).To(Succeed())
 
 		got := &hyperv1.IgnitionPayload{}
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(cr), got)).To(Succeed())
