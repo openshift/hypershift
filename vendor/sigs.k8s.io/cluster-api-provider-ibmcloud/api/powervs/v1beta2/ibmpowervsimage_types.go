@@ -112,9 +112,9 @@ type IBMPowerVSImageV1Beta2Status struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-//+kubebuilder:storageversion
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.imageState",description="PowerVS image state"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Image is ready for IBM PowerVS instances"
 
@@ -153,7 +153,7 @@ func (r *IBMPowerVSImage) SetV1Beta2Conditions(conditions []metav1.Condition) {
 	r.Status.V1Beta2.Conditions = conditions
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // IBMPowerVSImageList contains a list of IBMPowerVSImage.
 type IBMPowerVSImageList struct {

@@ -78,11 +78,11 @@ type IBMPowerVSMachineSpec struct {
 
 	// systemType is the System type used to host the instance.
 	// systemType determines the number of cores and memory that is available.
-	// Few of the supported SystemTypes are s922,e980,s1022,e1050,e1080,s1122.
+	// Few of the supported SystemTypes are s922,e980,s1022,e1050,e1080.
 	// When omitted, this means that the user has no opinion and the platform is left to choose a
 	// reasonable default, which is subject to change over time. The current default is s922 which is generally available.
 	// + This is not an enum because we expect other values to be added later which should be supported implicitly.
-	// +kubebuilder:validation:Enum:="s922";"e980";"s1022";"e1050";"e1080";"s1122";""
+	// +kubebuilder:validation:Enum:="s922";"e980";"s1022";"e1050";"e1080";""
 	// +optional
 	SystemType string `json:"systemType,omitempty"`
 
@@ -248,7 +248,7 @@ type IBMPowerVSMachineV1Beta2Status struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:storageversion
+// +kubebuilder:deprecatedversion
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this IBMPowerVSMachine belongs"
 // +kubebuilder:printcolumn:name="Machine",type="string",priority=1,JSONPath=".metadata.ownerReferences[?(@.kind==\"Machine\")].name",description="Machine object to which this IBMPowerVSMachine belongs"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of IBMPowerVSMachine"
@@ -293,7 +293,7 @@ func (r *IBMPowerVSMachine) SetV1Beta2Conditions(conditions []metav1.Condition) 
 	r.Status.V1Beta2.Conditions = conditions
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // IBMPowerVSMachineList contains a list of IBMPowerVSMachine.
 type IBMPowerVSMachineList struct {
