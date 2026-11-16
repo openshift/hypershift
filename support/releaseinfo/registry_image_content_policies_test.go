@@ -2,6 +2,7 @@ package releaseinfo
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -16,83 +17,191 @@ import (
 )
 
 func TestProviderWithOpenShiftImageRegistryOverridesDecorator_Lookup(t *testing.T) {
-	g := NewWithT(t)
+	t.Run("When overrides map a canonical image to a mirror, it should lookup the mirrored image", func(t *testing.T) {
+		g := NewWithT(t)
 
-	// Create mock resources.
-	mirroredReleaseImage := "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64"
-	canonicalReleaseImage := "canonical-release-image"
-	releaseImage := &ReleaseImage{
-		ImageStream:    &imagev1.ImageStream{},
-		StreamMetadata: &stream.Stream{},
-	}
+		// Create mock resources.
+		mirroredReleaseImage := "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64"
+		canonicalReleaseImage := "canonical-release-image"
+		releaseImage := &ReleaseImage{
+			ImageStream:    &imagev1.ImageStream{},
+			StreamMetadata: &stream.Stream{},
+		}
 
-	// Create registry providers delegating to a cached provider so we can mock the cache content for the mirroredReleaseImage.
-	delegate := &RegistryMirrorProviderDecorator{
-		Delegate: &CachedProvider{
-			Inner: &RegistryClientProvider{},
-			Cache: map[string]*ReleaseImage{
-				mirroredReleaseImage: releaseImage,
+		// Create registry providers delegating to a cached provider so we can mock the cache content for the mirroredReleaseImage.
+		delegate := &RegistryMirrorProviderDecorator{
+			Delegate: &CachedProvider{
+				Inner: &RegistryClientProvider{},
+				Cache: map[string]*ReleaseImage{
+					mirroredReleaseImage: releaseImage,
+				},
 			},
-		},
-		RegistryOverrides: map[string]string{},
-	}
-	provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
-		Delegate: delegate,
-		OpenShiftImageRegistryOverrides: map[string][]string{
+			RegistryOverrides: map[string]string{},
+		}
+		provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: delegate,
+			// Mock repoSetupFn to avoid real network calls for mirror verification.
+			repoSetupFn: func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				ref, err := reference.Parse(imageRef)
+				if err != nil {
+					return nil, nil, err
+				}
+				return nil, &ref, nil
+			},
+		}
+		provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
 			canonicalReleaseImage: {mirroredReleaseImage},
-		},
-		// Mock repoSetupFn to avoid real network calls for mirror verification.
-		repoSetupFn: func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
-			ref, err := reference.Parse(imageRef)
-			if err != nil {
-				return nil, nil, err
-			}
-			return nil, &ref, nil
-		},
-		lock: sync.Mutex{},
-	}
+		})
 
-	pullSecret := []byte(`{"auths":{}}`)
-	// Call the Lookup method and validate GetMirroredReleaseImage.
-	_, err := provider.Lookup(t.Context(), canonicalReleaseImage, pullSecret)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(provider.GetMirroredReleaseImage()).To(Equal(mirroredReleaseImage))
-}
+		pullSecret := []byte(`{"auths":{}}`)
+		// Call the Lookup method and validate GetMirroredReleaseImage.
+		_, err := provider.Lookup(t.Context(), canonicalReleaseImage, pullSecret)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(provider.GetMirroredReleaseImage()).To(Equal(mirroredReleaseImage))
+	})
 
-func TestProviderWithOpenShiftImageRegistryOverridesDecorator_LookupWithNilRepoSetupFn(t *testing.T) {
-	g := NewWithT(t)
+	t.Run("When repoSetupFn is nil and no override matches, it should lookup the direct image", func(t *testing.T) {
+		g := NewWithT(t)
 
-	directImage := "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64"
-	releaseImage := &ReleaseImage{
-		ImageStream:    &imagev1.ImageStream{},
-		StreamMetadata: &stream.Stream{},
-	}
+		directImage := "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64"
+		releaseImage := &ReleaseImage{
+			ImageStream:    &imagev1.ImageStream{},
+			StreamMetadata: &stream.Stream{},
+		}
 
-	delegate := &RegistryMirrorProviderDecorator{
-		Delegate: &CachedProvider{
-			Inner: &RegistryClientProvider{},
-			Cache: map[string]*ReleaseImage{
-				directImage: releaseImage,
+		delegate := &RegistryMirrorProviderDecorator{
+			Delegate: &CachedProvider{
+				Inner: &RegistryClientProvider{},
+				Cache: map[string]*ReleaseImage{
+					directImage: releaseImage,
+				},
 			},
-		},
-		RegistryOverrides: map[string]string{},
-	}
+			RegistryOverrides: map[string]string{},
+		}
 
-	// When repoSetupFn is nil it should default to registryclient.GetRepoSetup.
-	// Use an image that does not match any override so the default repoSetupFn
-	// is assigned but never called, avoiding real network calls.
-	provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
-		Delegate: delegate,
-		OpenShiftImageRegistryOverrides: map[string][]string{
+		// When repoSetupFn is nil it should default to registryclient.GetRepoSetup.
+		// Use an image that does not match any override so the default repoSetupFn
+		// is assigned but never called, avoiding real network calls.
+		provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: delegate,
+			// repoSetupFn intentionally nil to exercise the default fallback.
+		}
+		provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
 			"no-match-source": {"no-match-mirror"},
-		},
-		// repoSetupFn intentionally nil to exercise the default fallback.
-		lock: sync.Mutex{},
-	}
+		})
 
-	pullSecret := []byte(`{"auths":{}}`)
-	result, err := provider.Lookup(t.Context(), directImage, pullSecret)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result).To(Equal(releaseImage))
-	g.Expect(provider.GetMirroredReleaseImage()).To(BeEmpty())
+		pullSecret := []byte(`{"auths":{}}`)
+		result, err := provider.Lookup(t.Context(), directImage, pullSecret)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(releaseImage))
+		g.Expect(provider.GetMirroredReleaseImage()).To(BeEmpty())
+	})
+
+	t.Run("When Set runs concurrently with Lookup, it should not race", func(t *testing.T) {
+		g := NewWithT(t)
+
+		mirroredReleaseImage := "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64"
+		canonicalReleaseImage := "canonical-release-image"
+		releaseImage := &ReleaseImage{
+			ImageStream:    &imagev1.ImageStream{},
+			StreamMetadata: &stream.Stream{},
+		}
+
+		delegate := &RegistryMirrorProviderDecorator{
+			Delegate: &CachedProvider{
+				Inner: &RegistryClientProvider{},
+				Cache: map[string]*ReleaseImage{
+					mirroredReleaseImage:  releaseImage,
+					canonicalReleaseImage: releaseImage,
+				},
+			},
+			RegistryOverrides: map[string]string{},
+		}
+		provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: delegate,
+			repoSetupFn: func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				ref, err := reference.Parse(imageRef)
+				if err != nil {
+					return nil, nil, err
+				}
+				return nil, &ref, nil
+			},
+		}
+		provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+			canonicalReleaseImage: {mirroredReleaseImage},
+		})
+
+		const (
+			setIterations = 100
+			lookupReaders = 4
+		)
+
+		var readersReady, start, readersDone sync.WaitGroup
+		readersReady.Add(lookupReaders)
+		start.Add(1)
+		readersDone.Add(lookupReaders)
+
+		writerDone := make(chan struct{})
+		lookupErr := make(chan error, lookupReaders)
+
+		pullSecret := []byte(`{"auths":{}}`)
+
+		go func() {
+			defer close(writerDone)
+			readersReady.Wait()
+			start.Done()
+			for i := 0; i < setIterations; i++ {
+				// Alternate between mirrored and empty overrides to exercise both Lookup branches.
+				if i%2 == 0 {
+					provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+						canonicalReleaseImage: {mirroredReleaseImage},
+					})
+				} else {
+					provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+						"other-source": {"other-mirror"},
+					})
+				}
+			}
+		}()
+
+		for i := 0; i < lookupReaders; i++ {
+			go func() {
+				defer readersDone.Done()
+				readersReady.Done()
+				start.Wait()
+				for {
+					select {
+					case <-writerDone:
+						return
+					default:
+						img, err := provider.Lookup(t.Context(), canonicalReleaseImage, pullSecret)
+						if err != nil {
+							lookupErr <- err
+							return
+						}
+						if img == nil {
+							lookupErr <- fmt.Errorf("Lookup returned nil release image")
+							return
+						}
+						_ = provider.GetOpenShiftImageRegistryOverrides()
+						_ = provider.GetMirroredReleaseImage()
+					}
+				}
+			}()
+		}
+
+		<-writerDone
+		readersDone.Wait()
+
+		select {
+		case err := <-lookupErr:
+			t.Fatalf("Lookup failed under concurrent Set: %v", err)
+		default:
+		}
+
+		// Final Lookup should still succeed after concurrent Sets.
+		img, err := provider.Lookup(t.Context(), canonicalReleaseImage, pullSecret)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(img).To(Equal(releaseImage))
+	})
 }
