@@ -735,9 +735,7 @@ func convertMetricRelabeling(source []prometheusoperatorv1.RelabelConfig) ([]rel
 	result := make([]relabelingRuleDoc, 0, len(source))
 	for i, rule := range source {
 		action := strings.ToLower(rule.Action)
-		switch action {
-		case "", "replace", "keep", "drop", "hashmod", "labeldrop", "labelkeep":
-		default:
+		if !metrics.SupportedGMPRelabelAction(action) {
 			return nil, fmt.Errorf("metric relabeling %d: action %q is not supported by GMP", i, rule.Action)
 		}
 		if rule.Separator != nil && *rule.Separator == "" {
@@ -960,7 +958,10 @@ func (c *componentAssets) ensureUniqueEndpointPorts(endpoints []endpointDoc) err
 			declared[key] = true
 			continue
 		}
-		number, ok := c.numericContainerPort(endpoints[i].Port.Value)
+		number, ok, err := c.numericContainerPort(endpoints[i].Port.Value)
+		if err != nil {
+			return fmt.Errorf("endpoint %d: %w", i, err)
+		}
 		if !ok {
 			return fmt.Errorf("endpoints %d and an earlier endpoint both use port %q and no distinct numeric form exists; GMP requires unique ports, so these endpoints need separate monitors", i, key)
 		}
@@ -992,16 +993,30 @@ func withContainerRule(rules []relabelingRuleDoc, container string) []relabeling
 // numericContainerPort returns the container port number for a named port
 // reference, reporting false when the reference is already numeric or the
 // workload has no such named port.
-func (c *componentAssets) numericContainerPort(ref intstr.IntOrString) (intstr.IntOrString, bool) {
+//
+// A name that resolves to more than one number is an error. The caller rewrites
+// a named port to its number only as an alias for the same target, so picking
+// one of two numbers would silently scrape a different port.
+func (c *componentAssets) numericContainerPort(ref intstr.IntOrString) (intstr.IntOrString, bool, error) {
 	if ref.Type == intstr.Int {
-		return ref, false
+		return ref, false, nil
 	}
+	var number int32
+	found := false
 	for _, port := range c.containerPorts {
-		if port.Name == ref.StrVal {
-			return intstr.FromInt(int(port.ContainerPort)), true
+		if port.Name != ref.StrVal {
+			continue
 		}
+		if found && port.ContainerPort != number {
+			return intstr.IntOrString{}, false, fmt.Errorf("container port name %q refers to both %d and %d in the component workload", ref.StrVal, number, port.ContainerPort)
+		}
+		number = port.ContainerPort
+		found = true
 	}
-	return intstr.IntOrString{}, false
+	if !found {
+		return intstr.IntOrString{}, false, nil
+	}
+	return intstr.FromInt(int(number)), true, nil
 }
 
 // clusterIndependentServerName replaces the namespace label of a Service DNS

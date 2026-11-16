@@ -874,11 +874,12 @@ func TestConvertMetricRelabeling(t *testing.T) {
 		_, err := convertMetricRelabeling([]prometheusoperatorv1.RelabelConfig{{Action: "labelmap"}})
 		require.ErrorContains(t, err, `action "labelmap" is not supported by GMP`)
 	})
-	t.Run("When CoreOS uses an action GMP does not define, it should reject it", func(t *testing.T) {
+	t.Run("When CoreOS uses an action the GMP API defines, it should preserve it", func(t *testing.T) {
 		for _, action := range []string{"lowercase", "uppercase", "keepequal", "dropequal"} {
 			t.Run(action, func(t *testing.T) {
-				_, err := convertMetricRelabeling([]prometheusoperatorv1.RelabelConfig{{Action: action, Regex: "up"}})
-				require.ErrorContains(t, err, fmt.Sprintf("action %q is not supported by GMP", action))
+				actual, err := convertMetricRelabeling([]prometheusoperatorv1.RelabelConfig{{Action: action, Regex: "up"}})
+				require.NoError(t, err)
+				assert.Equal(t, []relabelingRuleDoc{{Regex: "up", Action: action}}, actual)
 			})
 		}
 	})
@@ -975,6 +976,16 @@ func TestComponentAssets_EnsureUniqueEndpointPorts(t *testing.T) {
 		assets := &componentAssets{services: []*corev1.Service{service()}}
 		_, err := assets.convertServiceMonitor(monitor())
 		require.ErrorContains(t, err, "GMP requires unique ports")
+	})
+
+	t.Run("When the repeated name resolves to two different numbers, it should return an error", func(t *testing.T) {
+		assets := &componentAssets{services: []*corev1.Service{service()}}
+		assets.addContainerPorts(corev1.PodSpec{Containers: []corev1.Container{
+			{Name: "kube-scheduler", Ports: []corev1.ContainerPort{{Name: "client", ContainerPort: 10259}}},
+			{Name: "sidecar", Ports: []corev1.ContainerPort{{Name: "client", ContainerPort: 10260}}},
+		}})
+		_, err := assets.convertServiceMonitor(monitor())
+		require.ErrorContains(t, err, `container port name "client" refers to both 10259 and 10260`)
 	})
 }
 
