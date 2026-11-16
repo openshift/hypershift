@@ -1,0 +1,2 @@
+# Sample pullspec for loader tests, not a released image pin.
+image: registry.redhat.io/openshift4/karpenter-operator-rhel9@sha256:88c55ea554f7e62a64e34ff8d3be45ef85ef6b80fe4e9b0240b9a1aa226f9d98
