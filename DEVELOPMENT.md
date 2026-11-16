@@ -243,6 +243,19 @@ make cluster-api-provider-aws # Generate CRDs for a specific CAPI provider
 make verify-capi-decoupling   # Check the invariants below without a full CI run
 ```
 
+IBM source/type synchronization and installed CRD generation have separate
+inputs. `hack/capi-vendor/ibmcloud` selects CAPIBM v0.14.0 for the localized
+VPC v1beta1/v1beta2 and PowerVS v1beta2 Go packages. It does not select the
+deployed provider image or upgrade the installed IBM CRDs.
+`hack/capi-crd-vendor/ibmcloud` retains the v0.13.1 source and dependency graph
+used for the existing CRDs. `make cluster-api-provider-ibmcloud` runs the
+repository's controller-gen directly in that isolated module with workspace
+resolution disabled, then stages the output through `hack/capi-crd-gen.sh`.
+The installed schemas are generated from those sources without compatibility
+overlays or conversion code. A future IBM CRD upgrade must deliberately
+update this separate generation input and validate the deployed provider's
+serving/storage contract; changing the compile-time type pin is not sufficient.
+
 Because each provider is a separate module reached through `replace`, `go build ./...` in the root module compiles only the provider subpackages something imports — a broken `exp/api` package stays invisible until CRD generation. It also means the localized `capicore` types and the upstream CAPI types they were copied from are **distinct Go types**: code merged from upstream that names `clusterv1beta1` or `capiv1` where a file already uses `capicore` will not compile, and the error does not say why.
 
 `make verify-capi-decoupling` (`hack/verify-capi-decoupling.sh`) checks this in seconds: no provider module may require or import `sigs.k8s.io/cluster-api`, every subpackage of every provider module must build, and the packages that consume `capicore` types must vet. It runs after `verify-capi-sync` in `verify-serial-targets`, invoked by `verify` and `verify-ci`; run it locally after **any merge or rebase onto main that touched provider types**, which is where the alias mismatch usually arrives from.
