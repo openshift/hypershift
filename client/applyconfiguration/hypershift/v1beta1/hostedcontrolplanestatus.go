@@ -27,6 +27,8 @@ import (
 // with apply.
 type HostedControlPlaneStatusApplyConfiguration struct {
 	Conditions                     []v1.ConditionApplyConfiguration                          `json:"conditions,omitempty"`
+	NodePoolDrain                  []NodePoolDrainApplyConfiguration                         `json:"nodePoolDrain,omitempty"`
+	NodePoolDrainLastProbeTime     *metav1.Time                                              `json:"nodePoolDrainLastProbeTime,omitempty"`
 	Ready                          *bool                                                     `json:"ready,omitempty"`
 	Initialized                    *bool                                                     `json:"initialized,omitempty"`
 	ExternalManagedControlPlane    *bool                                                     `json:"externalManagedControlPlane,omitempty"`
@@ -64,6 +66,27 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithConditions(values ...*v
 		}
 		b.Conditions = append(b.Conditions, *values[i])
 	}
+	return b
+}
+
+// WithNodePoolDrain adds the given value to the NodePoolDrain field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the NodePoolDrain field.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithNodePoolDrain(values ...*NodePoolDrainApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithNodePoolDrain")
+		}
+		b.NodePoolDrain = append(b.NodePoolDrain, *values[i])
+	}
+	return b
+}
+
+// WithNodePoolDrainLastProbeTime sets the NodePoolDrainLastProbeTime field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NodePoolDrainLastProbeTime field is set to the value of the last call.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithNodePoolDrainLastProbeTime(value metav1.Time) *HostedControlPlaneStatusApplyConfiguration {
+	b.NodePoolDrainLastProbeTime = &value
 	return b
 }
 

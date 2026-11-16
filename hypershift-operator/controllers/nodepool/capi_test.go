@@ -2581,7 +2581,7 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 	)
 
 	nodePool := &hyperv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool", Namespace: "test-namespace"},
+		ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool", Namespace: "test-namespace", UID: "uid-current"},
 		Spec: hyperv1.NodePoolSpec{
 			ClusterName: "test-cluster",
 			Replicas:    ptr.To[int32](3),
@@ -2662,6 +2662,17 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 
 		g.Expect(capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)).To(Succeed())
 		assertSubset(g, md.Spec.Selector.MatchLabels, md.Spec.Template.Labels)
+		g.Expect(md.Spec.Template.Annotations).To(HaveKeyWithValue(hyperv1.NodePoolUIDAnnotation, "uid-current"))
+
+		// Enabling the feature on an existing deployment must not change its
+		// Machine template and start a replacement rollout.
+		md.CreationTimestamp = metav1.Now()
+		delete(md.Spec.Template.Annotations, hyperv1.NodePoolUIDAnnotation)
+		g.Expect(capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)).To(Succeed())
+		g.Expect(md.Spec.Template.Annotations).NotTo(HaveKey(hyperv1.NodePoolUIDAnnotation))
+		md.Spec.Template.Annotations[hyperv1.NodePoolUIDAnnotation] = "uid-previous"
+		g.Expect(capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)).To(Succeed())
+		g.Expect(md.Spec.Template.Annotations).To(HaveKeyWithValue(hyperv1.NodePoolUIDAnnotation, "uid-previous"))
 	})
 
 	t.Run("MachineSet", func(t *testing.T) {
@@ -2680,6 +2691,15 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 
 		g.Expect(capi.reconcileMachineSet(t.Context(), ms, kvTemplate)).To(Succeed())
 		assertSubset(g, ms.Spec.Selector.MatchLabels, ms.Spec.Template.Labels)
+		g.Expect(ms.Spec.Template.Annotations).To(HaveKeyWithValue(hyperv1.NodePoolUIDAnnotation, "uid-current"))
+
+		ms.CreationTimestamp = metav1.Now()
+		delete(ms.Spec.Template.Annotations, hyperv1.NodePoolUIDAnnotation)
+		g.Expect(capi.reconcileMachineSet(t.Context(), ms, kvTemplate)).To(Succeed())
+		g.Expect(ms.Spec.Template.Annotations).NotTo(HaveKey(hyperv1.NodePoolUIDAnnotation))
+		ms.Spec.Template.Annotations[hyperv1.NodePoolUIDAnnotation] = "uid-previous"
+		g.Expect(capi.reconcileMachineSet(t.Context(), ms, kvTemplate)).To(Succeed())
+		g.Expect(ms.Spec.Template.Annotations).To(HaveKeyWithValue(hyperv1.NodePoolUIDAnnotation, "uid-previous"))
 	})
 }
 

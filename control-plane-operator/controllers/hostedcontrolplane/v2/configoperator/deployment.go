@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/pdbdrain"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 
@@ -34,6 +35,8 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 	kubeVersion := versions["kubernetes"]
 	hcp := cpContext.HCP
 	openShiftVersion := cpContext.ReleaseImageProvider.Version()
+	drainReadinessEnabled := os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") == "1" &&
+		hcp.Annotations[hyperv1.NodePoolDrainReadinessAnnotation] == "true"
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Command = append(c.Command,
@@ -48,7 +51,11 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 		)
 
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			c.Command = append(c.Command, "--controllers=controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus")
+			controllers := "controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus"
+			if drainReadinessEnabled {
+				controllers += ",nodepooldrain"
+			}
+			c.Command = append(c.Command, "--controllers="+controllers)
 		}
 
 		c.Env = append(c.Env, []corev1.EnvVar{
@@ -82,6 +89,18 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 					Value: "1",
 				},
 			)
+		}
+		if drainReadinessEnabled {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "ENABLE_NODEPOOL_DRAIN_READINESS",
+				Value: "1",
+			})
+			if prefixes := os.Getenv(pdbdrain.AdditionalPlatformNamespacePrefixesEnv); prefixes != "" {
+				c.Env = append(c.Env, corev1.EnvVar{
+					Name:  pdbdrain.AdditionalPlatformNamespacePrefixesEnv,
+					Value: prefixes,
+				})
+			}
 		}
 		if len(os.Getenv("MANAGED_SERVICE")) > 0 {
 			c.Env = append(c.Env,
