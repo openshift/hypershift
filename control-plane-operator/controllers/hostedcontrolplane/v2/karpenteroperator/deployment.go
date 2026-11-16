@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
+	karpenteroperatoroverrides "github.com/openshift/hypershift/hypershift-operator/karpenteroperator-overrides"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/images"
@@ -222,11 +223,24 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 			},
 		)
 	}
+	// Image precedence, from highest to lowest:
+	// 1. HostedCluster image annotation propagated to the HCP.
+	// 2. KARPENTER_OPERATOR_IMAGE_OVERRIDE on HO.
+	// 3. The pin compiled into HO.
+	// 4. The hosted cluster's release payload.
+	operatorImage, err := karpenteroperatoroverrides.Image(
+		hcp.Annotations[hyperkarpenterv1.KarpenterOperatorImage],
+		func() string {
+			return cpContext.ReleaseImageProvider.GetImage(karpenterutil.KarpenterOperatorImageName)
+		},
+		karp.RegistryOverrides,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve karpenter-operator image: %w", err)
+	}
+
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		c.Image = cpContext.ReleaseImageProvider.GetImage(karpenterutil.KarpenterOperatorImageName)
-		if override, exists := hcp.Annotations[hyperkarpenterv1.KarpenterOperatorImage]; exists && override != "" {
-			c.Image = override
-		}
+		c.Image = operatorImage
 		if platformType == hyperv1.AWSPlatform {
 			c.VolumeMounts = append(c.VolumeMounts,
 				corev1.VolumeMount{
