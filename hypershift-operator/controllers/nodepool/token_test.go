@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -2569,5 +2570,261 @@ func TestTokenRepairMissingReferencedSecrets(t *testing.T) {
 			To(Succeed(), "referenced user data Secret should still exist")
 		g.Expect(string(refreshed.Data["value"])).To(ContainSubstring("Bearer "+currentEncodedToken(t, fakeClient, token)),
 			"unparsable Secret should be rewritten with a servable ignition config")
+	})
+}
+
+// TestTokenReconcileKarpenterInMemoryNodePool exercises the Token lifecycle as
+// driven by the karpenter-operator's KarpenterIgnitionReconciler: it builds an
+// in-memory NodePool named <openshiftEC2NodeClass>-karpenter (see
+// karpenterutil.KarpenterNodePoolName) with no NodePool object behind it, then
+// calls NewToken/Token.Reconcile directly. There is no MachineDeployment named
+// after that pool and no MachineSet or Machine carries its NodePool annotation
+// (Karpenter-managed Machines belong to autoNode MachineDeployments named for
+// the HostedControlPlane, carrying a different NodePool annotation). The
+// bootstrap data Secret reference collection added to the Secret cleanup and
+// repair paths must tolerate that absence without error, or OpenshiftEC2NodeClass
+// reconciliation stalls before it can publish its annotations, conditions, and
+// AMI/subnet propagation.
+// nolint comment per TESTING.md: this is a package-level behavioral test that
+// exercises Token.Reconcile end to end for the karpenter-operator's in-memory
+// NodePool caller — a distinct scenario from TestTokenReconcile, which it must
+// not be merged into.
+//
+//nolint:hypershiftlinter // testfuncstructure: exercises Token.Reconcile for the karpenter-operator's in-memory NodePool caller, a distinct scenario from TestTokenReconcile
+func TestTokenReconcileKarpenterInMemoryNodePool(t *testing.T) {
+	controlplaneNamespace := "test-namespace"
+	hcName := "test-hostedcluster"
+	hcNamespace := "test-hc-namespace"
+
+	// The autoNode CAPI machinery of a real Karpenter cluster: a
+	// MachineDeployment, MachineSet and Machine named for the
+	// HostedControlPlane, all annotated for a NodePool that is not the
+	// in-memory Karpenter pool, with the MachineDeployment and Machine
+	// referencing the autoNode pool's bootstrap Secret.
+	foreignPoolName := "karpenter-8r2fj-us-east-1b"
+	foreignUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, foreignPoolName, "feedface")
+	foreignMachineDeployment := &capiv1.MachineDeployment{
+		ObjectMeta: metav1.ObjectMeta{Name: foreignPoolName, Namespace: controlplaneNamespace},
+		Spec: capiv1.MachineDeploymentSpec{
+			Template: capiv1.MachineTemplateSpec{
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(foreignUserDataName)},
+				},
+			},
+		},
+	}
+	foreignMachineSet := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        foreignPoolName + "-h9mnb",
+			Namespace:   controlplaneNamespace,
+			Annotations: map[string]string{nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, foreignPoolName)},
+		},
+		Spec: capiv1.MachineSetSpec{
+			Template: capiv1.MachineTemplateSpec{
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(foreignUserDataName)},
+				},
+			},
+		},
+	}
+	foreignMachine := &capiv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        foreignPoolName + "-w7kcr",
+			Namespace:   controlplaneNamespace,
+			Annotations: map[string]string{nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, foreignPoolName)},
+		},
+		Spec: capiv1.MachineSpec{
+			Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(foreignUserDataName)},
+		},
+	}
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pull-secret", Namespace: hcNamespace},
+		Data:       map[string][]byte{".dockerconfigjson": []byte("test-pull-secret")},
+	}
+	additionalTrustBundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-trust-bundle", Namespace: hcNamespace},
+		Data:       map[string]string{"ca-bundle.crt": "test-ca-bundle"},
+	}
+	ignitionServerCACert := ignitionserver.IgnitionCACertSecret(controlplaneNamespace)
+	ignitionServerCACert.Data = map[string][]byte{
+		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
+	}
+
+	// A Karpenter-enabled HostedCluster on AWS, as the karpenter-operator sees it.
+	karpenterEnabledHostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{Name: pullSecret.GetName()},
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{Region: "us-east-1"},
+			},
+			AutoNode: hyperv1.AutoNode{
+				Provisioner: hyperv1.ProvisionerConfig{
+					Name:      hyperv1.ProvisionerKarpenter,
+					Karpenter: hyperv1.KarpenterConfig{Platform: hyperv1.AWSPlatform},
+				},
+			},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			IgnitionEndpoint: "https://example.com",
+		},
+	}
+
+	// The in-memory NodePool, mirroring karpenterignition.createInMemoryNodePool:
+	// zero replicas, the Karpenter management label, and no annotations on the
+	// first reconciliation.
+	karpenterNodePool := func(name string) *hyperv1.NodePool {
+		return &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Namespace:   controlplaneNamespace,
+				Annotations: map[string]string{},
+				Labels: map[string]string{
+					karpenterutil.ManagedByKarpenterLabel: "true",
+				},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: hcName,
+				Replicas:    ptr.To[int32](0),
+				Release:     hyperv1.Release{Image: "image:4.17"},
+				Config: []corev1.LocalObjectReference{
+					{Name: karpenterutil.KarpenterTaintConfigMapName},
+				},
+				Arch: hyperv1.ArchitectureAMD64,
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AWSPlatform,
+				},
+			},
+		}
+	}
+
+	setup := func(t *testing.T, pool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, extraObjects ...crclient.Object) (*Token, crclient.Client) {
+		objects := append([]crclient.Object{
+			pullSecret,
+			additionalTrustBundle,
+			ignitionServerCACert,
+			foreignMachineDeployment,
+			foreignMachineSet,
+			foreignMachine,
+		}, extraObjects...)
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+
+		configGenerator := &ConfigGenerator{
+			Client:                fakeClient,
+			hostedCluster:         hostedCluster,
+			nodePool:              pool,
+			controlplaneNamespace: controlplaneNamespace,
+			rolloutConfig: &rolloutConfig{
+				releaseImage: &releaseinfo.ReleaseImage{
+					ImageStream: &imageapi.ImageStream{
+						ObjectMeta: metav1.ObjectMeta{Name: "4.17"},
+						Status: imageapi.ImageStreamStatus{
+							Tags: []imageapi.NamedTagEventList{{
+								Tag: "4.17",
+								Items: []imageapi.TagEvent{{
+									DockerImageReference: "image:4.17",
+								}},
+							}},
+						},
+					},
+					StreamMetadata: testAWSStream("x86_64", "us-east-1", "ami-default-amd64"),
+				},
+				globalConfig: "test-global-config",
+				mcoRawConfig: "raw-config",
+			},
+		}
+		token, err := NewToken(t.Context(), configGenerator, &CPOCapabilities{DecompressAndDecodeConfig: true})
+		if err != nil {
+			t.Fatalf("failed to create token: %v", err)
+		}
+		return token, fakeClient
+	}
+
+	t.Run("When the in-memory Karpenter NodePool reconciles with no MachineDeployment of its name and no Machines carrying its annotation, Reconcile should succeed", func(t *testing.T) {
+		g := NewWithT(t)
+		poolName := karpenterutil.KarpenterNodePoolName(&hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "default", Namespace: controlplaneNamespace},
+		})
+		token, fakeClient := setup(t, karpenterNodePool(poolName), karpenterEnabledHostedCluster)
+
+		// First reconcile: no annotations at all, so isOutdated() is true and
+		// cleanupOutdated runs the reference collection before creating the
+		// initial secrets. This must not fail on the absent CAPI machinery.
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "first reconcile of the in-memory Karpenter NodePool should succeed")
+
+		tokenSecret := token.TokenSecret()
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(tokenSecret), &corev1.Secret{})).
+			To(Succeed(), "the Karpenter pool's token Secret should be created")
+		userDataSecret := token.UserDataSecret()
+		gotUserData := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(userDataSecret), gotUserData)).
+			To(Succeed(), "the Karpenter pool's user data Secret should be created")
+		g.Expect(gotUserData.Annotations[nodePoolAnnotation]).To(Equal(fmt.Sprintf("%s/%s", controlplaneNamespace, poolName)),
+			"the Karpenter pool's user data Secret should carry its in-memory NodePool annotation")
+		g.Expect(gotUserData.Labels[karpenterutil.ManagedByKarpenterLabel]).To(Equal("true"),
+			"the Karpenter pool's user data Secret should carry the Karpenter management label")
+		g.Expect(gotUserData.Labels).To(HaveKeyWithValue(karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64), "ami-default-amd64"),
+			"the Karpenter pool's user data Secret should carry the AMI label Karpenter selects it by")
+
+		// Repair must not invent Secrets for other NodePools' references it
+		// sees in the controlplane namespace.
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: foreignUserDataName}, &corev1.Secret{})).
+			ToNot(Succeed(), "repair must not create the autoNode MachineDeployment's referenced Secret")
+
+		// A steady-state reconcile (no changes) must succeed as well.
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "second reconcile of the in-memory Karpenter NodePool should succeed")
+	})
+
+	t.Run("When there is no MachineDeployment for the in-memory Karpenter pool, cleanupOutdated should not error and should clean up unreferenced Secrets", func(t *testing.T) {
+		g := NewWithT(t)
+		poolName := karpenterutil.KarpenterNodePoolName(&hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "default", Namespace: controlplaneNamespace},
+		})
+		// Azure keeps the deletion guard exercised (AWS and KubeVirt always
+		// retain outdated Secrets): the pool shape, not the platform, is what
+		// is under test here.
+		pool := karpenterNodePool(poolName)
+		pool.Spec.Platform.Type = hyperv1.AzurePlatform
+		completedHash := "01d4c0de"
+		pool.Annotations[nodePoolAnnotationCurrentConfigVersion] = completedHash
+		// No Karpenter AutoNode on the cluster: only the cleanup path is under
+		// test, and Karpenter userData reconciliation is AWS-only.
+		hostedCluster := karpenterEnabledHostedCluster.DeepCopy()
+		hostedCluster.Spec.AutoNode = hyperv1.AutoNode{}
+
+		token, fakeClient := setup(t, pool, hostedCluster)
+
+		referenced, err := token.referencedBootstrapDataSecretNames(t.Context())
+		g.Expect(err).ToNot(HaveOccurred(), "reference collection must tolerate the absent MachineDeployment, MachineSets, and Machines")
+		g.Expect(referenced).To(BeEmpty(), "no bootstrap data Secret may be attributed to the in-memory Karpenter pool")
+
+		outdatedUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, poolName, completedHash)
+		outdatedUserData := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: controlplaneNamespace, Name: outdatedUserDataName},
+			Data:       map[string][]byte{"value": []byte("stale-ignition-config")},
+		}
+		outdatedTokenName := fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, poolName, completedHash)
+		outdatedToken := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: controlplaneNamespace, Name: outdatedTokenName},
+			Data:       map[string][]byte{TokenSecretTokenKey: []byte("stale-ignition-token")},
+		}
+		g.Expect(fakeClient.Create(t.Context(), outdatedUserData)).To(Succeed())
+		g.Expect(fakeClient.Create(t.Context(), outdatedToken)).To(Succeed())
+
+		g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup must not error on the absent MachineDeployment")
+
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, &corev1.Secret{})).
+			ToNot(Succeed(), "an unreferenced outdated user data Secret should be deleted")
+		gotOutdatedToken := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedTokenName}, gotOutdatedToken)).
+			To(Succeed(), "an unreferenced outdated token Secret should be kept until it expires")
+		g.Expect(gotOutdatedToken.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation]).
+			ToNot(BeEmpty(), "an unreferenced outdated token Secret should be annotated to expire")
+
+		// The autoNode machinery of the real Karpenter pool is untouched.
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: foreignMachineDeployment.GetName()}, foreignMachineDeployment.DeepCopy())).
+			To(Succeed(), "the autoNode MachineDeployment must be untouched")
 	})
 }
