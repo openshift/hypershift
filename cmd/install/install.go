@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	capicrdmigrator "github.com/openshift/hypershift/support/capi-crdmigrator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -189,6 +190,9 @@ func (o *Options) Complete() error {
 
 func (o *Options) Validate() error {
 	var errs []error
+	if !o.EnableDefaultingWebhook {
+		errs = append(errs, fmt.Errorf("--enable-defaulting-webhook cannot be disabled because HostedCluster and HostedControlPlane Route defaults are required"))
+	}
 
 	if o.InstallScope != "" && !Outputs(o.InstallScope).IsValid() {
 		errs = append(errs, fmt.Errorf("invalid --install-scope value %q: must be '%s', '%s', or '%s'", o.InstallScope, OutputAll, OutputCRDs, OutputResources))
@@ -569,6 +573,17 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 	if err != nil {
 		return err
 	}
+	config, err := opts.ClientProvider.ConfigFor("")
+	if err != nil {
+		return fmt.Errorf("failed to get kubernetes config: %w", err)
+	}
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create discovery client: %w", err)
+	}
+	if err := capabilities.ValidateCRDValidationRatcheting(discoveryClient); err != nil {
+		return fmt.Errorf("management cluster does not support the required CRD validation behavior: %w", err)
+	}
 
 	crds, objects, err := hyperShiftOperatorManifests(ctx, client, opts)
 	if err != nil {
@@ -587,14 +602,6 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 		// Coordinate with Cluster CAPI Operator if the ClusterAPI API is available.
 		// This is done after dry-run so the ClusterAPI config is not mutated if CRDs
 		// cannot be applied.
-		config, err := opts.ClientProvider.ConfigFor("")
-		if err != nil {
-			return fmt.Errorf("failed to get kubernetes config: %w", err)
-		}
-		discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
-		if err != nil {
-			return fmt.Errorf("failed to create discovery client: %w", err)
-		}
 		registered, err := isClusterAPIRegistered(discoveryClient)
 		if err != nil {
 			return err
@@ -661,7 +668,7 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.EnableAdminRBACGeneration = false
 	opts.EnableConversionWebhook = true
 	opts.EnableDedicatedRequestServingIsolation = true
-	opts.EnableDefaultingWebhook = false
+	opts.EnableDefaultingWebhook = true
 	opts.EnableEtcdRecovery = true
 	opts.EnableSizeTagging = false
 	opts.EnableValidatingWebhook = false

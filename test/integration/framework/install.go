@@ -140,12 +140,13 @@ func InstallHyperShiftOperator(ctx context.Context, logger logr.Logger, opts *Op
 		"--outputs=resources",
 		"--hypershift-image", opts.HyperShiftOperatorImage,
 		"--enable-ci-debug-output",
-		// Since it is hard to get all of the necessary setup done for the webhooks (serving certs, etc), we
-		// choose to omit the webhooks in these tests. The webhooks are not strictly required, and even some
-		// production deployments of HyperShift do not run the, so it is not extremely risky to do this, but
-		// we should keep in mind that we're drifting from an ideal production deployment by turning them off.
+		// The defaulting webhook is required because HostedCluster and
+		// HostedControlPlane Route defaults are part of API admission. The
+		// operator bootstraps its serving certificate and CA bundle when the
+		// defaulting webhook is enabled; conversion and validating webhooks are
+		// intentionally still omitted from this integration setup.
 		"--enable-conversion-webhook=false",
-		"--enable-defaulting-webhook=false",
+		"--enable-defaulting-webhook=true",
 		"--enable-validating-webhook=false",
 		"--enable-size-tagging",
 	)

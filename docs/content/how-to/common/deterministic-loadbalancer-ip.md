@@ -171,12 +171,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 !!! important

@@ -14,6 +14,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -1146,6 +1147,27 @@ func TestAddWebhookResources(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When building the mutating webhook configuration it should include HostedControlPlane CREATE defaulting", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		configuration := HyperShiftMutatingWebhookConfiguration{
+			Namespace: &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}},
+		}.Build()
+
+		var hostedControlPlaneWebhook *admissionregistrationv1.MutatingWebhook
+		for i := range configuration.Webhooks {
+			if configuration.Webhooks[i].Name == "hostedcontrolplanes.hypershift.openshift.io" {
+				hostedControlPlaneWebhook = &configuration.Webhooks[i]
+				break
+			}
+		}
+		g.Expect(hostedControlPlaneWebhook).NotTo(BeNil())
+		g.Expect(hostedControlPlaneWebhook.Rules).To(HaveLen(1))
+		g.Expect(hostedControlPlaneWebhook.Rules[0].Operations).To(HaveLen(1))
+		g.Expect(string(hostedControlPlaneWebhook.Rules[0].Operations[0])).To(Equal("CREATE"))
+		g.Expect(hostedControlPlaneWebhook.ClientConfig.Service.Path).NotTo(BeNil())
+		g.Expect(*hostedControlPlaneWebhook.ClientConfig.Service.Path).To(Equal("/mutate-hypershift-openshift-io-v1beta1-hostedcontrolplane"))
+	})
 }
 
 func TestAddOIDCResources(t *testing.T) {

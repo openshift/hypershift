@@ -6754,6 +6754,7 @@ spec:
                 description: |-
                   services defines metadata about how control plane services are published
                   in the management cluster.
+                  The list is bounded by MaxItems=6, so the duplicate check remains bounded.
                 items:
                   description: |-
                     ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
@@ -6904,6 +6905,7 @@ spec:
                           description: |-
                             route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
                             The specifics of the setup are platform dependent.
+                            An empty object uses management ingress.Spec.Domain as the hostname.
                           properties:
                             hostname:
                               description: |-
@@ -6935,10 +6937,10 @@ spec:
                       - message: nodePort is required when type is NodePort, and forbidden
                           otherwise
                         rule: 'self.type == ''NodePort'' ? has(self.nodePort) : !has(self.nodePort)'
-                      - message: only route is allowed when type is Route, and forbidden
+                      - message: route is required when type is Route, and forbidden
                           otherwise
-                        rule: 'self.type == ''Route'' ? !has(self.nodePort) && !has(self.loadBalancer)
-                          : !has(self.route)'
+                        rule: 'self.type == ''Route'' ? has(self.route) && !has(self.nodePort)
+                          && !has(self.loadBalancer) : !has(self.route)'
                       - message: only loadBalancer is required when type is LoadBalancer,
                           and forbidden otherwise
                         rule: 'self.type == ''LoadBalancer'' ? !has(self.nodePort)
@@ -6957,6 +6959,16 @@ spec:
                   type: object
                 maxItems: 6
                 type: array
+                x-kubernetes-list-type: atomic
+                x-kubernetes-validations:
+                - message: Services list must contain an APIServer service
+                  rule: self.exists(s, s.service == 'APIServer')
+                - message: Services list must contain an OAuthServer service
+                  rule: self.exists(s, s.service == 'OAuthServer')
+                - message: Services list must contain a Konnectivity service
+                  rule: self.exists(s, s.service == 'Konnectivity')
+                - message: Each service type must be unique within the Services list.
+                  rule: self.all(s, self.exists_one(t, t.service == s.service))
               sshKey:
                 description: sshKey is a reference to a secret containing the SSH
                   key for the hosted control plane.
@@ -7031,10 +7043,17 @@ spec:
             - sshKey
             type: object
             x-kubernetes-validations:
-            - message: spec.services in body should have at least 4 items or 3 for
-                IBMCloud
-              rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
-                : size(self.services) >= 4'
+            - message: Services list must contain an Ignition service
+              optionalOldSelf: true
+              rule: self.platform.type == 'IBMCloud' || self.services.exists(s, s.service
+                == 'Ignition') || (oldSelf.hasValue() && self.services == oldSelf.value().services
+                && !(oldSelf.value().platform.type == 'IBMCloud' || oldSelf.value().services.exists(s,
+                s.service == 'Ignition')))
+            - message: route is required for Route service publishing strategies
+              rule: self.services.all(s, s.servicePublishingStrategy.type != 'Route'
+                || has(s.servicePublishingStrategy.route)) || (self.services == oldSelf.services
+                && oldSelf.services.exists(s, s.servicePublishingStrategy.type ==
+                'Route' && !has(s.servicePublishingStrategy.route)))
             - message: disableMultiNetwork can only be set to true when networkType
                 is 'Other'
               rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)

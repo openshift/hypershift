@@ -174,12 +174,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -245,9 +248,11 @@ spec:
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -305,12 +310,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -370,15 +378,19 @@ spec:
   - service: APIServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -643,9 +655,11 @@ spec:
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -714,9 +728,11 @@ spec:
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -851,15 +867,19 @@ spec:
   - service: APIServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -942,12 +962,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 **Architecture Diagram:**
@@ -1167,12 +1190,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 **Architecture Diagram:**

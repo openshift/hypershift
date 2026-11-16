@@ -104,17 +104,20 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OIDC
     servicePublishingStrategy:
       type: Route
-      Route:
+      route:
         hostname: <URL>
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 This way, the API server is configured as a LoadBalancer, and the rest of the services are exposed via Route.

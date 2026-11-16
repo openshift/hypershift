@@ -1439,7 +1439,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "only route is allowed when type is Route"
+    expectedError: "route is required when type is Route, and forbidden otherwise"
 
   - name: When the loadBalancer block is used with a NodePort strategy it should fail
     initial: |

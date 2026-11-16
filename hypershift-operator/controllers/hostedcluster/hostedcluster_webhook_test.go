@@ -7,8 +7,11 @@ import (
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 func TestValidateKVHostedClusterCreate(t *testing.T) {
@@ -91,6 +94,89 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When an existing KubeVirt Route entry has no configuration, it should default the Route member", func(tt *testing.T) {
+		hc := &v1beta1.HostedCluster{
+			Spec: v1beta1.HostedClusterSpec{
+				Release: v1beta1.Release{Image: "example"},
+				Platform: v1beta1.PlatformSpec{
+					Type:     v1beta1.KubevirtPlatform,
+					Kubevirt: &v1beta1.KubevirtPlatformSpec{},
+				},
+				Services: []v1beta1.ServicePublishingStrategyMapping{{
+					Service: v1beta1.APIServer,
+					ServicePublishingStrategy: v1beta1.ServicePublishingStrategy{
+						Type: v1beta1.Route,
+					},
+				}},
+			},
+		}
+		ctx := admission.NewContextWithRequest(tt.Context(), admission.Request{
+			AdmissionRequest: admissionv1.AdmissionRequest{Operation: admissionv1.Create},
+		})
+		if err := (&hostedClusterDefaulter{}).Default(ctx, hc); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if hc.Spec.Services[0].ServicePublishingStrategy.Route == nil {
+			t.Fatal("expected the existing Route entry to receive an empty Route configuration")
+		}
+	})
+
+	t.Run("When a HostedControlPlane is created with a Route entry without configuration, it should default the Route member", func(tt *testing.T) {
+		hcp := &v1beta1.HostedControlPlane{Spec: v1beta1.HostedControlPlaneSpec{
+			Services: []v1beta1.ServicePublishingStrategyMapping{{
+				Service:                   v1beta1.APIServer,
+				ServicePublishingStrategy: v1beta1.ServicePublishingStrategy{Type: v1beta1.Route},
+			}},
+		}}
+		ctx := admission.NewContextWithRequest(tt.Context(), admission.Request{
+			AdmissionRequest: admissionv1.AdmissionRequest{Operation: admissionv1.Create},
+		})
+		if err := (&hostedControlPlaneDefaulter{}).Default(ctx, hcp); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if hcp.Spec.Services[0].ServicePublishingStrategy.Route == nil {
+			t.Fatal("expected the HostedControlPlane Route entry to receive an empty Route configuration")
+		}
+	})
+
+	t.Run("When a HostedCluster is updated with a Route entry without configuration, it should preserve the omitted Route member", func(tt *testing.T) {
+		hc := &v1beta1.HostedCluster{Spec: v1beta1.HostedClusterSpec{
+			Platform: v1beta1.PlatformSpec{Type: v1beta1.NonePlatform},
+			Release:  v1beta1.Release{Image: "example"},
+			Services: []v1beta1.ServicePublishingStrategyMapping{{
+				Service:                   v1beta1.APIServer,
+				ServicePublishingStrategy: v1beta1.ServicePublishingStrategy{Type: v1beta1.Route},
+			}},
+		}}
+		ctx := admission.NewContextWithRequest(tt.Context(), admission.Request{
+			AdmissionRequest: admissionv1.AdmissionRequest{Operation: admissionv1.Update},
+		})
+		if err := (&hostedClusterDefaulter{}).Default(ctx, hc); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if hc.Spec.Services[0].ServicePublishingStrategy.Route != nil {
+			t.Fatal("expected an update to preserve the omitted Route configuration")
+		}
+	})
+
+	t.Run("When a HostedControlPlane is updated with a Route entry without configuration, it should preserve the omitted Route member", func(tt *testing.T) {
+		hcp := &v1beta1.HostedControlPlane{Spec: v1beta1.HostedControlPlaneSpec{
+			Services: []v1beta1.ServicePublishingStrategyMapping{{
+				Service:                   v1beta1.APIServer,
+				ServicePublishingStrategy: v1beta1.ServicePublishingStrategy{Type: v1beta1.Route},
+			}},
+		}}
+		ctx := admission.NewContextWithRequest(tt.Context(), admission.Request{
+			AdmissionRequest: admissionv1.AdmissionRequest{Operation: admissionv1.Update},
+		})
+		if err := (&hostedControlPlaneDefaulter{}).Default(ctx, hcp); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if hcp.Spec.Services[0].ServicePublishingStrategy.Route != nil {
+			t.Fatal("expected an update to preserve the omitted Route configuration")
+		}
+	})
 }
 
 func TestValidateKVHostedClusterUpdate(t *testing.T) {

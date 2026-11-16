@@ -119,12 +119,15 @@ $pause_until
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   sshKey:
     name: $cluster_name-ssh-key
 ---

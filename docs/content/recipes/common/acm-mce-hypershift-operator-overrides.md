@@ -80,7 +80,9 @@ data:
 
 ### Example
 
-To enable the defaulting webhook and disable UWM telemetry remote write:
+The defaulting webhook is enabled by default and is required for Route service
+defaults. To state that setting explicitly while also disabling UWM telemetry
+remote write:
 
 ```bash
 cat <<EOF | kubectl apply -f -
