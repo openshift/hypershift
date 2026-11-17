@@ -59,6 +59,7 @@ PLATFORM_RULES: list[PlatformRule] = [
     ("hcm",       "HCM & Other",        lambda s: s.startswith("hcm-")),
     ("openstack", "OpenStack",          lambda s: "openstack" in s),
     ("ibm",       "IBM / PowerVS",      lambda s: any(k in s for k in ("ibmcloud", "powervs"))),
+    ("rosa",      "ROSA",               lambda s: "rosa" in s),
     ("aws",       "AWS",                lambda s: "aws" in s),
 ]
 
@@ -87,6 +88,7 @@ DESCRIPTIONS: dict[str, str] = {
     "mce":       "Agent-based bare metal installs via MCE",
     "gke":       "GKE hosted control planes",
     "hcm":       "Hosted Cluster Manager tests",
+    "rosa":      "ROSA Seaplane hosted control planes",
 }
 
 
