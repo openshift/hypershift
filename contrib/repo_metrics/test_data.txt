@@ -47,9 +47,7 @@ Add explicit guidance to:
 - Ensure godoc comments are generated for any newly created functions
 - Create unit tests for any newly created functions
 
-Signed-off-by: Bryan Cox <brcox@redhat.com>
 Assisted-by: GPT-5 (via Cursor)
-
 COMMIT_END
 
 COMMIT_START
@@ -61,7 +59,6 @@ CSI operator should respect `RUN_AS_USER` env variable
 to set UID security context on operator and CSI controller
 pods. CSO needs to have this variable set first before
 it can be seen by it's operands.
-
 COMMIT_END
 
 COMMIT_START
@@ -91,13 +88,11 @@ This enables self-managed Azure clusters to function without external DNS
 while keeping essential services on Routes that can use the management
 cluster's default route domain.
 
-Signed-off-by: Bryan Cox <brcox@redhat.com>
 Assisted-by: Claude (via Claude Code)
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -134,8 +129,6 @@ This change adds a retry mechanism:
 Fixes: OCPBUGS-62446
 
 Assisted-by: 🤖 Claude Code
-Signed-off-by: Juan Manuel Parrilla Madrid <jparrill@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -151,8 +144,6 @@ HASH: c0c2ecb9aa095a6cbb82c459051cb0efbbb35473
 PARENTS: e9abaee83955b1e79af19ce53da8e7776c260108
 SUBJECT: docs(readme): correct spelling mistake
 BODY:
-Signed-off-by: Bryan Cox <brcox@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -188,8 +179,6 @@ in control-plane-operator/controllers/hostedcontrolplane/v2/kas/config.go:159-16
 🤖 Generated with [Claude Code](https://claude.com/claude-code) via `/jira-solve CNTRLPLANE-1432`
 
 Co-Authored-By: Claude <noreply@anthropic.com>
-Signed-off-by: Juan Manuel Parrilla Madrid <jparrill@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -213,10 +202,8 @@ Update the jira-solve command to:
 These improvements make PRs easier to review and ensure commits follow
 project conventions.
 
-Signed-off-by: Bryan Cox <brcox@redhat.com>
 
 Assisted-by: Claude Sonnet 4.5 (via Cursor)
-
 COMMIT_END
 
 COMMIT_START
@@ -228,9 +215,7 @@ Update builder images in Dockerfile, Dockerfile.dev, and Dockerfile.e2e from
 rhel-9-release-golang-1.24-openshift-4.20 to rhel-9-release-golang-1.24-openshift-4.21
 to maintain consistency with the control plane operator image updates.
 
-Signed-off-by: Bryan Cox <brcox@redhat.com>
 Assisted-by: Claude Sonnet 4.5 (via Cursor)
-
 COMMIT_END
 
 COMMIT_START
@@ -240,9 +225,7 @@ SUBJECT: chore(build): update ose-hypershift-container image to be consistent wi
 BODY:
 Reconciling with https://github.com/openshift/ocp-build-data/tree/4fbe3fab45239dc4be6f5d9d98a0bf36e0274ec9/images/hypershift.yml
 
-Signed-off-by: Bryan Cox <brcox@redhat.com>
 Assisted-by: Claude Sonnet 4.5 (via Cursor)
-
 COMMIT_END
 
 COMMIT_START
@@ -251,7 +234,6 @@ PARENTS: 3642dc7d15ec408593d967a91956450f8530d3d5
 SUBJECT: feat(gcp-hcp): adding GCPPlatform feature gate
 BODY:
 Refs GCP-96: Create a feature flag to gate GCP-HCP changes
-
 COMMIT_END
 
 COMMIT_START
@@ -283,8 +265,6 @@ verification warnings to resolve trusted task violations.
 Resolves enterprise contract policy violations for trusted task requirements.
 
 Co-authored-by: Claude AI Assistant <claude@anthropic.com>
-Signed-off-by: Juan Manuel Parrilla Madrid <jparrill@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -324,8 +304,6 @@ HASH: facd774e6ca96ef62f3afd1e5aaaa286f3199fce
 PARENTS: 0fe7be3e59f44eb701d2a492bdada22838ec8b1e
 SUBJECT: fix(test-e2e): Correct parse flag value with 2+ = chars
 BODY:
-Signed-off-by: Borja Clemente <bclement@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -337,9 +315,6 @@ This is required since commit b1feaeff9e6.
 
 We also add a termination grace period, which is present on other
 CAPI provider's deployments but not on CAPO's.
-
-Signed-off-by: Stephen Finucane <stephenfin@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -347,8 +322,6 @@ HASH: 87a511cd4ce9db81a5c9816f0ac5774e4ca19b79
 PARENTS: 0fe7be3e59f44eb701d2a492bdada22838ec8b1e
 SUBJECT: feat(hcco): add HCP configuration status
 BODY:
-Signed-off-by: Ahmed Abdalla <aabdelre@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -359,9 +332,6 @@ BODY:
 Fixes the bug by setting the nodePoolAnnotationCurrentConfigVersion annotation on the in-memory NodePool object.
 In order to persist the current config version, we slap a new annotation on the HostedCluster which stores the current config.
 In the next loop if the underlying ConfigGenerator.Hash() changes, the secret will be marked outdated.
-
-Signed-off-by: Max Cao <macao@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -400,8 +370,6 @@ Fixes: OCPBUGS-61245
 🤖 Generated with [Claude Code](https://claude.ai/code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
-Signed-off-by: Juan Manuel Parrilla Madrid <jparrill@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -429,9 +397,6 @@ INFO: Running 'snyk code test'..
    "failures":0,
    "warnings":0
 }
-
-Signed-off-by: Antoni Segura Puimedon <antoni@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -452,11 +417,7 @@ better readability.
 
 Fixes: KFLUXSPRT-5246
 
-Signed-off-by: Antoni Segura Puimedon <antoni@redhat.com>
 Commit-Message-Assisted-by: Claude-3.5-Sonnet (via Cursor)
-
-Signed-off-by: Antoni Segura Puimedon <antoni@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -465,9 +426,6 @@ PARENTS: 3b6a0329e8a22066bedc7034035ce5f82f05cfe3
 SUBJECT: chore: Add openstack-reviewers, openstack-approvers
 BODY:
 Modelled on kubevirt's approach.
-
-Signed-off-by: Stephen Finucane <stephenfin@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -485,7 +443,6 @@ SUBJECT: fix(e2e): extend ValidateHostedClusterConditions timeout
 BODY:
 Extend ValidateHostedClusterConditions timeout when we initially
 have no nodes and don't delay on WaitForImageRollout.
-
 COMMIT_END
 
 COMMIT_START
@@ -510,7 +467,6 @@ PARENTS: db76a89d8506064c9d6fdb306875a1354e4ab2fd
 SUBJECT: chore(ai): ensure jira-solve run make pre-commit
 BODY:
 This change the spec to be more prescriptive on running make pre-commit before creating a PR
-
 COMMIT_END
 
 COMMIT_START
@@ -543,7 +499,6 @@ PARENTS: bf0d5f50c66342e13f0b0db9c55bf4e6547503cf
 SUBJECT: chore(ai): let jira-solve show the executed command in the PR desc
 BODY:
 This lets reviewers see the /jira-solve claude command that triggered execution
-
 COMMIT_END
 
 COMMIT_START
@@ -554,9 +509,6 @@ BODY:
 We also don't universally call the emptyDir mount "tmp-dir" (at least
 the csi-operator and cluster-storage-operator don't do this) so a
 reference to same is removed.
-
-Signed-off-by: Stephen Finucane <stephenfin@redhat.com>
-
 COMMIT_END
 
 COMMIT_START
@@ -575,7 +527,5 @@ BODY:
 Add .claude/ and .cursor/ directory patterns to OWNERS file
 with area/ai label for proper labeling of AI-related changes.
 
-Signed-off-by: Bryan Cox <brcox@redhat.com>
 Assisted-by: Claude (via Cursor)
-
 COMMIT_END
