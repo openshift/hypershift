@@ -163,6 +163,15 @@ type AzureMachineSpec struct {
 	// It is optional but may not be changed once set.
 	// +optional
 	CapacityReservationGroupID *string `json:"capacityReservationGroupID,omitempty"`
+
+	// VirtualMachineScaleSetID specifies the VMSS Flex resource id that the virtual machine should be
+	// created in.
+	// The field input must be a valid Azure resource ID for a Virtual Machine Scale Set resource, for example
+	// '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}'.
+	// The referenced Virtual Machine Scale Set must already exist and use Flexible orchestration mode.
+	// It is optional but may not be changed once set.
+	// +optional
+	VirtualMachineScaleSetID *string `json:"virtualMachineScaleSetID,omitempty"`
 }
 
 // SpotVMOptions defines the options relevant to running the Machine on Spot VMs.

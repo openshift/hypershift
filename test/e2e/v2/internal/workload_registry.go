@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	etcdsupport "github.com/openshift/hypershift/support/etcd"
 	"github.com/openshift/hypershift/support/podspec"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -534,6 +535,34 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 			},
 		},
 	}
+}
+
+// EtcdShardWorkloads returns the workloads backing the non-default managed etcd
+// shards configured on hostedCluster. Shard names are user-defined
+// (spec.etcd.managed.shards[].name), so these workloads cannot be part of the
+// static registry above; callers that need to account for every control plane
+// pod must append them for the cluster under test. The default shard is omitted
+// because the static "etcd" entry already covers it. Returns nil when the
+// cluster does not use managed etcd or has no shards configured.
+func EtcdShardWorkloads(hostedCluster *hyperv1.HostedCluster) []WorkloadSpec {
+	if hostedCluster == nil || hostedCluster.Spec.Etcd.ManagementType != hyperv1.Managed {
+		return nil
+	}
+
+	var shardWorkloads []WorkloadSpec
+	for _, shard := range etcdsupport.EffectiveShards(hostedCluster.Spec.Etcd.Managed) {
+		if shard.IsDefault {
+			continue
+		}
+		shardWorkloads = append(shardWorkloads, WorkloadSpec{
+			Type: "StatefulSet",
+			Name: shard.Name,
+			PodSelector: map[string]string{
+				"app": shard.Name,
+			},
+		})
+	}
+	return shardWorkloads
 }
 
 // ShouldSkipWorkloadForPlatform determines whether the workload should be skipped

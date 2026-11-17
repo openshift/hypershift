@@ -84,6 +84,18 @@ spec:
           value: engineering
 ```
 
+#### HyperShift system labels
+
+On GCPCluster and NodePool machine resources, HyperShift sets the following labels
+after merging user-supplied labels:
+
+- `hypershift-openshift-io-cluster`: the HostedCluster name.
+- `hypershift-openshift-io-infra-id`: the infrastructure ID, when available.
+
+HyperShift's values take precedence over user-supplied values for these keys.
+For other keys, NodePool labels take precedence over HostedCluster labels on
+NodePool machine resources.
+
 #### LoadBalancer Service label ownership
 
 For legacy GCP LoadBalancer Services, HyperShift reconciles

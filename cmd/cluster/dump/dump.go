@@ -58,7 +58,7 @@ import (
 	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
-	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1beta2 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -884,7 +884,7 @@ var (
 )
 
 func dumpKubevirtExternalCluster(ctx context.Context, mngmtCl client.Client, creds *hyperv1.KubevirtPlatformCredentials, npNS string, destDir string, opts *DumpOptions) error {
-	kubeconfig, err := kvinfra.GetKubeConfig(ctx, mngmtCl, npNS, creds.InfraKubeConfigSecret.Name)
+	kubeconfig, err := kvinfra.GetKubeConfig(ctx, mngmtCl, npNS, creds.InfraKubeConfigSecret.Name, creds.InfraKubeConfigSecret.Key)
 	if err != nil {
 		return fmt.Errorf("failed to get KubeVirt external infra-cluster:  %w", err)
 	}
@@ -1124,9 +1124,9 @@ func platformSpecificResources(platformType hyperv1.PlatformType) []client.Objec
 		}},
 		{hyperv1.OpenStackPlatform, []client.Object{
 			&capiopenstackv1alpha1.OpenStackServer{},
-			&capiopenstackv1beta1.OpenStackCluster{},
-			&capiopenstackv1beta1.OpenStackMachine{},
-			&capiopenstackv1beta1.OpenStackMachineTemplate{},
+			&capiopenstackv1beta2.OpenStackCluster{},
+			&capiopenstackv1beta2.OpenStackMachine{},
+			&capiopenstackv1beta2.OpenStackMachineTemplate{},
 			&orcv1alpha1.Image{},
 		}},
 		{hyperv1.AgentPlatform, []client.Object{

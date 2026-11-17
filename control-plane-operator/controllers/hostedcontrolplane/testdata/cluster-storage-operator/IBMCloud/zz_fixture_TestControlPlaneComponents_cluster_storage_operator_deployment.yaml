@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 7f8d6c5c32f82f8c736d793f239d0cb38aa22eae8a5c757c461fbb13373c6dad
+    hypershift.openshift.io/desired-state-hash: e914f52391ca6a8a8723ab26cdb0bdc9da5e5af5454e82b13905182fbbd0647f
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-storage-operator
@@ -164,6 +164,8 @@ spec:
           value: tools
         - name: VOLUME_DATA_SOURCE_VALIDATOR_IMAGE
           value: volume-data-source-validator
+        - name: VOLUME_DEVICE_EXPORTER_IMAGE
+          value: csi-volume-device-exporter
         image: cluster-storage-operator
         imagePullPolicy: IfNotPresent
         name: cluster-storage-operator

@@ -8,8 +8,10 @@ through static analysis.
 
 We already document our testing conventions in
 [`TESTING.md`](../../../TESTING.md) and
-[`test/e2e/v2/AGENTS.md`](../../../test/e2e/v2/AGENTS.md), but until now nothing
-enforced them. Conventions that live only in docs get followed inconsistently —
+the v2 framework's [`AGENTS.md`](../../../test/e2e/v2/AGENTS.md). Mechanical v2
+conventions are now enforced here; authoring decisions live in
+[Writing V2 Tests](../../../docs/content/how-to/ci/v2-testing/writing-tests.md).
+Conventions that live only in docs get followed inconsistently —
 reviewers have to catch violations by hand, and many slip through.
 
 This plugin turns those conventions into machine-enforced checks instead of

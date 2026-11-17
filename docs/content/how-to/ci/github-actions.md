@@ -38,7 +38,7 @@ Pull request callers resolve their reusable workflows from `main`, while post-me
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
 | `codespell.yaml` | `codespell-reusable.yaml` | Spell checking across the codebase |
-| `deadcode.yaml` | `deadcode-reusable.yaml` | Whole-program dead-code analysis; fails on any candidate |
+| `deadcode.yaml` | `deadcode-reusable.yaml` | Whole-program dead-code analysis; temporarily advisory pending [CNTRLPLANE-4936](https://redhat.atlassian.net/browse/CNTRLPLANE-4936) |
 | `gitlint.yaml` | `gitlint-reusable.yaml` | Commit message format validation |
 | `lint.yaml` | `lint-reusable.yaml` | Go linting via `golangci-lint` |
 | `verify.yaml` | `verify-reusable.yaml` | Full verification (`make verify`) |

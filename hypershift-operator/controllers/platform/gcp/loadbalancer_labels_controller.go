@@ -37,8 +37,10 @@ const (
 	routerServiceName        = "router"
 	privateRouterServiceName = "private-router"
 
-	backendServiceAnnotation    = "service.kubernetes.io/backend-service"
-	tcpForwardingRuleAnnotation = "service.kubernetes.io/tcp-forwarding-rule"
+	backendServiceAnnotation       = "service.kubernetes.io/backend-service"
+	legacyBackendServiceAnnotation = "networking.gke.io/backend-service"
+	tcpForwardingRuleAnnotation    = "service.kubernetes.io/tcp-forwarding-rule"
+	targetPoolAnnotation           = "networking.gke.io/target-pool"
 
 	loadBalancerDiscoveryRetry = 30 * time.Second
 
@@ -257,6 +259,10 @@ func (r *GCPLoadBalancerLabelsReconciler) reconcileRouterServices(ctx context.Co
 		} else {
 			backendServiceName := service.Annotations[backendServiceAnnotation]
 			if backendServiceName == "" {
+				backendServiceName = service.Annotations[legacyBackendServiceAnnotation]
+			}
+			targetPoolName := service.Annotations[targetPoolAnnotation]
+			if backendServiceName == "" && targetPoolName == "" {
 				pending = true
 				continue
 			}
@@ -270,7 +276,11 @@ func (r *GCPLoadBalancerLabelsReconciler) reconcileRouterServices(ctx context.Co
 			if err != nil {
 				return false, fmt.Errorf("list forwarding rules for Service %s: %w", serviceName, err)
 			}
-			forwardingRules = filterForwardingRulesByBackendService(listedRules, backendServiceName)
+			if backendServiceName != "" {
+				forwardingRules = filterForwardingRulesByBackendService(listedRules, backendServiceName)
+			} else {
+				forwardingRules = filterForwardingRulesByTargetPool(listedRules, service, targetPoolName)
+			}
 		}
 
 		found := len(forwardingRules) > 0
@@ -307,8 +317,26 @@ func filterForwardingRulesByBackendService(forwardingRules []*compute.Forwarding
 	matched := make([]*compute.ForwardingRule, 0, len(forwardingRules))
 	for _, forwardingRule := range forwardingRules {
 		// Backend service names can overlap, so do not use substring matching.
-		if resourceName(forwardingRule.BackendService) == backendServiceName {
+		if backendServiceName != "" && forwardingRule.BackendService != "" && resourceName(forwardingRule.BackendService) == resourceName(backendServiceName) {
 			matched = append(matched, forwardingRule)
+		}
+	}
+	return matched
+}
+
+// filterForwardingRulesByTargetPool also checks the Service IP because a target
+// pool may be shared by forwarding rules belonging to other Services.
+func filterForwardingRulesByTargetPool(forwardingRules []*compute.ForwardingRule, service *corev1.Service, targetPoolName string) []*compute.ForwardingRule {
+	matched := make([]*compute.ForwardingRule, 0, len(forwardingRules))
+	for _, forwardingRule := range forwardingRules {
+		if forwardingRule.Target == "" || path.Base(path.Dir(forwardingRule.Target)) != "targetPools" || resourceName(forwardingRule.Target) != resourceName(targetPoolName) || forwardingRule.IPAddress == "" {
+			continue
+		}
+		for _, ingress := range service.Status.LoadBalancer.Ingress {
+			if ingress.IP == forwardingRule.IPAddress {
+				matched = append(matched, forwardingRule)
+				break
+			}
 		}
 	}
 	return matched

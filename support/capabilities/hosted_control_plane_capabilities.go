@@ -66,26 +66,27 @@ func IsImageRegistryCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
 }
 
 // SupportsCompatibilityRequirements reports whether the release payload includes
-// the CRD compatibility checker for the supplied feature set.
-func SupportsCompatibilityRequirements(featureSet configv1.FeatureSet, releaseVersion semver.Version) bool {
-	if featureSet != configv1.TechPreviewNoUpgrade && featureSet != configv1.DevPreviewNoUpgrade {
-		return false
-	}
-
+// the CRD compatibility checker, which is enabled in the default feature set.
+func SupportsCompatibilityRequirements(releaseVersion semver.Version) bool {
 	return releaseVersion.Major > config.Version510.Major ||
 		(releaseVersion.Major == config.Version510.Major && releaseVersion.Minor >= config.Version510.Minor)
 }
 
 // CalculateEnabledCapabilities returns the net enabled capabilities, by
-// using the default set of capabilities (minus baremetal and ClusterAPI
-// capabilities) and the explicitly enabled and disabled capabilities, in
-// alphabetical order.
-func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities, featureSet configv1.FeatureSet, releaseVersion semver.Version) []configv1.ClusterVersionCapability {
+// using the default set of capabilities (minus baremetal, ClusterAPI and
+// MachineAPI capabilities) and the explicitly enabled and disabled
+// capabilities, in alphabetical order.
+//
+// MachineAPI is removed from the default set because HyperShift manages
+// guest cluster machines via its own CAPI-based NodePools and the guest
+// CVO rejects MachineAPI without ClusterAPI (openshift/api#3145).
+func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities, releaseVersion semver.Version) []configv1.ClusterVersionCapability {
 	vCurrent := configv1.ClusterVersionCapabilitySets[configv1.ClusterVersionCapabilitySetCurrent]
 	netCaps := sets.New[configv1.ClusterVersionCapability](vCurrent...)
 	netCaps.Delete(configv1.ClusterVersionCapabilityBaremetal)
 	netCaps.Delete(configv1.ClusterVersionCapabilityClusterAPI)
-	if !SupportsCompatibilityRequirements(featureSet, releaseVersion) {
+	netCaps.Delete(configv1.ClusterVersionCapabilityMachineAPI)
+	if !SupportsCompatibilityRequirements(releaseVersion) {
 		netCaps.Delete(configv1.ClusterVersionCapabilityCompatibilityRequirements)
 	}
 

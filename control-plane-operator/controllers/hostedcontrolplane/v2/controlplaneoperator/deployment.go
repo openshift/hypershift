@@ -52,6 +52,12 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			)
 		}
 
+		// The HostedCluster controller only enables GMP monitoring for CPO images that declare support,
+		// since older CPO images reject unknown flags.
+		if cpContext.EnableGMPMonitoring {
+			c.Args = append(c.Args, "--enable-gmp-monitoring")
+		}
+
 		c.Env = append(c.Env, []corev1.EnvVar{
 			{
 				Name:  "CONTROL_PLANE_OPERATOR_IMAGE",

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 71912a4a92424e287886f41af8c8f7eecd8a5610149c056490936686de5b1cef
+    hypershift.openshift.io/desired-state-hash: c7e96c164b98fe03aa76af4d7fc3168e5c081ed6e770f2cb03ceaea60811d1b2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-autoscaler
@@ -69,6 +69,8 @@ spec:
         - --cloud-provider=clusterapi
         - --node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)
         - --kubeconfig=/mnt/kubeconfig/target-kubeconfig
+        - --kube-client-qps=200
+        - --kube-client-burst=300
         - --clusterapi-cloud-config-authoritative
         - --skip-nodes-with-local-storage=false
         - --alsologtostderr

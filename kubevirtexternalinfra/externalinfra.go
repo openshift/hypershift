@@ -1,7 +1,9 @@
 package kubevirtexternalinfra
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +45,7 @@ type kubevirtInfraClientImp struct {
 	Client          client.Client
 	DiscoveryClient *discovery.DiscoveryClient
 	Namespace       string
+	credentialHash  [sha256.Size]byte
 }
 
 type mockKubevirtInfraClientMap struct {
@@ -99,7 +102,7 @@ func (k *kubevirtInfraClientMapImp) DiscoverKubevirtClusterClient(ctx context.Co
 		return nil, nil
 	}
 
-	if credentials == nil || credentials.InfraKubeConfigSecret == nil {
+	if credentials == nil {
 		cfg, err := cr.GetConfig()
 		if err != nil {
 			return nil, err
@@ -116,11 +119,26 @@ func (k *kubevirtInfraClientMapImp) DiscoverKubevirtClusterClient(ctx context.Co
 			Namespace:       localInfraNamespace,
 		}, nil
 	}
+	ref := credentials.InfraKubeConfigSecret
+	if err := ValidateCredentialRef(ref); err != nil {
+		k.Delete(key)
+		return nil, err
+	}
+	kubeConfig, err := GetKubeConfig(ctx, cl, secretNS, ref.Name, ref.Key)
+	if err != nil {
+		k.Delete(key)
+		return nil, err
+	}
+	credentialHash := sha256.Sum256(kubeConfig)
 	loaded, ok := k.theMap.Load(key)
 	if ok {
-		return loaded.(*kubevirtInfraClientImp), nil
+		cached := loaded.(*kubevirtInfraClientImp)
+		if cached.credentialHash == credentialHash && cached.Namespace == credentials.InfraNamespace {
+			return cached, nil
+		}
+		k.Delete(key)
 	}
-	targetClient, targetDiscoveryClient, err := generateKubevirtInfraClusterClient(ctx, cl, credentials, secretNS)
+	targetClient, targetDiscoveryClient, err := generateKubevirtInfraClusterClient(cl, kubeConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -129,9 +147,10 @@ func (k *kubevirtInfraClientMapImp) DiscoverKubevirtClusterClient(ctx context.Co
 		Client:          targetClient,
 		DiscoveryClient: targetDiscoveryClient,
 		Namespace:       credentials.InfraNamespace,
+		credentialHash:  credentialHash,
 	}
 
-	k.theMap.LoadOrStore(key, cluster)
+	k.theMap.Store(key, cluster)
 	return cluster, nil
 }
 
@@ -141,31 +160,26 @@ func (k *kubevirtInfraClientMapImp) Delete(key string) {
 	}
 }
 
-func generateKubevirtInfraClusterClient(ctx context.Context, cpClient client.Client, credentials *hyperv1.KubevirtPlatformCredentials, secretNamespace string) (client.Client, *discovery.DiscoveryClient, error) {
-	kubeConfig, err := GetKubeConfig(ctx, cpClient, secretNamespace, credentials.InfraKubeConfigSecret.Name)
-	if err != nil {
-		return nil, nil, err
-	}
-
+func generateKubevirtInfraClusterClient(cpClient client.Client, kubeConfig []byte) (client.Client, *discovery.DiscoveryClient, error) {
 	clientConfig, err := clientcmd.NewClientConfigFromBytes(kubeConfig)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create K8s-API client config: %w", err)
+		return nil, nil, errors.New("failed to create infrastructure client config")
 	}
 
 	restConfig, err := clientConfig.ClientConfig()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create REST config: %w", err)
+		return nil, nil, errors.New("failed to create infrastructure REST config")
 	}
 	var infraClusterClient client.Client
 
 	infraClusterClient, err = client.New(restConfig, client.Options{Scheme: cpClient.Scheme()})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create infra cluster client: %w", err)
+		return nil, nil, errors.New("failed to create infrastructure client")
 	}
 
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create infra cluster discovery client: %w", err)
+		return nil, nil, errors.New("failed to create infrastructure discovery client")
 	}
 
 	return infraClusterClient, discoveryClient, nil
@@ -241,7 +255,22 @@ func (k *kubevirtInfraClientImp) GetInfraKubevirtVersion(ctx context.Context) (*
 
 }
 
-func GetKubeConfig(ctx context.Context, cl client.Client, secretNamespace, secretName string) ([]byte, error) {
+// ValidateCredentialRef checks that an external infrastructure credential
+// reference names both a Secret and a key.
+func ValidateCredentialRef(ref *hyperv1.KubeconfigSecretRef) error {
+	switch {
+	case ref == nil:
+		return errors.New("infrastructure credential reference is missing")
+	case ref.Name == "":
+		return errors.New("infrastructure credential name is empty")
+	case ref.Key == "":
+		return errors.New("infrastructure credential key is empty")
+	}
+	return nil
+}
+
+// GetKubeConfig retrieves the validated infrastructure kubeconfig stored under key.
+func GetKubeConfig(ctx context.Context, cl client.Client, secretNamespace, secretName, key string) ([]byte, error) {
 	infraKubeconfigSecret := &corev1.Secret{}
 
 	infraKubeconfigSecretKey := client.ObjectKey{Namespace: secretNamespace, Name: secretName}
@@ -249,12 +278,115 @@ func GetKubeConfig(ctx context.Context, cl client.Client, secretNamespace, secre
 		return nil, fmt.Errorf("failed to fetch infra kubeconfig secret %s/%s: %w", secretNamespace, secretName, err)
 	}
 
-	kubeConfig, ok := infraKubeconfigSecret.Data["kubeconfig"]
-	if !ok {
-		return nil, errors.New("failed to retrieve infra kubeconfig from secret: 'kubeconfig' key is missing")
+	data, err := KubeConfigData(infraKubeconfigSecret, key)
+	if err != nil {
+		return nil, err
 	}
+	return data[key], nil
+}
 
-	return kubeConfig, nil
+// KubeConfigData selects and validates the kubeconfig key consumed by external
+// infrastructure clients, preserving only its credentials and namespace
+// metadata. The selected kubeconfig is published under both the configured key
+// and the canonical kubeconfig key, so infrastructure discovery, image caching,
+// CAPK, CSI, and the cloud controller all target the selected cluster. Other
+// source entries, including a separate canonical kubeconfig, are never
+// consumed and cannot split consumers across different clusters.
+func KubeConfigData(secret *corev1.Secret, key string) (map[string][]byte, error) {
+	if secret == nil {
+		return nil, errors.New("infrastructure kubeconfig Secret is missing")
+	}
+	if key == "" || key == "namespace" {
+		return nil, errors.New("infrastructure kubeconfig key must be non-empty and cannot be namespace")
+	}
+	selected, ok := secret.Data[key]
+	if !ok {
+		return nil, fmt.Errorf("infrastructure secret %s is missing kubeconfig key %q", client.ObjectKeyFromObject(secret), key)
+	}
+	if err := ValidateKubeConfig(selected); err != nil {
+		return nil, fmt.Errorf("invalid infrastructure secret %s key %q: %w", client.ObjectKeyFromObject(secret), key, err)
+	}
+	data := map[string][]byte{key: bytes.Clone(selected), "kubeconfig": bytes.Clone(selected)}
+	if namespace, exists := secret.Data["namespace"]; exists {
+		data["namespace"] = bytes.Clone(namespace)
+	}
+	return data, nil
+}
+
+// ValidateKubeConfig checks tenant-provided infrastructure credentials without
+// creating a client, executing credential plugins, or opening referenced files.
+func ValidateKubeConfig(data []byte) error {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return errors.New("kubeconfig is empty")
+	}
+	config, err := clientcmd.Load(data)
+	if err != nil {
+		// Decoder errors can contain credentials from the input. Do not expose them.
+		return errors.New("kubeconfig cannot be parsed")
+	}
+	if config.CurrentContext == "" {
+		return errors.New("kubeconfig must specify current-context")
+	}
+	currentContext := config.Contexts[config.CurrentContext]
+	if currentContext == nil {
+		return errors.New("kubeconfig current-context does not exist")
+	}
+	// Reference names are tenant input too; identify the failed category without
+	// including names or credential values in errors surfaced through status.
+	if currentContext.AuthInfo == "" {
+		return errors.New("kubeconfig current-context must reference a user")
+	}
+	if config.AuthInfos[currentContext.AuthInfo] == nil {
+		return errors.New("kubeconfig current-context references a missing user")
+	}
+	if currentContext.Cluster == "" {
+		return errors.New("kubeconfig current-context must reference a cluster")
+	}
+	if config.Clusters[currentContext.Cluster] == nil {
+		return errors.New("kubeconfig current-context references a missing cluster")
+	}
+	for _, context := range config.Contexts {
+		if context == nil {
+			return errors.New("kubeconfig contains an invalid context entry")
+		}
+	}
+	for _, authInfo := range config.AuthInfos {
+		if authInfo == nil {
+			return errors.New("kubeconfig contains an invalid user entry")
+		}
+		if authInfo.Exec != nil {
+			return errors.New("kubeconfig contains prohibited exec credentials")
+		}
+		if authInfo.AuthProvider != nil {
+			return errors.New("kubeconfig contains prohibited auth-provider credentials")
+		}
+		if authInfo.TokenFile != "" {
+			return errors.New("kubeconfig contains prohibited tokenFile credentials")
+		}
+		if authInfo.ClientCertificate != "" {
+			return errors.New("kubeconfig contains prohibited client-certificate file reference")
+		}
+		if authInfo.ClientKey != "" {
+			return errors.New("kubeconfig contains prohibited client-key file reference")
+		}
+	}
+	for _, cluster := range config.Clusters {
+		if cluster == nil {
+			return errors.New("kubeconfig contains an invalid cluster entry")
+		}
+		if cluster.InsecureSkipTLSVerify {
+			return errors.New("kubeconfig contains prohibited insecure-skip-tls-verify")
+		}
+		if cluster.CertificateAuthority != "" {
+			return errors.New("kubeconfig contains prohibited certificate-authority file reference")
+		}
+	}
+	// Every filesystem-backed field has already been rejected, so upstream
+	// structural validation cannot open tenant-selected files.
+	if err := clientcmd.Validate(*config); err != nil {
+		return errors.New("kubeconfig structure is invalid")
+	}
+	return nil
 }
 
 func ValidateClusterVersions(ctx context.Context, cl KubevirtInfraClient) error {

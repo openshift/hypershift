@@ -75,6 +75,7 @@ import (
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -139,11 +140,13 @@ const (
 	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
 	controlPlaneOperatorSupportsKASCustomKubeconfigLabel = "io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig"
 	controlPlaneOperatorSupportsGCPResourceTagsLabel     = "io.openshift.hypershift.control-plane-operator-supports-gcp-resource-tags"
+	controlPlaneOperatorSupportsGMPMonitoringLabel       = "io.openshift.hypershift.control-plane-operator-supports-gmp-monitoring"
 
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 	defaultToControlPlaneV2Label                               = "io.openshift.hypershift.control-plane-operator.v2-isdefault"
+	controlPlaneOperatorSupportsDeterministicLBLabel           = "io.openshift.hypershift.control-plane-operator-supports-deterministic-lb"
 
 	apiOpenShiftComLabelPrefix = "api.openshift.com/"
 
@@ -202,6 +205,10 @@ type HostedClusterReconciler struct {
 
 	MetricsSet    metrics.MetricsSet
 	SREConfigHash string
+
+	// EnableGMPMonitoring selects Google Managed Prometheus monitoring resources
+	// instead of monitoring.coreos.com resources.
+	EnableGMPMonitoring bool
 
 	OperatorNamespace string
 
@@ -542,6 +549,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				}
 			}
 		}
+	}
+
+	// Reject unsafe external KubeVirt credentials before anything below can
+	// discover the infrastructure cluster, including during deletion.
+	if err := r.reconcileKubevirtCredentialSafety(ctx, hcluster, hcp); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Phase 2: Deletion handling — if the cluster is being deleted, clean up and return early.
@@ -1044,7 +1057,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
+	// Copy GCPEndpointAvailable, GCPServiceAttachmentAvailable and GCPACMECNAMEAvailable conditions from the GCPPrivateServiceConnect resources.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
 		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
@@ -1059,6 +1072,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPEndpointAvailable))
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPServiceAttachmentAvailable))
+			propagateGCPPSCACMECNAMECondition(hcluster, gcpPSCList)
 		}
 	}
 
@@ -1571,6 +1585,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	})
 
 	_, cpoSupportsKASCustomKubeconfig := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsKASCustomKubeconfigLabel]
+	enableGMPMonitoring := r.effectiveGMPMonitoring(log, hcluster.Spec.Platform.Type, controlPlaneOperatorImageLabels, controlPlaneOperatorImageLabelsResolved)
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
 	// Default to true when labels are unavailable (pull secret outage) — all
@@ -1579,6 +1594,27 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	defaultToControlPlaneV2 := true
 	if controlPlaneOperatorImageLabels != nil {
 		_, defaultToControlPlaneV2 = controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
+	}
+
+	// Version-skew detection: the HC may ask for deterministic LB fields the
+	// CPO image predates. This is informational and non-blocking: the fields are
+	// ignored until the image is upgraded, and the condition clears by itself
+	// once the label shows up.
+	if controlPlaneOperatorImageLabelsResolved {
+		report.execute("DeterministicLBIPSupport", nonCritical, func() error {
+			// Not using statuspatching.PatchStatusCondition here on purpose: it
+			// re-fetches the HostedCluster, which would drop in-memory spec
+			// mutations made earlier in this reconcile (e.g. the KMS role ARN
+			// dereferenced from a Secret). Writing only on an actual change keeps
+			// the steady state free of status writes.
+			if !meta.SetStatusCondition(&hcluster.Status.Conditions, deterministicLBIPSupportedCondition(hcluster, controlPlaneOperatorImageLabels)) {
+				return nil
+			}
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return fmt.Errorf("failed to update %s condition: %w", hyperv1.DeterministicLBIPSupported, err)
+			}
+			return nil
+		})
 	}
 
 	// Phase 7: Core HCP chain — sequential (HCP → InfraCR → CAPI Cluster).
@@ -1651,7 +1687,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	report.executeOrBlock("OperatorDeployments", func() error {
 		return r.reconcileOperatorDeployments(ctx, createOrUpdate, hcluster, hcp, controlPlaneNamespace, p,
 			controlPlaneOperatorImage, utilitiesImage,
-			cpoHasUtilities, r.CertRotationScale, releaseImage, releaseImageVersion, releaseProvider)
+			cpoHasUtilities, enableGMPMonitoring, r.CertRotationScale, releaseImage, releaseImageVersion, releaseProvider)
 	})
 
 	report.executeOrBlock("RBACAndPolicies", func() error {
@@ -1689,6 +1725,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	return result, report.aggregate()
 }
 
+// deprecatedMetricsForwardingMessageFmt is the HostedCluster-only deprecation message surfaced by
+// reconcileDeprecatedConfigurationStatus. It is declared here, where it is produced, so the
+// controller and its test share a single source of truth for the text. It takes a single %q
+// argument identifying the deprecated annotation.
+const deprecatedMetricsForwardingMessageFmt = "The deprecated %q annotation is set; migrate to spec.monitoring.metricsForwarding and remove the annotation"
+
 // reconcileDeprecatedConfigurationStatus aggregates deprecated-configuration warnings
 // from two sources and surfaces them on the generic HostedClusterConfigurationDeprecated
 // condition: mechanisms visible only on the HostedCluster, and those detected by the HCP
@@ -1700,10 +1742,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 func (r *HostedClusterReconciler) reconcileDeprecatedConfigurationStatus(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
 	var messages []string
 
-	// HostedCluster-only deprecation checks go here as they are added, e.g.:
-	// if <deprecated hcluster field/annotation is set> {
-	//     messages = append(messages, "...")
-	// }
+	// HostedCluster-only deprecation checks go here as they are added. Enumerate
+	// deprecations from api/hypershift/v1beta1/*.go only; deprecations in the
+	// generated CRD from embedded configv1 types are OpenShift-owned and out of
+	// scope. Fire on presence so users are guided to migrate even when a newer
+	// field currently overrides the deprecated mechanism.
+	if _, ok := hcluster.Annotations[hyperv1.EnableMetricsForwarding]; ok {
+		messages = append(messages, fmt.Sprintf(deprecatedMetricsForwardingMessageFmt, hyperv1.EnableMetricsForwarding))
+	}
 
 	// Fold in deprecations detected by the HCP controller.
 	if hcp != nil {
@@ -1819,7 +1865,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 	hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, controlPlaneNamespace *corev1.Namespace,
 	p platform.Platform,
 	controlPlaneOperatorImage, utilitiesImage string,
-	cpoHasUtilities bool, certRotationScale time.Duration,
+	cpoHasUtilities, enableGMPMonitoring bool, certRotationScale time.Duration,
 	releaseImage *releaseinfo.ReleaseImage,
 	releaseImageVersion semver.Version,
 	releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides,
@@ -1849,6 +1895,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 		DefaultSecurityContextUID: securityContextUID,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		MetricsSet:                metricsSet,
+		EnableGMPMonitoring:       enableGMPMonitoring,
 		ReleaseImageProvider:      imageProvider,
 		OmitOwnerReference:        true,
 	}
@@ -1904,13 +1951,7 @@ func (r *HostedClusterReconciler) reconcilePlatformCredentialsWithStatus(
 	controlPlaneNamespace string, p platform.Platform,
 ) error {
 	if err := p.ReconcileCredentials(ctx, r.Client, createOrUpdate, hcluster, controlPlaneNamespace); err != nil {
-		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.PlatformCredentialsFound),
-			Status:             metav1.ConditionFalse,
-			Reason:             hyperv1.PlatformCredentialsNotFoundReason,
-			ObservedGeneration: hcluster.Generation,
-			Message:            err.Error(),
-		})
+		setPlatformCredentialsNotFound(hcluster, err)
 		if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
 			return fmt.Errorf("failed to reconcile platform credentials: %w, failed to update status: %w", err, statusErr)
 		}
@@ -3412,6 +3453,47 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 	return nil
 }
 
+// hcUsesLBIPFields returns true if the APIServer service in the HC spec has
+// serviceAnnotations or loadBalancerClass set. Used for version-skew detection:
+// if the HC uses these fields but the CPO image does not support them, the
+// fields are silently ignored. Only the APIServer service is wired through to
+// the KAS Services, so the other service types are unaffected by the skew.
+func hcUsesLBIPFields(hc *hyperv1.HostedCluster) bool {
+	for _, mapping := range hc.Spec.Services {
+		if mapping.Service != hyperv1.APIServer || mapping.ServicePublishingStrategy.LoadBalancer == nil {
+			continue
+		}
+		if len(mapping.ServicePublishingStrategy.LoadBalancer.ServiceAnnotations) > 0 ||
+			mapping.ServicePublishingStrategy.LoadBalancer.LoadBalancerClass != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// deterministicLBIPSupportedCondition reports whether the control plane operator
+// image honors the deterministic LB fields configured on the HostedCluster. It is
+// True when the image advertises support or when the HC does not use the fields.
+func deterministicLBIPSupportedCondition(hc *hyperv1.HostedCluster, controlPlaneOperatorImageLabels map[string]string) metav1.Condition {
+	condition := metav1.Condition{
+		Type:               string(hyperv1.DeterministicLBIPSupported),
+		ObservedGeneration: hc.Generation,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "The control plane operator supports deterministic load balancer IP configuration",
+	}
+
+	_, supportsDeterministicLB := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsDeterministicLBLabel]
+	if supportsDeterministicLB || !hcUsesLBIPFields(hc) {
+		return condition
+	}
+
+	condition.Status = metav1.ConditionFalse
+	condition.Reason = hyperv1.UnsupportedControlPlaneOperatorReason
+	condition.Message = "HostedCluster specifies serviceAnnotations or loadBalancerClass but the control plane operator image does not support deterministic LB IP management; upgrade the control plane release image"
+	return condition
+}
+
 // reconcileCLISecrets makes sure the secrets that were created by the cli, and are safe to be deleted with the
 // hosted cluster, has an owner reference of the hosted cluster.
 func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
@@ -4539,7 +4621,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	}
 
 	var currentVersion *semver.Version
-	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != imageregistry.HCControlPlaneReleaseImage(hc) {
+	if hc.Status.Version != nil && !sameReleaseImage(hc.Status.Version.Desired.Image, imageregistry.HCControlPlaneReleaseImage(hc)) {
 		releaseInfo, err := releaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to lookup release image: %w", err)
@@ -4553,6 +4635,27 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
+}
+
+// sameReleaseImage reports whether two release image pull specs refer to the same
+// release payload. Identical strings always match, which preserves the behavior for
+// pull specs that cannot be parsed. Otherwise both pull specs must parse and pin the
+// same digest, so a mirrored pull spec (for example one resolved through registry
+// overrides or image content policies) matches its source when the digests are equal.
+// Pull specs without a digest only match when the strings are identical.
+func sameReleaseImage(a, b string) bool {
+	if a == b {
+		return true
+	}
+	refA, err := reference.Parse(a)
+	if err != nil {
+		return false
+	}
+	refB, err := reference.Parse(b)
+	if err != nil {
+		return false
+	}
+	return refA.ID != "" && refA.ID == refB.ID
 }
 
 func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, refWithDigest func() (string, error)) (bool, error) {
@@ -4575,7 +4678,7 @@ func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseI
 		return false, err
 	}
 
-	if hc.Status.Version == nil || (hc.Spec.Release.Image != hc.Status.Version.Desired.Image && withDigest != hc.Status.Version.Desired.Image) {
+	if hc.Status.Version == nil || (!sameReleaseImage(hc.Spec.Release.Image, hc.Status.Version.Desired.Image) && !sameReleaseImage(withDigest, hc.Status.Version.Desired.Image)) {
 		// cluster is doing initial rollout or upgrading
 		return true, nil
 	}
@@ -4843,7 +4946,7 @@ func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context,
 	errs = append(errs, validations.ValidateOCPAPIServerSANs(ctx, hc, client)...)
 
 	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Authentication != nil {
-		err := supportvalidations.ValidateAuthenticationSpec(ctx, client, hc.Spec.Configuration.Authentication, hc.Namespace, []string{hc.Spec.IssuerURL})
+		err := supportvalidations.ValidateAuthenticationSpec(ctx, client, hc.Spec.Configuration.Authentication, hc.Namespace, hc.Spec.IssuerURL)
 		if err != nil {
 			fieldErr := &field.Error{
 				Type:     field.ErrorTypeInvalid,
@@ -5496,7 +5599,7 @@ func (r *HostedClusterReconciler) syncKVLiveMigratableCondition(ctx context.Cont
 // 2) non-error message about the condition of the upgrade
 // 3) error indicating that the upgrade is not allowed or we were not able to determine
 func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, string, error) {
-	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == imageregistry.HCControlPlaneReleaseImage(hcluster) {
+	if hcluster.Status.Version == nil || sameReleaseImage(hcluster.Status.Version.Desired.Image, imageregistry.HCControlPlaneReleaseImage(hcluster)) {
 		// cluster is either installing or at the version requested by the spec, no upgrade in progress
 		return false, "", nil
 	}
@@ -5898,6 +6001,39 @@ func (r *HostedClusterReconciler) effectiveMetricsSet(monitoring hyperv1.Monitor
 	return r.MetricsSet
 }
 
+// effectiveGMPMonitoring returns whether a hosted control plane should use GMP monitoring. GMP is only
+// used when the CPO image declares support, so the components rendered by the hypershift-operator and
+// the CPO always emit monitors for the same API group. EnableGMPMonitoring is a management-cluster-wide
+// operator flag, not derived from the HostedCluster spec, so the platform is checked here as well: GMP
+// is GCP-only, and without this check the flag would also apply to non-GCP platforms sharing the
+// management cluster.
+func (r *HostedClusterReconciler) effectiveGMPMonitoring(log logr.Logger, platform hyperv1.PlatformType, controlPlaneOperatorImageLabels map[string]string, controlPlaneOperatorImageLabelsResolved bool) bool {
+	if !r.EnableGMPMonitoring {
+		return false
+	}
+	if platform != hyperv1.GCPPlatform {
+		return false
+	}
+	// controlPlaneOperatorImageLabels normally reflects what the resolved CPO image actually
+	// declares, but hyperv1.ControlPlaneOperatorImageLabelsAnnotation lets a HostedCluster
+	// override it, bypassing this image-derived support check entirely. An old/pre-GMP CPO
+	// handed --enable-gmp-monitoring through that escape hatch would reject the unknown flag
+	// and crash-loop; acceptable for a deliberate test override, but worth knowing before using it.
+	if _, supported := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsGMPMonitoringLabel]; !supported {
+		// controlPlaneOperatorImageLabelsResolved is false when the image lookup itself failed
+		// (e.g. a pull secret outage); operator deployments are blocked in that case, so the log
+		// would be noise. A resolved-but-nil/empty map means the image was fetched successfully
+		// and genuinely declares no labels, which is worth logging like any other unsupported case.
+		// V(1): this fires every reconcile per HostedCluster, which would be noisy at fleet scale
+		// during the rollout window before a HostedCluster's CPO image carries the label.
+		if controlPlaneOperatorImageLabelsResolved {
+			log.V(1).Info("GMP monitoring is enabled but the control plane operator image does not support it, using monitoring.coreos.com resources")
+		}
+		return false
+	}
+	return true
+}
+
 // reconcileSREMetricsConfig loads the SRE metrics configuration (avoids parsing if the content is the same)
 // and ensures that it is synced to the hosted control plane
 func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
@@ -6149,6 +6285,30 @@ func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, con
 		resourceConditions[i] = psc.Status.Conditions
 	}
 	return computeEndpointServiceCondition(resourceConditions, conditionType, hyperv1.GCPErrorReason, hyperv1.GCPSuccessReason, "GCPPrivateServiceConnect conditions not found")
+}
+
+// propagateGCPPSCACMECNAMECondition copies the GCPACMECNAMEAvailable condition
+// from the GCPPrivateServiceConnect resources to the HostedCluster, preserving
+// its status, reason and message. Unlike the conditions aggregated by
+// computeGCPPSCCondition, this condition is only maintained when the cluster
+// sets spec.platform.gcp.delegation.acmeChallengeTarget, so when no PSC reports
+// it the condition is left unset (and removed if it was previously set) rather
+// than reported as Unknown.
+func propagateGCPPSCACMECNAMECondition(hcluster *hyperv1.HostedCluster, gcpPSCList hyperv1.GCPPrivateServiceConnectList) {
+	for _, psc := range gcpPSCList.Items {
+		condition := meta.FindStatusCondition(psc.Status.Conditions, string(hyperv1.GCPACMECNAMEAvailable))
+		if condition == nil {
+			continue
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:    string(hyperv1.GCPACMECNAMEAvailable),
+			Status:  condition.Status,
+			Reason:  condition.Reason,
+			Message: condition.Message,
+		})
+		return
+	}
+	meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.GCPACMECNAMEAvailable))
 }
 
 // propagateAzureResourceIDAnnotation copies the Azure resource ID annotation set by Cluster Service

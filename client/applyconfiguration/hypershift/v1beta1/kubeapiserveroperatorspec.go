@@ -25,6 +25,7 @@ import (
 // with apply.
 type KubeAPIServerOperatorSpecApplyConfiguration struct {
 	ComponentLogLevelSpecApplyConfiguration `json:",inline"`
+	EventTTLMinutes                         *int32 `json:"eventTTLMinutes,omitempty"`
 }
 
 // KubeAPIServerOperatorSpecApplyConfiguration constructs a declarative configuration of the KubeAPIServerOperatorSpec type for use with
@@ -38,5 +39,13 @@ func KubeAPIServerOperatorSpec() *KubeAPIServerOperatorSpecApplyConfiguration {
 // If called multiple times, the LogLevel field is set to the value of the last call.
 func (b *KubeAPIServerOperatorSpecApplyConfiguration) WithLogLevel(value hypershiftv1beta1.LogLevel) *KubeAPIServerOperatorSpecApplyConfiguration {
 	b.ComponentLogLevelSpecApplyConfiguration.LogLevel = &value
+	return b
+}
+
+// WithEventTTLMinutes sets the EventTTLMinutes field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EventTTLMinutes field is set to the value of the last call.
+func (b *KubeAPIServerOperatorSpecApplyConfiguration) WithEventTTLMinutes(value int32) *KubeAPIServerOperatorSpecApplyConfiguration {
+	b.EventTTLMinutes = &value
 	return b
 }

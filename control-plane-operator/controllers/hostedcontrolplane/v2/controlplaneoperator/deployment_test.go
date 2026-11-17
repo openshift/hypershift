@@ -18,6 +18,8 @@ func TestAdaptDeploymentImageOverrides(t *testing.T) {
 		name                      string
 		hostedClusterAnnotations  map[string]string
 		expectedImageOverridesArg string
+		enableGMPMonitoring       bool
+		expectGMPArg              bool
 	}{
 		{
 			name: "When ImageOverridesAnnotation is set on HostedCluster it should pass the value in the flag",
@@ -28,6 +30,18 @@ func TestAdaptDeploymentImageOverrides(t *testing.T) {
 		},
 		{
 			name:                      "When ImageOverridesAnnotation is not set on HostedCluster it should pass a no-op default value",
+			hostedClusterAnnotations:  map[string]string{},
+			expectedImageOverridesArg: "--image-overrides==",
+		},
+		{
+			name:                      "When GMP monitoring is enabled, it should pass the flag",
+			hostedClusterAnnotations:  map[string]string{},
+			expectedImageOverridesArg: "--image-overrides==",
+			enableGMPMonitoring:       true,
+			expectGMPArg:              true,
+		},
+		{
+			name:                      "When GMP monitoring is disabled, it should not pass the flag",
 			hostedClusterAnnotations:  map[string]string{},
 			expectedImageOverridesArg: "--image-overrides==",
 		},
@@ -64,8 +78,9 @@ func TestAdaptDeploymentImageOverrides(t *testing.T) {
 			}
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				Context: t.Context(),
-				HCP:     hcp,
+				Context:             t.Context(),
+				HCP:                 hcp,
+				EnableGMPMonitoring: tc.enableGMPMonitoring,
 			}
 
 			deployment, err := assets.LoadDeploymentManifest(ComponentName)
@@ -76,6 +91,11 @@ func TestAdaptDeploymentImageOverrides(t *testing.T) {
 
 			observedArgs := deployment.Spec.Template.Spec.Containers[0].Args
 			g.Expect(observedArgs).To(ContainElement(tc.expectedImageOverridesArg))
+			if tc.expectGMPArg {
+				g.Expect(observedArgs).To(ContainElement("--enable-gmp-monitoring"))
+			} else {
+				g.Expect(observedArgs).ToNot(ContainElement("--enable-gmp-monitoring"))
+			}
 		})
 	}
 }

@@ -886,8 +886,15 @@ func WorkloadRegistryValidationTest(getTestCtx internal.TestContextGetter) {
 			Expect(podList.Items).NotTo(BeEmpty(),
 				"expected pods in control plane namespace %s", testCtx.ControlPlaneNamespace)
 
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+			// Managed etcd shards are named by the user, so they are not part
+			// of the static registry and have to be resolved per cluster.
+			expectedWorkloads := slices.Concat(workloads, internal.EtcdShardWorkloads(hostedCluster))
+
 			workloadSelectors := make(map[string]labels.Selector)
-			for _, workload := range workloads {
+			for _, workload := range expectedWorkloads {
 				selector := labels.SelectorFromSet(workload.PodSelector)
 				workloadSelectors[workload.Name] = selector
 			}

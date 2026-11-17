@@ -803,6 +803,52 @@ func TestValidate(t *testing.T) {
 			},
 			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'Calico')",
 		},
+		{
+			name: "fails when a KAS service annotation is malformed",
+			rawOpts: &RawCreateOptions{
+				Name:                  "test-hc",
+				Namespace:             "test-hc",
+				PullSecretFile:        pullSecretFile,
+				Arch:                  "amd64",
+				KASServiceAnnotations: []string{"missing-separator"},
+			},
+			expectedErr: "invalid KAS service annotation",
+		},
+		{
+			name: "fails when KAS service annotations are combined with external DNS",
+			rawOpts: &RawCreateOptions{
+				Name:                  "test-hc",
+				Namespace:             "test-hc",
+				PullSecretFile:        pullSecretFile,
+				Arch:                  "amd64",
+				KASServiceAnnotations: []string{"metallb.io/address-pool=production"},
+				ExternalDNSDomain:     "example.com",
+			},
+			expectedErr: "--kas-service-annotations and --kas-load-balancer-class cannot be used with --external-dns-domain",
+		},
+		{
+			name: "fails when KAS load balancer class is combined with external DNS",
+			rawOpts: &RawCreateOptions{
+				Name:                 "test-hc",
+				Namespace:            "test-hc",
+				PullSecretFile:       pullSecretFile,
+				Arch:                 "amd64",
+				KASLoadBalancerClass: "metallb.io/metallb",
+				ExternalDNSDomain:    "example.com",
+			},
+			expectedErr: "--kas-service-annotations and --kas-load-balancer-class cannot be used with --external-dns-domain",
+		},
+		{
+			name: "passes with valid KAS service annotations",
+			rawOpts: &RawCreateOptions{
+				Name:                  "test-hc",
+				Namespace:             "test-hc",
+				PullSecretFile:        pullSecretFile,
+				Arch:                  "amd64",
+				KASServiceAnnotations: []string{"metallb.io/address-pool=production"},
+			},
+			expectedErr: "",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1487,6 +1533,178 @@ func TestApplyFeatureSet(t *testing.T) {
 			} else {
 				g.Expect(cluster.Spec.Configuration.FeatureGate).To(BeNil())
 			}
+		})
+	}
+}
+
+func newCreateOptionsForTest(raw *RawCreateOptions) *CreateOptions {
+	return &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: &ValidatedCreateOptions{
+				validatedCreateOptions: &validatedCreateOptions{
+					RawCreateOptions: raw,
+				},
+			},
+		},
+	}
+}
+
+func TestApplyDeterministicLBIP(t *testing.T) {
+	apiServerService := func(strategy hyperv1.ServicePublishingStrategy) hyperv1.ServicePublishingStrategyMapping {
+		return hyperv1.ServicePublishingStrategyMapping{
+			Service:                   hyperv1.APIServer,
+			ServicePublishingStrategy: strategy,
+		}
+	}
+	loadBalancerService := func(class string) hyperv1.ServicePublishingStrategyMapping {
+		return apiServerService(hyperv1.ServicePublishingStrategy{
+			Type:         hyperv1.LoadBalancer,
+			LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{LoadBalancerClass: class},
+		})
+	}
+
+	tests := []struct {
+		name                string
+		services            []hyperv1.ServicePublishingStrategyMapping
+		annotations         []string
+		class               string
+		expectError         string
+		expectedAnnotations map[string]string
+		expectedClass       string
+	}{
+		{
+			name:     "When no flags are set, it should leave the services unchanged",
+			services: []hyperv1.ServicePublishingStrategyMapping{loadBalancerService("")},
+		},
+		{
+			name:                "When annotations and class are set, it should apply them to the APIServer LoadBalancer strategy",
+			services:            []hyperv1.ServicePublishingStrategyMapping{loadBalancerService(""), {Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route, Route: &hyperv1.RoutePublishingStrategy{}}}},
+			annotations:         []string{"metallb.io/loadBalancerIPs=10.1.1.100", "metallb.io/address-pool=production"},
+			class:               "metallb.io/metallb",
+			expectedAnnotations: map[string]string{"metallb.io/loadBalancerIPs": "10.1.1.100", "metallb.io/address-pool": "production"},
+			expectedClass:       "metallb.io/metallb",
+		},
+		{
+			name:        "When the APIServer strategy is not LoadBalancer, it should return an error",
+			services:    []hyperv1.ServicePublishingStrategyMapping{apiServerService(hyperv1.ServicePublishingStrategy{Type: hyperv1.Route, Route: &hyperv1.RoutePublishingStrategy{}})},
+			annotations: []string{"metallb.io/loadBalancerIPs=10.1.1.100"},
+			expectError: "require the APIServer service publishing strategy to be LoadBalancer",
+		},
+		{
+			name:        "When there is no APIServer service, it should return an error",
+			services:    []hyperv1.ServicePublishingStrategyMapping{{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route, Route: &hyperv1.RoutePublishingStrategy{}}}},
+			annotations: []string{"metallb.io/loadBalancerIPs=10.1.1.100"},
+			expectError: "APIServer service publishing strategy not found",
+		},
+		{
+			name:        "When an annotation is malformed, it should return an error",
+			services:    []hyperv1.ServicePublishingStrategyMapping{loadBalancerService("")},
+			annotations: []string{"not-a-key-value"},
+			expectError: "invalid KAS service annotation",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{Services: tc.services},
+			}
+			opts := newCreateOptionsForTest(&RawCreateOptions{
+				KASServiceAnnotations: tc.annotations,
+				KASLoadBalancerClass:  tc.class,
+			})
+
+			err := applyDeterministicLBIP(cluster, opts)
+			if tc.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectError))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			apiServer := cluster.Spec.Services[0].ServicePublishingStrategy
+			g.Expect(apiServer.LoadBalancer.ServiceAnnotations).To(Equal(tc.expectedAnnotations))
+			g.Expect(apiServer.LoadBalancer.LoadBalancerClass).To(Equal(tc.expectedClass))
+		})
+	}
+}
+
+func TestVerifyDeterministicLBIPPersisted(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := hyperv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add hyperv1 to scheme: %v", err)
+	}
+
+	hc := func(loadBalancer *hyperv1.LoadBalancerPublishingStrategy) *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hc", Namespace: "clusters-test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:         hyperv1.LoadBalancer,
+							LoadBalancer: loadBalancer,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name        string
+		hc          *hyperv1.HostedCluster
+		rawOpts     *RawCreateOptions
+		expectedErr string
+	}{
+		{
+			name: "When the API server persisted the fields, it should pass",
+			hc: hc(&hyperv1.LoadBalancerPublishingStrategy{
+				ServiceAnnotations: map[string]string{"metallb.io/address-pool": "production"},
+				LoadBalancerClass:  "metallb.io/metallb",
+			}),
+			rawOpts: &RawCreateOptions{
+				KASServiceAnnotations: []string{"metallb.io/address-pool=production"},
+				KASLoadBalancerClass:  "metallb.io/metallb",
+			},
+		},
+		{
+			name:        "When the CRD pruned the loadBalancer block, it should fail",
+			hc:          hc(nil),
+			rawOpts:     &RawCreateOptions{KASServiceAnnotations: []string{"metallb.io/address-pool=production"}},
+			expectedErr: "did not persist the deterministic LoadBalancer fields",
+		},
+		{
+			name: "When the CRD pruned the annotations, it should fail",
+			hc: hc(&hyperv1.LoadBalancerPublishingStrategy{
+				LoadBalancerClass: "metallb.io/metallb",
+			}),
+			rawOpts: &RawCreateOptions{
+				KASServiceAnnotations: []string{"metallb.io/address-pool=production"},
+				KASLoadBalancerClass:  "metallb.io/metallb",
+			},
+			expectedErr: "did not persist the requested deterministic LoadBalancer fields",
+		},
+		{
+			name:    "When no fields were requested, it should not read the HostedCluster",
+			hc:      hc(nil),
+			rawOpts: &RawCreateOptions{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.hc).Build()
+			err := verifyDeterministicLBIPPersisted(context.Background(), client, tc.hc, newCreateOptionsForTest(tc.rawOpts))
+			if tc.expectedErr == "" {
+				g.Expect(err).NotTo(HaveOccurred())
+				return
+			}
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring(tc.expectedErr))
 		})
 	}
 }

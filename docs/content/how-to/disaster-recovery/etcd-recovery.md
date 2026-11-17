@@ -2,7 +2,7 @@
 
 ### Overview
 
-Etcd pods for hosted clusters run as part of a statefulset (etcd). The statefulset relies on persistent storage to store etcd data per member. In the case of a HighlyAvailable control plane, the size of the statefulset is 3 and each member (etcd-N) has its own PersistentVolumeClaim (etcd-data-N).
+Etcd pods for hosted clusters run as part of a statefulset (etcd). The statefulset relies on persistent storage to store etcd data per member. In the case of a HighlyAvailable control plane, the size of the statefulset is 3 and each member (etcd-N) has its own PersistentVolumeClaim (data-etcd-N).
 
 ### Automatic Recovery of Removed Members
 
@@ -79,6 +79,12 @@ etcd-2   2/2     Running   0          2m2s
 
 If multiple members of the etcd cluster have lost data or are in a crashloop state, then etcd must be restored from a snapshot. The following procedure requires down time for the control plane as the etcd database is restored.
 
+This procedure applies to an existing HostedCluster with `spec.controllerAvailabilityPolicy: HighlyAvailable`, managed etcd, and accessible persistent volumes for all three members.
+
+!!! warning "Restore every member from the same snapshot"
+
+    Restore the same snapshot into **all three** member PVCs before starting any etcd member, as described in [etcd disaster recovery](https://etcd.io/docs/v3.6/op-guide/recovery/#restoring-from-snapshot). Restoring only `data-etcd-0` and starting the other two members with empty volumes can leave the members serving different data, even when all pods are Ready and endpoint health checks pass. An empty member can become leader, causing loss of the restored data.
+
 NOTE: The following instructions require the `oc` and `jq` binaries.
 
 0. Setup environment variables that point to your hosted cluster:
@@ -93,11 +99,30 @@ CONTROL_PLANE_NAMESPACE="${CLUSTER_NAMESPACE}-${CLUSTER_NAME}"
 
 ```
 oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pausedUntil":"true"}}' --type=merge
+oc wait -n ${CONTROL_PLANE_NAMESPACE} hostedcontrolplane/${CLUSTER_NAME} \
+  --for=jsonpath='{.spec.pausedUntil}'=true --timeout=5m
+oc wait -n ${CONTROL_PLANE_NAMESPACE} hostedcontrolplane/${CLUSTER_NAME} \
+  --for=condition=ReconciliationActive=False --timeout=5m
+```
+
+Wait for both commands to succeed before changing control plane workloads. Setting the HostedCluster field alone does not mean the control-plane-operator has observed the pause.
+
+Stop the API servers so that they cannot write to etcd during recovery or the subsequent data consistency checks:
+
+```bash
+oc scale deployment -n ${CONTROL_PLANE_NAMESPACE} --replicas=0 \
+  kube-apiserver openshift-apiserver openshift-oauth-apiserver
+oc wait -n ${CONTROL_PLANE_NAMESPACE} --for=delete pod \
+  -l 'app in (kube-apiserver,openshift-apiserver,openshift-oauth-apiserver)' --timeout=5m
 ```
 
 2. Take a snapshot of etcd data using one of the following methods:
 
-    a. Use a previously backed up snapshot
+    a. Download or copy a previously backed up snapshot to `/tmp/etcd.snapshot.db` on the machine where you run `oc`. For example, to use a local backup:
+
+        ```bash
+        cp /path/to/backup/snapshot.db /tmp/etcd.snapshot.db
+        ```
 
     b. Take a snapshot from a running etcd pod (PREFERRED but requires available etcd pod):
 
@@ -118,7 +143,12 @@ oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pa
         snapshot save /var/lib/snapshot.db
 
         # 2. Verify that the snapshot is good
-        oc exec -n ${CONTROL_PLANE_NAMESPACE} -c etcd -t ${ETCD_POD} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/snapshot.db
+        oc exec -n ${CONTROL_PLANE_NAMESPACE} -c etcd ${ETCD_POD} -- env ETCDCTL_API=3 /usr/bin/bash -ec '
+          if [ -x /usr/bin/etcdutl ]; then
+            exec /usr/bin/etcdutl snapshot status /var/lib/snapshot.db -w table
+          else
+            exec /usr/bin/etcdctl snapshot status /var/lib/snapshot.db -w table
+          fi'
 
         # 3. Make a local copy of the snapshot
         oc cp -c etcd ${CONTROL_PLANE_NAMESPACE}/${ETCD_POD}:/var/lib/snapshot.db /tmp/etcd.snapshot.db
@@ -141,103 +171,133 @@ oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pa
 
 ```
 oc scale -n ${CONTROL_PLANE_NAMESPACE} statefulset/etcd --replicas=0
+oc wait -n ${CONTROL_PLANE_NAMESPACE} --for=delete pod -l app=etcd --timeout=5m
 ```
 
-4. Delete volumes for 2nd and 3rd members:
-```
-oc delete -n ${CONTROL_PLANE_NAMESPACE} pvc/data-etcd-1 pvc/data-etcd-2
-```
+Wait until all etcd pods are deleted before mounting their PVCs. Keep the statefulset at zero replicas and reconciliation paused until all three PVCs have been restored.
 
-5. Create pod to access the first etcd member's data:
+4. Create a temporary pod for each member's PVC:
 
-```
+```bash
 # Save etcd image
-ETCD_IMAGE=$(oc get -n ${CONTROL_PLANE_NAMESPACE} statefulset/etcd -o jsonpath='{ .spec.template.spec.containers[0].image }')
+ETCD_IMAGE=$(oc get -n ${CONTROL_PLANE_NAMESPACE} statefulset/etcd -o jsonpath='{.spec.template.spec.containers[?(@.name=="etcd")].image}')
 
-# Create pod that will allow access to etcd data:
+# Create pods that allow access to all three PVCs
+for MEMBER in 0 1 2; do
 cat << EOF | oc apply -n ${CONTROL_PLANE_NAMESPACE} -f -
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Pod
 metadata:
-  name: etcd-data
+  name: etcd-data-${MEMBER}
+  labels:
+    app: etcd-data
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: etcd-data
-  template:
-    metadata:
-      labels:
-        app: etcd-data
-    spec:
-      containers:
-      - name: access
-        image: $ETCD_IMAGE
-        volumeMounts:
-        - name: data
-          mountPath: /var/lib
-        command:
-        - /usr/bin/bash
-        args:
-        - -c
-        - |-
-          while true; do
-            sleep 1000
-          done
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: data-etcd-0
+  restartPolicy: Never
+  containers:
+  - name: access
+    image: ${ETCD_IMAGE}
+    volumeMounts:
+    - name: data
+      mountPath: /var/lib
+    command:
+    - /usr/bin/bash
+    args:
+    - -c
+    - sleep infinity
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: data-etcd-${MEMBER}
 EOF
+done
 
+oc wait -n ${CONTROL_PLANE_NAMESPACE} --for=condition=Ready \
+  pod/etcd-data-0 pod/etcd-data-1 pod/etcd-data-2 --timeout=5m
 ```
 
-6. Clear previous data and restore snapshot
+5. Clear previous data and restore the same snapshot into every PVC. Use the same initial cluster membership and token for all restores, with each member's own name and peer URL. For offline snapshot status and restore, select `etcdutl` when available, falling back to `etcdctl` for older payloads.
 
+If the snapshot was copied directly from `member/snap/db` (method 2c), it has no integrity hash. Set `RESTORE_OPTIONS=(--skip-hash-check)` before running the block. For snapshots created with `snapshot save` (methods 2a and 2b), leave `RESTORE_OPTIONS` empty so the integrity check stays enabled. The status query only inspects the database contents, so it succeeds in both cases.
+
+```bash
+# Run in a subshell that stops on the first failed command
+(
+set -e
+INITIAL_CLUSTER="etcd-0=https://etcd-0.etcd-discovery.${CONTROL_PLANE_NAMESPACE}.svc:2380,etcd-1=https://etcd-1.etcd-discovery.${CONTROL_PLANE_NAMESPACE}.svc:2380,etcd-2=https://etcd-2.etcd-discovery.${CONTROL_PLANE_NAMESPACE}.svc:2380"
+RESTORE_TOKEN="etcd-cluster-$(date +%s)"
+# Use (--skip-hash-check) only for a snapshot copied from member/snap/db (method 2c).
+RESTORE_OPTIONS=()
+
+for MEMBER in 0 1 2; do
+  DATA_POD="etcd-data-${MEMBER}"
+  SNAPSHOT_TOOL=$(oc exec -n ${CONTROL_PLANE_NAMESPACE} ${DATA_POD} -- /usr/bin/bash -ec '
+    if [ -x /usr/bin/etcdutl ]; then
+      echo /usr/bin/etcdutl
+    else
+      echo /usr/bin/etcdctl
+    fi')
+  oc cp /tmp/etcd.snapshot.db ${CONTROL_PLANE_NAMESPACE}/${DATA_POD}:/var/lib/restored.snap.db
+  oc exec -n ${CONTROL_PLANE_NAMESPACE} ${DATA_POD} -- env ETCDCTL_API=3 "${SNAPSHOT_TOOL}" \
+    snapshot status /var/lib/restored.snap.db -w table
+
+  oc exec -n ${CONTROL_PLANE_NAMESPACE} ${DATA_POD} -- rm -rf /var/lib/data
+  oc exec -n ${CONTROL_PLANE_NAMESPACE} ${DATA_POD} -- env ETCDCTL_API=3 "${SNAPSHOT_TOOL}" \
+    snapshot restore /var/lib/restored.snap.db \
+    "${RESTORE_OPTIONS[@]}" \
+    --data-dir=/var/lib/data \
+    --name etcd-${MEMBER} \
+    --initial-cluster-token="${RESTORE_TOKEN}" \
+    --initial-cluster="${INITIAL_CLUSTER}" \
+    --initial-advertise-peer-urls=https://etcd-${MEMBER}.etcd-discovery.${CONTROL_PLANE_NAMESPACE}.svc:2380
+
+  oc exec -n ${CONTROL_PLANE_NAMESPACE} ${DATA_POD} -- rm /var/lib/restored.snap.db
+done
+)
 ```
-# Wait for the etcd-data pod to start running
-oc get -n ${CONTROL_PLANE_NAMESPACE} pods -l app=etcd-data
 
-# Get the name of the etcd-data pod
-DATA_POD=$(oc get -n ${CONTROL_PLANE_NAMESPACE} pods --no-headers -l app=etcd-data -o name | cut -d/ -f2)
+Do not continue unless all three restores succeed. If a restore fails, correct the error and repeat this step for all three members using the same snapshot and a single shared token.
 
-# Copy local snapshot into the pod
-oc cp /tmp/etcd.snapshot.db ${CONTROL_PLANE_NAMESPACE}/${DATA_POD}:/var/lib/restored.snap.db
+6. Delete the temporary data access pods and wait for their termination so that the PVCs can be mounted by etcd:
 
-# Remove old data
-oc exec -n ${CONTROL_PLANE_NAMESPACE} ${DATA_POD} -- rm -rf /var/lib/data
-oc exec -n ${CONTROL_PLANE_NAMESPACE} ${DATA_POD} -- mkdir -p /var/lib/data
-
-# Restore snapshot
-oc exec -n ${CONTROL_PLANE_NAMESPACE} ${DATA_POD} -- etcdutl snapshot restore /var/lib/restored.snap.db \
-     --data-dir=/var/lib/data --skip-hash-check \
-     --name etcd-0 \
-     --initial-cluster-token=etcd-cluster \
-     --initial-cluster etcd-0=https://etcd-0.etcd-discovery.${CONTROL_PLANE_NAMESPACE}.svc:2380,etcd-1=https://etcd-1.etcd-discovery.${CONTROL_PLANE_NAMESPACE}.svc:2380,etcd-2=https://etcd-2.etcd-discovery.${CONTROL_PLANE_NAMESPACE}.svc:2380 \
-     --initial-advertise-peer-urls https://etcd-0.etcd-discovery.${CONTROL_PLANE_NAMESPACE}.svc:2380
-
-# Remove snapshot from etcd-0 data directory
-oc exec -n ${CONTROL_PLANE_NAMESPACE} ${DATA_POD} -- rm /var/lib/restored.snap.db
+```bash
+oc delete -n ${CONTROL_PLANE_NAMESPACE} pod/etcd-data-0 pod/etcd-data-1 pod/etcd-data-2 --wait=true
 ```
 
-7. Delete data access deployment:
-
-```
-oc delete -n ${CONTROL_PLANE_NAMESPACE} deployment/etcd-data
-```
-
-8. Scale up etcd cluster:
+7. Scale up the etcd cluster:
 ```
 oc scale -n ${CONTROL_PLANE_NAMESPACE} statefulset/etcd --replicas=3
+oc rollout status -n ${CONTROL_PLANE_NAMESPACE} statefulset/etcd --timeout=5m
 ```
 
-Wait for the all etcd member pods to come up and report available:
-```
-oc get -n ${CONTROL_PLANE_NAMESPACE} pods -l app=etcd -w
+8. Verify the restored data on each member's own endpoint while reconciliation remains paused and the API servers remain stopped:
+
+These online health, status, and key-value queries use `etcdctl` on all supported payloads. The `etcdutl` selection above applies only to offline snapshot operations.
+
+```bash
+for MEMBER in 0 1 2; do
+  oc exec -n ${CONTROL_PLANE_NAMESPACE} -c etcd etcd-${MEMBER} -- env \
+    ETCDCTL_API=3 \
+    ETCDCTL_CACERT=/etc/etcd/tls/etcd-ca/ca.crt \
+    ETCDCTL_CERT=/etc/etcd/tls/client/etcd-client.crt \
+    ETCDCTL_KEY=/etc/etcd/tls/client/etcd-client.key \
+    ETCDCTL_ENDPOINTS=https://etcd-${MEMBER}.etcd-discovery.${CONTROL_PLANE_NAMESPACE}.svc:2379 \
+    /usr/bin/bash -ec '
+      etcdctl endpoint health
+      etcdctl endpoint status -w table
+      etcdctl endpoint hashkv -w table
+      etcdctl get /kubernetes.io/ --prefix --count-only --consistency=s -w fields
+    '
+done
 ```
 
-9. Remove hosted cluster pause:
+Check that all three endpoints are healthy, share a cluster ID (`ClusterID`) and leader, and have distinct member IDs. The key-value hashes, `Revision` values, and `Count` values must match across all three members. The revision must correspond to the restored snapshot, and the key count must be consistent with the expected hosted cluster data. Allow members to finish applying updates and repeat the checks if necessary. Pod readiness, matching Raft indexes, and endpoint health alone do not establish data consistency.
+
+If these checks fail, keep reconciliation paused and the API servers stopped. Repeat the restore from the same known-good snapshot on all three PVCs; do not try to repair a partially restored cluster by deleting members with unknown data.
+
+9. After data consistency is confirmed, request a control plane restart to refresh caches, then remove the HostedCluster pause. Reconciliation restores the API server replica counts:
 
 ```
+oc annotate -n ${CLUSTER_NAMESPACE} hostedcluster/${CLUSTER_NAME} \
+  hypershift.openshift.io/restart-date="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
 oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pausedUntil":null}}' --type=merge
 ```

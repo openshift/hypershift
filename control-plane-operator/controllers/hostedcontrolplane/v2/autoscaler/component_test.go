@@ -1,6 +1,9 @@
 package autoscaler
 
 import (
+	"context"
+	"slices"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -10,12 +13,18 @@ import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/upsert"
 
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestPredicate(t *testing.T) {
@@ -94,12 +103,12 @@ func TestAdaptDeployment(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name              string
-		hcpAnnotations    map[string]string
-		AutoscalerOptions hyperv1.ClusterAutoscaling
-		ExpectedArgs      []string
-		UnexpectedArgs    []string
-		expectedReplicas  int32
+		name                   string
+		hcpAnnotations         map[string]string
+		AutoscalerOptions      hyperv1.ClusterAutoscaling
+		ExpectedArgs           []string
+		expectedKubeClientArgs []string
+		expectedReplicas       int32
 	}{
 		{
 			name: "When HCP has DisableClusterAutoscalerAnnotation annotation, it should set replicas to 0",
@@ -201,59 +210,52 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedReplicas: 1,
 		},
 		{
-			name: "When kubeClientQPS and kubeClientBurst are set, it should include both kube-client arguments",
+			name: "When kubeClientQPS and kubeClientBurst are set, it should override both defaults",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
-				KubeClientQPS:   ptr.To[int32](50),
-				KubeClientBurst: 100,
+				KubeClientQPS:   ptr.To[int32](20),
+				KubeClientBurst: 40,
 			},
-			ExpectedArgs: []string{
-				"--kube-client-qps=50",
-				"--kube-client-burst=100",
+			expectedKubeClientArgs: []string{
+				"--kube-client-qps=20",
+				"--kube-client-burst=40",
 			},
 			expectedReplicas: 1,
 		},
 		{
-			name: "When only kubeClientQPS is set, it should include kube-client-qps and omit kube-client-burst",
+			name: "When only kubeClientQPS is set, it should override QPS and retain the default burst",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				KubeClientQPS: ptr.To[int32](20),
 			},
-			ExpectedArgs: []string{
+			expectedKubeClientArgs: []string{
 				"--kube-client-qps=20",
-			},
-			UnexpectedArgs: []string{
-				"--kube-client-burst",
+				"--kube-client-burst=300",
 			},
 			expectedReplicas: 1,
 		},
 		{
-			name: "When only kubeClientBurst is set, it should include kube-client-burst and omit kube-client-qps",
+			name: "When only kubeClientBurst is set, it should override burst and retain the default QPS",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				KubeClientBurst: 40,
 			},
-			ExpectedArgs: []string{
+			expectedKubeClientArgs: []string{
+				"--kube-client-qps=200",
 				"--kube-client-burst=40",
-			},
-			UnexpectedArgs: []string{
-				"--kube-client-qps",
 			},
 			expectedReplicas: 1,
 		},
 		{
-			name:              "When kubeClientQPS and kubeClientBurst are omitted, it should not include kube-client arguments",
+			name:              "When kubeClientQPS and kubeClientBurst are omitted, it should use QPS 200 and burst 300",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{},
-			UnexpectedArgs: []string{
-				"--kube-client-qps",
-				"--kube-client-burst",
-			},
-			expectedReplicas: 1,
+			expectedReplicas:  1,
 		},
 		{
 			name: "When kubeClientQPS is -1, it should include kube-client-qps=-1 to disable rate limiting",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				KubeClientQPS: ptr.To[int32](-1),
 			},
-			ExpectedArgs: []string{
+			expectedKubeClientArgs: []string{
 				"--kube-client-qps=-1",
+				"--kube-client-burst=300",
 			},
 			expectedReplicas: 1,
 		},
@@ -262,8 +264,9 @@ func TestAdaptDeployment(t *testing.T) {
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				KubeClientQPS: ptr.To[int32](0),
 			},
-			ExpectedArgs: []string{
+			expectedKubeClientArgs: []string{
 				"--kube-client-qps=0",
+				"--kube-client-burst=300",
 			},
 			expectedReplicas: 1,
 		},
@@ -272,8 +275,9 @@ func TestAdaptDeployment(t *testing.T) {
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				KubeClientQPS: ptr.To[int32](1000),
 			},
-			ExpectedArgs: []string{
+			expectedKubeClientArgs: []string{
 				"--kube-client-qps=1000",
+				"--kube-client-burst=300",
 			},
 			expectedReplicas: 1,
 		},
@@ -282,7 +286,8 @@ func TestAdaptDeployment(t *testing.T) {
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				KubeClientBurst: 1,
 			},
-			ExpectedArgs: []string{
+			expectedKubeClientArgs: []string{
+				"--kube-client-qps=200",
 				"--kube-client-burst=1",
 			},
 			expectedReplicas: 1,
@@ -292,7 +297,8 @@ func TestAdaptDeployment(t *testing.T) {
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				KubeClientBurst: 2000,
 			},
-			ExpectedArgs: []string{
+			expectedKubeClientArgs: []string{
+				"--kube-client-qps=200",
 				"--kube-client-burst=2000",
 			},
 			expectedReplicas: 1,
@@ -323,9 +329,18 @@ func TestAdaptDeployment(t *testing.T) {
 			if len(tc.ExpectedArgs) > 0 {
 				g.Expect(observedArgs).To(ContainElements(tc.ExpectedArgs))
 			}
-			for _, unexpected := range tc.UnexpectedArgs {
-				g.Expect(observedArgs).NotTo(ContainElement(ContainSubstring(unexpected)))
+			var kubeClientArgs []string
+			for _, arg := range observedArgs {
+				if strings.HasPrefix(arg, KubeClientQPSArg.String()+"=") || strings.HasPrefix(arg, KubeClientBurstArg.String()+"=") {
+					kubeClientArgs = append(kubeClientArgs, arg)
+				}
 			}
+			expectedKubeClientArgs := tc.expectedKubeClientArgs
+			if expectedKubeClientArgs == nil {
+				expectedKubeClientArgs = []string{"--kube-client-qps=200", "--kube-client-burst=300"}
+			}
+			// Each rate-limit flag must appear exactly once after applying overrides.
+			g.Expect(kubeClientArgs).To(Equal(expectedKubeClientArgs))
 		})
 	}
 }
@@ -356,4 +371,111 @@ func TestAdaptDeploymentWithClusterAutoscalerImage(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal("quay.io/custom/cluster-autoscaler:v1.28.0"))
+}
+
+func TestNewComponent(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		autoscaling            hyperv1.ClusterAutoscaling
+		existingKubeClientArgs []string
+		expectedKubeClientArgs []string
+	}{
+		{
+			name:                   "When an existing deployment omits kube client limits, it should add defaults and reconcile idempotently",
+			expectedKubeClientArgs: []string{"--kube-client-qps=200", "--kube-client-burst=300"},
+		},
+		{
+			name: "When an existing deployment has duplicate kube client limits, it should replace them with single overrides and reconcile idempotently",
+			autoscaling: hyperv1.ClusterAutoscaling{
+				KubeClientQPS:   ptr.To[int32](20),
+				KubeClientBurst: 40,
+			},
+			existingKubeClientArgs: []string{
+				"--kube-client-qps=50", "--kube-client-burst=100",
+				"--kube-client-qps=20", "--kube-client-burst=40",
+			},
+			expectedKubeClientArgs: []string{"--kube-client-qps=20", "--kube-client-burst=40"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: "hcp-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID:      "test-infra-id",
+					ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64",
+					Autoscaling:  tc.autoscaling,
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					KubeConfig: &hyperv1.KubeconfigSecretRef{Name: "admin-kubeconfig"},
+				},
+			}
+			imageProvider := testutil.FakeImageProvider(testutil.WithVersion("4.22.0"))
+			kubeAPIServer := &hyperv1.ControlPlaneComponent{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-apiserver",
+					Namespace: hcp.Namespace,
+				},
+				Status: hyperv1.ControlPlaneComponentStatus{
+					Version: imageProvider.Version(),
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionTrue},
+						{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionTrue},
+					},
+				},
+			}
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred())
+			deployment.Namespace = hcp.Namespace
+			deployment.Spec.Template.Spec.Containers[0].Args = slices.DeleteFunc(deployment.Spec.Template.Spec.Containers[0].Args, func(arg string) bool {
+				return strings.HasPrefix(arg, KubeClientQPSArg.String()+"=") || strings.HasPrefix(arg, KubeClientBurstArg.String()+"=")
+			})
+			deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args, tc.existingKubeClientArgs...)
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+				deployment, kubeAPIServer, manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID),
+			).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					// Match the real client's preservation of a typed object's GVK on Get.
+					gvk := obj.GetObjectKind().GroupVersionKind()
+					defer obj.GetObjectKind().SetGroupVersionKind(gvk)
+					return c.Get(ctx, key, obj, opts...)
+				},
+			}).Build()
+			cpContext := controlplanecomponent.ControlPlaneContext{
+				Context:                  t.Context(),
+				Client:                   fakeClient,
+				HCP:                      hcp,
+				ApplyProvider:            upsert.NewApplyProvider(true),
+				ReleaseImageProvider:     imageProvider,
+				UserReleaseImageProvider: imageProvider,
+			}
+			component := NewComponent()
+			g.Expect(component.Reconcile(cpContext)).To(Succeed())
+
+			key := client.ObjectKeyFromObject(deployment)
+			updated := &appsv1.Deployment{}
+			g.Expect(fakeClient.Get(t.Context(), key, updated)).To(Succeed())
+			var kubeClientArgs []string
+			for _, arg := range updated.Spec.Template.Spec.Containers[0].Args {
+				if strings.HasPrefix(arg, KubeClientQPSArg.String()+"=") || strings.HasPrefix(arg, KubeClientBurstArg.String()+"=") {
+					kubeClientArgs = append(kubeClientArgs, arg)
+				}
+			}
+			g.Expect(kubeClientArgs).To(Equal(tc.expectedKubeClientArgs))
+
+			g.Expect(component.Reconcile(cpContext)).To(Succeed())
+			reconciled := &appsv1.Deployment{}
+			g.Expect(fakeClient.Get(t.Context(), key, reconciled)).To(Succeed())
+			g.Expect(cmp.Diff(updated, reconciled)).To(BeEmpty())
+			g.Expect(cpContext.ApplyProvider.ValidateUpdateEvents(1)).To(Succeed())
+		})
+	}
 }

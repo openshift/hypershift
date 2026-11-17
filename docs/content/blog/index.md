@@ -8,6 +8,14 @@ Technical progress reports and engineering stories from the HyperShift project.
 
 <div class="grid cards" markdown>
 
+-   :material-newspaper-variant-outline:{ .lg .middle } **September 2026 Progress Report**
+
+    ---
+
+    Etcd snapshot restore split-brain fix, konnectivity tunnel reliability overhaul, operator startup deadlock, VPC endpoint state machine bug, Karpenter drift detection during upgrades, and a packed Beneath the Headlines. 276 PRs from 71 contributors.
+
+    [:octicons-arrow-right-24: Read the report](2026-09-progress-report.md)
+
 -   :material-newspaper-variant-outline:{ .lg .middle } **August 2026 Progress Report**
 
     ---

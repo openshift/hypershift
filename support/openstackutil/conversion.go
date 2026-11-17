@@ -3,7 +3,7 @@ package openstackutil
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
-	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2"
 )
 
 func convertHypershiftTagToCAPOTag(tags []hyperv1.NeutronTag) []capo.NeutronTag {

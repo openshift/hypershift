@@ -22,6 +22,7 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/util"
+	hostedcontrolplanecontroller "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	capimanagerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager"
 	capiproviderv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider"
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
@@ -86,6 +87,7 @@ import (
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/google/go-cmp/cmp"
 	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 	"go.uber.org/mock/gomock"
@@ -102,6 +104,21 @@ const (
 	LinuxOS               = "linux"
 	ArchitectureAMD64     = "amd64"
 	ArchitecturePPC64LE   = "ppc64le"
+)
+
+// Release image pull specs shared by the release image identity tests. The mirror
+// pull specs pin the same digests as the source pull specs but live in a different
+// registry and repository, as happens when registry overrides or image content
+// policies are in effect.
+const (
+	testReleaseDigest1         = "sha256:286dca51487560560e202eec0e3492bdfc34a92b5ac3cb93539bfd5b25d5862a"
+	testReleaseDigest2         = "sha256:9a32a1223d89d5ab953bcd667c3c57687b1d4d45272091c6d2b202a9c92c9d18"
+	testSourceReleaseTag       = "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64"
+	testSourceReleaseDigest1   = "quay.io/openshift-release-dev/ocp-release@" + testReleaseDigest1
+	testSourceReleaseDigest2   = "quay.io/openshift-release-dev/ocp-release@" + testReleaseDigest2
+	testMirrorReleaseDigest1   = "virthost.ostest.test.metalkube.org:5000/localimages/local-release-image@" + testReleaseDigest1
+	testMirrorReleaseDigest2   = "virthost.ostest.test.metalkube.org:5000/localimages/local-release-image@" + testReleaseDigest2
+	testStaleForceUpgradeImage = "quay.io/openshift-release-dev/ocp-release:4.14.0-x86_64"
 )
 
 type fakeReleaseProvider struct {
@@ -1934,7 +1951,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 								InfraNamespace: "kubevirt-kubevirt",
 								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
 									Name: "secret",
-									Key:  "key",
+									Key:  "kubeconfig",
 								},
 							},
 						},
@@ -2122,6 +2139,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Data: map[string][]byte{
 				"credentials":       []byte("creds"),
 				".dockerconfigjson": []byte("{}"),
+				"kubeconfig":        []byte(externalInfraKubeconfig),
 			},
 		},
 		&configv1.Network{
@@ -2705,6 +2723,9 @@ func TestValidateReleaseImage(t *testing.T) {
 		releaseImageLoookup   func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error)
 		expectedResult        error
 		expectedNotFoundError bool
+		// expectedLookupImages, when set, is the exact ordered list of images
+		// that must be passed to the release provider Lookup.
+		expectedLookupImages []string
 	}{
 		{
 			name: "When no pull secret is provided it should return error",
@@ -3072,14 +3093,100 @@ func TestValidateReleaseImage(t *testing.T) {
 			releaseImageLoookup: nil, //won't be called
 			expectedResult:      nil,
 		},
+		{
+			name: "When the status desired image is a mirrored pull spec with the same digest as the spec release image, it should not look up the desired image",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest1,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image: testMirrorReleaseDigest1,
+						},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				if image != testSourceReleaseDigest1 {
+					return nil, fmt.Errorf("unexpected lookup of release image %s", image)
+				}
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
+			expectedResult:       nil,
+			expectedLookupImages: []string{testSourceReleaseDigest1},
+		},
+		{
+			name: "When the status desired image pins a different digest than the spec release image, it should look up the desired image",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest2,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image: testMirrorReleaseDigest1,
+						},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				switch image {
+				case testSourceReleaseDigest2:
+					return testutils.InitReleaseImageOrDie("4.16.0"), nil
+				case testMirrorReleaseDigest1:
+					return testutils.InitReleaseImageOrDie("4.15.0"), nil
+				default:
+					return nil, fmt.Errorf("unexpected lookup of release image %s", image)
+				}
+			},
+			expectedResult:       nil,
+			expectedLookupImages: []string{testSourceReleaseDigest2, testMirrorReleaseDigest1},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			var lookedUpImages []string
 			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-				DoAndReturn(tc.releaseImageLoookup).AnyTimes()
+				DoAndReturn(func(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+					lookedUpImages = append(lookedUpImages, image)
+					return tc.releaseImageLoookup(ctx, image, pullSecret)
+				}).AnyTimes()
 			r := &HostedClusterReconciler{
 				CertRotationScale: 24 * time.Hour,
 				Client:            fake.NewClientBuilder().WithObjects(tc.other...).Build(),
@@ -3100,6 +3207,9 @@ func TestValidateReleaseImage(t *testing.T) {
 			}
 			if tc.expectedNotFoundError {
 				g.Expect(errors2.IsNotFound(actual)).To(BeTrue())
+			}
+			if tc.expectedLookupImages != nil {
+				g.Expect(lookedUpImages).To(Equal(tc.expectedLookupImages))
 			}
 		})
 	}
@@ -3583,6 +3693,170 @@ func TestIsUpgradeable(t *testing.T) {
 			upgrading: true,
 			err:       false,
 		},
+		{
+			name: "When the status desired image is a mirrored pull spec with the same digest as the spec release image, it should not be upgrading",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest1,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   testMirrorReleaseDigest1,
+							Version: "4.15.0",
+						},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
+			upgrading: false,
+			err:       false,
+		},
+		{
+			name: "When Upgradeable is false and the status desired image is a mirrored pull spec with the same digest, it should not be upgrading",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest1,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   testMirrorReleaseDigest1,
+							Version: "4.15.0",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
+			upgrading: false,
+			err:       false,
+		},
+		{
+			name: "When Upgradeable is false with a stale force upgrade annotation and the status desired image is a mirrored pull spec with the same digest, it should not be upgrading",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ForceUpgradeToAnnotation: testStaleForceUpgradeImage,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest1,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   testMirrorReleaseDigest1,
+							Version: "4.15.0",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
+			upgrading: false,
+			err:       false,
+		},
+		{
+			name: "When Upgradeable is false and the mirrored status desired image pins a different digest for an older minor version, it should report a blocked upgrade",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest2,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   testMirrorReleaseDigest1,
+							Version: "4.15.0",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.16.0"), nil
+			},
+			upgrading: true,
+			err:       true,
+		},
+		{
+			name: "When Upgradeable is false and the force upgrade annotation names a different pull spec with the spec release image digest, it should still report a blocked upgrade",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ForceUpgradeToAnnotation: testMirrorReleaseDigest2,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest2,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   testMirrorReleaseDigest1,
+							Version: "4.15.0",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.16.0"), nil
+			},
+			upgrading: true,
+			err:       true,
+		},
 	}
 	for _, test := range tests {
 		mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
@@ -3774,6 +4048,85 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 			if diff := cmp.Diff(hcluster.Status.Conditions, tc.expectedConditions); diff != "" {
 				t.Errorf("actual conditions differ from expected: %s", diff)
 			}
+		})
+	}
+}
+
+func TestSameReleaseImage(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		a        string
+		b        string
+		expected bool
+	}{
+		{
+			name:     "When both pull specs are the identical legacy string release-1.2@sha12345, it should return true",
+			a:        "release-1.2@sha12345",
+			b:        "release-1.2@sha12345",
+			expected: true,
+		},
+		{
+			name:     "When both pull specs are the identical tag pull spec, it should return true",
+			a:        testSourceReleaseTag,
+			b:        testSourceReleaseTag,
+			expected: true,
+		},
+		{
+			name:     "When a mirrored pull spec pins the same sha256 digest as the source pull spec, it should return true",
+			a:        testSourceReleaseDigest1,
+			b:        testMirrorReleaseDigest1,
+			expected: true,
+		},
+		{
+			name:     "When one pull spec has both a tag and the same digest as the other, it should return true",
+			a:        testSourceReleaseTag + "@" + testReleaseDigest1,
+			b:        testMirrorReleaseDigest1,
+			expected: true,
+		},
+		{
+			name:     "When the pull specs pin different digests, it should return false",
+			a:        testSourceReleaseDigest2,
+			b:        testMirrorReleaseDigest1,
+			expected: false,
+		},
+		{
+			name:     "When one pull spec is a tag and the other pins a digest, it should return false",
+			a:        testSourceReleaseTag,
+			b:        testMirrorReleaseDigest1,
+			expected: false,
+		},
+		{
+			name:     "When both pull specs are tags in different repositories, it should return false",
+			a:        testSourceReleaseTag,
+			b:        "virthost.ostest.test.metalkube.org:5000/localimages/local-release-image:4.15.0-x86_64",
+			expected: false,
+		},
+		{
+			name:     "When one pull spec is empty and the other pins a digest, it should return false",
+			a:        "",
+			b:        testSourceReleaseDigest1,
+			expected: false,
+		},
+		{
+			name:     "When the strings differ and both fail to parse, it should return false",
+			a:        "release-1.2@sha12345",
+			b:        "release-1.2@sha67890",
+			expected: false,
+		},
+		{
+			name:     "When the strings differ and one fails to parse, it should return false",
+			a:        "release-1.2@sha12345",
+			b:        testSourceReleaseDigest1,
+			expected: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			g.Expect(sameReleaseImage(tc.a, tc.b)).To(Equal(tc.expected), "sameReleaseImage(%q, %q)", tc.a, tc.b)
+			g.Expect(sameReleaseImage(tc.b, tc.a)).To(Equal(tc.expected), "sameReleaseImage(%q, %q)", tc.b, tc.a)
 		})
 	}
 }
@@ -3988,6 +4341,113 @@ func TestIsProgressing(t *testing.T) {
 			},
 			want:    true,
 			wantErr: false,
+		},
+		{
+			name: "When the status desired image is a mirrored pull spec with the same digest as the spec release image, it should not be progressing",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest1,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   testMirrorReleaseDigest1,
+							Version: "4.15.0",
+						},
+					},
+				},
+			},
+			withDigest: testSourceReleaseDigest1,
+			want:       false,
+			wantErr:    false,
+		},
+		{
+			name: "When the spec release image is a tag whose resolved digest matches the mirrored status desired image, it should not be progressing",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: testSourceReleaseTag,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   testMirrorReleaseDigest1,
+							Version: "4.15.0",
+						},
+					},
+				},
+			},
+			withDigest: testSourceReleaseDigest1,
+			want:       false,
+			wantErr:    false,
+		},
+		{
+			name: "When the mirrored status desired image pins a different digest than the spec release image, it should be progressing",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest2,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   testMirrorReleaseDigest1,
+							Version: "4.15.0",
+						},
+					},
+				},
+			},
+			withDigest: testSourceReleaseDigest2,
+			want:       true,
+			wantErr:    false,
+		},
+		{
+			name: "When Upgradeable is false with a stale force upgrade annotation and the status desired image is a mirrored pull spec with the same digest, it should not be progressing or blocked",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ForceUpgradeToAnnotation: testStaleForceUpgradeImage,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: testSourceReleaseDigest1,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   testMirrorReleaseDigest1,
+							Version: "4.15.0",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			withDigest: testSourceReleaseDigest1,
+			want:       false,
+			wantErr:    false,
 		},
 	}
 	for _, tt := range tests {
@@ -5421,6 +5881,9 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(tt *testing.T) {
 			mockCtrl := gomock.NewController(t)
+			// These encryption-only scenarios use local infrastructure, not an
+			// external credential reference with no backing Secret.
+			testCase.hc.Spec.Platform.Kubevirt.Credentials = nil
 			testCase.objects = append(testCase.objects, testCase.hc)
 			infra := &configv1.Infrastructure{
 				ObjectMeta: metav1.ObjectMeta{
@@ -7081,6 +7544,101 @@ func TestComputeGCPPSCCondition(t *testing.T) {
 			condition := computeGCPPSCCondition(gcpPSCList, tc.conditionType)
 			if condition != tc.expected {
 				t.Errorf("error, expected %v\nbut got %v", tc.expected, condition)
+			}
+		})
+	}
+}
+
+func TestPropagateGCPPSCACMECNAMECondition(t *testing.T) {
+	t.Parallel()
+
+	pscListWith := func(conditions ...metav1.Condition) hyperv1.GCPPrivateServiceConnectList {
+		return hyperv1.GCPPrivateServiceConnectList{
+			Items: []hyperv1.GCPPrivateServiceConnect{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "psc"},
+					Status:     hyperv1.GCPPrivateServiceConnectStatus{Conditions: conditions},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name     string
+		pscList  hyperv1.GCPPrivateServiceConnectList
+		initial  []metav1.Condition
+		expected *metav1.Condition
+	}{
+		{
+			name: "When no PSC reports the condition, it should leave the HostedCluster without it",
+			pscList: pscListWith(metav1.Condition{
+				Type:   string(hyperv1.GCPDNSAvailable),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.GCPSuccessReason,
+			}),
+		},
+		{
+			name: "When a PSC reports the published record, it should copy status and reason",
+			pscList: pscListWith(metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.GCPSuccessReason,
+				Message: "ACME challenge CNAME published",
+			}),
+			expected: &metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.GCPSuccessReason,
+				Message: "ACME challenge CNAME published",
+			},
+		},
+		{
+			name: "When a PSC reports a skipped record, it should preserve the skip reason",
+			pscList: pscListWith(metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.GCPACMECNAMEOutsideBaseDomainReason,
+				Message: "No ACME challenge CNAME was created: the ingress domain is outside the base domain.",
+			}),
+			expected: &metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.GCPACMECNAMEOutsideBaseDomainReason,
+				Message: "No ACME challenge CNAME was created: the ingress domain is outside the base domain.",
+			},
+		},
+		{
+			name:    "When the condition was previously set and no PSC reports it anymore, it should be removed",
+			pscList: pscListWith(),
+			initial: []metav1.Condition{
+				{
+					Type:   string(hyperv1.GCPACMECNAMEAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.GCPSuccessReason,
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{Conditions: tc.initial},
+			}
+			propagateGCPPSCACMECNAMECondition(hcluster, tc.pscList)
+
+			condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.GCPACMECNAMEAvailable))
+			if tc.expected == nil {
+				if condition != nil {
+					t.Errorf("expected no %s condition, got %+v", hyperv1.GCPACMECNAMEAvailable, *condition)
+				}
+				return
+			}
+			if condition == nil {
+				t.Fatalf("expected %s condition to be set", hyperv1.GCPACMECNAMEAvailable)
+			}
+			if condition.Status != tc.expected.Status || condition.Reason != tc.expected.Reason || condition.Message != tc.expected.Message {
+				t.Errorf("expected condition %+v\nbut got %+v", *tc.expected, *condition)
 			}
 		})
 	}
@@ -9357,6 +9915,60 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 			}
 		})
 	}
+
+	// Rejecting unsafe credentials must still allow pause propagation.
+	for _, tc := range []struct {
+		name   string
+		legacy bool
+		paused bool
+	}{
+		{name: "When external KubeVirt credentials are unsafe, it should remove the unsafe target and persist the rejection"},
+		{name: "When external KubeVirt credentials are unsafe in the legacy reconciler, it should remove the unsafe target and persist the rejection", legacy: true},
+		{name: "When external KubeVirt credentials are unsafe and reconciliation is paused, it should still pause the HostedControlPlane and CAPI Cluster", paused: true},
+		{name: "When external KubeVirt credentials are unsafe and the legacy reconciler is paused, it should still pause the HostedControlPlane and CAPI Cluster", legacy: true, paused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			unsafe := strings.ReplaceAll(externalInfraKubeconfig, "user: {token: private-test-token}", "user: {exec: {apiVersion: client.authentication.k8s.io/v1, command: /bin/sh}}")
+			hc := credentialHostedCluster()
+			hc.Spec.InfraID = "tenant-infra"
+			if tc.paused {
+				hc.Spec.PausedUntil = ptr.To("true")
+			}
+			controlPlaneNamespace := hcpmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+			source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": []byte(unsafe)}}
+			target := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: hyperv1.KubeVirtInfraCredentialsSecretName}, Data: map[string][]byte{"kubeconfig": []byte(unsafe)}}
+			hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
+			capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace, hc.Spec.InfraID)
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc, source, target, hcp, capiCluster).Build()
+			r := &HostedClusterReconciler{Client: c, ReconcileLegacy: tc.legacy, now: metav1.Now}
+
+			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hc)})
+
+			g.Expect(err).To(MatchError(ContainSubstring("prohibited exec credentials")))
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(target), &corev1.Secret{})).To(Satisfy(errors2.IsNotFound))
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
+			condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.PlatformCredentialsFound))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(hyperv1.PlatformCredentialsNotFoundReason))
+			g.Expect(condition.Message).To(ContainSubstring("prohibited exec credentials"))
+			g.Expect(condition.Message).NotTo(ContainSubstring("/bin/sh"))
+			g.Expect(meta.IsStatusConditionFalse(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))).To(BeTrue())
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(source), source)).To(Succeed())
+			g.Expect(source.Data).To(Equal(map[string][]byte{"kubeconfig": []byte(unsafe)}))
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(capiCluster), capiCluster)).To(Succeed())
+			if tc.paused {
+				g.Expect(hcp.Spec.PausedUntil).To(Equal(ptr.To("true")))
+				g.Expect(capiCluster.Spec.Paused).To(Equal(ptr.To(true)))
+			} else {
+				g.Expect(hcp.Spec.PausedUntil).To(BeNil())
+				g.Expect(capiCluster.Spec.Paused).To(BeNil())
+			}
+		})
+	}
 }
 
 func TestReconcileSREMetricsConfig_EffectiveMetricsSet(t *testing.T) {
@@ -9708,10 +10320,23 @@ func TestDestroyGracePeriod(t *testing.T) {
 }
 
 func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
+	// hcpDeprecationMessage is an opaque placeholder standing in for any message the HCP
+	// controller reports; this test only verifies that such a message is folded into the
+	// HostedCluster condition, not its exact text.
 	const hcpDeprecationMessage = "The deprecated annotation is set; migrate to the field"
+
+	// The remaining messages reference the single source of truth in their producing
+	// controllers so the text is not duplicated here.
+	metricsForwardingMessage := fmt.Sprintf(deprecatedMetricsForwardingMessageFmt, hyperv1.EnableMetricsForwarding)
+	serviceDeprecationMessage := fmt.Sprintf(hostedcontrolplanecontroller.DeprecatedServiceEntryMessageFmt, hyperv1.OVNSbDb) + "; " + fmt.Sprintf(hostedcontrolplanecontroller.DeprecatedServiceEntryMessageFmt, hyperv1.OIDC)
+	multiArchDeprecationMessage := hostedcontrolplanecontroller.DeprecatedMultiArchMessage
+	aescbcBackupKeyDeprecationMessage := hostedcontrolplanecontroller.DeprecatedAESCBCBackupKeyMessage
+	awsKMSBackupKeyDeprecationMessage := hostedcontrolplanecontroller.DeprecatedAWSKMSBackupKeyMessage
+	azureKMSBackupKeyDeprecationMessage := hostedcontrolplanecontroller.DeprecatedAzureKMSBackupKeyMessage
 
 	testCases := []struct {
 		name            string
+		hcAnnotations   map[string]string
 		hcp             *hyperv1.HostedControlPlane
 		expectedStatus  metav1.ConditionStatus
 		expectedReason  string
@@ -9723,6 +10348,33 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.StatusUnknownReason,
 			expectedMessage: "The hosted control plane is not found",
+		},
+		{
+			name:            "When a HostedCluster-only deprecated annotation is set, it should set the condition to True without an HCP round-trip",
+			hcAnnotations:   map[string]string{hyperv1.EnableMetricsForwarding: "true"},
+			hcp:             nil,
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: metricsForwardingMessage,
+		},
+		{
+			name:          "When both a HostedCluster-only and an HCP-detected deprecation are present, it should aggregate both messages",
+			hcAnnotations: map[string]string{hyperv1.EnableMetricsForwarding: "true"},
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: hcpDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: metricsForwardingMessage + "; " + hcpDeprecationMessage,
 		},
 		{
 			name: "When the HCP reports a deprecated configuration, it should aggregate the message and set the condition to True",
@@ -9741,6 +10393,96 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			expectedStatus:  metav1.ConditionTrue,
 			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
 			expectedMessage: hcpDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports deprecated no-op service entries, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: serviceDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: serviceDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports deprecated multiArch configuration, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: multiArchDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: multiArchDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports a deprecated AESCBC backup key, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: aescbcBackupKeyDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: aescbcBackupKeyDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports a deprecated AWS KMS backup key, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: awsKMSBackupKeyDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: awsKMSBackupKeyDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports a deprecated Azure KMS backup key, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: azureKMSBackupKeyDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: azureKMSBackupKeyDeprecationMessage,
 		},
 		{
 			name: "When the HCP reports no deprecated configuration, it should set the condition to False",
@@ -9773,7 +10515,7 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			g := NewWithT(t)
 
 			hcluster := &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Generation: 9},
+				ObjectMeta: metav1.ObjectMeta{Generation: 9, Annotations: tc.hcAnnotations},
 			}
 			r := &HostedClusterReconciler{}
 			r.reconcileDeprecatedConfigurationStatus(hcluster, tc.hcp)
@@ -9904,6 +10646,298 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			pullSecret := controlplaneoperator.PullSecret("cp-ns")
 			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
+		})
+	}
+}
+
+func TestHcUsesLBIPFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		expected bool
+	}{
+		{
+			name: "When HC has no serviceAnnotations or loadBalancerClass, it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:         hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When HC has serviceAnnotations, it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									ServiceAnnotations: map[string]string{
+										"metallb.universe.tf/address-pool": "production",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When HC has loadBalancerClass, it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									LoadBalancerClass: "metallb.io/metallb",
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When HC has nil LoadBalancer strategy, it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When only a non-APIServer service uses LB fields, it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:         hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									ServiceAnnotations: map[string]string{"key": "val"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When HC has multiple services and the APIServer uses LB fields, it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:         hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+							},
+						},
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									ServiceAnnotations: map[string]string{"key": "val"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(hcUsesLBIPFields(tt.hc)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestDeterministicLBIPSupportedCondition(t *testing.T) {
+	hcWithFields := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Generation: 7},
+		Spec: hyperv1.HostedClusterSpec{
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.LoadBalancer,
+						LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+							ServiceAnnotations: map[string]string{
+								"metallb.io/loadBalancerIPs": "10.1.1.100",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	hcWithoutFields := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Generation: 7},
+		Spec: hyperv1.HostedClusterSpec{
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type:         hyperv1.LoadBalancer,
+						LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+					},
+				},
+			},
+		},
+	}
+	supportedLabels := map[string]string{controlPlaneOperatorSupportsDeterministicLBLabel: "true"}
+
+	tests := []struct {
+		name           string
+		hc             *hyperv1.HostedCluster
+		labels         map[string]string
+		expectedStatus metav1.ConditionStatus
+		expectedReason string
+	}{
+		{
+			name:           "When the CPO image advertises support, it should report True",
+			hc:             hcWithFields,
+			labels:         supportedLabels,
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When the CPO image lacks the label and the HC uses deterministic LB fields, it should report False",
+			hc:             hcWithFields,
+			labels:         map[string]string{"other-label": "true"},
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.UnsupportedControlPlaneOperatorReason,
+		},
+		{
+			name:           "When the CPO image lacks the label but the HC does not use the fields, it should report True",
+			hc:             hcWithoutFields,
+			labels:         map[string]string{"other-label": "true"},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When image labels are unavailable and the HC uses deterministic LB fields, it should report False",
+			hc:             hcWithFields,
+			labels:         nil,
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.UnsupportedControlPlaneOperatorReason,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			condition := deterministicLBIPSupportedCondition(tt.hc, tt.labels)
+			g.Expect(condition.Type).To(Equal(string(hyperv1.DeterministicLBIPSupported)))
+			g.Expect(condition.Status).To(Equal(tt.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tt.expectedReason))
+			g.Expect(condition.ObservedGeneration).To(Equal(tt.hc.Generation))
+		})
+	}
+}
+
+func TestEffectiveGMPMonitoring(t *testing.T) {
+	supportedLabels := map[string]string{controlPlaneOperatorSupportsGMPMonitoringLabel: "true"}
+	testCases := []struct {
+		name                string
+		enableGMPMonitoring bool
+		platform            hyperv1.PlatformType
+		labels              map[string]string
+		labelsResolved      bool
+		expected            bool
+		expectLog           bool
+	}{
+		{
+			name:           "When GMP monitoring is disabled, it should not use GMP monitoring",
+			platform:       hyperv1.GCPPlatform,
+			labels:         supportedLabels,
+			labelsResolved: true,
+		},
+		{
+			name:                "When GMP monitoring is enabled and the CPO image supports it, it should use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.GCPPlatform,
+			labels:              supportedLabels,
+			labelsResolved:      true,
+			expected:            true,
+		},
+		{
+			name:                "When GMP monitoring is enabled and the CPO image does not support it, it should log and not use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.GCPPlatform,
+			labels:              map[string]string{controlPlaneOperatorSubcommandsLabel: "true"},
+			labelsResolved:      true,
+			expectLog:           true,
+		},
+		{
+			name:                "When GMP monitoring is enabled and the CPO image labels are unavailable, it should not use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.GCPPlatform,
+		},
+		{
+			name:                "When GMP monitoring is enabled and the CPO image resolves with no labels at all, it should log and not use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.GCPPlatform,
+			labelsResolved:      true,
+			expectLog:           true,
+		},
+		{
+			name:                "When GMP monitoring is enabled on a non-GCP platform, it should not use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.AWSPlatform,
+			labels:              supportedLabels,
+			labelsResolved:      true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			var logged []string
+			log := funcr.New(func(_, args string) { logged = append(logged, args) }, funcr.Options{Verbosity: 1})
+			r := &HostedClusterReconciler{EnableGMPMonitoring: tc.enableGMPMonitoring}
+			g.Expect(r.effectiveGMPMonitoring(log, tc.platform, tc.labels, tc.labelsResolved)).To(Equal(tc.expected))
+			if tc.expectLog {
+				g.Expect(logged).To(HaveLen(1))
+			} else {
+				g.Expect(logged).To(BeEmpty())
+			}
 		})
 	}
 }

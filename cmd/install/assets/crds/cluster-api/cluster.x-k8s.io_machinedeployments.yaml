@@ -264,7 +264,7 @@ spec:
                       deletePolicy:
                         description: |-
                           deletePolicy defines the policy used by the MachineDeployment to identify nodes to delete when downscaling.
-                          Valid values are "Random, "Newest", "Oldest"
+                          Valid values are "Random", "Newest", "Oldest"
                           When no value is supplied, the default DeletePolicy of MachineSet is used
                         enum:
                         - Random
@@ -828,6 +828,31 @@ spec:
                     format: int32
                     type: integer
                 type: object
+              versions:
+                description: versions is the aggregated Kubernetes versions in this
+                  MachineDeployment.
+                items:
+                  description: StatusVersion groups version-related status information.
+                  properties:
+                    replicas:
+                      description: replicas is the number of replicas at this version.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    version:
+                      description: version is the Kubernetes version.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                  required:
+                  - version
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - version
+                x-kubernetes-list-type: map
             type: object
         type: object
     served: true
@@ -923,7 +948,7 @@ spec:
                   order:
                     description: |-
                       order defines the order in which Machines are deleted when downscaling.
-                      Defaults to "Random".  Valid values are "Random, "Newest", "Oldest"
+                      Defaults to "Random". Valid values are "Random", "Newest", "Oldest"
                     enum:
                     - Random
                     - Newest
@@ -1666,6 +1691,31 @@ spec:
                   when Machine's UpToDate condition is true.
                 format: int32
                 type: integer
+              versions:
+                description: versions is the aggregated Kubernetes versions in this
+                  MachineDeployment.
+                items:
+                  description: StatusVersion groups version-related status information.
+                  properties:
+                    replicas:
+                      description: replicas is the number of replicas at this version.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    version:
+                      description: version is the Kubernetes version.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                  required:
+                  - version
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - version
+                x-kubernetes-list-type: map
             type: object
         required:
         - spec

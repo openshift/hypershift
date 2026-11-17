@@ -1184,13 +1184,31 @@ type LoadBalancerPublishingStrategy struct {
 	//
 	// Annotations are applied per-key — existing annotations set by other
 	// controllers are preserved. HyperShift does not validate annotation
-	// values — correctness is the user's responsibility, same as setting
-	// annotations on any Kubernetes Service.
+	// value semantics — correctness is the user's responsibility, same as
+	// setting annotations on any Kubernetes Service.
+	// Only keys starting with a known load balancer provider prefix are
+	// accepted: metallb.io/, metallb.universe.tf/,
+	// service.beta.kubernetes.io/aws-load-balancer-eip,
+	// service.beta.kubernetes.io/aws-load-balancer-subnet,
+	// service.beta.kubernetes.io/aws-load-balancer-target-group,
+	// service.beta.kubernetes.io/azure-load-balancer-ipv,
+	// service.beta.kubernetes.io/azure-load-balancer-resource-group,
+	// networking.gke.io/, cis.f5.com/, lbipam.cilium.io/ and
+	// loadbalancer.openstack.org/. The networking.gke.io/load-balancer-type
+	// annotation is not allowed because it controls whether the load
+	// balancer is internal or external. Annotation keys are limited to 317
+	// characters. The name segment must start and end with an alphanumeric
+	// character and is limited to 63 characters.
+	// Values are limited to 253 characters.
 	// Minimum 1, maximum 10 annotations per service.
 	//
 	// +openshift:enable:FeatureGate=DeterministicLBIP
 	// +kubebuilder:validation:MinProperties=1
 	// +kubebuilder:validation:MaxProperties=10
+	// +kubebuilder:validation:XValidation:rule=`self.all(k, k.startsWith('metallb.io/') || k.startsWith('metallb.universe.tf/') || k.startsWith('service.beta.kubernetes.io/aws-load-balancer-eip') || k.startsWith('service.beta.kubernetes.io/aws-load-balancer-subnet') || k.startsWith('service.beta.kubernetes.io/aws-load-balancer-target-group') || k.startsWith('service.beta.kubernetes.io/azure-load-balancer-ipv') || k.startsWith('service.beta.kubernetes.io/azure-load-balancer-resource-group') || (k.startsWith('networking.gke.io/') && k != 'networking.gke.io/load-balancer-type') || k.startsWith('cis.f5.com/') || k.startsWith('lbipam.cilium.io/') || k.startsWith('loadbalancer.openstack.org/'))`,message="serviceAnnotations keys must start with a known load balancer provider prefix (e.g. metallb.io/, service.beta.kubernetes.io/aws-load-balancer-eip, lbipam.cilium.io/); networking.gke.io/load-balancer-type is not allowed; see the field description for the full list"
+	// +kubebuilder:validation:XValidation:rule=`self.all(k, size(k) <= 317)`,message="annotation keys must be at most 317 characters"
+	// +kubebuilder:validation:XValidation:rule=`self.all(k, k.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\\/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$'))`,message="annotation keys must be valid qualified names: an optional DNS subdomain prefix followed by '/', then a name of at most 63 characters starting and ending with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule=`self.all(k, size(self[k]) <= 253)`,message="annotation values must be at most 253 characters"
 	// +optional
 	ServiceAnnotations map[string]string `json:"serviceAnnotations,omitempty"`
 }
@@ -1488,6 +1506,7 @@ func PlatformTypes() []PlatformType {
 // and is used to configure platform specific behavior.
 //
 // +openshift:validation:FeatureGateAwareXValidation:featureGate=GCPPlatform,rule="(has(self.gcp) && has(self.gcp.resourceTags)) == (has(oldSelf.gcp) && has(oldSelf.gcp.resourceTags))",message="resourceTags may only be configured during installation"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=GCPPlatform,rule="!has(oldSelf.gcp) || !has(oldSelf.gcp.delegation) || (has(self.gcp) && has(self.gcp.delegation))",message="delegation cannot be removed once set"
 type PlatformSpec struct {
 	// type is the type of infrastructure provider for the cluster.
 	//
@@ -2074,7 +2093,7 @@ type ClusterAutoscaling struct {
 	// kube-apiserver. Valid values are -1 through 1000.
 	// When set to -1, client-side rate limiting is disabled.
 	// When set to 0, the flag is passed but client-go applies its default QPS of 5.
-	// When omitted, the flag is not set and the autoscaler uses its default (5).
+	// When omitted, HyperShift sets the flag to 200. An explicit value overrides this default.
 	//
 	// +kubebuilder:validation:Minimum=-1
 	// +kubebuilder:validation:Maximum=1000
@@ -2084,7 +2103,7 @@ type ClusterAutoscaling struct {
 	// kubeClientBurst sets the "--kube-client-burst" flag on cluster-autoscaler.
 	// Controls the maximum burst of queries to the kube-apiserver.
 	// Valid values are 1 through 2000.
-	// When omitted, the flag is not set and the autoscaler uses its default (10).
+	// When omitted, HyperShift sets the flag to 300. An explicit value overrides this default.
 	//
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=2000
@@ -3031,6 +3050,7 @@ type OperatorConfiguration struct {
 	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	// +openshift:enable:FeatureGate=KubeAPIServerEventTTL
 	KubeAPIServer KubeAPIServerOperatorSpec `json:"kubeAPIServer,omitzero"`
 
 	// etcd configures the etcd component.

@@ -44,6 +44,12 @@
                     },
                     {
                         "name": "IngressComponentRouteLabels"
+                    },
+                    {
+                        "name": "KubeAPIServerEventTTL"
+                    },
+                    {
+                        "name": "IgnitionPayloadSystem"
                     }
                 ],
                 "enabled": [

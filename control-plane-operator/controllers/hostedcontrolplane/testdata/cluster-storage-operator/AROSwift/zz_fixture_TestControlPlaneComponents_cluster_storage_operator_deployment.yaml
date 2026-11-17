@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d03fb69718ad374d15633c1e693321319711a5ccfd9e1493ab87a9b0b68c0dab
+    hypershift.openshift.io/desired-state-hash: 6b4e5b226e5460288f4e3f65c1063652ac186e8394e24144e8d5ccf38c67efe3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-storage-operator
@@ -164,6 +164,8 @@ spec:
           value: tools
         - name: VOLUME_DATA_SOURCE_VALIDATOR_IMAGE
           value: volume-data-source-validator
+        - name: VOLUME_DEVICE_EXPORTER_IMAGE
+          value: csi-volume-device-exporter
         - name: ARO_HCP_SECRET_PROVIDER_CLASS_FOR_DISK
           value: managed-azure-disk-csi
         - name: ARO_HCP_SECRET_PROVIDER_CLASS_FOR_FILE

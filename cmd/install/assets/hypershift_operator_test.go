@@ -878,6 +878,21 @@ func TestBuildArgs(t *testing.T) {
 			expectNotContains: []string{"--registry-overrides"},
 		},
 		{
+			name: "When GMP monitoring is enabled, it should include the flag in args",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				EnableGMPMonitoring: true,
+			},
+			expectContains: []string{"--enable-gmp-monitoring"},
+		},
+		{
+			name: "When GMP monitoring is disabled, it should not include the flag",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectNotContains: []string{"--enable-gmp-monitoring"},
+		},
+		{
 			name: "When all standard options are set, it should include them in args",
 			deployment: HyperShiftOperatorDeployment{
 				PrivatePlatform:                        string(hyperv1.AWSPlatform),

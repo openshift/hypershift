@@ -560,6 +560,7 @@ type HyperShiftOperatorDeployment struct {
 	IncludeVersion                          bool
 	UWMTelemetry                            bool
 	RHOBSMonitoring                         bool
+	EnableGMPMonitoring                     bool
 	CVOPrometheusURL                        string
 	MonitoringDashboards                    bool
 	CertRotationScale                       time.Duration
@@ -821,6 +822,9 @@ func (o HyperShiftOperatorDeployment) buildArgs() []string {
 	}
 	if o.RegistryOverrides != "" {
 		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
+	}
+	if o.EnableGMPMonitoring {
+		args = append(args, "--enable-gmp-monitoring")
 	}
 	return args
 }

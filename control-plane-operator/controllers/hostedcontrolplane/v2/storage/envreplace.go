@@ -59,6 +59,7 @@ var (
 		"LIVENESS_PROBE_CONTROL_PLANE_IMAGE":              "csi-livenessprobe",
 		"KUBE_RBAC_PROXY_CONTROL_PLANE_IMAGE":             "kube-rbac-proxy",
 		"VOLUME_DATA_SOURCE_VALIDATOR_IMAGE":              "volume-data-source-validator",
+		"VOLUME_DEVICE_EXPORTER_IMAGE":                    "csi-volume-device-exporter",
 		"TOOLS_IMAGE":                                     "tools",
 	}
 )
@@ -88,6 +89,7 @@ func (er *environmentReplacer) setOperatorImageReferences(releaseImageProvider, 
 		"LIVENESS_PROBE_IMAGE",
 		"CLUSTER_CLOUD_CONTROLLER_MANAGER_OPERATOR_IMAGE",
 		"KUBE_RBAC_PROXY_IMAGE",
+		"VOLUME_DEVICE_EXPORTER_IMAGE",
 	}
 
 	for envVar, payloadName := range operatorImageRefs {

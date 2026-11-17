@@ -139,6 +139,7 @@ type ConfigurableClusterOptions struct {
 	Annotations                           stringMapVar
 	AzureCredentialsFile                  string
 	AzureManagedIdentitiesFile            string
+	AzureKarpenterClientID                string
 	AzureIssuerURL                        string
 	AzureMultiArch                        bool
 	AzureServiceAccountTokenIssuerKeyPath string
@@ -207,6 +208,7 @@ type ConfigurableClusterOptions struct {
 	GCPStorageServiceAccount         string
 	GCPImageRegistryServiceAccount   string
 	GCPNetworkServiceAccount         string
+	GCPIngressServiceAccount         string
 	GCPServiceAccountSigningKeyPath  string
 	GCPEndpointAccess                string
 	GCPIssuerURL                     string
@@ -387,6 +389,7 @@ func (o *Options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
 func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
 		CredentialsFile:                  o.ConfigurableClusterOptions.AzureCredentialsFile,
+		KarpenterClientID:                o.ConfigurableClusterOptions.AzureKarpenterClientID,
 		Location:                         o.ConfigurableClusterOptions.AzureLocation,
 		IssuerURL:                        o.ConfigurableClusterOptions.AzureIssuerURL,
 		ServiceAccountTokenIssuerKeyPath: o.ConfigurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath,
@@ -468,6 +471,7 @@ func (o *Options) DefaultGCPOptions() hypershiftgcp.RawCreateOptions {
 		StorageServiceAccount:         o.ConfigurableClusterOptions.GCPStorageServiceAccount,
 		ImageRegistryServiceAccount:   o.ConfigurableClusterOptions.GCPImageRegistryServiceAccount,
 		NetworkServiceAccount:         o.ConfigurableClusterOptions.GCPNetworkServiceAccount,
+		IngressServiceAccount:         o.ConfigurableClusterOptions.GCPIngressServiceAccount,
 		ServiceAccountSigningKeyPath:  o.ConfigurableClusterOptions.GCPServiceAccountSigningKeyPath,
 		EndpointAccess:                o.ConfigurableClusterOptions.GCPEndpointAccess,
 		IssuerURL:                     o.ConfigurableClusterOptions.GCPIssuerURL,

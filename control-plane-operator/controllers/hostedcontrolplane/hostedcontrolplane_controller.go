@@ -48,6 +48,7 @@ import (
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
 	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	extoidcv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/external_oidc_webhook"
 	fgv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
@@ -72,6 +73,7 @@ import (
 	routerutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
 	snapshotcontrollerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/snapshotcontroller"
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	ignitionmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
@@ -200,6 +202,7 @@ type HostedControlPlaneReconciler struct {
 	OperateOnReleaseImage                   string
 	DefaultIngressDomain                    string
 	MetricsSet                              metrics.MetricsSet
+	EnableGMPMonitoring                     bool
 	KASHealthMetrics                        *kas.KASHealthMetrics
 	SREConfigHash                           string
 	ec2Client                               awsapi.EC2API
@@ -287,6 +290,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		schedulerv2.NewComponent(),
 		oapiv2.NewComponent(),
 		oauthapiv2.NewComponent(),
+		extoidcv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		cvov2.NewComponent(r.EnableCVOManagementClusterMetricsAccess),
 		ocmv2.NewComponent(),
@@ -312,13 +316,28 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		snapshotcontrollerv2.NewComponent(),
 		registryoperatorv2.NewComponent(),
 		konnectivityv2.NewComponent(),
-		ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
-		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
+	)
+
+	// The ignition serving components are reconciled by the CPO only in the legacy model. When the
+	// IgnitionPayloadSystem feature set is active (propagated to the CPO via HYPERSHIFT_FEATURESET) the
+	// HyperShift Operator owns the re-architected, same-named ignition components, so the CPO stands them
+	// down — feature-set mutual exclusion, one owner at a time, never a cross-owner delete. They are
+	// registered before the router so the router's HAProxy config includes ignition-server's route on the
+	// first reconcile pass.
+	if !featuregates.Gate().Enabled(featuregates.IgnitionPayloadSystem) {
+		r.components = append(r.components,
+			ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
+			ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
+		)
+	}
+
+	r.components = append(r.components,
 		endpointresolverv2.NewComponent(),
 		metricsproxyv2.NewComponent(r.DefaultIngressDomain),
 		routerv2.NewComponent(),
 		kubestorageversionmigratorv2.NewComponent(),
 	)
+
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
 	)
@@ -602,21 +621,71 @@ func (r *HostedControlPlaneReconciler) reconcileKASStatus(ctx context.Context, h
 	return nil
 }
 
+// Deprecation messages surfaced on the HostedClusterConfigurationDeprecated condition by
+// reconcileDeprecatedConfigurationStatus. They are declared here, where they are produced, so
+// that the controller and its tests (including the HostedCluster controller test that exercises
+// how these messages are folded into the HostedCluster condition) share a single source of truth
+// for the text. The *Fmt constants take a single %q argument identifying the deprecated element.
+const (
+	deprecatedVerbosityAnnotationMessageFmt = "The deprecated %q annotation is set; migrate to spec.operatorConfiguration.kubeAPIServer.logLevel and remove the annotation"
+	// DeprecatedServiceEntryMessageFmt is exported so the HostedCluster controller test can
+	// reconstruct the exact message without duplicating the text.
+	DeprecatedServiceEntryMessageFmt = "The deprecated spec.services entry %q is present; remove this entry because the service is no longer used"
+	// DeprecatedMultiArchMessage and the Deprecated*BackupKeyMessage constants are exported for
+	// the same reason.
+	DeprecatedMultiArchMessage         = "The deprecated spec.platform.aws.multiArch field is set to true; remove it because it is no longer used"
+	DeprecatedAESCBCBackupKeyMessage   = "The deprecated spec.secretEncryption.aescbc.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after the EtcdDataEncryptionUpToDate condition is True"
+	DeprecatedAWSKMSBackupKeyMessage   = "The deprecated spec.secretEncryption.kms.aws.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after the EtcdDataEncryptionUpToDate condition is True"
+	DeprecatedAzureKMSBackupKeyMessage = "The deprecated spec.secretEncryption.kms.azure.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after the EtcdDataEncryptionUpToDate condition is True"
+)
+
 // reconcileDeprecatedConfigurationStatus surfaces a generic warning condition whenever a
 // deprecated mechanism is used to configure the hosted control plane. Each deprecation
 // check appends a message to the collected list; if any fire, the condition is set to True
 // with the messages joined together, otherwise it is set to False. This makes it easy to
-// add new deprecation checks over time. Today the only such mechanism is the
-// hypershift.openshift.io/kube-apiserver-verbosity-level annotation, which fires whenever
-// the annotation is present, even if spec.operatorConfiguration.kubeAPIServer.logLevel is
-// also set and taking precedence, so that users are guided to remove the deprecated
-// annotation entirely. The condition is message-only: it does not affect verbosity
-// resolution, config hashes, or rollouts.
+// add new deprecation checks over time. Today the mechanisms are the
+// hypershift.openshift.io/kube-apiserver-verbosity-level annotation, the legacy OVNSbDb
+// and OIDC service entries, spec.platform.aws.multiArch, and
+// spec.secretEncryption.aescbc.backupKey, spec.secretEncryption.kms.aws.backupKey, and
+// spec.secretEncryption.kms.azure.backupKey. The annotation fires whenever it is present, even
+// if spec.operatorConfiguration.kubeAPIServer.logLevel is also set and taking precedence; the
+// service entries fire whenever they are present because those services are no longer used,
+// multiArch fires when true because it is no longer used, and backupKey fields fire whenever
+// they are present. A backupKey may still be required to decrypt existing secrets until
+// re-encryption with the active key completes, which is signaled by the EtcdDataEncryptionUpToDate
+// condition becoming True, so the messages advise removal only after that point.
+// The condition is message-only: it does not affect configuration resolution, config hashes,
+// or rollouts.
 func (r *HostedControlPlaneReconciler) reconcileDeprecatedConfigurationStatus(hostedControlPlane *hyperv1.HostedControlPlane) {
 	var deprecationMessages []string
 
 	if _, hasVerbosityAnnotation := hostedControlPlane.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]; hasVerbosityAnnotation {
-		deprecationMessages = append(deprecationMessages, fmt.Sprintf("The deprecated %q annotation is set; migrate to spec.operatorConfiguration.kubeAPIServer.logLevel and remove the annotation", hyperv1.KubeAPIServerVerbosityLevelAnnotation))
+		deprecationMessages = append(deprecationMessages, fmt.Sprintf(deprecatedVerbosityAnnotationMessageFmt, hyperv1.KubeAPIServerVerbosityLevelAnnotation))
+	}
+	for _, service := range hostedControlPlane.Spec.Services {
+		if service.Service == hyperv1.OVNSbDb || service.Service == hyperv1.OIDC {
+			deprecationMessages = append(deprecationMessages, fmt.Sprintf(DeprecatedServiceEntryMessageFmt, service.Service))
+		}
+	}
+	if hostedControlPlane.Spec.Platform.AWS != nil && hostedControlPlane.Spec.Platform.AWS.MultiArch {
+		deprecationMessages = append(deprecationMessages, DeprecatedMultiArchMessage)
+	}
+	if hostedControlPlane.Spec.SecretEncryption != nil &&
+		hostedControlPlane.Spec.SecretEncryption.AESCBC != nil &&
+		hostedControlPlane.Spec.SecretEncryption.AESCBC.BackupKey != nil { //nolint:staticcheck
+		deprecationMessages = append(deprecationMessages, DeprecatedAESCBCBackupKeyMessage)
+	}
+	if hostedControlPlane.Spec.SecretEncryption != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS.AWS != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS.AWS.BackupKey != nil { //nolint:staticcheck
+		deprecationMessages = append(deprecationMessages, DeprecatedAWSKMSBackupKeyMessage)
+	}
+	if hostedControlPlane.Spec.SecretEncryption != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS.Azure != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS.Azure.BackupKey != nil { //nolint:staticcheck
+		deprecationMessages = append(deprecationMessages, DeprecatedAzureKMSBackupKeyMessage)
 	}
 
 	newCondition := metav1.Condition{
@@ -1227,7 +1296,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 	}
 
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Authentication != nil {
-		if err := validations.ValidateAuthenticationSpec(ctx, r.Client, hcp.Spec.Configuration.Authentication, hcp.Namespace, []string{hcp.Spec.IssuerURL}); err != nil {
+		if err := validations.ValidateAuthenticationSpec(ctx, r.Client, hcp.Spec.Configuration.Authentication, hcp.Namespace, hcp.Spec.IssuerURL); err != nil {
 			return err
 		}
 	}
@@ -1436,6 +1505,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		SetDefaultSecurityContext:      r.SetDefaultSecurityContext,
 		DefaultSecurityContextUID:      r.DefaultSecurityContextUID,
 		MetricsSet:                     r.MetricsSet,
+		EnableGMPMonitoring:            r.EnableGMPMonitoring,
 		EnableCIDebugOutput:            r.EnableCIDebugOutput,
 		ImageMetadataProvider:          r.ImageMetadataProvider,
 		NativeSidecarContainersEnabled: r.ManagementClusterCapabilities.Has(capabilities.CapabilityNativeSidecarContainers),
@@ -2160,9 +2230,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			observedDefaultIngressCert = nil
 		}
 	}
+	namedCertCAs, err := r.getNamedCertificateCAs(ctx, hcp)
+	if err != nil {
+		return fmt.Errorf("failed to get named certificate CAs: %w", err)
+	}
+
 	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, rootCAConfigMap, func() error {
-		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert)
+		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert, namedCertCAs...)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile root CA configmap: %w", err)
 	}
@@ -2256,6 +2331,57 @@ func (r *HostedControlPlaneReconciler) reconcilePlatformSpecificCerts(ctx contex
 		return r.reconcileGCPPlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
 	}
 	return nil
+}
+
+// getNamedCertificateCAs extracts CA certificates from named certificate Secrets
+// so they can be included in the root-ca ConfigMap and ultimately propagated to
+// the guest cluster's kube-root-ca.crt trust bundle.
+//
+// CA certificates are collected from both the tls.crt chain (non-leaf CA
+// certs) and the ca.crt key (if present), merging both sources. This covers
+// Secrets where the chain and the root CA are split across the two keys.
+// If neither source provides a valid CA, a warning is logged.
+func (r *HostedControlPlaneReconciler) getNamedCertificateCAs(ctx context.Context, hcp *hyperv1.HostedControlPlane) ([]*corev1.Secret, error) {
+	if hcp.Spec.Configuration == nil {
+		return nil, nil
+	}
+	var namedCertCAs []*corev1.Secret
+	for _, namedCert := range hcp.Spec.Configuration.GetNamedCertificates() {
+		if namedCert.ServingCertificate.Name == "" {
+			continue
+		}
+		certSecret := &corev1.Secret{}
+		if err := r.Get(ctx, client.ObjectKey{
+			Namespace: hcp.Namespace,
+			Name:      namedCert.ServingCertificate.Name,
+		}, certSecret); err != nil {
+			// Return an error for all failures including NotFound so we
+			// never publish a root-ca ConfigMap with an incomplete CA
+			// bundle. The controller will requeue and the existing
+			// ConfigMap stays intact until all configured Secrets are
+			// available.
+			return nil, fmt.Errorf("failed to get named certificate secret %s: %w", namedCert.ServingCertificate.Name, err)
+		}
+		// Extract CAs from the tls.crt chain (non-leaf certificates)
+		// and also from ca.crt if present, merging both sources so that
+		// a Secret with leaf+intermediate in tls.crt and the root in
+		// ca.crt contributes the full trust chain.
+		caCerts := pki.ExtractCACertificatesFromChain(certSecret.Data[corev1.TLSCertKey])
+		if caData, ok := certSecret.Data[certs.CASignerCertMapKey]; ok && len(caData) > 0 {
+			caCerts = append(caCerts, pki.FilterCACertificates(caData)...)
+		}
+		if len(caCerts) > 0 {
+			namedCertCAs = append(namedCertCAs, &corev1.Secret{
+				Data: map[string][]byte{
+					certs.CASignerCertMapKey: caCerts,
+				},
+			})
+		} else {
+			r.Log.Info("Named certificate secret has no valid CA certificate in tls.crt chain or ca.crt; its signer will not be included in the root-ca trust bundle",
+				"secret", namedCert.ServingCertificate.Name)
+		}
+	}
+	return namedCertCAs, nil
 }
 
 func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {

@@ -41,6 +41,12 @@
                     },
                     {
                         "name": "AWSManagedDNS"
+                    },
+                    {
+                        "name": "KubeAPIServerEventTTL"
+                    },
+                    {
+                        "name": "IgnitionPayloadSystem"
                     }
                 ],
                 "enabled": [

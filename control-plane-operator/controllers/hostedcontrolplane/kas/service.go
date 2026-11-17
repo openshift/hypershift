@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 const AWSNLBAnnotation = "service.beta.kubernetes.io/aws-load-balancer-type"
@@ -71,6 +72,34 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		// Deterministic LB fields only apply to a Service that ends up as type
+		// LoadBalancer: Kubernetes forbids spec.loadBalancerClass on any other
+		// type. Private-only clusters fall back to ClusterIP here and their LB
+		// is reconciled by ReconcilePrivateService.
+		// Apply user-provided service annotations per-key BEFORE CPO's own
+		// annotations, so CPO-managed keys take precedence on collision.
+		if isPublic && strategy.LoadBalancer != nil {
+			for k, v := range strategy.LoadBalancer.ServiceAnnotations {
+				// CPO owns the NLB type annotation on AWS: the admission policy
+				// blocks changing it after creation (OCPBUGS-16728), and on
+				// updates CPO no longer re-writes it, so a user-supplied value
+				// would make every update fail. Skip it on AWS only; on other
+				// platforms the key is not operator-managed and passthrough is
+				// expected to work.
+				if k == AWSNLBAnnotation && hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+					continue
+				}
+				svc.Annotations[k] = v
+			}
+			// loadBalancerClass is immutable on Kubernetes Services, but it may be
+			// set when creating a Service or when updating one to type LoadBalancer.
+			// The latter covers a private -> public endpoint access transition, where
+			// this Service already exists as ClusterIP.
+			if strategy.LoadBalancer.LoadBalancerClass != "" &&
+				(isCreate || svc.Spec.Type != corev1.ServiceTypeLoadBalancer) {
+				svc.Spec.LoadBalancerClass = ptr.To(strategy.LoadBalancer.LoadBalancerClass)
+			}
+		}
 		// AWS requires the load balancer type annotation to remain unchanged after
 		// Service creation. The cluster-wide ValidatingAdmissionPolicy
 		// "openshift-cloud-controller-manager-cloud-provider-aws" (OCPBUGS-16728)
@@ -229,6 +258,42 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
+	}
+
+	apiServerStrategy := netutil.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
+	if apiServerStrategy != nil && apiServerStrategy.LoadBalancer != nil {
+		// serviceAnnotations carry the address, so only the Service exposing the
+		// primary endpoint gets them: requesting one address on both KAS Services
+		// leaves whichever load balancer loses the race pending forever. Endpoint
+		// access is mutable, so they are also removed again once a public endpoint
+		// appears and the public Service takes over as primary.
+		// They are applied per-key, BEFORE CPO's own platform annotations below,
+		// so CPO-managed keys take precedence on collision.
+		if netutil.IsPublicHCP(hcp) {
+			for k := range apiServerStrategy.LoadBalancer.ServiceAnnotations {
+				// CPO owns the NLB type annotation on AWS and the admission
+				// policy blocks removing it after creation (OCPBUGS-16728).
+				// Skip it on AWS only; other platforms do not manage this key.
+				if k == AWSNLBAnnotation && hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+					continue
+				}
+				delete(svc.Annotations, k)
+			}
+		} else {
+			for k, v := range apiServerStrategy.LoadBalancer.ServiceAnnotations {
+				if k == AWSNLBAnnotation && hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+					continue
+				}
+				svc.Annotations[k] = v
+			}
+		}
+		// loadBalancerClass selects the provisioning controller rather than an
+		// address, so every LoadBalancer Service needs it regardless of which one
+		// is primary. This Service is always a LoadBalancer and Kubernetes makes
+		// the field immutable once set, hence create only.
+		if isCreate && apiServerStrategy.LoadBalancer.LoadBalancerClass != "" {
+			svc.Spec.LoadBalancerClass = ptr.To(apiServerStrategy.LoadBalancer.LoadBalancerClass)
+		}
 	}
 
 	switch hcp.Spec.Platform.Type {

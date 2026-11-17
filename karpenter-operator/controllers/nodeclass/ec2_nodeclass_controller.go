@@ -268,7 +268,7 @@ func AMISelectorTerms(userDataSecret *corev1.Secret, platform hyperv1.PlatformTy
 		return nil, fmt.Errorf("failed to get supported architectures: %w", err)
 	}
 	for _, arch := range supportedArchitectures {
-		labelKey := karpenterutil.ArchToAMILabelKey(arch)
+		labelKey := karpenterutil.ArchToImageMetadataKey(arch, hyperkarpenterv1.UserDataAMILabel)
 		if ami, ok := userDataSecret.Labels[labelKey]; ok {
 			terms = append(terms, awskarpenterv1.AMISelectorTerm{ID: ami})
 		}

@@ -387,3 +387,21 @@ func componentsFakeObjects() ([]client.Object, error) {
 	}
 	return fakeObjects, nil
 }
+
+func TestWorkloadContext(t *testing.T) {
+	testCases := []struct {
+		name                string
+		enableGMPMonitoring bool
+	}{
+		{name: "When GMP monitoring is disabled, it should propagate the disabled value to the workload context"},
+		{name: "When GMP monitoring is enabled, it should propagate the enabled value to the workload context", enableGMPMonitoring: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			cp := &ControlPlaneContext{Context: t.Context(), EnableGMPMonitoring: tc.enableGMPMonitoring}
+			g.Expect(cp.workloadContext().EnableGMPMonitoring).To(Equal(tc.enableGMPMonitoring))
+		})
+	}
+}

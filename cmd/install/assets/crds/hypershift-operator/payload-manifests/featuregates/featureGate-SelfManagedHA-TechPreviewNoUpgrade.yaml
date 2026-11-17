@@ -60,6 +60,12 @@
                     },
                     {
                         "name": "AWSManagedDNS"
+                    },
+                    {
+                        "name": "KubeAPIServerEventTTL"
+                    },
+                    {
+                        "name": "IgnitionPayloadSystem"
                     }
                 ],
                 "version": ""

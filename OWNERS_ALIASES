@@ -6,7 +6,6 @@ aliases:
     - yiraeChristineKim
     - kurwang
   api-approvers:
-    - enxebre
     - csrwng
     - joelspeed
     - everettraven
@@ -18,8 +17,9 @@ aliases:
     - csrwng
   e2e-approvers:
     - ironcladlou
-  core-approvers:
+  hypershift-advisory-approvers:
     - enxebre
+  core-approvers:
     - csrwng
     - muraee
     - bryan-cox
@@ -30,7 +30,6 @@ aliases:
     - sdminonne
     - ironcladlou
   core-reviewers:
-    - enxebre
     - csrwng
     - muraee
     - bryan-cox
@@ -51,7 +50,6 @@ aliases:
   karpenter-approvers:
     - LucasAndFlores
     - elmiko
-    - enxebre
     - jkyros
     - joelsmith
     - linkvt

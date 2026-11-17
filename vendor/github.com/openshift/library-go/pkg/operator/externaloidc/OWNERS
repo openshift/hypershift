@@ -1,0 +1,8 @@
+reviewers:
+  - liouk
+  - everettraven
+  - ShazaAldawamneh
+approvers:
+  - liouk
+  - everettraven
+component: apiserver-auth

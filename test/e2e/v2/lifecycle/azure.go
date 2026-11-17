@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 
@@ -213,6 +214,24 @@ func (a *AzurePlatformConfig) ClusterSpecs(_ context.Context, releaseImage, n1Im
 			InitialNodePoolReplicas: &oneInitialReplica,
 			CreateArgs:              clusterArgs(),
 		},
+		// Etcd sharding can only be configured at creation time, so it needs a
+		// dedicated cluster rather than being layered onto an existing variant.
+		// The EtcdSharding feature gate is TechPreviewNoUpgrade and gates the
+		// spec.etcd.managed.shards field itself, so unless the HyperShift
+		// Operator is installed with --tech-preview-no-upgrade the field is
+		// absent from the CRD, the shards are dropped at admission, and the
+		// specs skip via etcdShardsOrSkip.
+		{
+			Variant:                 "etcd-sharded",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &twoInitialReplicas,
+			CreateArgs: clusterArgs(append(
+				// Shards run 3 replicas, which needs an HA control plane.
+				[]string{"--control-plane-availability-policy=HighlyAvailable"},
+				v2util.EtcdShardingCreateArgs("")...,
+			)...),
+		},
 	}
 }
 
@@ -377,6 +396,26 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 						Name:        "etcd-chaos",
 						Variant:     "upgrade",
 						LabelFilter: "etcd-chaos",
+					},
+				},
+			},
+			{
+				Name: "etcd-sharding",
+				Steps: []TestGroup{
+					// Shard deployment, kube-apiserver routing, per-kind key
+					// placement, shard member restart and day-2 immutability.
+					{
+						Name:        "etcd-sharding",
+						Variant:     "etcd-sharded",
+						LabelFilter: "etcd-sharding",
+					},
+					// Cluster operations with sharding enabled: runs after the
+					// sharding specs so it also covers recovery from the shard
+					// member restart.
+					{
+						Name:        "post-sharding-health",
+						Variant:     "etcd-sharded",
+						LabelFilter: "hosted-cluster-health || control-plane-workloads",
 					},
 				},
 			},

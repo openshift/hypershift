@@ -132,6 +132,12 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 	}
 
+	// Reject unsafe external KubeVirt credentials before anything below can
+	// discover the infrastructure cluster, including during deletion.
+	if err := r.reconcileKubevirtCredentialSafety(ctx, hcluster, hcp); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	var hcDestroyGracePeriod time.Duration
 
 	if gracePeriodString := hcluster.Annotations[hyperv1.HCDestroyGracePeriodAnnotation]; len(gracePeriodString) > 0 {
@@ -655,7 +661,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 	}
 
-	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
+	// Copy GCPEndpointAvailable, GCPServiceAttachmentAvailable and GCPACMECNAMEAvailable conditions from the GCPPrivateServiceConnect resources.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
 		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
@@ -670,6 +676,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		} else {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPEndpointAvailable))
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPServiceAttachmentAvailable))
+			propagateGCPPSCACMECNAMECondition(hcluster, gcpPSCList)
 		}
 	}
 
@@ -1053,10 +1060,25 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		utilitiesImage = r.HypershiftOperatorImage
 	}
 
+	// The error from GetControlPlaneOperatorImageLabels above already returns early, so by this
+	// point the image lookup has unconditionally succeeded.
+	enableGMPMonitoring := r.effectiveGMPMonitoring(log, hcluster.Spec.Platform.Type, controlPlaneOperatorImageLabels, true)
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
 	_, useRestrictedPSA := controlPlaneOperatorImageLabels[useRestrictedPodSecurityLabel]
 	_, defaultToControlPlaneV2 := controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
+
+	// The label lookup above already returned on error, so the labels are always
+	// resolved here. Writing only on an actual change keeps the steady state free
+	// of status writes.
+	if meta.SetStatusCondition(&hcluster.Status.Conditions, deterministicLBIPSupportedCondition(hcluster, controlPlaneOperatorImageLabels)) {
+		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to update %s condition: %w", hyperv1.DeterministicLBIPSupported, err)
+		}
+	}
 
 	// Reconcile the hosted cluster namespace
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
@@ -1700,6 +1722,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		DefaultSecurityContextUID: securityContextUID,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		MetricsSet:                metricsSet,
+		EnableGMPMonitoring:       enableGMPMonitoring,
 		ReleaseImageProvider:      imageProvider,
 		OmitOwnerReference:        true,
 	}

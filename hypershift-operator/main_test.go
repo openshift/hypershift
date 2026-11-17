@@ -7,8 +7,12 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
+
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"github.com/go-logr/logr"
 )
 
 type fakeHealthCheckManager struct {
@@ -65,6 +69,34 @@ func TestSetupHealthChecks(t *testing.T) {
 				g.Expect(mgr.readyChecks["readyz"](request)).To(MatchError("webhook server has not been started yet"))
 			} else {
 				g.Expect(mgr.readyChecks["readyz"](request)).To(Succeed())
+			}
+		})
+	}
+}
+
+func TestValidateStartOptions(t *testing.T) {
+	testCases := []struct {
+		name                string
+		enableGMPMonitoring bool
+		rhobsEnv            string
+		expectError         bool
+	}{
+		{name: "When GMP monitoring is disabled, it should pass"},
+		{name: "When GMP monitoring is enabled without RHOBS, it should pass", enableGMPMonitoring: true},
+		{name: "When RHOBS is enabled without GMP monitoring, it should pass", rhobsEnv: "1"},
+		{name: "When GMP monitoring is enabled with RHOBS, it should fail", enableGMPMonitoring: true, rhobsEnv: "1", expectError: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			t.Setenv(rhobsmonitoring.EnvironmentVariable, tc.rhobsEnv)
+			opts := &StartOptions{EtcdBackupMaxCount: 1, EnableGMPMonitoring: tc.enableGMPMonitoring}
+			err := validateStartOptions(opts, logr.Discard())
+			if tc.expectError {
+				g.Expect(err).To(MatchError(ContainSubstring("--enable-gmp-monitoring")))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
 			}
 		})
 	}

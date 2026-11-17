@@ -14,6 +14,7 @@ import (
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 	"github.com/openshift/hypershift/test/e2e/v2/util/mirrorregistry"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -82,9 +83,10 @@ func (a *AWSPlatformConfig) DefaultBaseDomain() string {
 //   - n1Image:      pullspec of the N-1 release used as the upgrade starting point.
 //
 // Variants:
-//   - public:           default target for non-lifecycle tests.
-//   - upgrade:          starts on n1Image, upgraded to releaseImage.
-//   - karpenter:        AutoNode/Karpenter node provisioning.
+//   - public:            default target for non-lifecycle tests.
+//   - public-rollouts:   identical config to public, dedicated to nodepool rollout tests.
+//   - upgrade:           starts on n1Image, upgraded to releaseImage.
+//   - karpenter:         AutoNode/Karpenter node provisioning.
 //   - karpenter-upgrade: karpenter, starting on n1Image.
 //
 // Environment inputs:
@@ -148,9 +150,27 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
 	}
 
+	deterministicLBArgs := []string{
+		"--endpoint-access=PublicAndPrivate",
+		"--feature-set=TechPreviewNoUpgrade",
+	}
+	if eip := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_EIP"); eip != "" {
+		if subnet := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET"); subnet != "" {
+			deterministicLBArgs = append(deterministicLBArgs,
+				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+eip,
+				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+subnet,
+			)
+		}
+	}
+
 	return []ClusterSpec{
 		{
 			Variant:     "public",
+			DestroyArgs: destroyArgs,
+			CreateArgs:  clusterArgs(publicArgs...),
+		},
+		{
+			Variant:     "public-rollouts",
 			DestroyArgs: destroyArgs,
 			CreateArgs:  clusterArgs(publicArgs...),
 		},
@@ -159,6 +179,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			DestroyArgs:  destroyArgs,
 			ReleaseImage: n1Image,
 			CreateArgs: clusterArgs(
+				"--public-only",
 				"--control-plane-availability-policy=HighlyAvailable",
 			),
 		},
@@ -210,13 +231,13 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			Variant:                 "autoscaling",
 			DestroyArgs:             destroyArgs,
 			InitialNodePoolReplicas: &oneInitialReplica,
-			CreateArgs:              clusterArgs(),
+			CreateArgs:              clusterArgs("--public-only"),
 		},
 		{
 			Variant:                 "external-oidc",
 			DestroyArgs:             destroyArgs,
 			InitialNodePoolReplicas: &oneInitialReplica,
-			CreateArgs:              clusterArgs(),
+			CreateArgs:              clusterArgs("--public-only"),
 		},
 		{
 			// Consumes the trust bundle and imageContentSources written to
@@ -225,9 +246,35 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			DestroyArgs:             destroyArgs,
 			InitialNodePoolReplicas: &oneInitialReplica,
 			CreateArgs: clusterArgs(
+				"--public-only",
 				"--additional-trust-bundle="+filepath.Join(a.sharedDir, "mirror-registry-ca.pem"),
 				"--image-content-sources="+filepath.Join(a.sharedDir, "mirror-registry-ics.yaml"),
 			),
+		},
+		// Etcd sharding can only be configured at creation time, so it needs a
+		// dedicated cluster rather than being layered onto an existing variant.
+		// The EtcdSharding feature gate is TechPreviewNoUpgrade and gates the
+		// spec.etcd.managed.shards field itself, so unless the HyperShift
+		// Operator is installed with --tech-preview-no-upgrade the field is
+		// absent from the CRD, the shards are dropped at admission, and the
+		// specs skip via etcdShardsOrSkip.
+		{
+			Variant:     "etcd-sharded",
+			DestroyArgs: destroyArgs,
+			CreateArgs: clusterArgs(append([]string{
+				"--public-only",
+				// Shards run 3 replicas, which needs an HA control plane.
+				"--control-plane-availability-policy=HighlyAvailable",
+			}, v2util.EtcdShardingCreateArgs("")...)...),
+		},
+		{
+			// Dedicated cluster for the deterministic LoadBalancer IP test.
+			// The EIP and public subnet belong to the management cluster and
+			// are reserved by the CI pre-step before create-guests runs.
+			Variant:                 "deterministic-lb",
+			DestroyArgs:             destroyArgs,
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs:              clusterArgs(deterministicLBArgs...),
 		},
 	}
 }
@@ -314,13 +361,25 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Variant:     "karpenter-upgrade",
 				LabelFilter: "karpenter-upgrade",
 			},
-			{
-				Name:        "image-mirroring",
-				Variant:     "image-mirroring",
-				LabelFilter: "image-mirroring",
-			},
 		},
 		Sequential: []SequentialGroup{
+			// The removal step is a day-2 mutation of imageContentSources that is
+			// not restored, so it must stay the last step on the variant.
+			{
+				Name: "image-mirroring",
+				Steps: []TestGroup{
+					{
+						Name:        "image-mirroring",
+						Variant:     "image-mirroring",
+						LabelFilter: "image-mirroring",
+					},
+					{
+						Name:        "image-mirroring-removal",
+						Variant:     "image-mirroring",
+						LabelFilter: "image-mirroring-removal",
+					},
+				},
+			},
 			{
 				Name: "public",
 				Steps: []TestGroup{
@@ -330,11 +389,17 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						LabelFilter: "hosted-cluster-aws || hosted-cluster-compliance || hosted-cluster-node-communication || " +
 							"hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || " +
 							"hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress || hosted-cluster-dns || " +
-							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || storage-kms",
+							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || storage-kms || " +
+							"hosted-cluster-event-ttl",
 					},
+				},
+			},
+			{
+				Name: "public-rollouts",
+				Steps: []TestGroup{
 					{
 						Name:    "public-nodepool-rollouts",
-						Variant: "public",
+						Variant: "public-rollouts",
 						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
 							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-osimagestream-upgrade || " +
 							"nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config",
@@ -398,6 +463,26 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						Name:        "etcd-chaos",
 						Variant:     "upgrade",
 						LabelFilter: "etcd-chaos",
+					},
+				},
+			},
+			{
+				Name: "etcd-sharding",
+				Steps: []TestGroup{
+					// Shard deployment, kube-apiserver routing, per-kind key
+					// placement, shard member restart and day-2 immutability.
+					{
+						Name:        "etcd-sharding",
+						Variant:     "etcd-sharded",
+						LabelFilter: "etcd-sharding",
+					},
+					// Cluster operations with sharding enabled: runs after the
+					// sharding specs so it also covers recovery from the shard
+					// member restart.
+					{
+						Name:        "post-sharding-health",
+						Variant:     "etcd-sharded",
+						LabelFilter: "hosted-cluster-health || control-plane-workloads",
 					},
 				},
 			},

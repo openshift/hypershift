@@ -1,11 +1,18 @@
 filters:
   ".*":
+    advisory_approvers:
+    - hypershift-advisory-approvers
     approvers:
     - core-approvers
     reviewers:
     - core-reviewers
     emeritus_approvers:
     - davidvossel
+  # The dedicated Dependabot workflow may approve only supported Go dependency
+  # paths. Its command tool also rejects any PR containing another path.
+  '^(go\.(mod|sum)|hack/tools/go\.(mod|sum)|(hack/tools/)?vendor/(modules\.txt|[^/]+/.+))$':
+    approvers:
+    - redhat-chai-bot
   "^openshift-hypershift-.*":
     approvers:
     - ci-operator-config-approvers
@@ -23,6 +30,11 @@ filters:
     labels:
     - area/platform/azure
   "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*gcp.*":
+    reviewers:
+    - gcp-reviewers
+    labels:
+    - area/platform/gcp
+  "^(support/gmpmonitoring/|support/metrics/gmp_monitoring.*\\.go$|hack/gmp-api-gen/|hack/gmp-api-source/|hack/update-gmp-api\\.sh$)":
     reviewers:
     - gcp-reviewers
     labels:

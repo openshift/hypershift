@@ -126,3 +126,44 @@ func TestHCPOAuthEnabled(t *testing.T) {
 		})
 	}
 }
+
+func TestHCPExternalOIDCEnabled(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		configuration *hyperv1.ClusterConfiguration
+		expected      bool
+	}{
+		{
+			name: "When HostedControlPlane configuration is absent, it should return false",
+		},
+		{
+			name:          "When HostedControlPlane authentication is absent, it should return false",
+			configuration: &hyperv1.ClusterConfiguration{},
+		},
+		{
+			name: "When HostedControlPlane authentication uses integrated OAuth, it should return false",
+			configuration: &hyperv1.ClusterConfiguration{
+				Authentication: &configv1.AuthenticationSpec{Type: configv1.AuthenticationTypeIntegratedOAuth},
+			},
+		},
+		{
+			name: "When HostedControlPlane authentication uses OIDC, it should return true",
+			configuration: &hyperv1.ClusterConfiguration{
+				Authentication: &configv1.AuthenticationSpec{Type: configv1.AuthenticationTypeOIDC},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Configuration: tt.configuration}}
+			g.Expect(HCPExternalOIDCEnabled(hcp)).To(Equal(tt.expected))
+		})
+	}
+}

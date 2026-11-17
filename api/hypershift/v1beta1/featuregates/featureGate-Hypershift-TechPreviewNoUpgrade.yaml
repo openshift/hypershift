@@ -69,6 +69,12 @@
                     },
                     {
                         "name": "TLSGroupPreferences"
+                    },
+                    {
+                        "name": "KubeAPIServerEventTTL"
+                    },
+                    {
+                        "name": "IgnitionPayloadSystem"
                     }
                 ],
                 "version": ""

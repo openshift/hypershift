@@ -120,12 +120,12 @@ func TestGetBackwardCompatibleCAPIImage(t *testing.T) {
 		expectedImage  string
 	}{
 		{
-			name:           "When version is 4.19.0 or above, it should return empty string",
-			releaseVersion: semver.MustParse("4.19.0"),
+			name:           "When version is 4.21.0 or above, it should return empty string",
+			releaseVersion: semver.MustParse("4.21.0"),
 			expectedImage:  "",
 		},
 		{
-			name:           "When version is below 4.19.0, it should return the pinned image",
+			name:           "When version is below 4.21.0, it should return the pinned image",
 			releaseVersion: semver.MustParse("4.18.0"),
 			expectedImage:  "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5c3e36db897fae332284e1a681044cd6997a70e8cb9059f810385352e7575ac",
 		},
@@ -222,7 +222,6 @@ func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 					}
 				}
 			}
-
 		})
 	}
 }

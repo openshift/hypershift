@@ -87,6 +87,7 @@ GENERATED_PATTERNS = ["**/zz_generated*", "**/zz_generated*/**"]
 # ---- FACTS -------------------------------------------------------------------------------
 
 GENERATED_GO = re.compile(rb"^// Code generated .* DO NOT EDIT\.$", re.M)
+GENERATED_HASH = re.compile(rb"^# Code generated .* DO NOT EDIT\.$", re.M)
 CRD_MARKER = b"controller-gen.kubebuilder.io/version"
 MAKE_OUTPUT_DIRS = [
     re.compile(r"output:crd:artifacts:config=(\S+)"),
@@ -147,6 +148,8 @@ def is_generated(path: str) -> bool:
         return bool(GENERATED_GO.search(read_head(path, 2048)))
     if path.endswith((".yaml", ".yml")):
         return CRD_MARKER in read_head(path)
+    if path.endswith(".sha256"):
+        return bool(GENERATED_HASH.search(read_head(path, 2048)))
     return False
 
 

@@ -31,10 +31,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	kauthnv1 "k8s.io/api/authentication/v1"
@@ -43,6 +45,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kauthnv1typedclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -160,18 +164,66 @@ func ExternalOIDCOAuthNotDeployedTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// ExternalOIDCKASConfigTest verifies KAS authentication configuration matches the OIDC provider
-// spec from the hosted cluster. Validates JWT authenticator issuer URL, audiences, and absence
-// of OAuth webhook config. Skips on non-OIDC clusters.
+// ExternalOIDCKASConfigTest verifies direct KAS or webhook authentication configuration
+// matches the hosted cluster's OIDC provider, including issuer, audiences, and KAS wiring.
+// Skips on non-OIDC clusters.
 func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 	Context("KAS Authentication Configuration", Label("external-oidc"), func() {
+		var (
+			usesWebhook    bool
+			apiServerArgs  map[string][]string
+			authConfigName string
+			authConfigKey  string
+			authConfig     struct {
+				JWT []struct {
+					Issuer struct {
+						URL       string   `json:"url"`
+						Audiences []string `json:"audiences"`
+					} `json:"issuer"`
+				} `json:"jwt"`
+			}
+		)
+
 		BeforeEach(func() {
-			hc, err := getTestCtx().GetHostedCluster()
+			tc := getTestCtx()
+			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			skipIfNotOIDC(hc)
+
+			cm := &corev1.ConfigMap{}
+			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+				Namespace: tc.ControlPlaneNamespace,
+				Name:      "kas-config",
+			}, cm)).To(Succeed())
+			var kasConfig struct {
+				APIServerArguments map[string][]string `json:"apiServerArguments"`
+			}
+			Expect(json.Unmarshal([]byte(cm.Data["config.json"]), &kasConfig)).To(Succeed())
+			apiServerArgs = kasConfig.APIServerArguments
+
+			// Use the control plane's configuration, not this test binary's feature
+			// gates, so the same tests cover both OIDC architectures.
+			_, usesWebhook = apiServerArgs["authentication-token-webhook-config-file"]
+			_, usesDirectOIDC := apiServerArgs["authentication-config"]
+			Expect(usesWebhook).NotTo(Equal(usesDirectOIDC),
+				"KAS in %s should configure exactly one of direct OIDC or token webhook authentication",
+				tc.ControlPlaneNamespace)
+			authConfigName, authConfigKey = "auth-config", "auth.json"
+			if usesWebhook {
+				authConfigName, authConfigKey = "external-oidc-webhook-auth-config", "auth-config.json"
+			}
+			cm = &corev1.ConfigMap{}
+			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+				Namespace: tc.ControlPlaneNamespace,
+				Name:      authConfigName,
+			}, cm)).To(Succeed(), "authentication ConfigMap %s/%s should exist", tc.ControlPlaneNamespace, authConfigName)
+			Expect(cm.Data).To(HaveKey(authConfigKey), "ConfigMap %s should contain %s", authConfigName, authConfigKey)
+			authConfig.JWT = nil
+			Expect(json.Unmarshal([]byte(cm.Data[authConfigKey]), &authConfig)).To(Succeed())
+			Expect(authConfig.JWT).NotTo(BeEmpty(), "ConfigMap %s should contain JWT authenticators", authConfigName)
 		})
 
-		It("should have auth-config ConfigMap with JWT authenticator matching the OIDC provider", func() {
+		It("should have a JWT authenticator matching the OIDC provider", func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -180,35 +232,8 @@ func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 			Expect(expectedIssuerURL).NotTo(BeEmpty(),
 				"OIDC provider issuer URL should not be empty on hosted cluster %s/%s", hc.Namespace, hc.Name)
 
-			// The auth-config ConfigMap is reconciled by CPO after the OIDC
-			// configuration is patched onto the HostedCluster. Poll until the
-			// JWT authenticator array is populated.
-			Eventually(func(g Gomega) {
-				cm := &corev1.ConfigMap{}
-				err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
-					Namespace: tc.ControlPlaneNamespace,
-					Name:      "auth-config",
-				}, cm)
-				g.Expect(err).NotTo(HaveOccurred(),
-					"auth-config ConfigMap should exist in %s", tc.ControlPlaneNamespace)
-
-				authJSON, ok := cm.Data["auth.json"]
-				g.Expect(ok).To(BeTrue(), "auth-config ConfigMap should have auth.json key")
-
-				var authConfig map[string]interface{}
-				g.Expect(json.Unmarshal([]byte(authJSON), &authConfig)).To(Succeed())
-
-				jwtArray, ok := authConfig["jwt"].([]interface{})
-				g.Expect(ok).To(BeTrue(), "auth.json should have jwt array")
-				g.Expect(jwtArray).NotTo(BeEmpty(), "jwt array should not be empty")
-
-				firstJWT, ok := jwtArray[0].(map[string]interface{})
-				g.Expect(ok).To(BeTrue(), "first jwt entry should be a map")
-				issuer, ok := firstJWT["issuer"].(map[string]interface{})
-				g.Expect(ok).To(BeTrue(), "jwt entry should have issuer")
-				g.Expect(issuer["url"]).To(Equal(expectedIssuerURL),
-					"JWT issuer URL should match OIDC provider from hosted cluster spec")
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			Expect(authConfig.JWT[0].Issuer.URL).To(Equal(expectedIssuerURL),
+				"JWT issuer URL in %s should match the hosted cluster's OIDC provider", authConfigName)
 		})
 
 		It("should have correct audiences in JWT config", func() {
@@ -220,52 +245,60 @@ func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 			Expect(expectedAudiences).NotTo(BeEmpty(),
 				"OIDC provider audiences should not be empty on hosted cluster %s/%s", hc.Namespace, hc.Name)
 
-			Eventually(func(g Gomega) {
-				cm := &corev1.ConfigMap{}
-				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
-					Namespace: tc.ControlPlaneNamespace,
-					Name:      "auth-config",
-				}, cm)).To(Succeed())
-
-				var authConfig map[string]interface{}
-				g.Expect(json.Unmarshal([]byte(cm.Data["auth.json"]), &authConfig)).To(Succeed())
-
-				jwtArray, ok := authConfig["jwt"].([]interface{})
-				g.Expect(ok).To(BeTrue(), "auth.json should have jwt array")
-				g.Expect(jwtArray).NotTo(BeEmpty(), "jwt array should not be empty")
-
-				firstJWT, ok := jwtArray[0].(map[string]interface{})
-				g.Expect(ok).To(BeTrue(), "first jwt entry should be a map")
-				issuer, ok := firstJWT["issuer"].(map[string]interface{})
-				g.Expect(ok).To(BeTrue(), "jwt entry should have issuer")
-				audiences, ok := issuer["audiences"].([]interface{})
-				g.Expect(ok).To(BeTrue(), "JWT issuer should have audiences array")
-				g.Expect(audiences).NotTo(BeEmpty(), "JWT audiences should not be empty")
-
-				for _, expected := range expectedAudiences {
-					g.Expect(audiences).To(ContainElement(string(expected)),
-						"JWT audiences should contain %s from hosted cluster spec", expected)
-				}
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			Expect(authConfig.JWT[0].Issuer.Audiences).NotTo(BeEmpty(), "JWT audiences in %s should not be empty", authConfigName)
+			for _, expected := range expectedAudiences {
+				Expect(authConfig.JWT[0].Issuer.Audiences).To(ContainElement(string(expected)),
+					"JWT audiences in %s should contain %s from the hosted cluster spec", authConfigName, expected)
+			}
 		})
 
-		It("should not have OAuth webhook authentication config", func() {
+		It("should configure KAS to use the OIDC authenticator", func() {
 			tc := getTestCtx()
-			cm := &corev1.ConfigMap{}
+			if !usesWebhook {
+				Expect(apiServerArgs["authentication-config"]).To(Equal([]string{"/etc/kubernetes/auth/auth.json"}))
+				Expect(apiServerArgs).NotTo(HaveKey("authentication-token-webhook-config-file"))
+				return
+			}
+
+			Expect(apiServerArgs).NotTo(HaveKey("authentication-config"))
+			Expect(apiServerArgs["authentication-token-webhook-config-file"]).To(Equal([]string{"/etc/kubernetes/auth-token-webhook/kubeconfig"}))
+			Expect(apiServerArgs["authentication-token-webhook-version"]).To(Equal([]string{"v1"}))
+			secret := &corev1.Secret{}
 			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 				Namespace: tc.ControlPlaneNamespace,
-				Name:      "kas-config",
-			}, cm)).To(Succeed())
+				Name:      "kas-authentication-token-webhook-config",
+			}, secret)).To(Succeed())
+			Expect(secret.Data).To(HaveKey("kubeconfig"))
+			kubeconfig, err := clientcmd.Load(secret.Data["kubeconfig"])
+			Expect(err).NotTo(HaveOccurred())
+			currentContext := kubeconfig.Contexts[kubeconfig.CurrentContext]
+			Expect(currentContext).NotTo(BeNil(), "token webhook kubeconfig should have a current context")
+			cluster := kubeconfig.Clusters[currentContext.Cluster]
+			Expect(cluster).NotTo(BeNil(), "token webhook kubeconfig should reference an existing cluster")
+			Expect(cluster.Server).To(Equal(fmt.Sprintf(
+				"https://external-oidc-webhook.%s.svc:443/apis/oauth.openshift.io/v1/tokenreviews", tc.ControlPlaneNamespace)))
+			Expect(cluster.CertificateAuthorityData).NotTo(BeEmpty(), "token webhook kubeconfig should trust the webhook CA")
+			Expect(currentContext.AuthInfo).To(BeEmpty(), "external OIDC webhook should not require client authentication")
+			Expect(kubeconfig.AuthInfos).To(BeEmpty(), "external OIDC webhook kubeconfig should not contain client credentials")
+		})
 
-			var kasConfig map[string]interface{}
-			Expect(json.Unmarshal([]byte(cm.Data["config.json"]), &kasConfig)).To(Succeed())
-
-			apiServerArgs, ok := kasConfig["apiServerArguments"].(map[string]interface{})
-			if ok {
-				_, hasWebhook := apiServerArgs["authentication-token-webhook-config-file"]
-				Expect(hasWebhook).To(BeFalse(),
-					"KAS should not have authentication-token-webhook-config-file when OIDC is configured")
+		It("should have the expected external OIDC webhook deployment state", func() {
+			tc := getTestCtx()
+			deployment := &appsv1.Deployment{}
+			err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+				Namespace: tc.ControlPlaneNamespace,
+				Name:      "external-oidc-webhook",
+			}, deployment)
+			if !usesWebhook {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+					"external-oidc-webhook should not be deployed in %s when KAS authenticates OIDC tokens directly", tc.ControlPlaneNamespace)
+				return
 			}
+			Expect(err).NotTo(HaveOccurred())
+			Expect(deployment.Spec.Replicas).NotTo(BeNil(), "external-oidc-webhook deployment should specify replicas")
+			Expect(*deployment.Spec.Replicas).To(BeNumerically(">", 0), "external-oidc-webhook deployment should not be scaled to zero")
+			Expect(podspec.IsDeploymentReady(tc.Context, deployment)).To(BeTrue(),
+				"external-oidc-webhook deployment in %s should have all desired replicas ready and updated", tc.ControlPlaneNamespace)
 		})
 	})
 }

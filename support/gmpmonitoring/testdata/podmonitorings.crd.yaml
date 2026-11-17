@@ -1,0 +1,1131 @@
+# Copyright 2022 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.1-0.20250103184936-50893dee96da
+  name: podmonitorings.monitoring.googleapis.com
+spec:
+  group: monitoring.googleapis.com
+  names:
+    kind: PodMonitoring
+    listKind: PodMonitoringList
+    plural: podmonitorings
+    singular: podmonitoring
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          PodMonitoring defines monitoring for a set of pods, scoped to pods
+          within the PodMonitoring's namespace.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              Specification of desired Pod selection for target discovery by
+              Prometheus.
+            properties:
+              endpoints:
+                description: The endpoints to scrape on the selected pods.
+                items:
+                  description: ScrapeEndpoint specifies a Prometheus metrics endpoint
+                    to scrape.
+                  properties:
+                    authorization:
+                      description: Authorization is the HTTP authorization credentials
+                        for the targets.
+                      properties:
+                        credentials:
+                          description: Credentials uses the secret as the credentials
+                            (token) for the authentication header.
+                          properties:
+                            secret:
+                              description: Secret represents reference to a given
+                                key from certain Secret in a given namespace.
+                              properties:
+                                key:
+                                  description: Key of the secret to select from. Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  description: Name of the secret to select from.
+                                  type: string
+                                namespace:
+                                  description: |-
+                                    Namespace of the secret to select from.
+                                    If empty the parent resource namespace will be chosen.
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                          type: object
+                        type:
+                          description: |-
+                            Type is the authentication type. Defaults to Bearer.
+                            Basic will cause an error, as the BasicAuth object should be used instead.
+                          type: string
+                          x-kubernetes-validations:
+                          - message: authorization type cannot be set to "basic",
+                              use "basic_auth" instead
+                            rule: self != 'Basic'
+                      type: object
+                    basicAuth:
+                      description: BasicAuth is the HTTP basic authentication credentials
+                        for the targets.
+                      properties:
+                        password:
+                          description: Password uses the secret as the BasicAuth password.
+                          properties:
+                            secret:
+                              description: Secret represents reference to a given
+                                key from certain Secret in a given namespace.
+                              properties:
+                                key:
+                                  description: Key of the secret to select from. Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  description: Name of the secret to select from.
+                                  type: string
+                                namespace:
+                                  description: |-
+                                    Namespace of the secret to select from.
+                                    If empty the parent resource namespace will be chosen.
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                          type: object
+                        username:
+                          description: Username is the BasicAuth username.
+                          type: string
+                      type: object
+                    interval:
+                      description: Interval at which to scrape metrics. Must be a
+                        valid Prometheus duration.
+                      format: duration
+                      type: string
+                    metricRelabeling:
+                      description: |-
+                        Relabeling rules for metrics scraped from this endpoint. Relabeling rules that
+                        override protected target labels (project_id, location, cluster, namespace, job,
+                        instance, top_level_controller, top_level_controller_type, or __address__) are
+                        not permitted. The labelmap action is not permitted in general.
+                      items:
+                        description: RelabelingRule defines a single Prometheus relabeling
+                          rule.
+                        properties:
+                          action:
+                            description: Action to perform based on regex matching.
+                              Defaults to 'replace'.
+                            enum:
+                            - replace
+                            - lowercase
+                            - uppercase
+                            - keep
+                            - drop
+                            - keepequal
+                            - dropequal
+                            - hashmod
+                            - labeldrop
+                            - labelkeep
+                            type: string
+                          modulus:
+                            description: Modulus to take of the hash of the source
+                              label values.
+                            format: int64
+                            type: integer
+                          regex:
+                            description: Regular expression against which the extracted
+                              value is matched. Defaults to '(.*)'.
+                            maxLength: 10000
+                            type: string
+                          replacement:
+                            description: |-
+                              Replacement value against which a regex replace is performed if the
+                              regular expression matches. Regex capture groups are available. Defaults to '$1'.
+                            type: string
+                          separator:
+                            description: Separator placed between concatenated source
+                              label values. Defaults to ';'.
+                            type: string
+                          sourceLabels:
+                            description: |-
+                              The source labels select values from existing labels. Their content is concatenated
+                              using the configured separator and matched against the configured regular expression
+                              for the replace, keep, and drop actions.
+                            items:
+                              pattern: ^[a-zA-Z_][a-zA-Z0-9_]*$
+                              type: string
+                            maxItems: 100
+                            type: array
+                          targetLabel:
+                            description: |-
+                              Label to which the resulting value is written in a replace action.
+                              It is mandatory for replace actions. Regex capture groups are available.
+                            pattern: ^[a-zA-Z_][a-zA-Z0-9_]*$
+                            type: string
+                            x-kubernetes-validations:
+                            - messageExpression: '''cannot relabel onto protected
+                                label "%s"''.format([self])'
+                              rule: self != 'project_id' && self != 'location' &&
+                                self != 'cluster' && self != 'namespace' && self !=
+                                'job' && self != 'instance' && self != 'top_level_controller'
+                                && self != 'top_level_controller_type' && self !=
+                                '__address__'
+                        type: object
+                        x-kubernetes-validations:
+                        - rule: '!has(self.action) ||  self.action != ''labeldrop''
+                            || has(self.regex)'
+                      maxItems: 250
+                      type: array
+                    oauth2:
+                      description: OAuth2 is the OAuth2 client credentials used to
+                        fetch a token for the targets.
+                      properties:
+                        clientID:
+                          description: ClientID is the public identifier for the client.
+                          type: string
+                        clientSecret:
+                          description: ClientSecret uses the secret as the client
+                            secret token.
+                          properties:
+                            secret:
+                              description: Secret represents reference to a given
+                                key from certain Secret in a given namespace.
+                              properties:
+                                key:
+                                  description: Key of the secret to select from. Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  description: Name of the secret to select from.
+                                  type: string
+                                namespace:
+                                  description: |-
+                                    Namespace of the secret to select from.
+                                    If empty the parent resource namespace will be chosen.
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                          type: object
+                        endpointParams:
+                          additionalProperties:
+                            type: string
+                          description: EndpointParams are additional parameters to
+                            append to the token URL.
+                          type: object
+                        proxyUrl:
+                          description: |-
+                            ProxyURL is the HTTP proxy server to use to connect to the targets.
+
+                            Encoded passwords are not supported.
+                          maxLength: 2000
+                          type: string
+                          x-kubernetes-validations:
+                          - rule: isURL(self) && !self.matches('@')
+                        scopes:
+                          description: Scopes represents the scopes for the token
+                            request.
+                          items:
+                            type: string
+                          type: array
+                        tlsConfig:
+                          description: TLS configures the token request's TLS settings.
+                          properties:
+                            ca:
+                              description: |-
+                                SecretSelector references a secret from a secret provider e.g. Kubernetes Secret. Only one
+                                provider can be used at a time.
+                              properties:
+                                secret:
+                                  description: Secret represents reference to a given
+                                    key from certain Secret in a given namespace.
+                                  properties:
+                                    key:
+                                      description: Key of the secret to select from.
+                                        Must be a valid secret key.
+                                      type: string
+                                    name:
+                                      description: Name of the secret to select from.
+                                      type: string
+                                    namespace:
+                                      description: |-
+                                        Namespace of the secret to select from.
+                                        If empty the parent resource namespace will be chosen.
+                                      type: string
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                              type: object
+                            cert:
+                              description: Cert uses the secret as the certificate
+                                for client authentication to the server.
+                              properties:
+                                secret:
+                                  description: Secret represents reference to a given
+                                    key from certain Secret in a given namespace.
+                                  properties:
+                                    key:
+                                      description: Key of the secret to select from.
+                                        Must be a valid secret key.
+                                      type: string
+                                    name:
+                                      description: Name of the secret to select from.
+                                      type: string
+                                    namespace:
+                                      description: |-
+                                        Namespace of the secret to select from.
+                                        If empty the parent resource namespace will be chosen.
+                                      type: string
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                              type: object
+                            insecureSkipVerify:
+                              description: InsecureSkipVerify disables target certificate
+                                validation.
+                              type: boolean
+                            key:
+                              description: Key uses the secret as the private key
+                                for client authentication to the server.
+                              properties:
+                                secret:
+                                  description: Secret represents reference to a given
+                                    key from certain Secret in a given namespace.
+                                  properties:
+                                    key:
+                                      description: Key of the secret to select from.
+                                        Must be a valid secret key.
+                                      type: string
+                                    name:
+                                      description: Name of the secret to select from.
+                                      type: string
+                                    namespace:
+                                      description: |-
+                                        Namespace of the secret to select from.
+                                        If empty the parent resource namespace will be chosen.
+                                      type: string
+                                  required:
+                                  - key
+                                  - name
+                                  type: object
+                              type: object
+                            maxVersion:
+                              description: |-
+                                MaxVersion is the maximum TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS 1.1),
+                                TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+
+                                If unset, Prometheus will use Go default minimum version, which is TLS 1.2.
+                                See MinVersion in https://pkg.go.dev/crypto/tls#Config.
+                              enum:
+                              - TLS10
+                              - TLS11
+                              - TLS12
+                              - TLS13
+                              type: string
+                            minVersion:
+                              description: |-
+                                MinVersion is the minimum TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS 1.1),
+                                TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+
+                                If unset, Prometheus will use Go default minimum version, which is TLS 1.2.
+                                See MinVersion in https://pkg.go.dev/crypto/tls#Config.
+                              enum:
+                              - TLS10
+                              - TLS11
+                              - TLS12
+                              - TLS13
+                              type: string
+                            serverName:
+                              description: ServerName is used to verify the hostname
+                                for the targets.
+                              type: string
+                          type: object
+                          x-kubernetes-validations:
+                          - message: client cert and client key must be provided together,
+                              when either is provided
+                            rule: has(self.cert) == has(self.key)
+                        tokenURL:
+                          description: TokenURL is the URL to fetch the token from.
+                          type: string
+                      type: object
+                    params:
+                      additionalProperties:
+                        items:
+                          type: string
+                        type: array
+                      description: HTTP GET params to use when scraping.
+                      type: object
+                    path:
+                      description: HTTP path to scrape metrics from. Defaults to "/metrics".
+                      type: string
+                    port:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: |-
+                        Name or number of the port to scrape.
+                        The container metadata label is only populated if the port is referenced by name
+                        because port numbers are not unique across containers.
+                      maxLength: 253
+                      minLength: 1
+                      x-kubernetes-int-or-string: true
+                      x-kubernetes-validations:
+                      - message: Port is required
+                        rule: self != 0
+                    proxyUrl:
+                      description: |-
+                        ProxyURL is the HTTP proxy server to use to connect to the targets.
+
+                        Encoded passwords are not supported.
+                      maxLength: 2000
+                      type: string
+                      x-kubernetes-validations:
+                      - rule: isURL(self) && !self.matches('@')
+                    scheme:
+                      description: Protocol scheme to use to scrape.
+                      enum:
+                      - http
+                      - https
+                      type: string
+                    timeout:
+                      description: |-
+                        Timeout for metrics scrapes. Must be a valid Prometheus duration.
+                        Must not be larger than the scrape interval.
+                      format: duration
+                      type: string
+                    tls:
+                      description: TLS configures the scrape request's TLS settings.
+                      properties:
+                        ca:
+                          description: |-
+                            SecretSelector references a secret from a secret provider e.g. Kubernetes Secret. Only one
+                            provider can be used at a time.
+                          properties:
+                            secret:
+                              description: Secret represents reference to a given
+                                key from certain Secret in a given namespace.
+                              properties:
+                                key:
+                                  description: Key of the secret to select from. Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  description: Name of the secret to select from.
+                                  type: string
+                                namespace:
+                                  description: |-
+                                    Namespace of the secret to select from.
+                                    If empty the parent resource namespace will be chosen.
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                          type: object
+                        cert:
+                          description: Cert uses the secret as the certificate for
+                            client authentication to the server.
+                          properties:
+                            secret:
+                              description: Secret represents reference to a given
+                                key from certain Secret in a given namespace.
+                              properties:
+                                key:
+                                  description: Key of the secret to select from. Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  description: Name of the secret to select from.
+                                  type: string
+                                namespace:
+                                  description: |-
+                                    Namespace of the secret to select from.
+                                    If empty the parent resource namespace will be chosen.
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                          type: object
+                        insecureSkipVerify:
+                          description: InsecureSkipVerify disables target certificate
+                            validation.
+                          type: boolean
+                        key:
+                          description: Key uses the secret as the private key for
+                            client authentication to the server.
+                          properties:
+                            secret:
+                              description: Secret represents reference to a given
+                                key from certain Secret in a given namespace.
+                              properties:
+                                key:
+                                  description: Key of the secret to select from. Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  description: Name of the secret to select from.
+                                  type: string
+                                namespace:
+                                  description: |-
+                                    Namespace of the secret to select from.
+                                    If empty the parent resource namespace will be chosen.
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                          type: object
+                        maxVersion:
+                          description: |-
+                            MaxVersion is the maximum TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS 1.1),
+                            TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+
+                            If unset, Prometheus will use Go default minimum version, which is TLS 1.2.
+                            See MinVersion in https://pkg.go.dev/crypto/tls#Config.
+                          enum:
+                          - TLS10
+                          - TLS11
+                          - TLS12
+                          - TLS13
+                          type: string
+                        minVersion:
+                          description: |-
+                            MinVersion is the minimum TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS 1.1),
+                            TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+
+                            If unset, Prometheus will use Go default minimum version, which is TLS 1.2.
+                            See MinVersion in https://pkg.go.dev/crypto/tls#Config.
+                          enum:
+                          - TLS10
+                          - TLS11
+                          - TLS12
+                          - TLS13
+                          type: string
+                        serverName:
+                          description: ServerName is used to verify the hostname for
+                            the targets.
+                          type: string
+                      type: object
+                      x-kubernetes-validations:
+                      - message: client cert and client key must be provided together,
+                          when either is provided
+                        rule: has(self.cert) == has(self.key)
+                  required:
+                  - interval
+                  - port
+                  type: object
+                  x-kubernetes-validations:
+                  - messageExpression: '''scrape timeout (%s) must not be greater
+                      than scrape interval (%s)''.format([self.timeout, self.interval])'
+                    rule: '!has(self.timeout) || self.timeout <= self.interval'
+                  - rule: '((has(self.authorization) ? 1 : 0) + (has(self.basicAuth)
+                      ? 1 : 0) + (has(self.oauth2) ? 1 : 0)) <= 1'
+                maxItems: 10
+                minItems: 1
+                type: array
+              filterRunning:
+                description: |-
+                  FilterRunning will drop any pods that are in the "Failed" or "Succeeded"
+                  pod lifecycle.
+                  See: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
+                type: boolean
+              limits:
+                description: Limits to apply at scrape time.
+                properties:
+                  labelNameLength:
+                    description: |-
+                      Maximum label name length.
+                      Uses Prometheus default if left unspecified.
+                    format: int64
+                    type: integer
+                  labelValueLength:
+                    description: |-
+                      Maximum label value length.
+                      Uses Prometheus default if left unspecified.
+                    format: int64
+                    type: integer
+                  labels:
+                    description: |-
+                      Maximum number of labels accepted for a single sample.
+                      Uses Prometheus default if left unspecified.
+                    format: int64
+                    type: integer
+                  samples:
+                    description: |-
+                      Maximum number of samples accepted within a single scrape.
+                      Uses Prometheus default if left unspecified.
+                    format: int64
+                    type: integer
+                type: object
+              selector:
+                description: |-
+                  Label selector that specifies which pods are selected for this monitoring
+                  configuration.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              targetLabels:
+                description: |-
+                  Labels to add to the Prometheus target for discovered endpoints.
+                  The `instance` label is always set to `<pod_name>:<port>` or `<node_name>:<port>`
+                  if the scraped pod is controlled by a DaemonSet.
+                properties:
+                  fromPod:
+                    description: |-
+                      Labels to transfer from the Kubernetes Pod to Prometheus target labels.
+                      Mappings are applied in order.
+                    items:
+                      description: |-
+                        LabelMapping specifies how to transfer a label from a Kubernetes resource
+                        onto a Prometheus target.
+                      properties:
+                        from:
+                          description: Kubernetes resource label to remap.
+                          type: string
+                        to:
+                          description: |-
+                            Remapped Prometheus target label.
+                            Defaults to the same name as `From`.
+                          pattern: ^[a-zA-Z_][a-zA-Z0-9_]*$
+                          type: string
+                          x-kubernetes-validations:
+                          - messageExpression: '''cannot relabel onto protected label
+                              "%s"''.format([self])'
+                            rule: self != 'project_id' && self != 'location' && self
+                              != 'cluster' && self != 'namespace' && self != 'job'
+                              && self != 'instance' && self != 'top_level_controller'
+                              && self != 'top_level_controller_type' && self != '__address__'
+                      required:
+                      - from
+                      type: object
+                    maxItems: 100
+                    type: array
+                  metadata:
+                    default:
+                    - container
+                    - pod
+                    - top_level_controller_name
+                    - top_level_controller_type
+                    description: |-
+                      Pod metadata labels that are set on all scraped targets.
+                      Permitted keys are `container`, `node`, `pod`, `top_level_controller_name`,
+                      and `top_level_controller_type`. The `container`
+                      label is only populated if the scrape port is referenced by name.
+                      Defaults to [container, pod, top_level_controller_name, top_level_controller_type].
+                      If set to null, it will be interpreted as the empty list.
+                      This is for backwards-compatibility only.
+                    items:
+                      enum:
+                      - container
+                      - node
+                      - pod
+                      - top_level_controller_name
+                      - top_level_controller_type
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
+            required:
+            - endpoints
+            - selector
+            type: object
+          status:
+            description: Most recently observed status of the resource.
+            properties:
+              conditions:
+                description: Represents the latest available observations of a podmonitor's
+                  current state.
+                items:
+                  description: MonitoringCondition describes the condition of a PodMonitoring.
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another.
+                      format: date-time
+                      type: string
+                    lastUpdateTime:
+                      description: The last time this condition was updated.
+                      format: date-time
+                      type: string
+                    message:
+                      description: A human-readable message indicating details about
+                        the transition.
+                      type: string
+                    reason:
+                      description: The reason for the condition's last transition.
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: MonitoringConditionType is the type of MonitoringCondition.
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              endpointStatuses:
+                description: Represents the latest available observations of target
+                  state for each ScrapeEndpoint.
+                items:
+                  properties:
+                    activeTargets:
+                      description: Total number of active targets.
+                      format: int64
+                      type: integer
+                    collectorsFraction:
+                      description: |-
+                        Fraction of collectors included in status, bounded [0,1].
+                        Ideally, this should always be 1. Anything less can
+                        be considered a problem and should be investigated.
+                      type: string
+                    lastUpdateTime:
+                      description: Last time this status was updated.
+                      format: date-time
+                      type: string
+                    name:
+                      description: The name of the ScrapeEndpoint.
+                      type: string
+                    sampleGroups:
+                      description: A fixed sample of targets grouped by error type.
+                      items:
+                        properties:
+                          count:
+                            description: Total count of similar errors.
+                            format: int32
+                            type: integer
+                          sampleTargets:
+                            description: Targets emitting the error message.
+                            items:
+                              properties:
+                                health:
+                                  description: Health status.
+                                  type: string
+                                labels:
+                                  additionalProperties:
+                                    description: A LabelValue is an associated value
+                                      for a LabelName.
+                                    type: string
+                                  description: The label set, keys and values, of
+                                    the target.
+                                  type: object
+                                lastError:
+                                  description: Error message.
+                                  type: string
+                                lastScrapeDurationSeconds:
+                                  description: Scrape duration in seconds.
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      type: array
+                    unhealthyTargets:
+                      description: Total number of active, unhealthy targets.
+                      format: int64
+                      type: integer
+                  required:
+                  - name
+                  type: object
+                type: array
+              observedGeneration:
+                description: The generation observed by the controller.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: Namespace not allowed on PodMonitoring secret references.
+          reason: FieldValueForbidden
+          rule: self.spec.endpoints.all(e, !has(e.authorization) || !has(e.authorization.credentials)
+            || !has(e.authorization.credentials.secret) || !has(e.authorization.credentials.secret.__namespace__))
+        - message: Namespace not allowed on PodMonitoring secret references.
+          reason: FieldValueForbidden
+          rule: self.spec.endpoints.all(e, !has(e.basicAuth) || !has(e.basicAuth.password)
+            || !has(e.basicAuth.password.secret) || !has(e.basicAuth.password.secret.__namespace__))
+        - message: Namespace not allowed on PodMonitoring secret references.
+          reason: FieldValueForbidden
+          rule: self.spec.endpoints.all(e, !has(e.tls) || !has(e.tls.ca) || !has(e.tls.ca.secret)
+            || !has(e.tls.ca.secret.__namespace__))
+        - message: Namespace not allowed on PodMonitoring secret references.
+          reason: FieldValueForbidden
+          rule: self.spec.endpoints.all(e, !has(e.tls) || !has(e.tls.cert) || !has(e.tls.cert.secret)
+            || !has(e.tls.cert.secret.__namespace__))
+        - message: Namespace not allowed on PodMonitoring secret references.
+          reason: FieldValueForbidden
+          rule: self.spec.endpoints.all(e, !has(e.tls) || !has(e.tls.key) || !has(e.tls.key.secret)
+            || !has(e.tls.key.secret.__namespace__))
+        - message: Namespace not allowed on PodMonitoring secret references.
+          reason: FieldValueForbidden
+          rule: self.spec.endpoints.all(e, !has(e.oauth2) || !has(e.oauth2.clientSecret)
+            || !has(e.oauth2.clientSecret.secret) || !has(e.oauth2.clientSecret.secret.__namespace__))
+    served: true
+    storage: true
+    subresources:
+      status: {}
+  - deprecated: true
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: PodMonitoring defines monitoring for a set of pods.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              Specification of desired Pod selection for target discovery by
+              Prometheus.
+            properties:
+              endpoints:
+                description: The endpoints to scrape on the selected pods.
+                items:
+                  description: ScrapeEndpoint specifies a Prometheus metrics endpoint
+                    to scrape.
+                  properties:
+                    interval:
+                      description: Interval at which to scrape metrics. Must be a
+                        valid Prometheus duration.
+                      type: string
+                    metricRelabeling:
+                      description: |-
+                        Relabeling rules for metrics scraped from this endpoint. Relabeling rules that
+                        override protected target labels (project_id, location, cluster, namespace, job,
+                        instance, or __address__) are not permitted. The labelmap action is not permitted
+                        in general.
+                      items:
+                        description: RelabelingRule defines a single Prometheus relabeling
+                          rule.
+                        properties:
+                          action:
+                            description: Action to perform based on regex matching.
+                              Defaults to 'replace'.
+                            type: string
+                          modulus:
+                            description: Modulus to take of the hash of the source
+                              label values.
+                            format: int64
+                            type: integer
+                          regex:
+                            description: Regular expression against which the extracted
+                              value is matched. Defaults to '(.*)'.
+                            type: string
+                          replacement:
+                            description: |-
+                              Replacement value against which a regex replace is performed if the
+                              regular expression matches. Regex capture groups are available. Defaults to '$1'.
+                            type: string
+                          separator:
+                            description: Separator placed between concatenated source
+                              label values. Defaults to ';'.
+                            type: string
+                          sourceLabels:
+                            description: |-
+                              The source labels select values from existing labels. Their content is concatenated
+                              using the configured separator and matched against the configured regular expression
+                              for the replace, keep, and drop actions.
+                            items:
+                              type: string
+                            type: array
+                          targetLabel:
+                            description: |-
+                              Label to which the resulting value is written in a replace action.
+                              It is mandatory for replace actions. Regex capture groups are available.
+                            type: string
+                        type: object
+                      type: array
+                    params:
+                      additionalProperties:
+                        items:
+                          type: string
+                        type: array
+                      description: HTTP GET params to use when scraping.
+                      type: object
+                    path:
+                      description: HTTP path to scrape metrics from. Defaults to "/metrics".
+                      type: string
+                    port:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Name or number of the port to scrape.
+                      x-kubernetes-int-or-string: true
+                    proxyUrl:
+                      description: Proxy URL to scrape through. Encoded passwords
+                        are not supported.
+                      type: string
+                    scheme:
+                      description: Protocol scheme to use to scrape.
+                      type: string
+                    timeout:
+                      description: |-
+                        Timeout for metrics scrapes. Must be a valid Prometheus duration.
+                        Must not be larger then the scrape interval.
+                      type: string
+                  required:
+                  - port
+                  type: object
+                type: array
+              limits:
+                description: Limits to apply at scrape time.
+                properties:
+                  labelNameLength:
+                    description: |-
+                      Maximum label name length.
+                      Uses Prometheus default if left unspecified.
+                    format: int64
+                    type: integer
+                  labelValueLength:
+                    description: |-
+                      Maximum label value length.
+                      Uses Prometheus default if left unspecified.
+                    format: int64
+                    type: integer
+                  labels:
+                    description: |-
+                      Maximum number of labels accepted for a single sample.
+                      Uses Prometheus default if left unspecified.
+                    format: int64
+                    type: integer
+                  samples:
+                    description: |-
+                      Maximum number of samples accepted within a single scrape.
+                      Uses Prometheus default if left unspecified.
+                    format: int64
+                    type: integer
+                type: object
+              selector:
+                description: |-
+                  Label selector that specifies which pods are selected for this monitoring
+                  configuration.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              targetLabels:
+                description: Labels to add to the Prometheus target for discovered
+                  endpoints.
+                properties:
+                  fromPod:
+                    description: |-
+                      Labels to transfer from the Kubernetes Pod to Prometheus target labels.
+                      Mappings are applied in order.
+                    items:
+                      description: |-
+                        LabelMapping specifies how to transfer a label from a Kubernetes resource
+                        onto a Prometheus target.
+                      properties:
+                        from:
+                          description: Kubenetes resource label to remap.
+                          type: string
+                        to:
+                          description: |-
+                            Remapped Prometheus target label.
+                            Defaults to the same name as `From`.
+                          type: string
+                      required:
+                      - from
+                      type: object
+                    type: array
+                  metadata:
+                    description: |-
+                      Pod metadata labels that are set on all scraped targets.
+                      Permitted keys are `pod`, `container`, and `node` for PodMonitoring and
+                      `pod`, `container`, `node`, and `namespace` for ClusterPodMonitoring.
+                      Defaults to [pod, container] for PodMonitoring and [namespace, pod, container]
+                      for ClusterPodMonitoring.
+                      If set to null, it will be interpreted as the empty list for PodMonitoring
+                      and to [namespace] for ClusterPodMonitoring. This is for backwards-compatibility
+                      only.
+                    items:
+                      type: string
+                    type: array
+                type: object
+            required:
+            - endpoints
+            - selector
+            type: object
+          status:
+            description: Most recently observed status of the resource.
+            properties:
+              conditions:
+                description: Represents the latest available observations of a podmonitor's
+                  current state.
+                items:
+                  description: MonitoringCondition describes a condition of a PodMonitoring.
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another.
+                      format: date-time
+                      type: string
+                    lastUpdateTime:
+                      description: The last time this condition was updated.
+                      format: date-time
+                      type: string
+                    message:
+                      description: A human-readable message indicating details about
+                        the transition.
+                      type: string
+                    reason:
+                      description: The reason for the condition's last transition.
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: MonitoringConditionType is the type of MonitoringCondition.
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                description: The generation observed by the controller.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: false
+    subresources:
+      status: {}

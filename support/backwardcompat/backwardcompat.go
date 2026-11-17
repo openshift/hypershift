@@ -35,9 +35,9 @@ func GetBackwardCompatibleConfigHash(config *v1beta1.ClusterConfiguration) (stri
 }
 
 // GetBackwardCompatibleCAPIImage returns a CAPI image pinned to a version that
-// writes status through the v1beta2 API. Payloads at 4.18 or below ship a CAPI
-// controller that writes status via v1beta1; the v1beta1→v1beta2 conversion
-// drops the phase field, leaving it permanently empty.
+// writes status through the v1beta2 API. Payloads at 4.20 or below ship a CAPI
+// controller that writes via v1beta1; the v1beta1→v1beta2 conversion
+// causes high congestion on big envs and drops the phase field, leaving it permanently empty.
 // The pinned image is from OCP 4.22 which includes CAPI 1.13. It is the
 // cluster-capi-controllers component from the pinned OCP release payload
 // quay.io/openshift-release-dev/ocp-release@sha256:1dbbdfdde4bb3f3ed4bca965e810a2990a3913990fb4a57072764b771f604554.
@@ -46,7 +46,7 @@ func GetBackwardCompatibleConfigHash(config *v1beta1.ClusterConfiguration) (stri
 func GetBackwardCompatibleCAPIImage(releaseVersion semver.Version) string {
 	const (
 		backwardCompatibleCAPIImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5c3e36db897fae332284e1a681044cd6997a70e8cb9059f810385352e7575ac"
-		minUnaffectedVersion        = "4.19.0-0"
+		minUnaffectedVersion        = "4.21.0-0" // 4.20 was the last version to use CAPI v1beta1.
 	)
 
 	releaseVersion.Pre = nil

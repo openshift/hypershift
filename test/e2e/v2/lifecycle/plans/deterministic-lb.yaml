@@ -1,0 +1,9 @@
+name: deterministic-lb
+platform: aws
+testMatrix:
+  sequential:
+    - name: deterministic-lb
+      steps:
+        - name: deterministic-lb
+          variant: deterministic-lb
+          labelFilter: deterministic-lb-ip

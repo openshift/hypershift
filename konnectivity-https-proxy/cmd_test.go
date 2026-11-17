@@ -17,6 +17,16 @@ import (
 	"golang.org/x/net/http/httpproxy"
 )
 
+func TestNewStartCommand(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	cmd := NewStartCommand()
+	flag := cmd.Flags().Lookup("resolve-from-management-cluster-dns")
+
+	g.Expect(flag).NotTo(BeNil())
+	g.Expect(flag.DefValue).To(Equal("false"))
+}
+
 func TestShouldDialDirectFunc(t *testing.T) {
 	u := func(s string) *url.URL {
 		u, err := url.Parse("https://" + s)

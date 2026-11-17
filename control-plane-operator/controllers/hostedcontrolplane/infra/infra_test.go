@@ -1617,6 +1617,9 @@ func TestReconcileAPIServerService(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When deterministic LB IP fields are set, it should wire them to the right Services", testReconcileAPIServerServiceDeterministicLBIPWiring)
+	t.Run("When a private cluster gains a public endpoint, it should move the address to the public Service", testReconcileAPIServerServiceWhenAPrivateClusterGainsAPublicEndpointItShouldMoveTheAddressToThePublicService)
 }
 
 func TestReconcileHCPRouterServices(t *testing.T) {
@@ -2218,4 +2221,154 @@ func TestReconcileOAuthService_AzureLoadBalancer(t *testing.T) {
 			g.Expect(routes.Items).To(BeEmpty())
 		})
 	}
+}
+
+// kasLoadBalancerWithDeterministicIP returns KAS LoadBalancer publishing
+// strategies carrying deterministic LB IP configuration.
+func kasLoadBalancerWithDeterministicIP(annotations map[string]string, lbClass string) []hyperv1.ServicePublishingStrategyMapping {
+	services := kasServiceLoadBalancerOthersRoute()
+	for i := range services {
+		if services[i].Service != hyperv1.APIServer {
+			continue
+		}
+		services[i].ServicePublishingStrategy.LoadBalancer = &hyperv1.LoadBalancerPublishingStrategy{
+			ServiceAnnotations: annotations,
+			LoadBalancerClass:  lbClass,
+		}
+	}
+	return services
+}
+
+// testReconcileAPIServerServiceDeterministicLBIPWiring verifies which KAS
+// Service receives the deterministic LB IP configuration. serviceAnnotations
+// carry the address and belong only to the Service exposing the primary
+// endpoint, while loadBalancerClass selects the provisioning controller and
+// belongs to every LoadBalancer Service. It runs as a subtest of
+// TestReconcileAPIServerService to keep the one-to-one test rule.
+func testReconcileAPIServerServiceDeterministicLBIPWiring(t *testing.T) {
+	t.Parallel()
+
+	const addressAnnotation = "metallb.io/loadBalancerIPs"
+	const lbClass = "metallb.io/metallb"
+
+	testCases := []struct {
+		name                     string
+		endpointAccess           hyperv1.AWSEndpointAccessType
+		wantPublicServiceType    corev1.ServiceType
+		wantAddressOnPublic      bool
+		wantAddressOnPrivate     bool
+		wantClassOnPublic        bool
+		wantPrivateServiceExists bool
+	}{
+		{
+			name:                     "When the cluster is public, it should configure only the public Service",
+			endpointAccess:           hyperv1.Public,
+			wantPublicServiceType:    corev1.ServiceTypeLoadBalancer,
+			wantAddressOnPublic:      true,
+			wantClassOnPublic:        true,
+			wantPrivateServiceExists: false,
+		},
+		{
+			name:                     "When the cluster is private, it should configure only the private Service",
+			endpointAccess:           hyperv1.Private,
+			wantPublicServiceType:    corev1.ServiceTypeClusterIP,
+			wantAddressOnPublic:      false,
+			wantClassOnPublic:        false,
+			wantAddressOnPrivate:     true,
+			wantPrivateServiceExists: true,
+		},
+		{
+			name:                     "When the cluster is public and private, it should put the address only on the public Service",
+			endpointAccess:           hyperv1.PublicAndPrivate,
+			wantPublicServiceType:    corev1.ServiceTypeLoadBalancer,
+			wantAddressOnPublic:      true,
+			wantClassOnPublic:        true,
+			wantAddressOnPrivate:     false,
+			wantPrivateServiceExists: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			hcp := withServices(
+				withAWSEndpointAccess(baseAWSHCP(), tc.endpointAccess),
+				kasLoadBalancerWithDeterministicIP(map[string]string{addressAnnotation: "10.1.1.100"}, lbClass),
+			)
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			r := NewReconciler(fakeClient, testIngressDomain)
+			g.Expect(r.reconcileAPIServerService(context.Background(), hcp, upsert.New(false).CreateOrUpdate)).To(Succeed())
+
+			publicSvc := cpomanifests.KubeAPIServerService(testNamespace)
+			g.Expect(fakeClient.Get(context.Background(), client.ObjectKeyFromObject(publicSvc), publicSvc)).To(Succeed())
+			g.Expect(publicSvc.Spec.Type).To(Equal(tc.wantPublicServiceType))
+
+			if tc.wantAddressOnPublic {
+				g.Expect(publicSvc.Annotations).To(HaveKeyWithValue(addressAnnotation, "10.1.1.100"))
+			} else {
+				g.Expect(publicSvc.Annotations).NotTo(HaveKey(addressAnnotation))
+			}
+			if tc.wantClassOnPublic {
+				g.Expect(publicSvc.Spec.LoadBalancerClass).To(HaveValue(Equal(lbClass)))
+			} else {
+				// Kubernetes rejects loadBalancerClass on a non-LoadBalancer Service.
+				g.Expect(publicSvc.Spec.LoadBalancerClass).To(BeNil())
+			}
+
+			privateSvc := manifests.KubeAPIServerPrivateService(testNamespace)
+			err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(privateSvc), privateSvc)
+			if !tc.wantPrivateServiceExists {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "private Service should not exist")
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// The class applies to every LoadBalancer Service, the address does not.
+			g.Expect(privateSvc.Spec.LoadBalancerClass).To(HaveValue(Equal(lbClass)))
+			if tc.wantAddressOnPrivate {
+				g.Expect(privateSvc.Annotations).To(HaveKeyWithValue(addressAnnotation, "10.1.1.100"))
+			} else {
+				g.Expect(privateSvc.Annotations).NotTo(HaveKey(addressAnnotation))
+			}
+		})
+	}
+}
+
+// testReconcileAPIServerServiceWhenAPrivateClusterGainsAPublicEndpointItShouldMoveTheAddressToThePublicService
+// covers the endpoint access transition: the private Service must release the
+// address so the public one can claim it, otherwise both load balancers request
+// the same address and one stays pending. It runs as a subtest of
+// TestReconcileAPIServerService to keep the one-to-one test rule.
+func testReconcileAPIServerServiceWhenAPrivateClusterGainsAPublicEndpointItShouldMoveTheAddressToThePublicService(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	const addressAnnotation = "metallb.io/loadBalancerIPs"
+	services := kasLoadBalancerWithDeterministicIP(map[string]string{addressAnnotation: "10.1.1.100"}, "metallb.io/metallb")
+
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+	r := NewReconciler(fakeClient, testIngressDomain)
+	createOrUpdate := upsert.New(false).CreateOrUpdate
+	ctx := context.Background()
+
+	hcp := withServices(withAWSEndpointAccess(baseAWSHCP(), hyperv1.Private), services)
+	g.Expect(r.reconcileAPIServerService(ctx, hcp, createOrUpdate)).To(Succeed())
+
+	privateSvc := manifests.KubeAPIServerPrivateService(testNamespace)
+	g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(privateSvc), privateSvc)).To(Succeed())
+	g.Expect(privateSvc.Annotations).To(HaveKeyWithValue(addressAnnotation, "10.1.1.100"))
+
+	hcp = withServices(withAWSEndpointAccess(baseAWSHCP(), hyperv1.PublicAndPrivate), services)
+	g.Expect(r.reconcileAPIServerService(ctx, hcp, createOrUpdate)).To(Succeed())
+
+	privateSvc = manifests.KubeAPIServerPrivateService(testNamespace)
+	g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(privateSvc), privateSvc)).To(Succeed())
+	g.Expect(privateSvc.Annotations).NotTo(HaveKey(addressAnnotation))
+
+	publicSvc := cpomanifests.KubeAPIServerService(testNamespace)
+	g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(publicSvc), publicSvc)).To(Succeed())
+	g.Expect(publicSvc.Annotations).To(HaveKeyWithValue(addressAnnotation, "10.1.1.100"))
 }

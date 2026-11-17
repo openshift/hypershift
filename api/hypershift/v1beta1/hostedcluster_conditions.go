@@ -204,6 +204,14 @@ const (
 	// A failure here is unlikely to resolve without the changing user input.
 	PlatformCredentialsFound ConditionType = "PlatformCredentialsFound"
 
+	// IngressCredentialsFound indicates whether the optional ingress-operator
+	// credentials are configured. It is only evaluated for platforms whose
+	// ingress operator needs cloud credentials (today: GCP). A False condition
+	// is non-blocking: the HostedCluster keeps reconciling, but the guest
+	// ingress operator runs without cloud credentials and cannot publish the
+	// *.apps DNS records.
+	IngressCredentialsFound ConditionType = "IngressCredentialsFound"
+
 	// ReconciliationActive indicates if reconciliation of the HostedCluster is
 	// active or paused hostedCluster.spec.pausedUntil.
 	ReconciliationActive ConditionType = "ReconciliationActive"
@@ -329,6 +337,16 @@ const (
 	// False: re-encryption is in progress or has failed.
 	// Absent: encryption is not configured.
 	EtcdDataEncryptionUpToDate ConditionType = "EtcdDataEncryptionUpToDate"
+
+	// DeterministicLBIPSupported indicates whether the HostedCluster's
+	// deterministic load balancer configuration (loadBalancer.serviceAnnotations
+	// and loadBalancer.loadBalancerClass on the APIServer service) is honored by
+	// the control plane operator image in use.
+	// A False condition means the HostedCluster asks for annotations or an LB
+	// class that the control plane operator image predates, so the fields are
+	// ignored. Upgrading the control plane release image resolves it; the
+	// HostedCluster keeps reconciling in the meantime.
+	DeterministicLBIPSupported ConditionType = "DeterministicLBIPSupported"
 )
 
 // Reasons.
@@ -346,6 +364,10 @@ const (
 	SecretNotFoundReason               = "SecretNotFound"
 	WaitingForGracePeriodReason        = "WaitingForGracePeriod"
 	BlockedReason                      = "Blocked"
+	// UnsupportedControlPlaneOperatorReason is used with the
+	// DeterministicLBIPSupported condition when the control plane operator image
+	// does not implement a feature the HostedCluster has configured.
+	UnsupportedControlPlaneOperatorReason = "UnsupportedControlPlaneOperator"
 
 	InfraStatusFailureReason           = "InfraStatusFailure"
 	WaitingOnInfrastructureReadyReason = "WaitingOnInfrastructureReady"
@@ -367,6 +389,7 @@ const (
 	OIDCConfigurationInvalidReason        = "OIDCConfigurationInvalid"
 	ProxyCABundleInvalidReason            = "ProxyCABundleInvalid"
 	PlatformCredentialsNotFoundReason     = "PlatformCredentialsNotFound"
+	IngressServiceAccountNotFoundReason   = "IngressServiceAccountNotFound"
 	InvalidImageReason                    = "InvalidImage"
 	InvalidIdentityProvider               = "InvalidIdentityProvider"
 	PayloadArchNotFoundReason             = "PayloadArchNotFound"

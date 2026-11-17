@@ -94,4 +94,19 @@ func TestDefaultAzureOptions(t *testing.T) {
 			t.Fatal("Azure E2E workers must enable managed boot diagnostics before creation")
 		}
 	})
+
+	for name, clientID := range map[string]string{
+		"When a Karpenter client ID is supplied, it should pass it to Azure cluster creation": "12345678-1234-1234-1234-123456789012",
+		"When no Karpenter client ID is supplied, it should leave the Azure option empty":     "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			opts := &Options{
+				ConfigurableClusterOptions: ConfigurableClusterOptions{AzureKarpenterClientID: clientID},
+			}
+			azureOpts := opts.DefaultAzureOptions()
+			if azureOpts.KarpenterClientID != clientID {
+				t.Fatalf("expected Karpenter client ID %q, got %q", clientID, azureOpts.KarpenterClientID)
+			}
+		})
+	}
 }

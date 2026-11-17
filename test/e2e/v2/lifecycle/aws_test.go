@@ -27,6 +27,50 @@ import (
 )
 
 func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
+	t.Run("When AWS cluster specs are built, it should use public-only networking except for Karpenter and deterministic-lb variants", func(t *testing.T) {
+		t.Setenv("EXTRA_ARGS", "")
+		t.Setenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS", "")
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "eipalloc-test")
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "subnet-test")
+		g := NewWithT(t)
+		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
+		g.Expect(specs).To(HaveLen(11))
+		for _, spec := range specs {
+			switch spec.Variant {
+			case "public", "public-rollouts", "managed-dns", "upgrade", "autoscaling", "external-oidc", "image-mirroring", "etcd-sharded":
+				g.Expect(spec.CreateArgs).To(ContainElement("--public-only"), "variant %s", spec.Variant)
+			case "karpenter", "karpenter-upgrade":
+				g.Expect(spec.CreateArgs).NotTo(ContainElement("--public-only"), "variant %s", spec.Variant)
+				g.Expect(spec.CreateArgs).To(ContainElement("--endpoint-access=PublicAndPrivate"), "variant %s", spec.Variant)
+			case "deterministic-lb":
+				g.Expect(spec.CreateArgs).NotTo(ContainElement("--public-only"), "variant %s", spec.Variant)
+				g.Expect(spec.CreateArgs).To(ContainElement("--endpoint-access=PublicAndPrivate"), "variant %s", spec.Variant)
+				g.Expect(spec.CreateArgs).To(ContainElement("--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations=eipalloc-test"), "variant %s", spec.Variant)
+				g.Expect(spec.CreateArgs).To(ContainElement("--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets=subnet-test"), "variant %s", spec.Variant)
+			default:
+				t.Fatalf("unexpected AWS variant %q", spec.Variant)
+			}
+		}
+	})
+	t.Run("When deterministic LB env vars are absent, it should keep the variant but omit its annotations", func(t *testing.T) {
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "")
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "")
+		g := NewWithT(t)
+		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
+
+		var deterministicLB *ClusterSpec
+		for i := range specs {
+			if specs[i].Variant == "deterministic-lb" {
+				deterministicLB = &specs[i]
+				break
+			}
+		}
+		g.Expect(deterministicLB).NotTo(BeNil())
+		g.Expect(deterministicLB.CreateArgs).To(ContainElement("--endpoint-access=PublicAndPrivate"))
+		for _, arg := range deterministicLB.CreateArgs {
+			g.Expect(arg).NotTo(HavePrefix("--kas-service-annotations="))
+		}
+	})
 	t.Run("When AWS cluster specs are built, it should omit Azure dump credentials for every variant", func(t *testing.T) {
 		g := NewWithT(t)
 		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
@@ -90,16 +134,63 @@ func TestAWSPlatformConfigImageMirroringClusterSpecs(t *testing.T) {
 			t.Fatalf("got %+v, want %+v", *mirroring, want)
 		}
 	})
+}
 
-	t.Run("When the default AWS plan is built, it should validate and run the image-mirroring tests on their own variant", func(t *testing.T) {
+func TestDeterministicLBTestPlan(t *testing.T) {
+	t.Run("When the dedicated deterministic-lb plan is loaded, it should validate against the AWS variant and select the lifecycle lane", func(t *testing.T) {
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "eipalloc-test")
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "subnet-test")
+		g := NewWithT(t)
+
+		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+		plan, err := ReadTestPlan(filepath.Join("plans", "deterministic-lb.yaml"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(plan.Validate(cfg.ClusterSpecs(t.Context(), "current", "previous"))).To(Succeed())
+
+		specs := plan.FilterClusterSpecs(cfg.ClusterSpecs(t.Context(), "current", "previous"))
+		g.Expect(specs).To(HaveLen(1))
+		g.Expect(specs[0].Variant).To(Equal("deterministic-lb"))
+		g.Expect(specs[0].CreateArgs).To(ContainElement("--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations=eipalloc-test"))
+		g.Expect(specs[0].CreateArgs).To(ContainElement("--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets=subnet-test"))
+
+		g.Expect(plan.TestMatrix.Sequential).To(HaveLen(1))
+		g.Expect(plan.TestMatrix.Sequential[0].Steps).To(HaveLen(1))
+		g.Expect(plan.TestMatrix.Sequential[0].Steps[0].Variant).To(Equal("deterministic-lb"))
+		g.Expect(plan.TestMatrix.Sequential[0].Steps[0].LabelFilter).To(Equal("deterministic-lb-ip"))
+	})
+}
+
+func TestAWSPlatformConfigTestMatrix(t *testing.T) {
+	t.Run("When the default AWS plan is built, it should validate and run the image-mirroring tests as a sequential lane ending with the removal", func(t *testing.T) {
 		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
 		plan := cfg.DefaultTestPlan()
 		if err := plan.Validate(cfg.ClusterSpecs(t.Context(), "current", "previous")); err != nil {
 			t.Fatalf("default AWS plan is invalid: %v", err)
 		}
-		want := TestGroup{Name: "image-mirroring", Variant: "image-mirroring", LabelFilter: "image-mirroring"}
-		if !slices.Contains(plan.TestMatrix.Parallel, want) {
-			t.Fatalf("default AWS plan does not contain %+v", want)
+		for _, group := range plan.TestMatrix.Parallel {
+			if group.Variant == "image-mirroring" {
+				t.Fatalf("image-mirroring variant must not run in a parallel group: %+v", group)
+			}
+		}
+		var lanes []SequentialGroup
+		for _, group := range plan.TestMatrix.Sequential {
+			if slices.ContainsFunc(group.Steps, func(step TestGroup) bool { return step.Variant == "image-mirroring" }) {
+				lanes = append(lanes, group)
+			}
+		}
+		if len(lanes) != 1 {
+			t.Fatalf("expected exactly one sequential group using the image-mirroring variant, got %+v", lanes)
+		}
+		want := SequentialGroup{
+			Name: "image-mirroring",
+			Steps: []TestGroup{
+				{Name: "image-mirroring", Variant: "image-mirroring", LabelFilter: "image-mirroring"},
+				// The removal mutates the HC without restoring it, so it must be last.
+				{Name: "image-mirroring-removal", Variant: "image-mirroring", LabelFilter: "image-mirroring-removal"},
+			},
+		}
+		if !reflect.DeepEqual(lanes[0], want) {
+			t.Fatalf("got %+v, want %+v", lanes[0], want)
 		}
 	})
 }

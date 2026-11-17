@@ -362,6 +362,10 @@ type LoadBalancerSpec struct {
 	// FrontendIPsCount specifies the number of frontend IP addresses for the load balancer.
 	// +optional
 	FrontendIPsCount *int32 `json:"frontendIPsCount,omitempty"`
+	// PrivateLinks to the load balancer (max 8 private links).
+	// Only supported on the API server load balancer.
+	// +optional
+	PrivateLinks []PrivateLink `json:"privateLinks,omitempty"`
 	// BackendPool describes the backend pool of the load balancer.
 	// +optional
 	BackendPool BackendPool `json:"backendPool,omitempty"`
@@ -423,6 +427,57 @@ type IPTag struct {
 	// Tag specifies the value of the IP tag associated with the public IP. Example: SQL.
 	Tag string `json:"tag"`
 }
+
+// PrivateLink configures an Azure private link.
+type PrivateLink struct {
+	// Name of the private link.
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// NATIPConfigurations specify up to 8 NAT IP configurations for the private link.
+	NATIPConfigurations []PrivateLinkNATIPConfiguration `json:"natIPConfigurations"`
+
+	// LBFrontendIPConfigNames are the names of the load balancer FrontendIP to which the private link will forward
+	// requests. The specified frontend IP configs must have the private IP set.
+	LBFrontendIPConfigNames []string `json:"lbFrontendIPConfigNames"`
+
+	// AllowedSubscriptions is a list of subscriptions from which the private link can be accessed.
+	// +optional
+	AllowedSubscriptions []string `json:"allowedSubscriptions,omitempty"`
+
+	// AutoApprovedSubscriptions is a list of subscription for which the connections to private link are automatically
+	// approved.
+	// +optional
+	AutoApprovedSubscriptions []string `json:"autoApprovedSubscriptions,omitempty"`
+
+	// EnableProxyProtocol indicates whether the private link service is enabled for proxy protocol or not.
+	// +optional
+	EnableProxyProtocol *bool `json:"enableProxyProtocol,omitempty"`
+}
+
+// PrivateLinkNATIPConfiguration specifies NAT IP configuration for the private link.
+type PrivateLinkNATIPConfiguration struct {
+	// AllocationMethod specifies how the private link NAT IPs are allocated: "Static" or "Dynamic".
+	AllocationMethod PrivateLinkNATIPAllocationMethod `json:"allocationMethod"`
+
+	// Subnet from which the IP is allocated.
+	Subnet string `json:"subnet"`
+
+	// +optional
+	PrivateIPAddress string `json:"privateIPAddress,omitempty"`
+}
+
+// PrivateLinkNATIPAllocationMethod specifies whether the private link NAT IPs are allocated statically or dynamically.
+// +kubebuilder:validation:Enum=Static;Dynamic
+type PrivateLinkNATIPAllocationMethod string
+
+const (
+	// NATIPAllocationMethodStatic specifies that NAT IP for private link is allocated statically (manually set by user).
+	NATIPAllocationMethodStatic PrivateLinkNATIPAllocationMethod = "Static"
+
+	// NATIPAllocationMethodDynamic specifies that NAT IP for private link is allocated dynamically (by Azure).
+	NATIPAllocationMethodDynamic PrivateLinkNATIPAllocationMethod = "Dynamic"
+)
 
 // VMState describes the state of an Azure virtual machine.
 //
