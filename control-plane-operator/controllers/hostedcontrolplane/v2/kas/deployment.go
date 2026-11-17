@@ -61,6 +61,7 @@ exec /usr/bin/azure-workload-identity-webhook \
   --disable-cert-rotation
 `))
 
+//nolint:gocyclo // release-5.0 keeps the platform identity webhook switch inline; the reported version config step adds one branch
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
@@ -151,6 +152,13 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
 		applyKASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, hcp.Spec.AuditWebhook)
+	}
+
+	// When the control plane runs a different release payload than spec.release
+	// (spec.controlPlaneReleaseImage), mask the kube-apiserver /version endpoint
+	// so it keeps reporting the user payload's version.
+	if err := applyReportedVersionConfig(cpContext, &deployment.Spec.Template.Spec); err != nil {
+		return fmt.Errorf("failed to apply reported version config: %w", err)
 	}
 
 	if secretEncryption := hcp.Spec.SecretEncryption; secretEncryption != nil {
