@@ -395,6 +395,8 @@ func TestSetCurvePreferencesUsingAPIServer(t *testing.T) {
 		expectError       bool
 		expectUnchanged   bool
 		expectedCurvePref []tls.CurveID
+		skipUnlessFIPS    bool
+		assertLogsContain string
 	}{
 		{
 			name:            "When TLSSecurityProfile is nil, it should not change curve preferences",
@@ -485,6 +487,19 @@ func TestSetCurvePreferencesUsingAPIServer(t *testing.T) {
 				},
 			},
 			expectedCurvePref: []tls.CurveID{tls.X25519, tls.CurveP256},
+			assertLogsContain: "unknown",
+		},
+		{
+			name:           "When using intermediate profile on a FIPS runtime, it should set FIPS-approved curves only",
+			skipUnlessFIPS: true,
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileIntermediateType,
+					},
+				},
+			},
+			expectedCurvePref: []tls.CurveID{tls.CurveP256, tls.CurveP384},
 		},
 	}
 
@@ -492,7 +507,16 @@ func TestSetCurvePreferencesUsingAPIServer(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
+			if test.skipUnlessFIPS && !libgocrypto.IsFIPSEnabled() {
+				t.Skip("Go FIPS mode is not enabled in this test environment")
+			}
+
 			ctx := context.Background()
+			var logs bytes.Buffer
+			if test.assertLogsContain != "" {
+				logger := zap.New(zap.WriteTo(&logs), zap.JSONEncoder())
+				ctx = ctrl.LoggerInto(ctx, logger)
+			}
 
 			setter, err := SetCurvePreferencesUsingAPIServer(ctx, test.apiServer)
 			if test.expectError {
@@ -513,57 +537,11 @@ func TestSetCurvePreferencesUsingAPIServer(t *testing.T) {
 			}
 
 			g.Expect(tlsConfig.CurvePreferences).To(Equal(test.expectedCurvePref))
+			if test.assertLogsContain != "" {
+				g.Expect(logs.String()).To(ContainSubstring(test.assertLogsContain))
+			}
 		})
 	}
-}
-
-func TestSetCurvePreferencesUsingAPIServer_FIPS(t *testing.T) {
-	if !libgocrypto.IsFIPSEnabled() {
-		t.Skip("Go FIPS mode is not enabled in this test environment")
-	}
-
-	t.Parallel()
-	g := NewWithT(t)
-
-	apiServer := &configv1.APIServer{
-		Spec: configv1.APIServerSpec{
-			TLSSecurityProfile: &configv1.TLSSecurityProfile{
-				Type: configv1.TLSProfileIntermediateType,
-			},
-		},
-	}
-	setter, err := SetCurvePreferencesUsingAPIServer(context.Background(), apiServer)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	tlsConfig := &tls.Config{}
-	setter(tlsConfig)
-	g.Expect(tlsConfig.CurvePreferences).To(Equal([]tls.CurveID{tls.CurveP256, tls.CurveP384}))
-}
-
-func TestSetCurvePreferencesUsingAPIServer_logsUnrecognizedGroups(t *testing.T) {
-	t.Parallel()
-	g := NewWithT(t)
-
-	var logs bytes.Buffer
-	logger := zap.New(zap.WriteTo(&logs), zap.JSONEncoder())
-	ctx := ctrl.LoggerInto(context.Background(), logger)
-
-	apiServer := &configv1.APIServer{
-		Spec: configv1.APIServerSpec{
-			TLSSecurityProfile: &configv1.TLSSecurityProfile{
-				Type: configv1.TLSProfileCustomType,
-				Custom: &configv1.CustomTLSProfile{
-					TLSProfileSpec: configv1.TLSProfileSpec{
-						Groups: []configv1.TLSGroup{configv1.TLSGroupX25519, "unknown"},
-					},
-				},
-			},
-		},
-	}
-	setter, err := SetCurvePreferencesUsingAPIServer(ctx, apiServer)
-	g.Expect(err).ToNot(HaveOccurred())
-	setter(&tls.Config{})
-	g.Expect(logs.String()).To(ContainSubstring("unknown"))
 }
 
 func TestSupportedEtcdCipherSuites(t *testing.T) {
