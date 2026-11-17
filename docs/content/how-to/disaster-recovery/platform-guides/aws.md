@@ -186,8 +186,3 @@ The count should drop to the baseline (typically 2 SOA/NS records) before procee
 ## Node Readoption
 
 Node readoption is **not supported** on AWS. Worker nodes will be reprovisioned during restore.
-
-## Migration Helper Script
-
-A migration helper script is maintained at:
-[https://github.com/openshift/hypershift/blob/main/contrib/migration/migrate-hcp.sh](https://github.com/openshift/hypershift/blob/main/contrib/migration/migrate-hcp.sh)
