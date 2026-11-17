@@ -20,16 +20,18 @@ import (
 
 func TestAdaptDeployment(t *testing.T) {
 	testCases := []struct {
-		name           string
-		releaseVersion string
-		httpProxy      string
-		httpsProxy     string
-		noProxy        string
-		validate       func(*WithT, *corev1.Container)
+		name               string
+		releaseVersion     string
+		userReleaseVersion string
+		httpProxy          string
+		httpsProxy         string
+		noProxy            string
+		validate           func(*WithT, *corev1.Container)
 	}{
 		{
-			name:           "When release version is set, it should add RELEASE_VERSION env var",
-			releaseVersion: "4.17.0",
+			name:               "When release version is set, it should add RELEASE_VERSION env var",
+			releaseVersion:     "4.17.0",
+			userReleaseVersion: "4.17.0",
 			validate: func(g *WithT, container *corev1.Container) {
 				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{
 					Name:  "RELEASE_VERSION",
@@ -38,12 +40,28 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		},
 		{
-			name:           "When different release version is set, it should use that version",
-			releaseVersion: "4.18.0-rc.1",
+			name:               "When different release version is set, it should use that version",
+			releaseVersion:     "4.18.0-rc.1",
+			userReleaseVersion: "4.18.0-rc.1",
 			validate: func(g *WithT, container *corev1.Container) {
 				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{
 					Name:  "RELEASE_VERSION",
 					Value: "4.18.0-rc.1",
+				}))
+			},
+		},
+		{
+			name:               "When the control plane payload is skewed, it should set RELEASE_VERSION from the user payload",
+			releaseVersion:     "4.23.0-0.nightly-2026-11-13-121834",
+			userReleaseVersion: "4.22.10",
+			validate: func(g *WithT, container *corev1.Container) {
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{
+					Name:  "RELEASE_VERSION",
+					Value: "4.22.10",
+				}))
+				g.Expect(container.Env).ToNot(ContainElement(corev1.EnvVar{
+					Name:  "RELEASE_VERSION",
+					Value: "4.23.0-0.nightly-2026-11-13-121834",
 				}))
 			},
 		},
@@ -108,10 +126,12 @@ func TestAdaptDeployment(t *testing.T) {
 			}
 
 			releaseImageProvider := testutil.FakeImageProvider(testutil.WithVersion(tc.releaseVersion))
+			userReleaseImageProvider := testutil.FakeImageProvider(testutil.WithVersion(tc.userReleaseVersion))
 
 			cpContext := component.WorkloadContext{
-				HCP:                  hcp,
-				ReleaseImageProvider: releaseImageProvider,
+				HCP:                      hcp,
+				ReleaseImageProvider:     releaseImageProvider,
+				UserReleaseImageProvider: userReleaseImageProvider,
 			}
 
 			deployment, err := assets.LoadDeploymentManifest(ComponentName)
@@ -146,8 +166,9 @@ func TestAdaptDeploymentUpdatesContainer(t *testing.T) {
 		releaseImageProvider := testutil.FakeImageProvider(testutil.WithVersion("4.17.0"))
 
 		cpContext := component.WorkloadContext{
-			HCP:                  hcp,
-			ReleaseImageProvider: releaseImageProvider,
+			HCP:                      hcp,
+			ReleaseImageProvider:     releaseImageProvider,
+			UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion("4.17.0")),
 		}
 
 		deployment, err := assets.LoadDeploymentManifest(ComponentName)
@@ -171,8 +192,9 @@ func TestAdaptDeploymentUpdatesContainer(t *testing.T) {
 		releaseImageProvider := testutil.FakeImageProvider(testutil.WithVersion("4.17.0"))
 
 		cpContext := component.WorkloadContext{
-			HCP:                  hcp,
-			ReleaseImageProvider: releaseImageProvider,
+			HCP:                      hcp,
+			ReleaseImageProvider:     releaseImageProvider,
+			UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion("4.17.0")),
 		}
 
 		deployment, err := assets.LoadDeploymentManifest(ComponentName)
@@ -383,8 +405,9 @@ func TestAdaptDeploymentTLS(t *testing.T) {
 			deployment := buildDeployment(baseArgs)
 
 			cpContext := component.WorkloadContext{
-				HCP:                  hcp,
-				ReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion(tc.releaseVersion)),
+				HCP:                      hcp,
+				ReleaseImageProvider:     testutil.FakeImageProvider(testutil.WithVersion(tc.releaseVersion)),
+				UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion(tc.releaseVersion)),
 			}
 			err := adaptDeployment(cpContext, deployment)
 
