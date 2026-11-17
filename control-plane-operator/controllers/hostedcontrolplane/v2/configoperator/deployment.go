@@ -23,17 +23,22 @@ const (
 )
 
 func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
-	versions, err := cpContext.ReleaseImageProvider.ComponentVersions()
+	// The synthetic ClusterOperators the HCCO writes into the guest cluster are
+	// user-facing version surfaces: they must report the versions of the user
+	// payload (spec.release), even when a controlPlaneRelease payload is in
+	// effect for management-side components, so that the payload skew is not
+	// visible to the hosted cluster admin.
+	userVersions, err := cpContext.UserReleaseImageProvider.ComponentVersions()
 	if err != nil {
-		return fmt.Errorf("failed to get component versions: %w", err)
+		return fmt.Errorf("failed to get user payload component versions: %w", err)
 	}
 	hccoImage := cpContext.ReleaseImageProvider.GetImage(hostedClusterConfigOperatorImage)
 	if hccoImage == "" {
 		return fmt.Errorf("hosted-cluster-config-operator image is not set")
 	}
-	kubeVersion := versions["kubernetes"]
+	kubeVersion := userVersions["kubernetes"]
 	hcp := cpContext.HCP
-	openShiftVersion := cpContext.ReleaseImageProvider.Version()
+	openShiftVersion := cpContext.UserReleaseImageProvider.Version()
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Command = append(c.Command,
