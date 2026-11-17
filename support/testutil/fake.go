@@ -28,13 +28,24 @@ func WithImages(images map[string]string) FakeImageProviderOpt {
 	}
 }
 
+// WithComponentVersions sets the component versions the fake provider reports.
+func WithComponentVersions(componentVersions map[string]string) FakeImageProviderOpt {
+	return func(f *fakeImageProvider) {
+		f.componentVersions = componentVersions
+	}
+}
+
 type fakeImageProvider struct {
-	version string
-	images  map[string]string
+	version           string
+	images            map[string]string
+	componentVersions map[string]string
 }
 
 // ComponentVersions implements imageprovider.ReleaseImageProvider.
 func (f *fakeImageProvider) ComponentVersions() (map[string]string, error) {
+	if f.componentVersions != nil {
+		return f.componentVersions, nil
+	}
 	return map[string]string{
 		"kubernetes": "1.30.1",
 	}, nil
