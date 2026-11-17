@@ -16,10 +16,12 @@ import (
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
@@ -568,6 +570,10 @@ func setMachineDeploymentFailureDomain(nodePool *hyperv1.NodePool, machineDeploy
 
 // propagateLabelsAndTaintsToMachines propagates label/taints directly into Machines
 // to avoid a NodePool label/taints change triggering a rolling upgrade.
+// It only patches Machines returned by the List: a Machine that is deleted before
+// it is patched is skipped, and it is never created. Machines that are already up
+// to date are not patched. Failures for individual Machines do not stop the loop;
+// they are returned together once every Machine has been processed.
 // TODO(Alberto): drop this and rely on core in-place propagation once CAPI 1.4.0
 // https://github.com/kubernetes-sigs/cluster-api/releases comes through the payload.
 // https://issues.redhat.com/browse/HOSTEDCP-971
@@ -577,46 +583,60 @@ func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.
 	if err := c.List(ctx, machineList, client.InNamespace(machineDeployment.Namespace)); err != nil {
 		return err
 	}
-	for _, machine := range machineList.Items {
-		if nodePoolName := machine.GetAnnotations()[nodePoolAnnotation]; nodePoolName != client.ObjectKeyFromObject(nodePool).String() {
+	nodePoolKey := client.ObjectKeyFromObject(nodePool).String()
+	taintsInJSON, err := taintsToJSON(nodePool.Spec.Taints)
+	if err != nil {
+		return fmt.Errorf("failed to serialize NodePool taints: %w", err)
+	}
+	var errs []error
+	for i := range machineList.Items {
+		machine := &machineList.Items[i]
+		if nodePoolName := machine.GetAnnotations()[nodePoolAnnotation]; nodePoolName != nodePoolKey {
+			continue
+		}
+		machineKey := client.ObjectKeyFromObject(machine).String()
+
+		original := machine.DeepCopy()
+		if machine.Labels == nil {
+			machine.Labels = make(map[string]string)
+		}
+		if machine.Annotations == nil {
+			machine.Annotations = make(map[string]string)
+		}
+
+		for k, v := range nodePool.Spec.NodeLabels {
+			labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
+			machine.Labels[labelKey] = v
+		}
+
+		// Propagate globalPS managed label to Machines so the HCCO Node controller
+		// applies it to Nodes. This enables the GlobalPullSecret DaemonSet to
+		// schedule on Replace nodes. Only AWS and Azure platforms support this.
+		if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform || nodePool.Spec.Platform.Type == hyperv1.AzurePlatform {
+			globalPSLabelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, globalPSNodeLabel)
+			machine.Labels[globalPSLabelKey] = "true"
+		}
+
+		machine.Annotations[nodePoolAnnotationTaints] = taintsInJSON
+
+		if equality.Semantic.DeepEqual(original, machine) {
+			log.Info("Reconciled Machine", "result", controllerutil.OperationResultNone)
 			continue
 		}
 
-		if result, err := controllerutil.CreateOrPatch(ctx, c.Client, &machine, func() error {
-			if machine.Labels == nil {
-				machine.Labels = make(map[string]string)
+		// Patch instead of CreateOrPatch: a JSON merge patch never creates the
+		// Machine if it was deleted after the List.
+		if err := c.Patch(ctx, machine, client.MergeFrom(original)); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("Machine no longer exists, skipping label and taint propagation", "machine", machineKey)
+				continue
 			}
-			if machine.Annotations == nil {
-				machine.Annotations = make(map[string]string)
-			}
-
-			for k, v := range nodePool.Spec.NodeLabels {
-				labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
-				machine.Labels[labelKey] = v
-			}
-
-			// Propagate globalPS managed label to Machines so the HCCO Node controller
-			// applies it to Nodes. This enables the GlobalPullSecret DaemonSet to
-			// schedule on Replace nodes. Only AWS and Azure platforms support this.
-			if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform || nodePool.Spec.Platform.Type == hyperv1.AzurePlatform {
-				globalPSLabelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, globalPSNodeLabel)
-				machine.Labels[globalPSLabelKey] = "true"
-			}
-
-			taintsInJSON, err := taintsToJSON(nodePool.Spec.Taints)
-			if err != nil {
-				return err
-			}
-			machine.Annotations[nodePoolAnnotationTaints] = taintsInJSON
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile Machine %q: %w",
-				client.ObjectKeyFromObject(&machine).String(), err)
-		} else {
-			log.Info("Reconciled Machine", "result", result)
+			errs = append(errs, fmt.Errorf("failed to reconcile Machine %q: %w", machineKey, err))
+			continue
 		}
+		log.Info("Reconciled Machine", "result", controllerutil.OperationResultUpdated)
 	}
-	return nil
+	return utilerrors.NewAggregate(errs)
 }
 
 // propagateVersionAndTemplate updates the MachineDeployment spec to match the
