@@ -200,6 +200,23 @@ func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx 
 			ownerRef.ApplyTo(endpointSlice)
 		}
 
+		// Fetch the VMI to discover which hypervisor node the VM is running on.
+		// Without nodeName, externalTrafficPolicy: Local cannot work: kube-proxy/OVN-K
+		// will not consider any node "local" and the LB health check fails everywhere.
+		var nodeName *string
+		vmi := &kubevirtv1.VirtualMachineInstance{}
+		vmiKey := client.ObjectKey{
+			Namespace: cpService.Namespace,
+			Name:      machine.Spec.InfrastructureRef.Name,
+		}
+		if err := r.kubevirtInfraClient.Get(ctx, vmiKey, vmi); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return err
+			}
+		} else if vmi.Status.NodeName != "" {
+			nodeName = ptr.To(vmi.Status.NodeName)
+		}
+
 		if endpointSlice.Labels == nil {
 			endpointSlice.Labels = map[string]string{}
 		}
@@ -210,6 +227,7 @@ func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx 
 			endpointSlice.Endpoints = []discoveryv1.Endpoint{{
 				Addresses:  machineAddresses,
 				Conditions: machinePhaseToEndpointConditions(machine),
+				NodeName:   nodeName,
 			}}
 		} else {
 			endpointSlice.Endpoints = []discoveryv1.Endpoint{}
