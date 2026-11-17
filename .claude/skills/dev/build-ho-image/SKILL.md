@@ -1,5 +1,5 @@
 ---
-name: Build HO Image
+name: build-ho-image
 description: "Build and push hypershift-operator container image. Auto-applies when testing HO changes that require deploying to a live cluster."
 ---
 

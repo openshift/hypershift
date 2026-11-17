@@ -1,5 +1,5 @@
 ---
-name: Konflux Archived PipelineRuns
+name: konflux-ec-violations
 description: "Accesses archived Konflux PipelineRuns, TaskRuns, and pod logs via KubeArchive. Auto-applies when checking Konflux PipelineRun results, investigating enterprise contract failures, or retrieving logs from completed Konflux CI runs."
 ---
 

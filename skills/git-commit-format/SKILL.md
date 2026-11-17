@@ -1,5 +1,5 @@
 ---
-name: Git Commit Format
+name: git-commit-format
 description: "Apply HyperShift conventional commit formatting rules. Use when generating commit messages or creating commits."
 ---
 

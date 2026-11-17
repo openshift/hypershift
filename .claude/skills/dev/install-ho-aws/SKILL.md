@@ -1,5 +1,5 @@
 ---
-name: Install HO AWS
+name: install-ho-aws
 description: "Install HyperShift Operator with private AWS and external-dns settings."
 ---
 
