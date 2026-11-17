@@ -3,7 +3,11 @@ package nodepool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -4098,6 +4102,267 @@ func TestPropagateLabelsAndTaintsToMachines(t *testing.T) {
 			}
 		})
 	}
+
+	raceNodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-np",
+			Namespace: "test-ns",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+			},
+			NodeLabels: map[string]string{
+				"custom-label": "custom-value",
+			},
+			Taints: []hyperv1.Taint{
+				{Key: "key1", Value: "val1", Effect: "NoSchedule"},
+			},
+		},
+	}
+	desiredLabels := map[string]string{
+		"managed.hypershift.openshift.io.custom-label":                                      "custom-value",
+		"managed.hypershift.openshift.io.hypershift.openshift.io/nodepool-globalps-enabled": "true",
+	}
+	desiredTaintsJSON := `[{"key":"key1","value":"val1","effect":"NoSchedule"}]`
+	newMachine := func(name, nodePoolKey string, mutate ...func(*capiv1.Machine)) *capiv1.Machine {
+		m := &capiv1.Machine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "cp-ns",
+				Annotations: map[string]string{
+					nodePoolAnnotation: nodePoolKey,
+				},
+			},
+		}
+		for _, f := range mutate {
+			f(m)
+		}
+		return m
+	}
+	newRaceCAPI := func(c client.Client, nodePool *hyperv1.NodePool) *CAPI {
+		return &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					Client:   c,
+					nodePool: nodePool,
+				},
+			},
+		}
+	}
+	md := &capiv1.MachineDeployment{ObjectMeta: metav1.ObjectMeta{Namespace: "cp-ns"}}
+
+	t.Run("When an owned Machine is deleted after it is listed, it should skip it without creating it and still update later Machines", func(t *testing.T) {
+		g := NewWithT(t)
+
+		victim := newMachine("machine-a", "test-ns/test-np")
+		later := newMachine("machine-b", "test-ns/test-np", func(m *capiv1.Machine) {
+			m.Labels = map[string]string{
+				"team": "infra",
+				"managed.hypershift.openshift.io.old-label": "old-value",
+			}
+			m.Annotations["example.com/keep"] = "yes"
+			m.Spec.ClusterName = "test-cluster"
+			m.Spec.ProviderID = "aws:///us-east-1a/i-0123456789abcdef0"
+		})
+		upToDate := newMachine("machine-c-uptodate", "test-ns/test-np", func(m *capiv1.Machine) {
+			m.Labels = maps.Clone(desiredLabels)
+			m.Annotations[nodePoolAnnotationTaints] = desiredTaintsJSON
+		})
+		other := newMachine("machine-other", "other-ns/other-np", func(m *capiv1.Machine) {
+			m.Labels = map[string]string{"team": "other"}
+		})
+		rc := newPropagationRaceClient(t, []client.Object{victim, later, upToDate, other}, victim, nil, nil)
+		before := map[string]*capiv1.Machine{}
+		for _, name := range []string{upToDate.Name, other.Name} {
+			m := &capiv1.Machine{}
+			g.Expect(rc.Get(t.Context(), client.ObjectKey{Namespace: "cp-ns", Name: name}, m)).To(Succeed())
+			before[name] = m
+		}
+
+		err := newRaceCAPI(rc, raceNodePool).propagateLabelsAndTaintsToMachines(t.Context(), logr.Discard(), md)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(rc.creates).To(BeEmpty(), "a Machine deleted after List must never be created")
+		g.Expect(rc.updates).To(BeEmpty(), "Machines must only be patched")
+		g.Expect(rc.patches).To(ConsistOf("machine-a", "machine-b"))
+
+		err = rc.Get(t.Context(), client.ObjectKeyFromObject(victim), &capiv1.Machine{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "deleted Machine must stay deleted, got %v", err)
+
+		got := &capiv1.Machine{}
+		g.Expect(rc.Get(t.Context(), client.ObjectKeyFromObject(later), got)).To(Succeed())
+		for k, v := range desiredLabels {
+			g.Expect(got.Labels).To(HaveKeyWithValue(k, v))
+		}
+		g.Expect(got.Labels).To(HaveKeyWithValue("team", "infra"))
+		g.Expect(got.Labels).To(HaveKeyWithValue("managed.hypershift.openshift.io.old-label", "old-value"))
+		g.Expect(got.Annotations).To(HaveKeyWithValue(nodePoolAnnotationTaints, desiredTaintsJSON))
+		g.Expect(got.Annotations).To(HaveKeyWithValue("example.com/keep", "yes"))
+		g.Expect(got.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "test-ns/test-np"))
+		g.Expect(got.Spec.ClusterName).To(Equal("test-cluster"))
+		g.Expect(got.Spec.ProviderID).To(Equal("aws:///us-east-1a/i-0123456789abcdef0"))
+
+		for name, want := range before {
+			m := &capiv1.Machine{}
+			g.Expect(rc.Get(t.Context(), client.ObjectKey{Namespace: "cp-ns", Name: name}, m)).To(Succeed())
+			g.Expect(m.ResourceVersion).To(Equal(want.ResourceVersion), "Machine %s must not be written", name)
+			g.Expect(m.Labels).To(Equal(want.Labels))
+			g.Expect(m.Annotations).To(Equal(want.Annotations))
+		}
+	})
+
+	t.Run("When patching owned Machines fails with non-NotFound errors, it should aggregate every failure and continue with remaining Machines", func(t *testing.T) {
+		g := NewWithT(t)
+
+		errA := apierrors.NewInternalError(errors.New("injected failure for machine-a"))
+		errD := apierrors.NewServiceUnavailable("injected failure for machine-d")
+		victim := newMachine("machine-b", "test-ns/test-np")
+		objects := []client.Object{
+			newMachine("machine-a", "test-ns/test-np"),
+			victim,
+			newMachine("machine-c", "test-ns/test-np"),
+			newMachine("machine-d", "test-ns/test-np"),
+		}
+		rc := newPropagationRaceClient(t, objects, victim, map[string]error{"machine-a": errA, "machine-d": errD}, nil)
+
+		err := newRaceCAPI(rc, raceNodePool).propagateLabelsAndTaintsToMachines(t.Context(), logr.Discard(), md)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(errors.Is(err, errA)).To(BeTrue(), "aggregate must retain the machine-a failure: %v", err)
+		g.Expect(errors.Is(err, errD)).To(BeTrue(), "aggregate must retain the machine-d failure: %v", err)
+		g.Expect(err.Error()).To(ContainSubstring(`"cp-ns/machine-a"`))
+		g.Expect(err.Error()).To(ContainSubstring(`"cp-ns/machine-d"`))
+		g.Expect(err.Error()).ToNot(ContainSubstring("machine-b"), "NotFound must not be reported as a failure")
+
+		g.Expect(rc.creates).To(BeEmpty(), "a Machine deleted after List must never be created")
+		g.Expect(rc.updates).To(BeEmpty(), "Machines must only be patched")
+		g.Expect(rc.patches).To(ConsistOf("machine-a", "machine-b", "machine-c", "machine-d"))
+
+		got := &capiv1.Machine{}
+		g.Expect(rc.Get(t.Context(), client.ObjectKey{Namespace: "cp-ns", Name: "machine-c"}, got)).To(Succeed())
+		for k, v := range desiredLabels {
+			g.Expect(got.Labels).To(HaveKeyWithValue(k, v))
+		}
+		g.Expect(got.Annotations).To(HaveKeyWithValue(nodePoolAnnotationTaints, desiredTaintsJSON))
+	})
+
+	t.Run("When an owned Machine without labels already has the NodePool taints annotation, it should not patch it", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// A NodePool without node labels on a platform without the global pull
+		// secret label only sets the taints annotation; a nil label map must be
+		// treated as equal to the empty map the propagation initializes.
+		nodePool := raceNodePool.DeepCopy()
+		nodePool.Spec.Platform.Type = hyperv1.KubevirtPlatform
+		nodePool.Spec.NodeLabels = nil
+		nodePool.Spec.Taints = nil
+		upToDate := newMachine("machine-a", "test-ns/test-np", func(m *capiv1.Machine) {
+			m.Annotations[nodePoolAnnotationTaints] = "null"
+		})
+		rc := newPropagationRaceClient(t, []client.Object{upToDate}, nil, nil, nil)
+		before := &capiv1.Machine{}
+		g.Expect(rc.Get(t.Context(), client.ObjectKeyFromObject(upToDate), before)).To(Succeed())
+		g.Expect(before.Labels).To(BeNil())
+
+		err := newRaceCAPI(rc, nodePool).propagateLabelsAndTaintsToMachines(t.Context(), logr.Discard(), md)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(rc.creates).To(BeEmpty())
+		g.Expect(rc.updates).To(BeEmpty())
+		g.Expect(rc.patches).To(BeEmpty(), "an up-to-date Machine must not be patched")
+		got := &capiv1.Machine{}
+		g.Expect(rc.Get(t.Context(), client.ObjectKeyFromObject(upToDate), got)).To(Succeed())
+		g.Expect(got.ResourceVersion).To(Equal(before.ResourceVersion))
+	})
+
+	t.Run("When listing Machines fails, it should return the error without writing any Machine", func(t *testing.T) {
+		g := NewWithT(t)
+
+		listErr := apierrors.NewServiceUnavailable("injected list failure")
+		rc := newPropagationRaceClient(t, []client.Object{newMachine("machine-a", "test-ns/test-np")}, nil, nil, listErr)
+
+		err := newRaceCAPI(rc, raceNodePool).propagateLabelsAndTaintsToMachines(t.Context(), logr.Discard(), md)
+		g.Expect(errors.Is(err, listErr)).To(BeTrue(), "expected the list error, got %v", err)
+
+		g.Expect(rc.creates).To(BeEmpty())
+		g.Expect(rc.updates).To(BeEmpty())
+		g.Expect(rc.patches).To(BeEmpty())
+	})
+}
+
+// propagationRaceClient is a fake client that records the writes issued by
+// propagation loops so tests can assert that listed objects are only patched.
+type propagationRaceClient struct {
+	client.WithWatch
+	creates []string
+	updates []string
+	patches []string
+}
+
+// newPropagationRaceClient returns a fake client seeded with objects. When victim
+// is set, the first List deletes it from the backing store after reading it and
+// returns it as the first item, deterministically simulating an object that is
+// deleted between List and the following write. Patch returns patchErrors[name]
+// for the named objects instead of patching them, and List returns listErr when
+// set. Create, Update and Patch calls are recorded by object name; Create always
+// fails so that a deleted object can never be resurrected by the code under test.
+func newPropagationRaceClient(t *testing.T, objects []client.Object, victim client.Object, patchErrors map[string]error, listErr error) *propagationRaceClient {
+	t.Helper()
+	rc := &propagationRaceClient{}
+	victimDeleted := false
+	victimFirst := func(a, b string) int {
+		switch {
+		case a == b:
+			return 0
+		case a == victim.GetName():
+			return -1
+		case b == victim.GetName():
+			return 1
+		}
+		return strings.Compare(a, b)
+	}
+	rc.WithWatch = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if listErr != nil {
+				return listErr
+			}
+			if err := c.List(ctx, list, opts...); err != nil {
+				return err
+			}
+			if victim == nil || victimDeleted {
+				return nil
+			}
+			if err := c.Delete(ctx, victim); err != nil {
+				return fmt.Errorf("failed to delete %s after List: %w", victim.GetName(), err)
+			}
+			victimDeleted = true
+			switch l := list.(type) {
+			case *capiv1.MachineList:
+				slices.SortStableFunc(l.Items, func(a, b capiv1.Machine) int { return victimFirst(a.Name, b.Name) })
+			case *capiaws.AWSMachineList:
+				slices.SortStableFunc(l.Items, func(a, b capiaws.AWSMachine) int { return victimFirst(a.Name, b.Name) })
+			default:
+				return fmt.Errorf("unsupported list type %T", list)
+			}
+			return nil
+		},
+		Create: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.CreateOption) error {
+			rc.creates = append(rc.creates, obj.GetName())
+			return fmt.Errorf("unexpected Create for %s", obj.GetName())
+		},
+		Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			rc.updates = append(rc.updates, obj.GetName())
+			return c.Update(ctx, obj, opts...)
+		},
+		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+			rc.patches = append(rc.patches, obj.GetName())
+			if err, ok := patchErrors[obj.GetName()]; ok {
+				return err
+			}
+			return c.Patch(ctx, obj, patch, opts...)
+		},
+	}).Build()
+	return rc
 }
 
 // TestPauseUnpauseCycle is a regression test for the interaction between pausing
