@@ -113,6 +113,29 @@ In disconnected environments, pinned images are not part of the hosted cluster p
 - On **release-4.21/4.22**: users must manually mirror the 4.20.10 release. Tracked under OCPBUGS-74263 and OCPBUGS-86056.
 - On **main/5.0+**: users must manually mirror the OCP 4.22 `cluster-capi-controllers` image listed above. Tracked under OCPBUGS-123171 and OCPBUGS-140990.
 
+## Core CAPI Manager Client Rate Limits
+
+On `main`, the HyperShift operator starts the core CAPI manager (`cluster-capi-controllers`) with explicit client-side rate limits:
+
+```text
+--kube-api-qps=100
+--kube-api-burst=200
+--clustercache-client-qps=100
+--clustercache-client-burst=200
+```
+
+`--kube-api-*` limit the manager's client for the management cluster API server. `--clustercache-client-*` limit the client it uses to reach the hosted cluster's API server.
+
+The flags are added when either of these is true:
+
+- the hosted cluster's payload version is 4.19 or later, or
+- the manager runs the backward compatibility pinned image described above (payloads below 4.21 without an annotation override).
+
+When `hypershift.openshift.io/capi-manager-image` sets any other image and the payload version is below 4.19, the flags are not added. CAPI manager builds from before OCP 4.19 may not register them. For example, the OCP 4.18 build only has the older `--clustercachetracker-client-*` flags and fails to start with `--clustercache-client-*`.
+
+!!! warning
+    Like the other version-gated CAPI manager arguments, from payload version 4.19 onwards these flags are added whatever image the annotation sets. For hosted clusters at payload version 4.19 or later, an image set with `hypershift.openshift.io/capi-manager-image` must be a `cluster-capi-controllers` build that registers these flags, such as the one shipped in the hosted cluster's own payload. An image that does not register them fails to start with an `unknown flag` error.
+
 ## Related Files
 
 - `support/backwardcompat/backwardcompat.go` -- backward compatibility image pinning
@@ -120,3 +143,4 @@ In disconnected environments, pinned images are not part of the hosted cluster p
 - `hypershift-operator/controllers/hostedcluster/internal/platform/{aws,azure,gcp,kubevirt,agent,openstack,powervs}/` -- per-platform `CAPIProviderDeploymentSpec()`
 - `support/images/envvars.go` -- env var to payload image name mapping
 - `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` -- CAPI manager image override
+- `control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager/deployment.go` -- CAPI manager arguments, including the client rate limits
