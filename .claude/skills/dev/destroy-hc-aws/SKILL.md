@@ -1,5 +1,5 @@
 ---
-name: Destroy HC AWS
+name: destroy-hc-aws
 description: "Destroy a HyperShift HostedCluster and all associated AWS infrastructure (VPC, IAM, Route53, etc.)."
 ---
 
