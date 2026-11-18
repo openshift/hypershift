@@ -10977,8 +10977,24 @@ func TestHostedClusterReconciler_ReconcileOpenShiftTrustedCAs(t *testing.T) {
 		creates, updates, patches, applies, deletes int
 	}
 
-	// newClients returns the client handed to the reconciler, which counts writes and can inject errors,
-	// and the underlying fake client, which is used to observe the stored state without interception.
+	// rejectOverlappingKeys emulates the API server validation documented on corev1.ConfigMap: keys stored in Data
+	// must not overlap with keys stored in BinaryData. The fake client does not enforce it on its own.
+	rejectOverlappingKeys := func(obj crclient.Object) error {
+		cm, ok := obj.(*corev1.ConfigMap)
+		if !ok {
+			return nil
+		}
+		for key := range cm.Data {
+			if _, found := cm.BinaryData[key]; found {
+				return errors2.NewInvalid(corev1.SchemeGroupVersion.WithKind("ConfigMap").GroupKind(), cm.Name,
+					field.ErrorList{field.Duplicate(field.NewPath("data").Key(key), key)})
+			}
+		}
+		return nil
+	}
+
+	// newClients returns the client handed to the reconciler, which counts writes, validates ConfigMap keys and can
+	// inject errors, and the underlying fake client, which is used to observe the stored state without interception.
 	newClients := func(objects []crclient.Object, getErr, updateErr error) (crclient.Client, crclient.Client, *writeCounts) {
 		counts := &writeCounts{}
 		stored := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
@@ -10991,12 +11007,18 @@ func TestHostedClusterReconciler_ReconcileOpenShiftTrustedCAs(t *testing.T) {
 			},
 			Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
 				counts.creates++
+				if err := rejectOverlappingKeys(obj); err != nil {
+					return err
+				}
 				return c.Create(ctx, obj, opts...)
 			},
 			Update: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.UpdateOption) error {
 				counts.updates++
 				if updateErr != nil {
 					return updateErr
+				}
+				if err := rejectOverlappingKeys(obj); err != nil {
+					return err
 				}
 				return c.Update(ctx, obj, opts...)
 			},
@@ -11047,10 +11069,14 @@ func TestHostedClusterReconciler_ReconcileOpenShiftTrustedCAs(t *testing.T) {
 		expectErrContains       string
 		expectConfigMapNotFound bool
 		expectData              map[string]string
+		// expectBinaryData is the expected BinaryData after reconciling; nil means it is expected to be empty.
+		expectBinaryData        map[string][]byte
 		expectUnchangedRevision bool
 		expectPreservedMetadata bool
-		expectCreates           int
-		expectUpdates           int
+		// expectNoOpOnRepeat reconciles a second time and expects no further writes.
+		expectNoOpOnRepeat bool
+		expectCreates      int
+		expectUpdates      int
 	}{
 		{
 			name:          "When the ConfigMap exists with an outdated bundle, it should update it to the current file content",
@@ -11122,6 +11148,22 @@ func TestHostedClusterReconciler_ReconcileOpenShiftTrustedCAs(t *testing.T) {
 			fileContent:             ptr.To(bundleB),
 			expectData:              map[string]string{caBundleKey: bundleB, "extra.crt": bundleA},
 			expectPreservedMetadata: true,
+			expectUpdates:           1,
+		},
+		{
+			name: "When the existing ConfigMap stores the bundle key in BinaryData, it should move the bundle to Data and keep other binary keys",
+			existing: func() *corev1.ConfigMap {
+				cm := newConfigMap(map[string]string{"extra.crt": bundleA})
+				cm.BinaryData = map[string][]byte{caBundleKey: []byte(bundleA), "extra.bin": {0x00, 0xff}}
+				cm.Labels = map[string]string{"app.kubernetes.io/managed-by": "external-tool"}
+				cm.Annotations = map[string]string{"example.com/note": "preserve-me"}
+				return cm
+			}(),
+			fileContent:             ptr.To(bundleB),
+			expectData:              map[string]string{caBundleKey: bundleB, "extra.crt": bundleA},
+			expectBinaryData:        map[string][]byte{"extra.bin": {0x00, 0xff}},
+			expectPreservedMetadata: true,
+			expectNoOpOnRepeat:      true,
 			expectUpdates:           1,
 		},
 		{
@@ -11202,6 +11244,11 @@ func TestHostedClusterReconciler_ReconcileOpenShiftTrustedCAs(t *testing.T) {
 			g.Expect(got.Name).To(Equal(configMapKey.Name))
 			g.Expect(got.Namespace).To(Equal(configMapKey.Namespace))
 			g.Expect(got.Data).To(Equal(tc.expectData))
+			if tc.expectBinaryData == nil {
+				g.Expect(got.BinaryData).To(BeEmpty())
+			} else {
+				g.Expect(got.BinaryData).To(Equal(tc.expectBinaryData))
+			}
 			if tc.expectUnchangedRevision {
 				g.Expect(got.ResourceVersion).To(Equal(initialRevision), "expected the stored ConfigMap not to be written")
 			}
@@ -11209,6 +11256,16 @@ func TestHostedClusterReconciler_ReconcileOpenShiftTrustedCAs(t *testing.T) {
 				g.Expect(got.Labels).To(Equal(tc.existing.Labels))
 				g.Expect(got.Annotations).To(Equal(tc.existing.Annotations))
 				g.Expect(got.OwnerReferences).To(Equal(tc.existing.OwnerReferences))
+			}
+			if tc.expectNoOpOnRepeat {
+				countsBefore := *counts
+				g.Expect(r.reconcileOpenShiftTrustedCAs(t.Context(), hcp)).To(Succeed())
+				g.Expect(*counts).To(Equal(countsBefore), "expected no writes on the second reconcile")
+				again := &corev1.ConfigMap{}
+				g.Expect(storedClient.Get(t.Context(), configMapKey, again)).To(Succeed())
+				g.Expect(again.ResourceVersion).To(Equal(got.ResourceVersion))
+				g.Expect(again.Data).To(Equal(got.Data))
+				g.Expect(again.BinaryData).To(Equal(got.BinaryData))
 			}
 		})
 	}

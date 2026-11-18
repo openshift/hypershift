@@ -25,12 +25,12 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 	// so concatenating in map order fails reliably. Keys are zero-padded so that generation order is sorted key order,
 	// and each host also has a "host..port" entry, which sorts directly after the host.
 	manyRegistryCAs := map[string]string{}
-	var manyRegistryCAsSorted bytes.Buffer
+	var manyRegistryCAsSorted string
 	for i := range 20 {
 		host := fmt.Sprintf("mirror-%02d.registry.example.com", i)
 		manyRegistryCAs[host] = "cert-" + host
 		manyRegistryCAs[host+"..5000"] = "cert-" + host + "-5000"
-		fmt.Fprintf(&manyRegistryCAsSorted, "cert-%s\ncert-%s-5000\n", host, host)
+		manyRegistryCAsSorted += "cert-" + host + "\ncert-" + host + "-5000\n"
 	}
 
 	testCases := []struct {
@@ -185,7 +185,7 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 					Data: manyRegistryCAs,
 				},
 			},
-			expectedCert:  &manyRegistryCAsSorted,
+			expectedCert:  bytes.NewBufferString(manyRegistryCAsSorted),
 			expectedError: false,
 		},
 	}
@@ -196,13 +196,18 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...).Build()
 			cert, err := getImageRegistryCABundle(t.Context(), client)
 			if tc.expectedError {
-				g.Expect(err).NotTo(BeNil())
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(cert).To(BeNil())
+				return
 			}
+			g.Expect(err).NotTo(HaveOccurred())
 
-			if tc.expectedCert != nil {
-				g.Expect(cert).NotTo(BeNil())
-				g.Expect(cert.String()).To(Equal(tc.expectedCert.String()))
+			if tc.expectedCert == nil {
+				g.Expect(cert).To(BeNil())
+				return
 			}
+			g.Expect(cert).NotTo(BeNil())
+			g.Expect(cert.String()).To(Equal(tc.expectedCert.String()))
 		})
 	}
 }
