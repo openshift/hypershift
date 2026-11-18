@@ -22,6 +22,11 @@ storage:
     mode: 420
     overwrite: true
     path: /etc/kubernetes/manifests/kube-apiserver-proxy.yaml
+  - contents:
+      source: data:text/plain;charset=utf-8;base64,IyBTeXN0ZW0td2lkZSBwcm94eSBjb25maWd1cmF0aW9uIGZvciBIeXBlclNoaWZ0CiMgR2VuZXJhdGVkIGJ5IGh5cGVyc2hpZnQtb3BlcmF0b3IKIyBUaGlzIGVuc3VyZXMgYWxsIHByb2Nlc3NlcyAoaW5jbHVkaW5nIGludGVyYWN0aXZlIHNoZWxscykgdXNlIHRoZSBwcm94eQoKZXhwb3J0IEhUVFBfUFJPWFk9cHJveHkKZXhwb3J0IEhUVFBTX1BST1hZPXByb3h5CmV4cG9ydCBOT19QUk9YWT1sb2NhbGhvc3QsMTI3LjAuMC4xLGNsdXN0ZXIuaW50ZXJuYWwuZXhhbXBsZS5jb20K
+    mode: 420
+    overwrite: true
+    path: /etc/profile.d/proxy.sh
 systemd:
   units:
   - contents: |

@@ -96,6 +96,12 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 			platform: hyperv1.IBMCloudPlatform,
 			noProxy:  "localhost,127.0.0.1",
 		},
+		{
+			name:     "when proxy is set and does not skip it should create kubernetes-default-proxy with proxy.sh",
+			proxy:    "http://10.0.139.103:3128",
+			platform: hyperv1.AWSPlatform,
+			noProxy:  "localhost,127.0.0.1,.svc,.cluster.local",
+		},
 	}
 
 	for _, tc := range testCases {
