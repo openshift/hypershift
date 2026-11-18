@@ -32,14 +32,15 @@ type ImageSpecApplyConfiguration struct {
 	// internal cluster registry.
 	RegistrySources *RegistrySourcesApplyConfiguration `json:"registrySources,omitempty"`
 	// imageStreamImportMode controls the import mode behaviour of imagestreams.
-	// It can be set to `Legacy` or `PreserveOriginal` or the empty string. If this value
+	// Allowed values are `Legacy` and `PreserveOriginal`. The empty string is also accepted, for compatibility
+	// with older clients that always serialize this field, and is treated the same as omitting it. If this value
 	// is specified, this setting is applied to all newly created imagestreams which do not have the
 	// value set. `Legacy` indicates that the legacy behaviour should be used.
 	// For manifest lists, the legacy behaviour will discard the manifest list and import a single
 	// sub-manifest. In this case, the platform is chosen in the following order of priority:
 	// 1. tag annotations; 2. control plane arch/os; 3. linux/amd64; 4. the first manifest in the list.
 	// `PreserveOriginal` indicates that the original manifest will be preserved. For manifest lists,
-	// the manifest list and all its sub-manifests will be imported. When empty, the behaviour will be
+	// the manifest list and all its sub-manifests will be imported. When omitted or empty, the behaviour will be
 	// decided based on the payload type advertised by the ClusterVersion status, i.e single arch payload
 	// implies the import mode is Legacy and multi payload implies PreserveOriginal.
 	ImageStreamImportMode *configv1.ImportModeType `json:"imageStreamImportMode,omitempty"`

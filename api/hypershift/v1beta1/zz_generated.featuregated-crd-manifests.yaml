@@ -217,7 +217,6 @@ hostedclusters.hypershift.openshift.io:
   - HCPEtcdBackup
   - HCPUserFacingOperatorLogs
   - HyperShiftOnlyDynamicResourceAllocation
-  - ImageStreamImportMode
   - IngressComponentRouteLabels
   - IngressControllerLBSecurityGroupsAWS
   - KMSEncryption
@@ -300,7 +299,6 @@ hostedcontrolplanes.hypershift.openshift.io:
   - HCPEtcdBackup
   - HCPUserFacingOperatorLogs
   - HyperShiftOnlyDynamicResourceAllocation
-  - ImageStreamImportMode
   - IngressComponentRouteLabels
   - IngressControllerLBSecurityGroupsAWS
   - KMSEncryption

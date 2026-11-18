@@ -6,11 +6,11 @@ import (
 	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 )
 
-// ECDSAKeyConfigApplyConfiguration represents a declarative configuration of the ECDSAKeyConfig type for use
+// PKIECDSAKeyConfigApplyConfiguration represents a declarative configuration of the PKIECDSAKeyConfig type for use
 // with apply.
 //
-// ECDSAKeyConfig specifies parameters for ECDSA key generation.
-type ECDSAKeyConfigApplyConfiguration struct {
+// PKIECDSAKeyConfig specifies parameters for ECDSA key generation.
+type PKIECDSAKeyConfigApplyConfiguration struct {
 	// curve specifies the NIST elliptic curve for ECDSA keys.
 	// Valid values are "P256", "P384", and "P521".
 	//
@@ -22,19 +22,19 @@ type ECDSAKeyConfigApplyConfiguration struct {
 	//
 	// When set to P521, the NIST P-521 curve (also known as secp521r1) is used,
 	// providing 256-bit security.
-	Curve *configv1alpha1.ECDSACurve `json:"curve,omitempty"`
+	Curve *configv1alpha1.PKIECDSACurve `json:"curve,omitempty"`
 }
 
-// ECDSAKeyConfigApplyConfiguration constructs a declarative configuration of the ECDSAKeyConfig type for use with
+// PKIECDSAKeyConfigApplyConfiguration constructs a declarative configuration of the PKIECDSAKeyConfig type for use with
 // apply.
-func ECDSAKeyConfig() *ECDSAKeyConfigApplyConfiguration {
-	return &ECDSAKeyConfigApplyConfiguration{}
+func PKIECDSAKeyConfig() *PKIECDSAKeyConfigApplyConfiguration {
+	return &PKIECDSAKeyConfigApplyConfiguration{}
 }
 
 // WithCurve sets the Curve field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Curve field is set to the value of the last call.
-func (b *ECDSAKeyConfigApplyConfiguration) WithCurve(value configv1alpha1.ECDSACurve) *ECDSAKeyConfigApplyConfiguration {
+func (b *PKIECDSAKeyConfigApplyConfiguration) WithCurve(value configv1alpha1.PKIECDSACurve) *PKIECDSAKeyConfigApplyConfiguration {
 	b.Curve = &value
 	return b
 }
