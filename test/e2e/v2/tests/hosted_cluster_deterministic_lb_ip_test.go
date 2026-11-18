@@ -44,6 +44,10 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:DeterministicLBIP] H
 			"E2E_EXPECTED_DETERMINISTIC_LB_IP",
 		} {
 			if internal.GetEnvVarValue(name) == "" {
+				// The variant is only created when the pre-step values are
+				// present. If they are lost between create-guests and this
+				// step, the runner's --ginkgo.fail-on-empty turns the all-skip
+				// run into a suite failure instead of a green job.
 				Skip(fmt.Sprintf("deterministic LB EIP pre-step did not provide %s", name))
 			}
 		}

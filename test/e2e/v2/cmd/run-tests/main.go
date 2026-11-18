@@ -163,6 +163,9 @@ func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitP
 
 	args := []string{
 		fmt.Sprintf("--ginkgo.label-filter=%s", labelFilter),
+		// A label filter that matches nothing, or a suite whose only specs are
+		// skipped, is a configuration error: fail instead of reporting success.
+		"--ginkgo.fail-on-empty",
 		fmt.Sprintf("--e2e.junit-report=%s", junitPath),
 		fmt.Sprintf("--ginkgo.timeout=%s", ginkgoTimeout),
 		"--ginkgo.v",
