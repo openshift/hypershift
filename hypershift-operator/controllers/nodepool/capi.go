@@ -589,12 +589,11 @@ func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.
 		return fmt.Errorf("failed to serialize NodePool taints: %w", err)
 	}
 	var errs []error
-	for i := range machineList.Items {
-		machine := &machineList.Items[i]
+	for _, machine := range machineList.Items {
 		if nodePoolName := machine.GetAnnotations()[nodePoolAnnotation]; nodePoolName != nodePoolKey {
 			continue
 		}
-		machineKey := client.ObjectKeyFromObject(machine).String()
+		machineKey := client.ObjectKeyFromObject(&machine).String()
 
 		original := machine.DeepCopy()
 		if machine.Labels == nil {
@@ -619,14 +618,14 @@ func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.
 
 		machine.Annotations[nodePoolAnnotationTaints] = taintsInJSON
 
-		if equality.Semantic.DeepEqual(original, machine) {
+		if equality.Semantic.DeepEqual(original, &machine) {
 			log.Info("Reconciled Machine", "result", controllerutil.OperationResultNone)
 			continue
 		}
 
 		// Patch instead of CreateOrPatch: a JSON merge patch never creates the
 		// Machine if it was deleted after the List.
-		if err := c.Patch(ctx, machine, client.MergeFrom(original)); err != nil {
+		if err := c.Patch(ctx, &machine, client.MergeFrom(original)); err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Info("Machine no longer exists, skipping label and taint propagation", "machine", machineKey)
 				continue
