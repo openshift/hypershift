@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/support/config"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -964,6 +965,15 @@ func TestBuildEnvVars(t *testing.T) {
 			},
 		},
 		{
+			name: "When EnableKarpenterOperator is enabled, it should include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				EnableKarpenterOperator: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: karpenterutil.EnableStandaloneKarpenterOperatorEnvVar, Value: "1"},
+			},
+		},
+		{
 			name: "When EnableAuditLogPersistence is enabled, it should include ENABLE_AUDIT_LOG_PERSISTENCE env var",
 			deployment: HyperShiftOperatorDeployment{
 				EnableAuditLogPersistence: true,
@@ -1074,6 +1084,7 @@ func TestBuildEnvVars(t *testing.T) {
 				"ENABLE_SIZE_TAGGING",
 				"MONITORING_DASHBOARDS",
 				"CAPI_STORAGE_VERSION",
+				"ENABLE_STANDALONE_KARPENTER_OPERATOR",
 			},
 		},
 	}
