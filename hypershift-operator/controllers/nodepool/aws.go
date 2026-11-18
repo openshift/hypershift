@@ -454,19 +454,18 @@ func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
 	}
 
 	var errs []error
-	for i := range awsMachines.Items {
-		machine := &awsMachines.Items[i]
+	for _, machine := range awsMachines.Items {
 		original := machine.DeepCopy()
 		machine.Spec.AdditionalTags = awsAdditionalTags(c.nodePool, c.hostedCluster, c.capiClusterName)
-		if equality.Semantic.DeepEqual(original, machine) {
+		if equality.Semantic.DeepEqual(original, &machine) {
 			continue
 		}
 
 		// Patch instead of CreateOrPatch: a JSON merge patch never creates the
 		// AWSMachine if it was deleted after the List.
-		if err := c.Patch(ctx, machine, client.MergeFrom(original)); err != nil {
+		if err := c.Patch(ctx, &machine, client.MergeFrom(original)); err != nil {
 			if apierrors.IsNotFound(err) {
-				log.Info("AWSMachine no longer exists, skipping tag reconciliation", "awsMachine", client.ObjectKeyFromObject(machine).String())
+				log.Info("AWSMachine no longer exists, skipping tag reconciliation", "awsMachine", client.ObjectKeyFromObject(&machine).String())
 				continue
 			}
 			errs = append(errs, fmt.Errorf("failed to reconcile AWSMachine %s: %w", machine.Name, err))
