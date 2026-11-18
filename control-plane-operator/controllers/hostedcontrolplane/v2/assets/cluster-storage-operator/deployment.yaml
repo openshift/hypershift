@@ -136,8 +136,6 @@ spec:
             - ALL
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /etc/guest-kubeconfig
-          name: guest-kubeconfig
         - mountPath: /var/run/secrets/serving-cert
           name: cluster-storage-operator-serving-cert
         - mountPath: /var/run/configmaps/config
@@ -149,9 +147,6 @@ spec:
           type: RuntimeDefault
       serviceAccountName: cluster-storage-operator
       volumes:
-      - name: guest-kubeconfig
-        secret:
-          secretName: service-network-admin-kubeconfig
       - name: cluster-storage-operator-serving-cert
         secret:
           secretName: cluster-storage-operator-serving-cert
