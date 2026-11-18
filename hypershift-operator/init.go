@@ -19,7 +19,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -133,10 +135,13 @@ func getImageRegistryCABundle(ctx context.Context, client crclient.Client) (*byt
 	}
 	if configmap.Data != nil {
 		var buf bytes.Buffer
-		for _, crt := range configmap.Data {
+		// Iterate in sorted key order so the bundle is byte-for-byte identical across operator restarts. Map iteration
+		// order is random, and the resulting bundle is copied into hosted control plane namespaces, where a content
+		// change rolls the control plane components that mount it.
+		for _, key := range slices.Sorted(maps.Keys(configmap.Data)) {
 			// Added a newline character to the end of each certificate to avoid bad concatenation
 			// of certificates in the buffer using the UI.
-			fmt.Fprintf(&buf, "%s\n", crt)
+			fmt.Fprintf(&buf, "%s\n", configmap.Data[key])
 		}
 		if buf.Len() > 0 {
 			return &buf, nil

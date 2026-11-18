@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -20,6 +21,18 @@ import (
 )
 
 func TestGetImageRegistryCABundle(t *testing.T) {
+	// manyRegistryCAs has enough entries that Go's randomized map iteration practically never yields sorted key order,
+	// so concatenating in map order fails reliably. Keys are zero-padded so that generation order is sorted key order,
+	// and each host also has a "host..port" entry, which sorts directly after the host.
+	manyRegistryCAs := map[string]string{}
+	var manyRegistryCAsSorted bytes.Buffer
+	for i := range 20 {
+		host := fmt.Sprintf("mirror-%02d.registry.example.com", i)
+		manyRegistryCAs[host] = "cert-" + host
+		manyRegistryCAs[host+"..5000"] = "cert-" + host + "-5000"
+		fmt.Fprintf(&manyRegistryCAsSorted, "cert-%s\ncert-%s-5000\n", host, host)
+	}
+
 	testCases := []struct {
 		name               string
 		objects            []crclient.Object
@@ -151,6 +164,30 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 			expectedCert:       bytes.NewBufferString("test1\ntest2\ntest3\ntest4\n"),
 			expectedError:      false,
 		},
+		{
+			name: "When the trusted CA configmap has multiple entries, it should concatenate them in sorted key order",
+			objects: []crclient.Object{
+				&configapi.Image{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "cluster",
+					},
+					Spec: configapi.ImageSpec{
+						AdditionalTrustedCA: configapi.ConfigMapNameReference{
+							Name: "registry-config",
+						},
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "registry-config",
+						Namespace: "openshift-config",
+					},
+					Data: manyRegistryCAs,
+				},
+			},
+			expectedCert:  &manyRegistryCAsSorted,
+			expectedError: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -163,9 +200,8 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 			}
 
 			if tc.expectedCert != nil {
-				for _, value := range bytes.Split(cert.Bytes(), []byte("\n")) {
-					g.Expect(value).Should(BeElementOf(bytes.Split(tc.expectedCert.Bytes(), []byte("\n"))))
-				}
+				g.Expect(cert).NotTo(BeNil())
+				g.Expect(cert.String()).To(Equal(tc.expectedCert.String()))
 			}
 		})
 	}
