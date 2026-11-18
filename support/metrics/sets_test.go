@@ -105,7 +105,9 @@ func TestServiceMonitorRelabelConfigs(t *testing.T) {
 		}
 		t.Cleanup(func() {
 			cm.Data[SREConfigurationConfigMapKey] = "{}"
-			_ = LoadSREMetricsSetConfigurationFromConfigMap(cm)
+			if err := LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+				t.Errorf("failed to reset SRE metrics set configuration: %v", err)
+			}
 		})
 
 		got, known := ServiceMonitorRelabelConfigs("kube-apiserver", MetricsSetSRE)
@@ -120,13 +122,29 @@ func TestServiceMonitorRelabelConfigs(t *testing.T) {
 		}
 	})
 
-	t.Run("When the returned rules are modified, it should not change the configured rules", func(t *testing.T) {
-		got, _ := ServiceMonitorRelabelConfigs("kube-apiserver", MetricsSetTelemetry)
+	t.Run("When the returned SRE rules are modified, it should not change the loaded rules", func(t *testing.T) {
+		cm := SREMetricsSetConfigurationConfigMap("clusters-test")
+		cm.Data = map[string]string{SREConfigurationConfigMapKey: sampleSREConfigYAML}
+		if err := LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+			t.Fatalf("Unexpected: %v", err)
+		}
+		t.Cleanup(func() {
+			cm.Data[SREConfigurationConfigMapKey] = "{}"
+			if err := LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+				t.Errorf("failed to reset SRE metrics set configuration: %v", err)
+			}
+		})
+		// sreConfig was parsed separately, so it is independent of the loaded rules.
+		if len(sreConfig.KubeAPIServer) == 0 || len(sreConfig.KubeAPIServer[0].SourceLabels) == 0 {
+			t.Fatal("sample SRE configuration needs a kubeAPIServer rule with source labels")
+		}
+
+		got, _ := ServiceMonitorRelabelConfigs("kube-apiserver", MetricsSetSRE)
 		got[0].Regex = "modified"
 		got[0].SourceLabels[0] = "modified"
-		again, _ := ServiceMonitorRelabelConfigs("kube-apiserver", MetricsSetTelemetry)
-		if !reflect.DeepEqual(again, KASRelabelConfigs(MetricsSetTelemetry)) {
-			t.Errorf("modifying the returned rules changed the configured rules: %v", again)
+		again, _ := ServiceMonitorRelabelConfigs("kube-apiserver", MetricsSetSRE)
+		if !reflect.DeepEqual(again, sreConfig.KubeAPIServer) {
+			t.Errorf("modifying the returned rules changed the loaded rules: %v", again)
 		}
 	})
 
@@ -135,7 +153,9 @@ func TestServiceMonitorRelabelConfigs(t *testing.T) {
 		cm.Data = map[string]string{SREConfigurationConfigMapKey: sampleSREConfigYAML}
 		t.Cleanup(func() {
 			cm.Data[SREConfigurationConfigMapKey] = "{}"
-			_ = LoadSREMetricsSetConfigurationFromConfigMap(cm)
+			if err := LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+				t.Errorf("failed to reset SRE metrics set configuration: %v", err)
+			}
 		})
 
 		var wg sync.WaitGroup
@@ -168,6 +188,31 @@ func TestServiceMonitorRelabelConfigs(t *testing.T) {
 			if got, known := ServiceMonitorRelabelConfigs(name, MetricsSetTelemetry); known || got != nil {
 				t.Errorf("ServiceMonitorRelabelConfigs(%q, Telemetry) = %v, %v, want nil, false", name, got, known)
 			}
+		}
+	})
+}
+
+func TestResetSREMetricsSetConfiguration(t *testing.T) {
+	cm := SREMetricsSetConfigurationConfigMap("clusters-test")
+	cm.Data = map[string]string{SREConfigurationConfigMapKey: sampleSREConfigYAML}
+	if err := LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+		t.Fatalf("Unexpected: %v", err)
+	}
+	t.Cleanup(ResetSREMetricsSetConfiguration)
+	if rules, _ := ServiceMonitorRelabelConfigs("kube-apiserver", MetricsSetSRE); len(rules) == 0 {
+		t.Fatal("expected loaded kubeAPIServer rules before the reset")
+	}
+
+	ResetSREMetricsSetConfiguration()
+
+	t.Run("When the configuration is reset, it should leave no SRE rules", func(t *testing.T) {
+		if rules, known := ServiceMonitorRelabelConfigs("kube-apiserver", MetricsSetSRE); !known || rules != nil {
+			t.Errorf("ServiceMonitorRelabelConfigs(kube-apiserver, SRE) = %v, %v, want nil, true", rules, known)
+		}
+	})
+	t.Run("When the configuration is reset, it should not change the built-in sets", func(t *testing.T) {
+		if rules, _ := ServiceMonitorRelabelConfigs("kube-apiserver", MetricsSetTelemetry); !reflect.DeepEqual(rules, KASRelabelConfigs(MetricsSetTelemetry)) {
+			t.Errorf("Telemetry rules changed after the reset: %v", rules)
 		}
 	})
 }

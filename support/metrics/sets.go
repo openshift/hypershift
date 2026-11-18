@@ -529,6 +529,15 @@ func SREMetricsSetConfigHash(cm *corev1.ConfigMap) string {
 	return ""
 }
 
+// ResetSREMetricsSetConfiguration clears the loaded SRE metrics set
+// configuration, so the SRE set has no rules until a configuration is loaded
+// again. It is the state of a process that has not loaded any configuration.
+func ResetSREMetricsSetConfiguration() {
+	sreMetricsSetMutex.Lock()
+	defer sreMetricsSetMutex.Unlock()
+	sreMetricsSetConfig = MetricsSetConfig{}
+}
+
 // LoadSREMetricsSetConfigurationFromConfigMap parses the SRE metrics set configuration
 // from the given ConfigMap and loads it into the singleton variable 'sreMetricsSetConfig'
 // This can then be used by reconcile functions that get lists of RelabelConfigs for a
