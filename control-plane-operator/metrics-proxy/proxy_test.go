@@ -494,7 +494,9 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 
 		fakeMetrics := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			fmt.Fprint(w, testExposition)
+			if _, err := fmt.Fprint(w, testExposition); err != nil {
+				t.Errorf("failed to write metrics fixture: %v", err)
+			}
 		}))
 		// The subtests run in parallel after this function returns.
 		t.Cleanup(fakeMetrics.Close)
@@ -638,6 +640,138 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("When several targets expose the same metric families, it should encode each family once with one exposition type", func(t *testing.T) {
+		t.Parallel()
+
+		serve := func(exposition string) *httptest.Server {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				if _, err := fmt.Fprint(w, exposition); err != nil {
+					t.Errorf("failed to write metrics fixture: %v", err)
+				}
+			}))
+			// The subtests run in parallel after this function returns.
+			t.Cleanup(server.Close)
+			return server
+		}
+		// Pod a exposes a complete summary with one quantile; pod b adds a
+		// second quantile that the drop rule below removes.
+		podA := serve(`# TYPE rpc_latency_seconds summary
+rpc_latency_seconds{quantile="0.5"} 0.2
+rpc_latency_seconds_sum 1
+rpc_latency_seconds_count 5
+# TYPE requests_total counter
+requests_total 1
+# TYPE conflicting_metric gauge
+conflicting_metric 3
+`)
+		podB := serve(`# TYPE rpc_latency_seconds summary
+rpc_latency_seconds{quantile="0.5"} 0.3
+rpc_latency_seconds{quantile="0.99"} 0.9
+rpc_latency_seconds_sum 2
+rpc_latency_seconds_count 7
+# TYPE requests_total counter
+requests_total 2
+# TYPE conflicting_metric counter
+conflicting_metric 4
+`)
+		hostA, portA := parseHostPort(t, podA.URL)
+		hostB, portB := parseHostPort(t, podB.URL)
+
+		tests := []struct {
+			name           string
+			filter         MetricsFilterMode
+			rules          []prometheusoperatorv1.RelabelConfig
+			wantTypes      map[string]dto.MetricType
+			wantSampleKeys []string
+		}{
+			{
+				name:   "When one target's summary is partially filtered and another's is complete, it should expose the family once as untyped",
+				filter: MetricsFilterRelabel,
+				rules: []prometheusoperatorv1.RelabelConfig{
+					{Action: "keep", Regex: "rpc_latency_seconds.*|requests_total", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}},
+					{Action: "drop", Regex: `rpc_latency_seconds;0\.99`, SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "quantile"}},
+				},
+				wantTypes: map[string]dto.MetricType{
+					"requests_total":            dto.MetricType_COUNTER,
+					"rpc_latency_seconds":       dto.MetricType_UNTYPED,
+					"rpc_latency_seconds_count": dto.MetricType_UNTYPED,
+					"rpc_latency_seconds_sum":   dto.MetricType_UNTYPED,
+				},
+				wantSampleKeys: []string{
+					"requests_total pod=pod-a", "requests_total pod=pod-b",
+					"rpc_latency_seconds pod=pod-a quantile=0.5", "rpc_latency_seconds pod=pod-b quantile=0.5",
+					"rpc_latency_seconds_count pod=pod-a", "rpc_latency_seconds_count pod=pod-b",
+					"rpc_latency_seconds_sum pod=pod-a", "rpc_latency_seconds_sum pod=pod-b",
+				},
+			},
+			{
+				name:   "When the targets are not filtered, it should expose each typed family once with the series of every target",
+				filter: MetricsFilterNone,
+				rules:  nil,
+				wantTypes: map[string]dto.MetricType{
+					"requests_total":      dto.MetricType_COUNTER,
+					"rpc_latency_seconds": dto.MetricType_SUMMARY,
+				},
+				wantSampleKeys: []string{
+					"requests_total pod=pod-a", "requests_total pod=pod-b",
+					"rpc_latency_seconds pod=pod-a quantile=0.5", "rpc_latency_seconds pod=pod-b quantile=0.5",
+					"rpc_latency_seconds pod=pod-b quantile=0.99",
+					"rpc_latency_seconds_count pod=pod-a", "rpc_latency_seconds_count pod=pod-b",
+					"rpc_latency_seconds_sum pod=pod-a", "rpc_latency_seconds_sum pod=pod-b",
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				g := NewWithT(t)
+
+				handler := newTestHandler(
+					map[string]ComponentConfig{
+						"openshift-apiserver": {
+							MetricsPort:   portA,
+							MetricsPath:   "/metrics",
+							MetricsScheme: "http",
+							sampleFilter:  newSampleFilter(logr.Discard(), "openshift-apiserver", tt.filter, tt.rules),
+						},
+					},
+					&fakeTargetDiscoverer{targets: []ScrapeTarget{
+						{PodName: "pod-a", PodIP: hostA, Port: portA},
+						{PodName: "pod-b", PodIP: hostB, Port: portB},
+					}},
+				)
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/openshift-apiserver", nil)
+				g.Expect(err).NotTo(HaveOccurred())
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				g.Expect(rec.Code).To(Equal(http.StatusOK))
+
+				// A strict text-format reader rejects a metric name declared twice.
+				parser := expfmt.NewTextParser(model.LegacyValidation)
+				families, err := parser.TextToMetricFamilies(strings.NewReader(rec.Body.String()))
+				if tt.filter == MetricsFilterNone {
+					// The conflicting_metric types differ between the targets,
+					// so its samples stay in separate families, as before.
+					g.Expect(rec.Body.String()).To(ContainSubstring("# TYPE conflicting_metric gauge"))
+					g.Expect(rec.Body.String()).To(ContainSubstring("# TYPE conflicting_metric counter"))
+					g.Expect(strings.Index(rec.Body.String(), "# TYPE conflicting_metric gauge")).
+						To(BeNumerically("<", strings.Index(rec.Body.String(), "# TYPE conflicting_metric counter")))
+					conflictFreeParser := expfmt.NewTextParser(model.LegacyValidation)
+					families, err = conflictFreeParser.TextToMetricFamilies(
+						strings.NewReader(withoutFamily(rec.Body.String(), "conflicting_metric")))
+				}
+				g.Expect(err).NotTo(HaveOccurred(), "response:\n%s", rec.Body.String())
+				for name, wantType := range tt.wantTypes {
+					g.Expect(families).To(HaveKey(name))
+					g.Expect(families[name].GetType()).To(Equal(wantType), name)
+				}
+				g.Expect(sampleKeysWithPod(families)).To(Equal(tt.wantSampleKeys))
+			})
+		}
+	})
 }
 
 var bucketOrQuantileLabel = regexp.MustCompile(`(?:^|,)(le|quantile)="([^"]*)"`)
@@ -656,6 +790,56 @@ func exposedSampleKeys(body string) []string {
 			name += " " + match[1] + "=" + match[2]
 		}
 		keys = append(keys, name)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// withoutFamily removes the comment and sample lines of one metric family from
+// a text exposition.
+func withoutFamily(body, family string) string {
+	var lines []string
+	for line := range strings.SplitSeq(body, "\n") {
+		if strings.HasPrefix(line, family+" ") || strings.HasPrefix(line, family+"{") ||
+			strings.HasPrefix(line, "# TYPE "+family+" ") || strings.HasPrefix(line, "# HELP "+family+" ") {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// sampleKeysWithPod returns the sorted samples of the parsed families as
+// "<name> pod=<pod>" plus the quantile when present. Only counter, untyped
+// and summary families are expanded, which is all the multi-target fixture
+// exposes.
+func sampleKeysWithPod(families map[string]*dto.MetricFamily) []string {
+	labelValue := func(m *dto.Metric, name string) string {
+		for _, lp := range m.Label {
+			if lp.GetName() == name {
+				return lp.GetValue()
+			}
+		}
+		return ""
+	}
+	var keys []string
+	for name, mf := range families {
+		for _, m := range mf.Metric {
+			pod := " pod=" + labelValue(m, "pod")
+			switch mf.GetType() {
+			case dto.MetricType_SUMMARY:
+				for _, q := range m.GetSummary().GetQuantile() {
+					keys = append(keys, fmt.Sprintf("%s%s quantile=%s", name, pod, strconv.FormatFloat(q.GetQuantile(), 'g', -1, 64)))
+				}
+				keys = append(keys, name+"_sum"+pod, name+"_count"+pod)
+			default:
+				if quantile := labelValue(m, "quantile"); quantile != "" {
+					keys = append(keys, name+pod+" quantile="+quantile)
+					continue
+				}
+				keys = append(keys, name+pod)
+			}
+		}
 	}
 	slices.Sort(keys)
 	return keys

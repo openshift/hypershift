@@ -388,6 +388,104 @@ request_duration_seconds_count 2 1700000000000
 			},
 		},
 		{
+			name: "When a keep regex is invalid on its own but valid once anchored, it should fail closed",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("x)|(.*"),
+			},
+			wantLines: nil,
+		},
+		{
+			name: "When a histogram has no +Inf bucket and the rules keep only the count-backed +Inf bucket, it should forward it",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{
+				Action:       "keep",
+				Regex:        `latency_seconds_bucket;\+Inf`,
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"},
+			}},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return map[string]*dto.MetricFamily{"latency_seconds": histogramWithoutInfBucket("latency_seconds")}
+			},
+			wantLines: []string{
+				"# TYPE latency_seconds_bucket untyped",
+				`latency_seconds_bucket{le="+Inf"} 4`,
+			},
+		},
+		{
+			name: "When a histogram has neither +Inf bucket nor sum and count, it should not synthesize them when flattening",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("latency_seconds_bucket"),
+			},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				mf := histogramWithoutInfBucket("latency_seconds")
+				mf.Metric[0].Histogram.SampleCount = nil
+				mf.Metric[0].Histogram.SampleSum = nil
+				return map[string]*dto.MetricFamily{"latency_seconds": mf}
+			},
+			wantLines: []string{
+				"# TYPE latency_seconds_bucket untyped",
+				`latency_seconds_bucket{le="1"} 3`,
+			},
+		},
+		{
+			name: "When a bucket bound is negative zero, it should match and expose it as le 0 like the encoder",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{
+				Action:       "keep",
+				Regex:        `offset_seconds_bucket;0`,
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"},
+			}},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return parseFamilies(t, `# TYPE offset_seconds histogram
+offset_seconds_bucket{le="-0"} 1
+offset_seconds_bucket{le="+Inf"} 2
+offset_seconds_sum 0.5
+offset_seconds_count 2
+`)
+			},
+			wantLines: []string{
+				"# TYPE offset_seconds_bucket untyped",
+				`offset_seconds_bucket{le="0"} 1`,
+			},
+		},
+		{
+			name: "When a negative zero bucket is kept with the whole histogram, it should render le 0 through the encoder",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("offset_seconds_.*"),
+			},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return parseFamilies(t, `# TYPE offset_seconds histogram
+offset_seconds_bucket{le="-0"} 1
+offset_seconds_bucket{le="+Inf"} 2
+offset_seconds_sum 0.5
+offset_seconds_count 2
+`)
+			},
+			wantLines: []string{
+				"# TYPE offset_seconds histogram",
+				`offset_seconds_bucket{le="0"} 1`,
+				`offset_seconds_bucket{le="+Inf"} 2`,
+				"offset_seconds_sum 0.5",
+				"offset_seconds_count 2",
+			},
+		},
+		{
+			name: "When a summary or histogram metric has no value, it should drop it instead of forwarding it",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName(".*"),
+			},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return map[string]*dto.MetricFamily{
+					"empty_summary":   {Name: ptr.To("empty_summary"), Type: dto.MetricType_SUMMARY.Enum(), Metric: []*dto.Metric{{}}},
+					"empty_histogram": {Name: ptr.To("empty_histogram"), Type: dto.MetricType_HISTOGRAM.Enum(), Metric: []*dto.Metric{{}}},
+				}
+			},
+			wantLines: nil,
+		},
+		{
 			name: "When a flattened histogram sample name collides with another family, it should drop the flattened samples",
 			mode: MetricsFilterRelabel,
 			rules: []prometheusoperatorv1.RelabelConfig{
@@ -563,6 +661,15 @@ func TestNewSampleFilter(t *testing.T) {
 			mode: MetricsFilterRelabel,
 			rules: []prometheusoperatorv1.RelabelConfig{
 				{Action: "keep", Regex: "(", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}},
+			},
+			wantForwardNothing: true,
+			wantLogs:           map[string]int{"Invalid metric relabel regex": 1},
+		},
+		{
+			name: "When a keep regex is invalid before anchoring, it should forward nothing and log the error",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "keep", Regex: "foo)(bar", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}},
 			},
 			wantForwardNothing: true,
 			wantLogs:           map[string]int{"Invalid metric relabel regex": 1},
@@ -748,6 +855,7 @@ func TestFormatLabelFloat(t *testing.T) {
 		{value: 1, want: "1"},
 		{value: 2.5e+06, want: "2.5e+06"},
 		{value: math.Inf(+1), want: "+Inf"},
+		{value: math.Copysign(0, -1), want: "0"},
 	} {
 		t.Run(fmt.Sprintf("When the value is %v, it should format it like the text encoder", tc.value), func(t *testing.T) {
 			t.Parallel()

@@ -116,8 +116,7 @@ func newSampleFilter(log logr.Logger, componentName string, mode MetricsFilterMo
 		if regexString == "" {
 			regexString = defaultRelabelRegex
 		}
-		// Anchor the regex the same way Prometheus relabeling does.
-		regex, err := regexp.Compile("^(?s:" + regexString + ")$")
+		regex, err := compileRelabelRegex(regexString)
 		if err != nil {
 			log.Error(err, "Invalid metric relabel regex, forwarding no samples for component",
 				"component", componentName, "rule", i, "action", action)
@@ -141,6 +140,17 @@ func newSampleFilter(log logr.Logger, componentName string, mode MetricsFilterMo
 		})
 	}
 	return filter
+}
+
+// compileRelabelRegex compiles a relabel regex anchored the same way
+// Prometheus relabeling does. The expression is validated on its own first:
+// anchoring can turn an invalid expression such as "x)|(.*" into a valid one
+// with a different meaning, which must not widen what a rule matches.
+func compileRelabelRegex(expression string) (*regexp.Regexp, error) {
+	if _, err := regexp.Compile(expression); err != nil {
+		return nil, err
+	}
+	return regexp.Compile("^(?s:" + expression + ")$")
 }
 
 func (f *sampleFilter) apply(log logr.Logger, families map[string]*dto.MetricFamily) map[string]*dto.MetricFamily {
@@ -293,8 +303,8 @@ type exposedSample struct {
 	extraLabel string
 	extraValue string
 	value      float64
-	// inSource is false for samples the encoder synthesizes when they are
-	// missing from the scraped metric (the +Inf bucket, _sum or _count).
+	// inSource is false for samples the encoder synthesizes from data missing
+	// in the scraped metric: _sum or _count, or a +Inf bucket without a count.
 	inSource bool
 }
 
@@ -348,11 +358,14 @@ func exposedSamples(metricType dto.MetricType, m *dto.Metric) []exposedSample {
 			}
 		}
 		if !infSeen {
+			// The encoder renders the +Inf bucket from the sample count, so
+			// it is source data whenever the count is.
 			samples = append(samples, exposedSample{
 				suffix:     "_bucket",
 				extraLabel: model.BucketLabel,
 				extraValue: "+Inf",
 				value:      count,
+				inSource:   h.SampleCount != nil || h.SampleCountFloat != nil,
 			})
 		}
 		return append(samples,
@@ -366,6 +379,10 @@ func exposedSamples(metricType dto.MetricType, m *dto.Metric) []exposedSample {
 
 // formatLabelFloat formats le and quantile values like the text encoder does.
 func formatLabelFloat(v float64) string {
+	if v == 0 {
+		// The encoder writes "0" for both zero and negative zero.
+		return "0"
+	}
 	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 

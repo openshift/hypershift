@@ -134,12 +134,23 @@ openshiftAPIServer:
 		})
 
 		t.Run("When the sre-metric-set configuration drops the component's rules, it should forward no samples for it", func(t *testing.T) {
-			loadSREMetricsSetConfig(t, "{}")
 			g := NewGomegaWithT(t)
+			// Establish a baseline with rules so this subtest verifies the
+			// transition on its own.
+			loadSREMetricsSetConfig(t, `
+openshiftAPIServer:
+  - action: keep
+    sourceLabels: ["__name__"]
+    regex: "apiserver_request_total"
+`)
+			withRules, hashWithRules := reconcile(g)
+			g.Expect(withRules.MetricRelabelConfigs).To(HaveLen(1))
+
+			loadSREMetricsSetConfig(t, "{}")
 			oas, hash := reconcile(g)
 			g.Expect(oas.MetricsFilter).To(Equal(metricsproxybin.MetricsFilterRelabel))
 			g.Expect(oas.MetricRelabelConfigs).To(BeEmpty())
-			g.Expect(hash).NotTo(Equal(firstHash))
+			g.Expect(hash).NotTo(Equal(hashWithRules))
 		})
 	})
 }

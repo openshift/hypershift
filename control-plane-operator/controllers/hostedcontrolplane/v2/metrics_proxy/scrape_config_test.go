@@ -1367,7 +1367,9 @@ func loadSREMetricsSetConfig(t *testing.T, config string) {
 	}
 	t.Cleanup(func() {
 		cm.Data[metrics.SREConfigurationConfigMapKey] = "{}"
-		_ = metrics.LoadSREMetricsSetConfigurationFromConfigMap(cm)
+		if err := metrics.LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+			t.Errorf("failed to reset SRE metrics set configuration: %v", err)
+		}
 	})
 }
 
