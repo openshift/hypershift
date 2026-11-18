@@ -39,14 +39,16 @@ func NewFilter(log logr.Logger) *Filter {
 	return &Filter{log: log}
 }
 
-// Apply returns the metric families the component's sample filter permits.
-// Components without a sample filter (the All metrics set and PodMonitor-based
-// components) forward every family unchanged.
-func (f *Filter) Apply(componentName string, cfg ComponentConfig, families map[string]*dto.MetricFamily) map[string]*dto.MetricFamily {
+// Apply returns, for each batch of metric families, the families the
+// component's sample filter permits. All batches are filtered together, so
+// flattened histogram and summary samples are checked against the surviving
+// families of every batch. Components without a sample filter (the All metrics
+// set and PodMonitor-based components) forward every family unchanged.
+func (f *Filter) Apply(componentName string, cfg ComponentConfig, batches []map[string]*dto.MetricFamily) []map[string]*dto.MetricFamily {
 	if cfg.sampleFilter == nil {
-		return families
+		return batches
 	}
-	return cfg.sampleFilter.apply(f.log.WithValues("component", componentName), families)
+	return cfg.sampleFilter.apply(f.log.WithValues("component", componentName), batches)
 }
 
 // sampleFilter holds the compiled keep and drop rules of one component and
@@ -153,47 +155,66 @@ func compileRelabelRegex(expression string) (*regexp.Regexp, error) {
 	return regexp.Compile("^(?s:" + expression + ")$")
 }
 
-func (f *sampleFilter) apply(log logr.Logger, families map[string]*dto.MetricFamily) map[string]*dto.MetricFamily {
+func (f *sampleFilter) apply(log logr.Logger, batches []map[string]*dto.MetricFamily) []map[string]*dto.MetricFamily {
+	results := make([]map[string]*dto.MetricFamily, len(batches))
 	if f.forwardNothing {
-		return map[string]*dto.MetricFamily{}
+		for i := range results {
+			results[i] = map[string]*dto.MetricFamily{}
+		}
+		return results
 	}
 	if len(f.rules) == 0 {
-		return families
+		return batches
 	}
 
-	result := make(map[string]*dto.MetricFamily, len(families))
 	derived := make(map[string]*derivedFamily)
-	for key, mf := range families {
-		switch mf.GetType() {
-		case dto.MetricType_SUMMARY, dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-			if kept := f.filterCompositeFamily(key, mf, derived); kept != nil {
-				result[key] = kept
-			}
-		default:
-			if kept := f.filterSimpleFamily(mf); kept != nil {
-				result[key] = kept
+	for i, families := range batches {
+		result := make(map[string]*dto.MetricFamily, len(families))
+		for key, mf := range families {
+			switch mf.GetType() {
+			case dto.MetricType_SUMMARY, dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
+				if kept := f.filterCompositeFamily(derivedSource{batch: i, key: key}, mf, derived); kept != nil {
+					result[key] = kept
+				}
+			default:
+				if kept := f.filterSimpleFamily(mf); kept != nil {
+					result[key] = kept
+				}
 			}
 		}
+		results[i] = result
 	}
 
-	// result now holds every family that survived filtering unchanged or as a
-	// subset, so derived names are checked against surviving families only:
-	// a family that filtering removed entirely must not suppress permitted
-	// samples. A partially kept source family is never in result.
+	// results now hold every family of every batch that survived filtering
+	// unchanged or as a subset, so derived names are checked against surviving
+	// families only, in any batch: a family that filtering removed entirely
+	// must not suppress permitted samples. A partially kept source family is
+	// never in results.
 	var collisions []string
 	for name, d := range derived {
-		if _, clashes := result[name]; d.collided || clashes {
+		if d.collided || survives(results, name) {
 			collisions = append(collisions, name)
 			continue
 		}
-		result[name] = d.family
+		results[d.source.batch][name] = d.family
 	}
 	if len(collisions) > 0 && f.collisionLogged.CompareAndSwap(false, true) {
 		sort.Strings(collisions)
 		log.Info("Dropping filtered histogram or summary samples whose metric name collides with another metric family",
 			"metrics", collisions)
 	}
-	return result
+	return results
+}
+
+// survives reports whether a family with the given name survived filtering in
+// any batch.
+func survives(results []map[string]*dto.MetricFamily, name string) bool {
+	for _, result := range results {
+		if _, ok := result[name]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // filterSimpleFamily filters a counter, gauge or untyped family, where every
@@ -215,7 +236,7 @@ func (f *sampleFilter) filterSimpleFamily(mf *dto.MetricFamily) *dto.MetricFamil
 // render the typed family without re-adding dropped samples (_sum, _count and
 // the +Inf bucket), so the kept samples of the whole family are emitted as
 // untyped families into derived instead, and nil is returned.
-func (f *sampleFilter) filterCompositeFamily(sourceKey string, mf *dto.MetricFamily, derived map[string]*derivedFamily) *dto.MetricFamily {
+func (f *sampleFilter) filterCompositeFamily(source derivedSource, mf *dto.MetricFamily, derived map[string]*derivedFamily) *dto.MetricFamily {
 	name := mf.GetName()
 	perMetric := make([][]exposedSample, len(mf.Metric))
 	keptPerMetric := make([][]bool, len(mf.Metric))
@@ -252,7 +273,7 @@ func (f *sampleFilter) filterCompositeFamily(sourceKey string, mf *dto.MetricFam
 			if !keptPerMetric[i][j] || !s.inSource {
 				continue
 			}
-			addDerivedSample(derived, sourceKey, name+s.suffix, mf.Help, untypedSample(m, s))
+			addDerivedSample(derived, source, name+s.suffix, mf.Help, untypedSample(m, s))
 		}
 	}
 	return nil
@@ -411,14 +432,21 @@ func familyWithMetrics(mf *dto.MetricFamily, kept []*dto.Metric) *dto.MetricFami
 // filtered summary or histogram.
 type derivedFamily struct {
 	family *dto.MetricFamily
-	// source is the key of the family the samples were derived from.
-	source string
+	// source is the family the samples were derived from.
+	source derivedSource
 	// collided is set when samples from more than one source family map to
 	// the same name; such samples are dropped regardless of map iteration order.
 	collided bool
 }
 
-func addDerivedSample(derived map[string]*derivedFamily, source, name string, help *string, metric *dto.Metric) {
+// derivedSource identifies the family flattened samples come from: its key in
+// its batch of families.
+type derivedSource struct {
+	batch int
+	key   string
+}
+
+func addDerivedSample(derived map[string]*derivedFamily, source derivedSource, name string, help *string, metric *dto.Metric) {
 	d, ok := derived[name]
 	if !ok {
 		d = &derivedFamily{

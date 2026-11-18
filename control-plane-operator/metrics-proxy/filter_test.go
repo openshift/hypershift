@@ -559,8 +559,77 @@ latency_count{pod="pod-a"} 7
 			}
 			cfg := ComponentConfig{sampleFilter: newSampleFilter(logr.Discard(), "test-component", tt.mode, tt.rules)}
 
-			got := NewFilter(logr.Discard()).Apply("test-component", cfg, families)
+			got := applyOne(NewFilter(logr.Discard()), cfg, families)
 			g.Expect(renderFamilies(t, got)).To(Equal(tt.wantLines))
+		})
+	}
+
+	crossBatchTests := []struct {
+		name        string
+		rules       []prometheusoperatorv1.RelabelConfig
+		batches     func(t *testing.T) []map[string]*dto.MetricFamily
+		wantBatches [][]string
+	}{
+		{
+			name: "When a family of another batch survives with a flattened sample's name, it should keep only the surviving family",
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "drop", Regex: "pod-gauge", SourceLabels: []prometheusoperatorv1.LabelName{"pod"}},
+				{Action: "drop", Regex: `latency;0\.99`, SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "quantile"}},
+			},
+			batches: crossBatchFamilies,
+			wantBatches: [][]string{
+				{"# TYPE latency_count gauge", `latency_count{pod="pod-count"} 9`},
+				{
+					"# TYPE latency untyped", `latency{pod="pod-summary",quantile="0.5"} 0.2`,
+					"# TYPE latency_sum untyped", `latency_sum{pod="pod-summary"} 2`,
+				},
+			},
+		},
+		{
+			name: "When the family of another batch named like a flattened sample is rejected, it should keep the flattened sample",
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "drop", Regex: "pod-gauge|pod-count", SourceLabels: []prometheusoperatorv1.LabelName{"pod"}},
+				{Action: "drop", Regex: `latency;0\.99`, SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "quantile"}},
+			},
+			batches: crossBatchFamilies,
+			wantBatches: [][]string{
+				nil,
+				{
+					"# TYPE latency untyped", `latency{pod="pod-summary",quantile="0.5"} 0.2`,
+					"# TYPE latency_count untyped", `latency_count{pod="pod-summary"} 7`,
+					"# TYPE latency_sum untyped", `latency_sum{pod="pod-summary"} 2`,
+				},
+			},
+		},
+		{
+			name: "When flattened samples of families in different batches share a name, it should drop them",
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "drop", Regex: `a;0\.99`, SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "quantile"}},
+				{Action: "drop", Regex: `a_bucket;1`, SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"}},
+			},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{
+					parseFamilies(t, "# TYPE a summary\na{quantile=\"0.5\"} 1\na{quantile=\"0.99\"} 2\na_sum 3\na_count 4\n"),
+					parseFamilies(t, "# TYPE a histogram\na_bucket{le=\"1\"} 1\na_bucket{le=\"+Inf\"} 2\na_sum 5\na_count 2\n"),
+				}
+			},
+			wantBatches: [][]string{
+				{"# TYPE a untyped", `a{quantile="0.5"} 1`},
+				{"# TYPE a_bucket untyped", `a_bucket{le="+Inf"} 2`},
+			},
+		},
+	}
+	for _, tt := range crossBatchTests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			cfg := ComponentConfig{sampleFilter: newSampleFilter(logr.Discard(), "test-component", MetricsFilterRelabel, tt.rules)}
+			got := NewFilter(logr.Discard()).Apply("test-component", cfg, tt.batches(t))
+			g.Expect(got).To(HaveLen(len(tt.wantBatches)))
+			for i, want := range tt.wantBatches {
+				g.Expect(renderFamilies(t, got[i])).To(Equal(want), "batch %d", i)
+			}
 		})
 	}
 
@@ -576,7 +645,7 @@ latency_count{pod="pod-a"} 7
 
 		for range 25 {
 			families := collidingFamilies()
-			g.Expect(renderFamilies(t, filter.Apply("test-component", cfg, families))).To(Equal([]string{
+			g.Expect(renderFamilies(t, applyOne(filter, cfg, families))).To(Equal([]string{
 				"# TYPE b_total counter",
 				"b_total 6",
 			}))
@@ -606,7 +675,7 @@ latency_count{pod="pod-a"} 7
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				results[i] = filter.Apply("test-component", cfg, inputs[i])
+				results[i] = applyOne(filter, cfg, inputs[i])
 			}()
 		}
 		wg.Wait()
@@ -764,6 +833,26 @@ func TestNewSampleFilter(t *testing.T) {
 		g.Expect(got.rules[0].regex.MatchString("b")).To(BeTrue())
 		g.Expect(got.rules[1].regex.String()).To(Equal("^(?s:(.*))$"))
 	})
+}
+
+// applyOne filters a single batch of families.
+func applyOne(filter *Filter, cfg ComponentConfig, families map[string]*dto.MetricFamily) map[string]*dto.MetricFamily {
+	return filter.Apply("test-component", cfg, []map[string]*dto.MetricFamily{families})[0]
+}
+
+// crossBatchFamilies returns two batches as the proxy forms them when a gauge
+// named latency is scraped before a summary of the same name: the gauge and a
+// standalone latency_count gauge in the first batch, the summary in the second.
+func crossBatchFamilies(t *testing.T) []map[string]*dto.MetricFamily {
+	t.Helper()
+	first := parseFamilies(t, "# TYPE latency gauge\nlatency{pod=\"pod-gauge\"} 1\n# TYPE latency_count gauge\nlatency_count{pod=\"pod-count\"} 9\n")
+	second := parseFamilies(t, `# TYPE latency summary
+latency{pod="pod-summary",quantile="0.5"} 0.2
+latency{pod="pod-summary",quantile="0.99"} 0.9
+latency_sum{pod="pod-summary"} 2
+latency_count{pod="pod-summary"} 7
+`)
+	return []map[string]*dto.MetricFamily{first, second}
 }
 
 func concatLines(groups ...[]string) []string {

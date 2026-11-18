@@ -778,6 +778,9 @@ latency_count 7
 		standaloneCount := serveExposition(t, "", `# TYPE latency_count gauge
 latency_count 9
 `)
+		gaugeLatency := serveExposition(t, "", `# TYPE latency gauge
+latency 1
+`)
 		gaugeRPC := serveExposition(t, "", `# TYPE rpc_latency_seconds gauge
 rpc_latency_seconds 1
 `)
@@ -829,6 +832,32 @@ rpc_latency_seconds_count 5
 					"latency_sum":   dto.MetricType_UNTYPED,
 				},
 				wantSampleKeys: []string{"latency pod=pod-a quantile=0.5", "latency_count pod=pod-b", "latency_sum pod=pod-a"},
+			},
+			{
+				name: "When a filtered-away family of another type splits the targets, it should still protect a surviving family from flattened samples",
+				targets: []ScrapeTarget{
+					withPod(gaugeLatency, "pod-gauge"), withPod(summaryWithTwoQuantiles, "pod-summary"), withPod(standaloneCount, "pod-count"),
+				},
+				rules: []prometheusoperatorv1.RelabelConfig{dropPod("pod-gauge"), dropQuantile("latency")},
+				wantTypes: map[string]dto.MetricType{
+					"latency":       dto.MetricType_UNTYPED,
+					"latency_count": dto.MetricType_GAUGE,
+					"latency_sum":   dto.MetricType_UNTYPED,
+				},
+				wantSampleKeys: []string{"latency pod=pod-summary quantile=0.5", "latency_count pod=pod-count", "latency_sum pod=pod-summary"},
+			},
+			{
+				name: "When a filtered-away family of another type splits the targets and the colliding family is rejected, it should keep the flattened sample",
+				targets: []ScrapeTarget{
+					withPod(gaugeLatency, "pod-gauge"), withPod(summaryWithTwoQuantiles, "pod-summary"), withPod(standaloneCount, "pod-count"),
+				},
+				rules: []prometheusoperatorv1.RelabelConfig{dropPod("pod-gauge|pod-count"), dropQuantile("latency")},
+				wantTypes: map[string]dto.MetricType{
+					"latency":       dto.MetricType_UNTYPED,
+					"latency_count": dto.MetricType_UNTYPED,
+					"latency_sum":   dto.MetricType_UNTYPED,
+				},
+				wantSampleKeys: []string{"latency pod=pod-summary quantile=0.5", "latency_count pod=pod-summary", "latency_sum pod=pod-summary"},
 			},
 			{
 				name: "When a filtered-away family of another type comes first, it should still merge the same-type families of later targets",

@@ -99,16 +99,12 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		batches = addToBatches(batches, families)
 	}
 
-	encodeFiltered := func(families map[string]*dto.MetricFamily) {
-		filtered := h.filter.Apply(componentName, componentConfig, families)
+	for _, filtered := range h.filter.Apply(componentName, componentConfig, batches) {
 		for _, name := range slices.Sorted(maps.Keys(filtered)) {
 			if err := encoder.Encode(filtered[name]); err != nil {
 				h.log.Error(err, "encode error")
 			}
 		}
-	}
-	for _, batch := range batches {
-		encodeFiltered(batch)
 	}
 
 	// Emit synthetic scrape error counter for failed targets.
