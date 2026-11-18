@@ -389,6 +389,11 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		return &ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
+	// Grandfather NodePools that existed before CRI-O 1.33 changed the default
+	// nofile ulimit. The marker must be set before Status.Version is updated,
+	// otherwise the drop-in would be removed again on the next reconcile.
+	MarkCRIODefaultUlimitsPreserved(nodePool, releaseImage.Version())
+
 	// TODO (alberto): we should hide haproxy config generation within NewConfigGenerator and let the kubeconfig absence to be an error type.
 	// The func consumer can then choose how to handle it.
 	if hcluster.Status.KubeConfig == nil {

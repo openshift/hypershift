@@ -96,7 +96,12 @@ const (
 	// on new NodePools and during version upgrades to avoid triggering rollouts on
 	// existing stable NodePools.
 	nodePoolAnnotationCanonicalDataPlaneImages = "hypershift.openshift.io/canonical-data-plane-images"
-	nodePoolCoreIgnitionConfigLabel            = "hypershift.openshift.io/core-ignition-config"
+	// CRIODefaultUlimitsPreserveAnnotation marks a NodePool that existed
+	// before CRI-O 1.33 changed the default nofile ulimit. It is set once during
+	// the first upgrade to 4.21+ and never cleared, so later upgrades keep the
+	// pre-4.21 default.
+	CRIODefaultUlimitsPreserveAnnotation = "hypershift.openshift.io/preserve-crio-default-ulimits"
+	nodePoolCoreIgnitionConfigLabel      = "hypershift.openshift.io/core-ignition-config"
 
 	tuningConfigKey                                      = "tuning"
 	tunedConfigMapLabel                                  = "hypershift.openshift.io/tuned-config"

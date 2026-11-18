@@ -359,25 +359,13 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 
 	np := r.createInMemoryNodePool(hcp, nodeClass.object, releaseImage, hasKubeletConfig)
 
-	cg, err := r.buildConfigGenerator(ctx, hostedCluster, np, hcp.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to build config generator: %w", err)
-	}
-
-	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
-		DecompressAndDecodeConfig: true,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create token: %w", err)
-	}
-
 	nodeClassVersion, err := nodeClass.statusVersion()
 	if err != nil {
 		return fmt.Errorf("failed to get status version from nodeclass: %w", err)
 	}
 
 	// Populate the in-memory NodePool annotations and status from the stored nodeclass
-	// state so that Token.isOutdated() can correctly detect config/version changes.
+	// state before generating config so config generation sees the current version.
 	// On first reconcile (no stored state), leave annotations absent so isOutdated()
 	// returns true and creates the initial secrets.
 	currentConfigVersion := nodeClass.object.GetAnnotations()[nodeClassAnnotationCurrentConfigVersion]
@@ -391,6 +379,25 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		if nodeClassVersion != "" {
 			np.Status.Version = nodeClassVersion
 		}
+	}
+	if nodeClass.object.GetAnnotations()[nodepool.CRIODefaultUlimitsPreserveAnnotation] == "true" {
+		np.Annotations[nodepool.CRIODefaultUlimitsPreserveAnnotation] = "true"
+	}
+
+	cg, err := r.buildConfigGenerator(ctx, hostedCluster, np, hcp.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to build config generator: %w", err)
+	}
+
+	// Persist the one-way CRI-O ulimits preserve marker on the nodeclass so later
+	// upgrades keep seeing it even though this NodePool only exists in memory.
+	nodepool.MarkCRIODefaultUlimitsPreserved(np, cg.Version())
+
+	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
+		DecompressAndDecodeConfig: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create token: %w", err)
 	}
 
 	// Set the deployed bootstrap hash so effectiveSecrets() can maintain the
@@ -415,9 +422,11 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 	versionChanged := cg.Version() != nodeClassVersion
 	rolloutConfigChanged := currentRolloutConfig != "" && currentRolloutConfig != cg.RolloutHashWithoutVersion()
 	shouldSeedAnnotation := currentRolloutConfig == "" && currentConfigVersion != ""
+	preserveCRIODefaultUlimits := np.Annotations[nodepool.CRIODefaultUlimitsPreserveAnnotation] == "true"
+	preserveChanged := preserveCRIODefaultUlimits && nodeClass.object.GetAnnotations()[nodepool.CRIODefaultUlimitsPreserveAnnotation] != "true"
 
-	if versionChanged || rolloutConfigChanged || shouldSeedAnnotation {
-		if err := r.updateConfigVersionAnnotation(ctx, nodeClass.object, hashToRecord, cg.RolloutHashWithoutVersion()); err != nil {
+	if versionChanged || rolloutConfigChanged || shouldSeedAnnotation || preserveChanged {
+		if err := r.updateConfigVersionAnnotation(ctx, nodeClass.object, hashToRecord, cg.RolloutHashWithoutVersion(), preserveCRIODefaultUlimits); err != nil {
 			return err
 		}
 		log.Info("Updated config version annotation", "oldVersion", currentConfigVersion, "newVersion", hashToRecord)
@@ -796,7 +805,7 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 	return hc, nil
 }
 
-func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.Context, nodeClass client.Object, newVersion, rolloutConfig string) error {
+func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.Context, nodeClass client.Object, newVersion, rolloutConfig string, preserveCRIODefaultUlimits bool) error {
 	original := nodeClass.DeepCopyObject().(client.Object)
 	annotations := nodeClass.GetAnnotations()
 	if annotations == nil {
@@ -804,6 +813,9 @@ func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.
 	}
 	annotations[nodeClassAnnotationCurrentConfigVersion] = newVersion
 	annotations[nodeClassAnnotationCurrentRolloutConfig] = rolloutConfig
+	if preserveCRIODefaultUlimits {
+		annotations[nodepool.CRIODefaultUlimitsPreserveAnnotation] = "true"
+	}
 	nodeClass.SetAnnotations(annotations)
 	if err := r.GuestClient.Patch(ctx, nodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to update config version annotation on NodeClass: %w", err)

@@ -1,21 +1,12 @@
 package kubevirt
 
 import (
-	"fmt"
 	"net"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
-	"github.com/openshift/hypershift/support/api"
+	mcfgutil "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/machineconfig"
 
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
-
-	"github.com/clarketm/json"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/vincent-petithory/dataurl"
 )
 
 const (
@@ -74,12 +65,17 @@ func GenerateNetworkOverrideMachineConfig(nodePool *hyperv1.NodePool, networking
 
 	noopContent := []byte("# Network configuration not needed for multus primary network\ndesiredState: {}\n")
 
-	return encodeIgnitionAsMachineConfig(
-		[]ignitionapi.File{
-			fileFromBytes(nmstateDisableIPv6AutoconfPath, noopContent),
-			fileFromBytes(nmstateArpProxyIPv6GwPath, noopContent),
+	return mcfgutil.MachineConfigYAML(
+		kubevirtNetworkMachineConfigName,
+		ignitionapi.Config{
+			Ignition: ignitionapi.Ignition{Version: ignitionVersion},
+			Storage: ignitionapi.Storage{
+				Files: []ignitionapi.File{
+					mcfgutil.FileFromBytes(nmstateDisableIPv6AutoconfPath, 0644, noopContent),
+					mcfgutil.FileFromBytes(nmstateArpProxyIPv6GwPath, 0644, noopContent),
+				},
+			},
 		},
-		"kubevirt network override",
 	)
 }
 
@@ -102,58 +98,4 @@ func hasIPv6Network(networking hyperv1.ClusterNetworking) bool {
 		}
 	}
 	return false
-}
-
-// fileFromBytes creates an ignition-config file with the given contents.
-func fileFromBytes(path string, contents []byte) ignitionapi.File {
-	mode := 0644
-	return ignitionapi.File{
-		Node: ignitionapi.Node{
-			Path:      path,
-			Overwrite: ptr.To(true),
-		},
-		FileEmbedded1: ignitionapi.FileEmbedded1{
-			Mode: &mode,
-			Contents: ignitionapi.Resource{
-				Source: ptr.To(dataurl.EncodeBytes(contents)),
-			},
-		},
-	}
-}
-
-// encodeIgnitionAsMachineConfig builds a MachineConfig containing the given ignition
-// files and returns it as a YAML-encoded string. The label parameter is used in
-// error messages to identify the caller context.
-func encodeIgnitionAsMachineConfig(files []ignitionapi.File, label string) (string, error) {
-	ignConfig := ignitionapi.Config{
-		Ignition: ignitionapi.Ignition{
-			Version: ignitionVersion,
-		},
-		Storage: ignitionapi.Storage{
-			Files: files,
-		},
-	}
-
-	serializedConfig, err := json.Marshal(&ignConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize %s ignition config: %w", label, err)
-	}
-
-	mc := &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: kubevirtNetworkMachineConfigName,
-		},
-	}
-	ignition.SetMachineConfigLabels(mc)
-	mc.Spec.Config.Raw = serializedConfig
-
-	mc.APIVersion = mcfgv1.SchemeGroupVersion.String()
-	mc.Kind = "MachineConfig"
-
-	encoded, err := api.CompatibleYAMLEncode(mc, api.YamlSerializer)
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize %s machine config: %w", label, err)
-	}
-
-	return string(encoded), nil
 }
