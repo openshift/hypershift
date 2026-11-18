@@ -73,7 +73,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Scrape all targets
 	results := h.scraper.ScrapeAll(ctx, targets, componentConfig.MetricsPath, componentConfig.MetricsScheme, componentConfig.TLSServerName, componentConfig.TLSConfig)
 
-	// Merge, filter, and label results
+	// Label, filter, and merge results
 	format := expfmt.NewFormat(expfmt.TypeTextPlain)
 	var buf bytes.Buffer
 	encoder := expfmt.NewEncoder(&buf, format)
@@ -88,8 +88,10 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		successes++
 
-		families := h.filter.Apply(componentName, result.Families)
-		families = h.labeler.Inject(families, targets[i], componentName, componentConfig)
+		// Inject labels first so the relabel rules see each sample with the
+		// labels it is exposed with.
+		families := h.labeler.Inject(result.Families, targets[i], componentName, componentConfig)
+		families = h.filter.Apply(componentName, componentConfig, families)
 
 		for _, mf := range families {
 			if err := encoder.Encode(mf); err != nil {

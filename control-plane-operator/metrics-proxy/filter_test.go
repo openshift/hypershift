@@ -1,421 +1,758 @@
 package metricsproxy
 
 import (
-	"regexp"
+	"bytes"
+	"fmt"
+	"math"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 
-	"github.com/openshift/hypershift/support/metrics"
+	. "github.com/onsi/gomega"
 
+	"k8s.io/utils/ptr"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
+)
+
+// testExposition is a scrape of a control plane component with a counter, a
+// gauge, a histogram and a summary.
+const testExposition = `# HELP apiserver_request_total Counter of apiserver requests.
+# TYPE apiserver_request_total counter
+apiserver_request_total{code="200",verb="GET"} 10
+apiserver_request_total{code="500",verb="GET"} 2
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 1.2e+08
+# HELP apiserver_request_duration_seconds Response latency.
+# TYPE apiserver_request_duration_seconds histogram
+apiserver_request_duration_seconds_bucket{verb="GET",le="0.1"} 5
+apiserver_request_duration_seconds_bucket{verb="GET",le="1"} 9
+apiserver_request_duration_seconds_bucket{verb="GET",le="+Inf"} 10
+apiserver_request_duration_seconds_sum{verb="GET"} 3.5
+apiserver_request_duration_seconds_count{verb="GET"} 10
+# HELP rpc_latency_seconds RPC latency.
+# TYPE rpc_latency_seconds summary
+rpc_latency_seconds{quantile="0.5"} 0.2
+rpc_latency_seconds{quantile="0.99"} 0.9
+rpc_latency_seconds_sum 12
+rpc_latency_seconds_count 40
+`
+
+var (
+	testCounterLines = []string{
+		"# TYPE apiserver_request_total counter",
+		`apiserver_request_total{code="200",verb="GET"} 10`,
+		`apiserver_request_total{code="500",verb="GET"} 2`,
+	}
+	testGaugeLines = []string{
+		"# TYPE process_resident_memory_bytes gauge",
+		"process_resident_memory_bytes 1.2e+08",
+	}
+	testHistogramLines = []string{
+		"# TYPE apiserver_request_duration_seconds histogram",
+		`apiserver_request_duration_seconds_bucket{verb="GET",le="0.1"} 5`,
+		`apiserver_request_duration_seconds_bucket{verb="GET",le="1"} 9`,
+		`apiserver_request_duration_seconds_bucket{verb="GET",le="+Inf"} 10`,
+		`apiserver_request_duration_seconds_sum{verb="GET"} 3.5`,
+		`apiserver_request_duration_seconds_count{verb="GET"} 10`,
+	}
+	testSummaryLines = []string{
+		"# TYPE rpc_latency_seconds summary",
+		`rpc_latency_seconds{quantile="0.5"} 0.2`,
+		`rpc_latency_seconds{quantile="0.99"} 0.9`,
+		"rpc_latency_seconds_sum 12",
+		"rpc_latency_seconds_count 40",
+	}
 )
 
 func TestFilter_Apply(t *testing.T) {
 	t.Parallel()
 
+	keepName := func(regex string) prometheusoperatorv1.RelabelConfig {
+		return prometheusoperatorv1.RelabelConfig{Action: "keep", Regex: regex, SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}}
+	}
+	dropName := func(regex string) prometheusoperatorv1.RelabelConfig {
+		return prometheusoperatorv1.RelabelConfig{Action: "drop", Regex: regex, SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}}
+	}
+
 	tests := []struct {
-		name          string
-		metricsSet    metrics.MetricsSet
-		componentName string
-		families      map[string]*dto.MetricFamily
-		wantNames     []string
+		name      string
+		mode      MetricsFilterMode
+		rules     []prometheusoperatorv1.RelabelConfig
+		families  func(t *testing.T) map[string]*dto.MetricFamily
+		wantLines []string
 	}{
 		{
-			name:          "When MetricsSetAll is used, it should return all metric families",
-			metricsSet:    metrics.MetricsSetAll,
-			componentName: "kube-apiserver",
-			families: map[string]*dto.MetricFamily{
-				"apiserver_storage_objects":           createMetricFamily("apiserver_storage_objects"),
-				"apiserver_request_total":             createMetricFamily("apiserver_request_total"),
-				"some_unrelated_metric":               createMetricFamily("some_unrelated_metric"),
-				"apiserver_current_inflight_requests": createMetricFamily("apiserver_current_inflight_requests"),
+			name:      "When the metrics filter is None, it should forward every family unchanged",
+			mode:      MetricsFilterNone,
+			wantLines: concatLines(testHistogramLines, testCounterLines, testGaugeLines, testSummaryLines),
+		},
+		{
+			name:      "When the metrics filter is unset, it should forward every family unchanged",
+			mode:      "",
+			wantLines: concatLines(testHistogramLines, testCounterLines, testGaugeLines, testSummaryLines),
+		},
+		{
+			name:      "When the metrics filter is Relabel without rules, it should forward no samples",
+			mode:      MetricsFilterRelabel,
+			wantLines: nil,
+		},
+		{
+			name:      "When a keep rule matches a counter name, it should forward only that typed family",
+			mode:      MetricsFilterRelabel,
+			rules:     []prometheusoperatorv1.RelabelConfig{keepName("apiserver_request_total")},
+			wantLines: testCounterLines,
+		},
+		{
+			name: "When a keep rule is followed by a drop rule on multiple labels, it should apply both in order",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("apiserver_request_.*"),
+				{Action: "drop", Regex: "apiserver_request_total;5..", SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "code"}},
 			},
-			wantNames: []string{
-				"apiserver_storage_objects",
-				"apiserver_request_total",
-				"some_unrelated_metric",
-				"apiserver_current_inflight_requests",
+			wantLines: concatLines(
+				testHistogramLines,
+				[]string{"# TYPE apiserver_request_total counter", `apiserver_request_total{code="200",verb="GET"} 10`},
+			),
+		},
+		{
+			name:      "When a drop rule matches a gauge name, it should forward every other family unchanged",
+			mode:      MetricsFilterRelabel,
+			rules:     []prometheusoperatorv1.RelabelConfig{dropName("process_.*")},
+			wantLines: concatLines(testHistogramLines, testCounterLines, testSummaryLines),
+		},
+		{
+			name:      "When a drop rule uses the .* regex on the metric name, it should forward no samples",
+			mode:      MetricsFilterRelabel,
+			rules:     []prometheusoperatorv1.RelabelConfig{dropName(".*")},
+			wantLines: nil,
+		},
+		{
+			name:      "When a drop rule uses the (.*) regex on the metric name, it should forward no samples",
+			mode:      MetricsFilterRelabel,
+			rules:     []prometheusoperatorv1.RelabelConfig{dropName("(.*)")},
+			wantLines: nil,
+		},
+		{
+			name:  "When a keep rule selects histogram buckets by name, it should forward only the buckets as untyped samples",
+			mode:  MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{keepName("apiserver_request_duration_seconds_bucket")},
+			wantLines: []string{
+				"# TYPE apiserver_request_duration_seconds_bucket untyped",
+				`apiserver_request_duration_seconds_bucket{verb="GET",le="0.1"} 5`,
+				`apiserver_request_duration_seconds_bucket{verb="GET",le="1"} 9`,
+				`apiserver_request_duration_seconds_bucket{verb="GET",le="+Inf"} 10`,
 			},
 		},
 		{
-			name:          "When MetricsSetTelemetry is used with kube-apiserver, it should filter correctly",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			componentName: "kube-apiserver",
-			families: map[string]*dto.MetricFamily{
-				"apiserver_storage_objects":           createMetricFamily("apiserver_storage_objects"),
-				"apiserver_request_total":             createMetricFamily("apiserver_request_total"),
-				"apiserver_current_inflight_requests": createMetricFamily("apiserver_current_inflight_requests"),
-				"some_unrelated_metric":               createMetricFamily("some_unrelated_metric"),
-				"etcd_debugging_count":                createMetricFamily("etcd_debugging_count"),
-			},
-			wantNames: []string{
-				"apiserver_storage_objects",
-				"apiserver_request_total",
-				"apiserver_current_inflight_requests",
+			name: "When a keep rule selects histogram buckets by name and le, it should forward only the matching buckets",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{
+				Action:       "keep",
+				Regex:        `apiserver_request_duration_seconds_bucket;(0\.1|\+Inf)`,
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"},
+			}},
+			wantLines: []string{
+				"# TYPE apiserver_request_duration_seconds_bucket untyped",
+				`apiserver_request_duration_seconds_bucket{verb="GET",le="0.1"} 5`,
+				`apiserver_request_duration_seconds_bucket{verb="GET",le="+Inf"} 10`,
 			},
 		},
 		{
-			name:          "When MetricsSetTelemetry is used with etcd, it should filter correctly",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			componentName: "etcd",
-			families: map[string]*dto.MetricFamily{
-				"etcd_disk_wal_fsync_duration_seconds_bucket": createMetricFamily("etcd_disk_wal_fsync_duration_seconds_bucket"),
-				"etcd_mvcc_db_total_size_in_bytes":            createMetricFamily("etcd_mvcc_db_total_size_in_bytes"),
-				"etcd_server_leader_changes_seen_total":       createMetricFamily("etcd_server_leader_changes_seen_total"),
-				"etcd_some_other_metric":                      createMetricFamily("etcd_some_other_metric"),
+			name: "When a keep rule matches every histogram sample, it should keep the histogram type",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("apiserver_request_duration_seconds_(bucket|sum|count)"),
 			},
-			wantNames: []string{
-				"etcd_disk_wal_fsync_duration_seconds_bucket",
-				"etcd_mvcc_db_total_size_in_bytes",
-				"etcd_server_leader_changes_seen_total",
+			wantLines: testHistogramLines,
+		},
+		{
+			name: "When a keep rule selects a summary quantile, it should forward only that quantile as an untyped sample",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{
+				Action:       "keep",
+				Regex:        `rpc_latency_seconds;0\.99`,
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "quantile"},
+			}},
+			wantLines: []string{
+				"# TYPE rpc_latency_seconds untyped",
+				`rpc_latency_seconds{quantile="0.99"} 0.9`,
 			},
 		},
 		{
-			name:          "When MetricsSetTelemetry is used with kube-controller-manager, it should filter correctly",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			componentName: "kube-controller-manager",
-			families: map[string]*dto.MetricFamily{
-				"pv_collector_total_pv_count": createMetricFamily("pv_collector_total_pv_count"),
-				"some_other_metric":           createMetricFamily("some_other_metric"),
-				"rest_client_requests_total":  createMetricFamily("rest_client_requests_total"),
+			name:  "When a drop rule removes a summary count, it should forward the remaining summary samples untyped without a count",
+			mode:  MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{dropName("rpc_latency_seconds_count")},
+			wantLines: concatLines(testHistogramLines, testCounterLines, testGaugeLines, []string{
+				"# TYPE rpc_latency_seconds untyped",
+				`rpc_latency_seconds{quantile="0.5"} 0.2`,
+				`rpc_latency_seconds{quantile="0.99"} 0.9`,
+				"# TYPE rpc_latency_seconds_sum untyped",
+				"rpc_latency_seconds_sum 12",
+			}),
+		},
+		{
+			name: "When source labels use a custom separator, it should join the values with it",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{
+				Action:       "keep",
+				Regex:        "GET/200",
+				Separator:    ptr.To("/"),
+				SourceLabels: []prometheusoperatorv1.LabelName{"verb", "code"},
+			}},
+			wantLines: []string{"# TYPE apiserver_request_total counter", `apiserver_request_total{code="200",verb="GET"} 10`},
+		},
+		{
+			name: "When a source label is missing, it should match it as an empty value",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{
+				Action:       "keep",
+				Regex:        "|200",
+				SourceLabels: []prometheusoperatorv1.LabelName{"code"},
+			}},
+			wantLines: concatLines(
+				testHistogramLines,
+				[]string{"# TYPE apiserver_request_total counter", `apiserver_request_total{code="200",verb="GET"} 10`},
+				testGaugeLines, testSummaryLines,
+			),
+		},
+		{
+			name: "When a keep rule has no regex, it should default to (.*) and keep every sample",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{
+				Action:       "keep",
+				SourceLabels: []prometheusoperatorv1.LabelName{"code"},
+			}},
+			wantLines: concatLines(testHistogramLines, testCounterLines, testGaugeLines, testSummaryLines),
+		},
+		{
+			name:      "When a drop rule has neither source labels nor regex, it should match the empty value and drop every sample",
+			mode:      MetricsFilterRelabel,
+			rules:     []prometheusoperatorv1.RelabelConfig{{Action: "drop"}},
+			wantLines: nil,
+		},
+		{
+			name: "When a keep rule partially matches a regex, it should require a fully anchored match",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("apiserver_request"),
 			},
-			wantNames: []string{
-				"pv_collector_total_pv_count",
+			wantLines: nil,
+		},
+		{
+			name: "When a rule references a label injected before filtering, it should match on it",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{
+				Action:       "keep",
+				Regex:        "clusters-test",
+				SourceLabels: []prometheusoperatorv1.LabelName{"namespace"},
+			}},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				families := parseFamilies(t, testExposition)
+				m := families["process_resident_memory_bytes"].Metric[0]
+				m.Label = append(m.Label, &dto.LabelPair{Name: ptr.To("namespace"), Value: ptr.To("clusters-test")})
+				return families
+			},
+			wantLines: []string{
+				"# TYPE process_resident_memory_bytes gauge",
+				`process_resident_memory_bytes{namespace="clusters-test"} 1.2e+08`,
 			},
 		},
 		{
-			name:          "When unknown component is provided, it should return all families",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			componentName: "unknown-component",
-			families: map[string]*dto.MetricFamily{
-				"metric_one":   createMetricFamily("metric_one"),
-				"metric_two":   createMetricFamily("metric_two"),
-				"metric_three": createMetricFamily("metric_three"),
+			name: "When only unsupported actions are configured, it should forward every family unchanged",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "labeldrop", Regex: "code"},
+				{TargetLabel: "foo", Replacement: ptr.To("bar")},
 			},
-			wantNames: []string{
-				"metric_one",
-				"metric_two",
-				"metric_three",
+			wantLines: concatLines(testHistogramLines, testCounterLines, testGaugeLines, testSummaryLines),
+		},
+		{
+			name: "When unsupported actions are mixed with a keep rule, it should apply only the keep rule",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "labeldrop", Regex: "code"},
+				keepName("apiserver_request_total"),
+			},
+			wantLines: testCounterLines,
+		},
+		{
+			name:      "When a keep regex does not compile, it should fail closed and forward no samples",
+			mode:      MetricsFilterRelabel,
+			rules:     []prometheusoperatorv1.RelabelConfig{keepName("(apiserver_request_total")},
+			wantLines: nil,
+		},
+		{
+			name: "When a drop regex does not compile, it should fail closed and forward no samples",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName(".*"),
+				dropName("process_[a-"),
+			},
+			wantLines: nil,
+		},
+		{
+			name:      "When the metrics filter mode is unknown, it should fail closed and forward no samples",
+			mode:      MetricsFilterMode("Unknown"),
+			rules:     []prometheusoperatorv1.RelabelConfig{keepName(".*")},
+			wantLines: nil,
+		},
+		{
+			name:  "When histogram series are fully kept or fully dropped, it should keep the histogram type for the kept series",
+			mode:  MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{Action: "drop", Regex: "LIST", SourceLabels: []prometheusoperatorv1.LabelName{"verb"}}},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return parseFamilies(t, `# TYPE request_duration_seconds histogram
+request_duration_seconds_bucket{verb="GET",le="1"} 1
+request_duration_seconds_bucket{verb="GET",le="+Inf"} 2
+request_duration_seconds_sum{verb="GET"} 1.5
+request_duration_seconds_count{verb="GET"} 2
+request_duration_seconds_bucket{verb="LIST",le="1"} 3
+request_duration_seconds_bucket{verb="LIST",le="+Inf"} 4
+request_duration_seconds_sum{verb="LIST"} 2.5
+request_duration_seconds_count{verb="LIST"} 4
+`)
+			},
+			wantLines: []string{
+				"# TYPE request_duration_seconds histogram",
+				`request_duration_seconds_bucket{verb="GET",le="1"} 1`,
+				`request_duration_seconds_bucket{verb="GET",le="+Inf"} 2`,
+				`request_duration_seconds_sum{verb="GET"} 1.5`,
+				`request_duration_seconds_count{verb="GET"} 2`,
 			},
 		},
 		{
-			name:          "When MetricsSetTelemetry is used with cluster-version-operator, it should filter correctly",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			componentName: "cluster-version-operator",
-			families: map[string]*dto.MetricFamily{
-				"cluster_version":                   createMetricFamily("cluster_version"),
-				"cluster_version_available_updates": createMetricFamily("cluster_version_available_updates"),
-				"cluster_operator_up":               createMetricFamily("cluster_operator_up"),
-				"some_unrelated_cvo_metric":         createMetricFamily("some_unrelated_cvo_metric"),
+			name: "When samples carry timestamps, it should preserve them on flattened samples",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("request_duration_seconds_(bucket|count)"),
 			},
-			wantNames: []string{
-				"cluster_version",
-				"cluster_version_available_updates",
-				"cluster_operator_up",
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return parseFamilies(t, `# TYPE request_duration_seconds histogram
+request_duration_seconds_bucket{le="1"} 1 1700000000000
+request_duration_seconds_bucket{le="+Inf"} 2 1700000000000
+request_duration_seconds_sum 1.5 1700000000000
+request_duration_seconds_count 2 1700000000000
+`)
 			},
+			wantLines: []string{
+				"# TYPE request_duration_seconds_bucket untyped",
+				`request_duration_seconds_bucket{le="1"} 1 1700000000000`,
+				`request_duration_seconds_bucket{le="+Inf"} 2 1700000000000`,
+				"# TYPE request_duration_seconds_count untyped",
+				"request_duration_seconds_count 2 1700000000000",
+			},
+		},
+		{
+			name: "When a histogram has no +Inf bucket and the rules drop the +Inf sample, it should not synthesize one",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{{
+				Action:       "drop",
+				Regex:        `.*;\+Inf`,
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"},
+			}},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return map[string]*dto.MetricFamily{"latency_seconds": histogramWithoutInfBucket("latency_seconds")}
+			},
+			wantLines: []string{
+				"# TYPE latency_seconds_bucket untyped",
+				`latency_seconds_bucket{le="1"} 3`,
+				"# TYPE latency_seconds_count untyped",
+				"latency_seconds_count 4",
+				"# TYPE latency_seconds_sum untyped",
+				"latency_seconds_sum 2",
+			},
+		},
+		{
+			name: "When a histogram has no +Inf bucket and the rules keep every exposed sample, it should keep the histogram type",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("latency_seconds_.*"),
+			},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return map[string]*dto.MetricFamily{"latency_seconds": histogramWithoutInfBucket("latency_seconds")}
+			},
+			wantLines: []string{
+				"# TYPE latency_seconds histogram",
+				`latency_seconds_bucket{le="1"} 3`,
+				`latency_seconds_bucket{le="+Inf"} 4`,
+				"latency_seconds_sum 2",
+				"latency_seconds_count 4",
+			},
+		},
+		{
+			name: "When a flattened histogram sample name collides with another family, it should drop the flattened samples",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("latency_seconds_bucket"),
+			},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return map[string]*dto.MetricFamily{
+					"latency_seconds":        histogramWithoutInfBucket("latency_seconds"),
+					"latency_seconds_bucket": gaugeFamily("latency_seconds_bucket", 7),
+				}
+			},
+			wantLines: []string{
+				"# TYPE latency_seconds_bucket gauge",
+				"latency_seconds_bucket 7",
+			},
+		},
+		{
+			name: "When flattened samples of two families map to the same name, it should drop both",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				keepName("a_sum"),
+			},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				return collidingFamilies()
+			},
+			wantLines: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			g := NewWithT(t)
 
-			f := NewFilter(tt.metricsSet)
-			got := f.Apply(tt.componentName, tt.families)
-
-			if len(got) != len(tt.wantNames) {
-				t.Errorf("Apply() returned %d families, want %d", len(got), len(tt.wantNames))
+			families := parseFamilies(t, testExposition)
+			if tt.families != nil {
+				families = tt.families(t)
 			}
+			cfg := ComponentConfig{sampleFilter: newSampleFilter(logr.Discard(), "test-component", tt.mode, tt.rules)}
 
-			for _, name := range tt.wantNames {
-				if _, ok := got[name]; !ok {
-					t.Errorf("Apply() missing expected metric family: %s", name)
-				}
-			}
-
-			for name := range got {
-				found := false
-				for _, wantName := range tt.wantNames {
-					if name == wantName {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("Apply() returned unexpected metric family: %s", name)
-				}
-			}
+			got := NewFilter(logr.Discard()).Apply("test-component", cfg, families)
+			g.Expect(renderFamilies(t, got)).To(Equal(tt.wantLines))
 		})
 	}
+
+	t.Run("When a collision is evaluated repeatedly, it should give the same result regardless of map order and log once", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		var records []string
+		log := funcr.New(func(_, args string) { records = append(records, args) }, funcr.Options{})
+		cfg := ComponentConfig{sampleFilter: newSampleFilter(log, "test-component", MetricsFilterRelabel,
+			[]prometheusoperatorv1.RelabelConfig{keepName("a_sum|b_.*")})}
+		filter := NewFilter(log)
+
+		for range 25 {
+			families := collidingFamilies()
+			g.Expect(renderFamilies(t, filter.Apply("test-component", cfg, families))).To(Equal([]string{
+				"# TYPE b_total counter",
+				"b_total 6",
+			}))
+		}
+		g.Expect(countContaining(records, "collides")).To(Equal(1))
+	})
+
+	t.Run("When the filter is shared by concurrent requests, it should filter each scrape independently", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		cfg := ComponentConfig{sampleFilter: newSampleFilter(logr.Discard(), "test-component", MetricsFilterRelabel,
+			[]prometheusoperatorv1.RelabelConfig{{
+				Action:       "keep",
+				Regex:        `apiserver_request_duration_seconds_bucket;(0\.1|\+Inf)`,
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"},
+			}})}
+		filter := NewFilter(logr.Discard())
+
+		inputs := make([]map[string]*dto.MetricFamily, 16)
+		for i := range inputs {
+			inputs[i] = parseFamilies(t, testExposition)
+		}
+		results := make([]map[string]*dto.MetricFamily, len(inputs))
+		var wg sync.WaitGroup
+		for i := range inputs {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results[i] = filter.Apply("test-component", cfg, inputs[i])
+			}()
+		}
+		wg.Wait()
+		for _, result := range results {
+			g.Expect(renderFamilies(t, result)).To(Equal([]string{
+				"# TYPE apiserver_request_duration_seconds_bucket untyped",
+				`apiserver_request_duration_seconds_bucket{verb="GET",le="0.1"} 5`,
+				`apiserver_request_duration_seconds_bucket{verb="GET",le="+Inf"} 10`,
+			}))
+		}
+	})
 }
 
-func TestFilter_getOrCompile(t *testing.T) {
+func TestNewSampleFilter(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		metricsSet    metrics.MetricsSet
-		componentName string
-		wantNil       bool
-		wantCached    bool
+		name               string
+		mode               MetricsFilterMode
+		rules              []prometheusoperatorv1.RelabelConfig
+		wantNil            bool
+		wantForwardNothing bool
+		wantRules          []relabelRule
+		wantLogs           map[string]int
 	}{
 		{
-			name:          "When component has keep regex, it should cache compiled regex",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			componentName: "kube-apiserver",
-			wantNil:       false,
-			wantCached:    true,
+			name:    "When the mode is unset, it should return no filter",
+			mode:    "",
+			wantNil: true,
 		},
 		{
-			name:          "When component has no keep regex, it should cache nil",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			componentName: "unknown-component",
-			wantNil:       true,
-			wantCached:    true,
+			name:     "When the mode is None with rules, it should return no filter and log that the rules are ignored",
+			mode:     MetricsFilterNone,
+			rules:    []prometheusoperatorv1.RelabelConfig{{Action: "keep", Regex: "x"}},
+			wantNil:  true,
+			wantLogs: map[string]int{"forwards all samples": 1},
 		},
 		{
-			name:          "When called twice for same component, it should return cached regex",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			componentName: "etcd",
-			wantNil:       false,
-			wantCached:    true,
+			name:               "When the mode is Relabel without rules, it should forward nothing",
+			mode:               MetricsFilterRelabel,
+			wantForwardNothing: true,
+		},
+		{
+			name:               "When the mode is Relabel with an empty rule list, it should forward nothing",
+			mode:               MetricsFilterRelabel,
+			rules:              []prometheusoperatorv1.RelabelConfig{},
+			wantForwardNothing: true,
+		},
+		{
+			name:               "When the mode is unknown, it should forward nothing and log an error",
+			mode:               MetricsFilterMode("Bogus"),
+			wantForwardNothing: true,
+			wantLogs:           map[string]int{`unknown metrics filter \"Bogus\"`: 1},
+		},
+		{
+			name: "When actions use mixed case, it should compile them as keep and drop with Prometheus defaults",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "Keep", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}},
+				{Action: "DROP", Regex: "b", Separator: ptr.To(""), SourceLabels: []prometheusoperatorv1.LabelName{"x", "y"}},
+			},
+			wantRules: []relabelRule{
+				{keep: true, sourceLabels: []string{"__name__"}, separator: ";"},
+				{keep: false, sourceLabels: []string{"x", "y"}, separator: ""},
+			},
+		},
+		{
+			name: "When only unsupported actions are configured, it should keep no rules, forward samples and log each action once",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "labeldrop", Regex: "a"},
+				{Action: "LabelDrop", Regex: "b"},
+				{TargetLabel: "c", Replacement: ptr.To("d")},
+				{Action: "hashmod", Modulus: 2, TargetLabel: "e"},
+			},
+			wantRules: nil,
+			wantLogs: map[string]int{
+				`"action"="labeldrop"`: 1,
+				`"action"="replace"`:   1,
+				`"action"="hashmod"`:   1,
+			},
+		},
+		{
+			name: "When a keep regex does not compile, it should forward nothing and log the error",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "keep", Regex: "(", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}},
+			},
+			wantForwardNothing: true,
+			wantLogs:           map[string]int{"Invalid metric relabel regex": 1},
+		},
+		{
+			name: "When an unsupported action has an invalid regex, it should ignore the rule",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "labelkeep", Regex: "("},
+				{Action: "keep", Regex: "a", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}},
+			},
+			wantRules: []relabelRule{{keep: true, sourceLabels: []string{"__name__"}, separator: ";"}},
+			wantLogs:  map[string]int{`"action"="labelkeep"`: 1},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			g := NewWithT(t)
 
-			f := NewFilter(tt.metricsSet)
+			var records []string
+			log := funcr.New(func(_, args string) { records = append(records, args) }, funcr.Options{})
 
-			// First call
-			got1 := f.getOrCompile(tt.componentName)
-			if (got1 == nil) != tt.wantNil {
-				t.Errorf("getOrCompile() first call returned nil=%v, want nil=%v", got1 == nil, tt.wantNil)
+			got := newSampleFilter(log, "test-component", tt.mode, tt.rules)
+
+			for substr, count := range tt.wantLogs {
+				g.Expect(countContaining(records, substr)).To(Equal(count), "log records: %v", records)
 			}
-
-			// Second call - should return cached value
-			got2 := f.getOrCompile(tt.componentName)
-			if got1 != got2 {
-				t.Errorf("getOrCompile() second call returned different value, cache not working")
+			if tt.wantNil {
+				g.Expect(got).To(BeNil())
+				return
 			}
-
-			// Verify cache contains the entry
-			f.mu.RLock()
-			cached, ok := f.cache[tt.componentName]
-			f.mu.RUnlock()
-
-			if !ok {
-				t.Errorf("getOrCompile() did not cache the result for component: %s", tt.componentName)
+			g.Expect(got).NotTo(BeNil())
+			g.Expect(got.forwardNothing).To(Equal(tt.wantForwardNothing))
+			if tt.wantForwardNothing {
+				return
 			}
-
-			if cached != got1 {
-				t.Errorf("getOrCompile() cached value differs from returned value")
+			g.Expect(got.rules).To(HaveLen(len(tt.wantRules)))
+			for i, want := range tt.wantRules {
+				g.Expect(got.rules[i].keep).To(Equal(want.keep))
+				g.Expect(got.rules[i].sourceLabels).To(Equal(want.sourceLabels))
+				g.Expect(got.rules[i].separator).To(Equal(want.separator))
 			}
 		})
 	}
-}
 
-func TestFilter_getOrCompile_HandlesEmptyRegex(t *testing.T) {
-	t.Parallel()
+	t.Run("When a regex is configured, it should be anchored and default to (.*)", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
 
-	f := NewFilter(metrics.MetricsSetTelemetry)
-
-	// Test with a component that has no keep regex
-	result := f.getOrCompile("nonexistent-component")
-
-	if result != nil {
-		t.Errorf("When regex string is empty, it should return nil, got: %v", result)
-	}
-
-	// Verify it was cached as nil
-	f.mu.RLock()
-	cached, ok := f.cache["nonexistent-component"]
-	f.mu.RUnlock()
-
-	if !ok {
-		t.Error("When regex string is empty, it should cache nil result")
-	}
-
-	if cached != nil {
-		t.Errorf("When regex string is empty, cached value should be nil, got: %v", cached)
-	}
-}
-
-func TestGetKeepRegexForComponent(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name          string
-		componentName string
-		metricsSet    metrics.MetricsSet
-		wantEmpty     bool
-		wantContains  string
-	}{
-		{
-			name:          "When kube-apiserver with Telemetry, it should return non-empty regex",
-			componentName: "kube-apiserver",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
-			wantContains:  "apiserver_storage_objects",
-		},
-		{
-			name:          "When etcd with Telemetry, it should return non-empty regex",
-			componentName: "etcd",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
-			wantContains:  "etcd_disk_wal_fsync_duration_seconds_bucket",
-		},
-		{
-			name:          "When kube-controller-manager with Telemetry, it should return non-empty regex",
-			componentName: "kube-controller-manager",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
-			wantContains:  "pv_collector_total_pv_count",
-		},
-		{
-			name:          "When openshift-apiserver with Telemetry, it should return non-empty regex",
-			componentName: "openshift-apiserver",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
-			wantContains:  "apiserver_storage_objects",
-		},
-		{
-			name:          "When openshift-controller-manager with Telemetry, it should return non-empty regex",
-			componentName: "openshift-controller-manager",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
-			wantContains:  "openshift_build_status_phase_total",
-		},
-		{
-			name:          "When cluster-version-operator with Telemetry, it should return non-empty regex",
-			componentName: "cluster-version-operator",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
-			wantContains:  "cluster_version",
-		},
-		{
-			name:          "When olm-operator with Telemetry, it should return non-empty regex",
-			componentName: "olm-operator",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
-			wantContains:  "csv_succeeded",
-		},
-		{
-			name:          "When catalog-operator with Telemetry, it should return non-empty regex",
-			componentName: "catalog-operator",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
-			wantContains:  "subscription_sync_total",
-		},
-		{
-			name:          "When node-tuning-operator with Telemetry, it should return non-empty regex",
-			componentName: "node-tuning-operator",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
-			wantContains:  "nto_profile_calculated_total",
-		},
-		{
-			name:          "When unknown component, it should return empty string",
-			componentName: "unknown-component",
-			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     true,
-		},
-		{
-			name:          "When kube-apiserver with MetricsSetAll, it should return empty string",
-			componentName: "kube-apiserver",
-			metricsSet:    metrics.MetricsSetAll,
-			wantEmpty:     true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := getKeepRegexForComponent(tt.componentName, tt.metricsSet)
-
-			if tt.wantEmpty {
-				if got != "" {
-					t.Errorf("getKeepRegexForComponent() = %q, want empty string", got)
-				}
-			} else {
-				if got == "" {
-					t.Error("getKeepRegexForComponent() returned empty string, want non-empty")
-				}
-				if tt.wantContains != "" && !strings.Contains(got, tt.wantContains) {
-					t.Errorf("getKeepRegexForComponent() = %q, want to contain %q", got, tt.wantContains)
-				}
-			}
+		got := newSampleFilter(logr.Discard(), "test-component", MetricsFilterRelabel, []prometheusoperatorv1.RelabelConfig{
+			{Action: "keep", Regex: "a|b", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}},
+			{Action: "keep", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}},
 		})
-	}
+		g.Expect(got.rules).To(HaveLen(2))
+		g.Expect(got.rules[0].regex.String()).To(Equal("^(?s:a|b)$"))
+		g.Expect(got.rules[0].regex.MatchString("ab")).To(BeFalse())
+		g.Expect(got.rules[0].regex.MatchString("b")).To(BeTrue())
+		g.Expect(got.rules[1].regex.String()).To(Equal("^(?s:(.*))$"))
+	})
 }
 
-func TestFilter_Apply_ConcurrentAccess(t *testing.T) {
-	t.Parallel()
-
-	f := NewFilter(metrics.MetricsSetTelemetry)
-	families := map[string]*dto.MetricFamily{
-		"apiserver_storage_objects": createMetricFamily("apiserver_storage_objects"),
-		"apiserver_request_total":   createMetricFamily("apiserver_request_total"),
+func concatLines(groups ...[]string) []string {
+	var lines []string
+	for _, group := range groups {
+		lines = append(lines, group...)
 	}
-
-	// Test concurrent access to the filter
-	done := make(chan bool)
-	for i := 0; i < 10; i++ {
-		go func() {
-			for j := 0; j < 100; j++ {
-				_ = f.Apply("kube-apiserver", families)
-			}
-			done <- true
-		}()
-	}
-
-	for i := 0; i < 10; i++ {
-		<-done
-	}
+	return lines
 }
 
-func TestGetKeepRegexForComponent_ValidRegex(t *testing.T) {
-	t.Parallel()
-
-	components := []string{
-		"kube-apiserver",
-		"etcd",
-		"kube-controller-manager",
-		"openshift-apiserver",
-		"openshift-controller-manager",
-		"openshift-route-controller-manager",
-		"cluster-version-operator",
-		"olm-operator",
-		"catalog-operator",
-		"node-tuning-operator",
+func countContaining(records []string, substr string) int {
+	count := 0
+	for _, r := range records {
+		if strings.Contains(r, substr) {
+			count++
+		}
 	}
-
-	for _, component := range components {
-		t.Run(component, func(t *testing.T) {
-			t.Parallel()
-
-			regexStr := getKeepRegexForComponent(component, metrics.MetricsSetTelemetry)
-			if regexStr == "" {
-				t.Skip("Component has no keep regex for Telemetry set")
-			}
-
-			// Verify the regex compiles successfully
-			fullRegex := "^(" + regexStr + ")$"
-			_, err := regexp.Compile(fullRegex)
-			if err != nil {
-				t.Errorf("When regex is returned for %s, it should be valid, got error: %v", component, err)
-			}
-		})
-	}
+	return count
 }
 
-// Helper function to create a simple MetricFamily for testing
-func createMetricFamily(name string) *dto.MetricFamily {
-	metricType := dto.MetricType_GAUGE
+// parseFamilies parses a text exposition the same way the scraper does.
+func parseFamilies(t *testing.T, text string) map[string]*dto.MetricFamily {
+	t.Helper()
+	parser := expfmt.NewTextParser(model.LegacyValidation)
+	families, err := parser.TextToMetricFamilies(strings.NewReader(text))
+	if err != nil {
+		t.Fatalf("failed to parse exposition: %v", err)
+	}
+	return families
+}
+
+// renderFamilies encodes the families in the text format, sorted by family
+// name, and returns the TYPE and sample lines.
+func renderFamilies(t *testing.T, families map[string]*dto.MetricFamily) []string {
+	t.Helper()
+	names := make([]string, 0, len(families))
+	for name := range families {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var buf bytes.Buffer
+	encoder := expfmt.NewEncoder(&buf, expfmt.NewFormat(expfmt.TypeTextPlain))
+	for _, name := range names {
+		if err := encoder.Encode(families[name]); err != nil {
+			t.Fatalf("failed to encode family %s: %v", name, err)
+		}
+	}
+
+	var lines []string
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		if line == "" || strings.HasPrefix(line, "# HELP ") {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// histogramWithoutInfBucket returns a histogram family whose only explicit
+// bucket is le="1", so the text encoder adds the +Inf bucket.
+func histogramWithoutInfBucket(name string) *dto.MetricFamily {
 	return &dto.MetricFamily{
-		Name: &name,
-		Type: &metricType,
+		Name: ptr.To(name),
+		Type: dto.MetricType_HISTOGRAM.Enum(),
+		Metric: []*dto.Metric{{
+			Histogram: &dto.Histogram{
+				SampleCount: ptr.To[uint64](4),
+				SampleSum:   ptr.To(2.0),
+				Bucket:      []*dto.Bucket{{UpperBound: ptr.To(1.0), CumulativeCount: ptr.To[uint64](3)}},
+			},
+		}},
+	}
+}
+
+// collidingFamilies returns a histogram "a" and a summary "a_sum" whose
+// flattened samples share the name a_sum, plus an unrelated counter.
+func collidingFamilies() map[string]*dto.MetricFamily {
+	return map[string]*dto.MetricFamily{
+		"a": {
+			Name: ptr.To("a"),
+			Type: dto.MetricType_HISTOGRAM.Enum(),
+			Metric: []*dto.Metric{{Histogram: &dto.Histogram{
+				SampleCount: ptr.To[uint64](1),
+				SampleSum:   ptr.To(2.0),
+				Bucket:      []*dto.Bucket{{UpperBound: ptr.To(math.Inf(+1)), CumulativeCount: ptr.To[uint64](1)}},
+			}}},
+		},
+		"a_sum": {
+			Name: ptr.To("a_sum"),
+			Type: dto.MetricType_SUMMARY.Enum(),
+			Metric: []*dto.Metric{{Summary: &dto.Summary{
+				SampleCount: ptr.To[uint64](5),
+				SampleSum:   ptr.To(4.0),
+				Quantile:    []*dto.Quantile{{Quantile: ptr.To(0.5), Value: ptr.To(3.0)}},
+			}}},
+		},
+		"b_total": {
+			Name:   ptr.To("b_total"),
+			Type:   dto.MetricType_COUNTER.Enum(),
+			Metric: []*dto.Metric{{Counter: &dto.Counter{Value: ptr.To(6.0)}}},
+		},
+	}
+}
+
+func gaugeFamily(name string, value float64) *dto.MetricFamily {
+	return &dto.MetricFamily{
+		Name:   ptr.To(name),
+		Type:   dto.MetricType_GAUGE.Enum(),
+		Metric: []*dto.Metric{{Gauge: &dto.Gauge{Value: ptr.To(value)}}},
+	}
+}
+
+func TestFormatLabelFloat(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		value float64
+		want  string
+	}{
+		{value: 0.005, want: "0.005"},
+		{value: 1, want: "1"},
+		{value: 2.5e+06, want: "2.5e+06"},
+		{value: math.Inf(+1), want: "+Inf"},
+	} {
+		t.Run(fmt.Sprintf("When the value is %v, it should format it like the text encoder", tc.value), func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(formatLabelFloat(tc.value)).To(Equal(tc.want))
+		})
 	}
 }

@@ -7407,3 +7407,80 @@ func TestGetNamedCertificateCAs(t *testing.T) {
 		})
 	}
 }
+
+// TestHostedControlPlaneReconciler_ReconcileSREMetricsConfig loads the
+// package-global SRE metrics set configuration and must not run in parallel.
+func TestHostedControlPlaneReconciler_ReconcileSREMetricsConfig(t *testing.T) {
+	namespace := "clusters-test"
+	// An empty configuration keeps the shared SRE metrics set configuration
+	// unchanged for other tests; a successful load is observed through the
+	// recorded configuration hash.
+	sreConfig := metrics.SREMetricsSetConfigurationConfigMap(namespace)
+	sreConfig.Data = map[string]string{metrics.SREConfigurationConfigMapKey: "{}"}
+
+	tests := []struct {
+		name          string
+		metricsSet    metrics.MetricsSet
+		forwardingSet hyperv1.MetricsSet
+		withConfigMap bool
+		wantLoaded    bool
+	}{
+		{
+			name:          "When the control plane collects the SRE set, it should load the SRE configuration",
+			metricsSet:    metrics.MetricsSetSRE,
+			withConfigMap: true,
+			wantLoaded:    true,
+		},
+		{
+			name:          "When only metrics forwarding uses the SRE set, it should load the SRE configuration",
+			metricsSet:    metrics.MetricsSetTelemetry,
+			forwardingSet: hyperv1.MetricsSetSRE,
+			withConfigMap: true,
+			wantLoaded:    true,
+		},
+		{
+			name:          "When the control plane collects the SRE set and forwards Telemetry, it should still load the SRE configuration",
+			metricsSet:    metrics.MetricsSetSRE,
+			forwardingSet: hyperv1.MetricsSetTelemetry,
+			withConfigMap: true,
+			wantLoaded:    true,
+		},
+		{
+			name:          "When neither collection nor forwarding sets SRE, it should not load the SRE configuration",
+			metricsSet:    metrics.MetricsSetTelemetry,
+			withConfigMap: true,
+			wantLoaded:    false,
+		},
+		{
+			name:          "When only forwarding uses the SRE set and the ConfigMap does not exist, it should succeed without loading",
+			metricsSet:    metrics.MetricsSetAll,
+			forwardingSet: hyperv1.MetricsSetSRE,
+			wantLoaded:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if tt.withConfigMap {
+				builder = builder.WithObjects(sreConfig.DeepCopy())
+			}
+			r := &HostedControlPlaneReconciler{Client: builder.Build(), MetricsSet: tt.metricsSet}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+				Spec: hyperv1.HostedControlPlaneSpec{Monitoring: hyperv1.MonitoringSpec{
+					MetricsForwarding: hyperv1.MetricsForwardingSpec{MetricsSet: tt.forwardingSet},
+				}},
+			}
+
+			g.Expect(r.reconcileSREMetricsConfig(t.Context(), hcp)).To(Succeed())
+			if tt.wantLoaded {
+				g.Expect(r.SREConfigHash).To(Equal(metrics.SREMetricsSetConfigHash(sreConfig)))
+			} else {
+				g.Expect(r.SREConfigHash).To(BeEmpty())
+			}
+		})
+	}
+}

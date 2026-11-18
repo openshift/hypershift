@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,7 +21,12 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/support/metrics"
+
+	"sigs.k8s.io/yaml"
+
 	"github.com/go-logr/logr"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
@@ -65,7 +73,7 @@ func parseHostPort(t *testing.T, serverURL string) (string, int32) {
 
 func newTestHandler(components map[string]ComponentConfig, discoverer TargetDiscoverer) *ProxyHandler {
 	scraper := NewScraper()
-	filter := NewFilter("All")
+	filter := NewFilter(logr.Discard())
 	labeler := NewLabeler("test-namespace")
 
 	handler := NewProxyHandler(logr.Discard(), &fakeComponentProvider{components: components}, discoverer, scraper, filter, labeler)
@@ -480,6 +488,177 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 		g.Expect(rec.Header().Get("Content-Encoding")).To(BeEmpty())
 		g.Expect(rec.Body.Len()).To(Equal(0))
 	})
+
+	t.Run("When components carry metric relabel rules in the config file, it should forward only the permitted samples", func(t *testing.T) {
+		t.Parallel()
+
+		fakeMetrics := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			fmt.Fprint(w, testExposition)
+		}))
+		// The subtests run in parallel after this function returns.
+		t.Cleanup(fakeMetrics.Close)
+		fakeHost, fakePort := parseHostPort(t, fakeMetrics.URL)
+
+		allSamples := []string{
+			"apiserver_request_duration_seconds_bucket le=+Inf",
+			"apiserver_request_duration_seconds_bucket le=0.1",
+			"apiserver_request_duration_seconds_bucket le=1",
+			"apiserver_request_duration_seconds_count",
+			"apiserver_request_duration_seconds_sum",
+			"apiserver_request_total",
+			"apiserver_request_total",
+			"process_resident_memory_bytes",
+			"rpc_latency_seconds quantile=0.5",
+			"rpc_latency_seconds quantile=0.99",
+			"rpc_latency_seconds_count",
+			"rpc_latency_seconds_sum",
+		}
+
+		tests := []struct {
+			name          string
+			component     string
+			filter        MetricsFilterMode
+			rules         []prometheusoperatorv1.RelabelConfig
+			failedTarget  bool
+			wantSamples   []string
+			wantTypeLines []string
+		}{
+			{
+				name:      "When an SRE keep rule selects openshift-apiserver metrics by name, it should return only matching samples",
+				component: "openshift-apiserver",
+				filter:    MetricsFilterRelabel,
+				rules: []prometheusoperatorv1.RelabelConfig{{
+					Action:       "keep",
+					Regex:        "(apiserver_request_total|apiserver_request_duration_seconds_bucket)",
+					SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+				}},
+				wantSamples: []string{
+					"apiserver_request_duration_seconds_bucket le=+Inf",
+					"apiserver_request_duration_seconds_bucket le=0.1",
+					"apiserver_request_duration_seconds_bucket le=1",
+					"apiserver_request_total",
+					"apiserver_request_total",
+				},
+				wantTypeLines: []string{"# TYPE apiserver_request_duration_seconds_bucket untyped", "# TYPE apiserver_request_total counter"},
+			},
+			{
+				name:      "When an SRE keep rule selects openshift-apiserver buckets by name and le, it should return only the matching buckets",
+				component: "openshift-apiserver",
+				filter:    MetricsFilterRelabel,
+				rules: []prometheusoperatorv1.RelabelConfig{{
+					Action:       "keep",
+					Regex:        `apiserver_request_duration_seconds_bucket;(1|\+Inf)`,
+					SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"},
+				}},
+				wantSamples: []string{
+					"apiserver_request_duration_seconds_bucket le=+Inf",
+					"apiserver_request_duration_seconds_bucket le=1",
+				},
+			},
+			{
+				name:         "When the SRE set has no rules for a known component, it should return only the synthetic scrape-error metric",
+				component:    "openshift-controller-manager",
+				filter:       MetricsFilterRelabel,
+				failedTarget: true,
+				wantSamples:  []string{"metrics_aggregator_pod_scrape_errors_total"},
+			},
+			{
+				name:        "When the Telemetry kube-apiserver keep rule is used, it should return only the kept metrics",
+				component:   "kube-apiserver",
+				filter:      MetricsFilterRelabel,
+				rules:       metrics.KASRelabelConfigs(metrics.MetricsSetTelemetry),
+				wantSamples: []string{"apiserver_request_total", "apiserver_request_total"},
+			},
+			{
+				name:        "When the Telemetry kube-scheduler drop .* rule is used, it should return no samples",
+				component:   "kube-scheduler",
+				filter:      MetricsFilterRelabel,
+				rules:       metrics.SchedulerRelabelConfigs(metrics.MetricsSetTelemetry),
+				wantSamples: nil,
+			},
+			{
+				name:        "When the Telemetry openshift-route-controller-manager drop (.*) rule is used, it should return no samples",
+				component:   "openshift-route-controller-manager",
+				filter:      MetricsFilterRelabel,
+				rules:       metrics.OpenShiftRouteControllerManagerRelabelConfigs(metrics.MetricsSetTelemetry),
+				wantSamples: nil,
+			},
+			{
+				name:          "When the metrics filter is None, as for the All set and PodMonitors, it should return every sample unchanged",
+				component:     "cluster-autoscaler",
+				filter:        MetricsFilterNone,
+				wantSamples:   allSamples,
+				wantTypeLines: []string{"# TYPE apiserver_request_duration_seconds histogram", "# TYPE rpc_latency_seconds summary"},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				g := NewWithT(t)
+
+				fileConfig := FileConfig{Components: []ComponentFileConfig{{
+					Name:                 tt.component,
+					Selector:             map[string]string{"app": tt.component},
+					MetricsPort:          fakePort,
+					MetricsPath:          "/metrics",
+					MetricsScheme:        "http",
+					MetricsFilter:        tt.filter,
+					MetricRelabelConfigs: tt.rules,
+				}}}
+				data, err := yaml.Marshal(fileConfig)
+				g.Expect(err).NotTo(HaveOccurred())
+				configPath := filepath.Join(t.TempDir(), "config.yaml")
+				g.Expect(os.WriteFile(configPath, data, 0o600)).To(Succeed())
+				reader := NewConfigFileReader(configPath, logr.Discard())
+				g.Expect(reader.Load()).To(Succeed())
+
+				targets := []ScrapeTarget{{PodName: tt.component + "-0", PodIP: fakeHost, Port: fakePort}}
+				if tt.failedTarget {
+					targets = append(targets, ScrapeTarget{PodName: tt.component + "-1", PodIP: "192.0.2.1", Port: 9999})
+				}
+				handler := NewProxyHandler(logr.Discard(), reader, &fakeTargetDiscoverer{targets: targets},
+					NewScraper(), NewFilter(logr.Discard()), NewLabeler("test-namespace"))
+
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/"+tt.component, nil)
+				g.Expect(err).NotTo(HaveOccurred())
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+
+				g.Expect(rec.Code).To(Equal(http.StatusOK))
+				body := rec.Body.String()
+				g.Expect(exposedSampleKeys(body)).To(Equal(tt.wantSamples))
+				for _, typeLine := range tt.wantTypeLines {
+					g.Expect(body).To(ContainSubstring(typeLine))
+				}
+				if len(tt.wantSamples) > 0 && !tt.failedTarget {
+					g.Expect(body).To(ContainSubstring(`pod="` + tt.component + `-0"`))
+				}
+			})
+		}
+	})
+}
+
+var bucketOrQuantileLabel = regexp.MustCompile(`(?:^|,)(le|quantile)="([^"]*)"`)
+
+// exposedSampleKeys returns the sorted sample names of a text exposition, with
+// the le or quantile label value appended when present.
+func exposedSampleKeys(body string) []string {
+	var keys []string
+	for line := range strings.SplitSeq(body, "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		name, rest, _ := strings.Cut(line, "{")
+		name, _, _ = strings.Cut(name, " ")
+		if match := bucketOrQuantileLabel.FindStringSubmatch(rest); match != nil {
+			name += " " + match[1] + "=" + match[2]
+		}
+		keys = append(keys, name)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // canonicalizeExposition parses Prometheus exposition text and re-encodes it with

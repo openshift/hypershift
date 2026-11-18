@@ -7,6 +7,7 @@ import (
 
 	metricsproxybin "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/metrics"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,7 +43,7 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 		},
 	}
 
-	smComponents, err := componentsFromServiceMonitors(cpContext, namespace)
+	smComponents, err := componentsFromServiceMonitors(cpContext, namespace, effectiveForwardingMetricsSet(cpContext))
 	if err != nil {
 		return err
 	}
@@ -70,7 +71,7 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 	return nil
 }
 
-func componentsFromServiceMonitors(cpContext component.WorkloadContext, namespace string) ([]metricsproxybin.ComponentFileConfig, error) {
+func componentsFromServiceMonitors(cpContext component.WorkloadContext, namespace string, metricsSet metrics.MetricsSet) ([]metricsproxybin.ComponentFileConfig, error) {
 	log := logr.FromContextOrDiscard(cpContext)
 
 	smList := &prometheusoperatorv1.ServiceMonitorList{}
@@ -82,6 +83,7 @@ func componentsFromServiceMonitors(cpContext component.WorkloadContext, namespac
 	for i := range smList.Items {
 		comp, ok := componentFromServiceMonitor(cpContext, log, namespace, &smList.Items[i])
 		if ok {
+			comp.MetricsFilter, comp.MetricRelabelConfigs = serviceMonitorMetricsFilter(log, comp.Name, metricsSet)
 			components = append(components, comp)
 		}
 	}
@@ -134,6 +136,23 @@ func componentFromServiceMonitor(cpContext component.WorkloadContext, log logr.L
 	comp.Name = sm.Name
 	populateMetricsLabelsFromAnnotations(&comp, sm.Annotations)
 	return comp, true
+}
+
+// serviceMonitorMetricsFilter returns the metrics filter and relabel rules the
+// metrics-proxy applies to the samples of a ServiceMonitor-based component for
+// the effective forwarding metrics set. The All set forwards every sample. For
+// other sets the rules of the set are used; a component without rules, or a
+// ServiceMonitor that is not a known control plane component, forwards no
+// samples.
+func serviceMonitorMetricsFilter(log logr.Logger, serviceMonitorName string, metricsSet metrics.MetricsSet) (metricsproxybin.MetricsFilterMode, []prometheusoperatorv1.RelabelConfig) {
+	if metricsSet == metrics.MetricsSetAll {
+		return metricsproxybin.MetricsFilterNone, nil
+	}
+	relabelConfigs, known := metrics.ServiceMonitorRelabelConfigs(serviceMonitorName, metricsSet)
+	if !known {
+		log.V(4).Info("ServiceMonitor is not a known control plane component, forwarding no samples", "serviceMonitor", serviceMonitorName, "metricsSet", metricsSet)
+	}
+	return metricsproxybin.MetricsFilterRelabel, relabelConfigs
 }
 
 func componentsFromPodMonitors(cpContext component.WorkloadContext, namespace string) ([]metricsproxybin.ComponentFileConfig, error) {
@@ -191,6 +210,8 @@ func componentFromPodMonitor(cpContext component.WorkloadContext, log logr.Logge
 		MetricsPath:   endpointMetricsPath(ep.Path),
 		MetricsScheme: endpointScheme(ep.Scheme),
 		TLSServerName: serverName,
+		// PodMonitor-based components are forwarded without filtering.
+		MetricsFilter: metricsproxybin.MetricsFilterNone,
 	}
 
 	if ep.TLSConfig != nil {
