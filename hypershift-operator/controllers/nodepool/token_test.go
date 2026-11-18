@@ -2765,7 +2765,7 @@ func TestTokenReconcileKarpenterInMemoryNodePool(t *testing.T) {
 			"the Karpenter pool's user data Secret should carry its in-memory NodePool annotation")
 		g.Expect(gotUserData.Labels[karpenterutil.ManagedByKarpenterLabel]).To(Equal("true"),
 			"the Karpenter pool's user data Secret should carry the Karpenter management label")
-		g.Expect(gotUserData.Labels).To(HaveKeyWithValue(karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64), "ami-default-amd64"),
+		g.Expect(gotUserData.Labels).To(HaveKeyWithValue(karpenterutil.ArchToImageMetadataKey(hyperv1.ArchitectureAMD64, hyperkarpenterv1.UserDataAMILabel), "ami-default-amd64"),
 			"the Karpenter pool's user data Secret should carry the AMI label Karpenter selects it by")
 
 		// Repair must not invent Secrets for other NodePools' references it
