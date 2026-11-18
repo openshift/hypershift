@@ -88,6 +88,19 @@ func TestReconcile(t *testing.T) {
 			expectAnnotated: true,
 		},
 		{
+			name: "When node has GCP NTH taint and machine is interruptible it should delete the machine",
+			node: func() *corev1.Node {
+				n := baseNode()
+				n.Spec.Taints = []corev1.Taint{
+					{Key: "gcp-node-termination-handler/preempted", Effect: corev1.TaintEffectNoSchedule},
+				}
+				return n
+			}(),
+			machine:         baseMachine(),
+			expectDeleted:   true,
+			expectAnnotated: true,
+		},
+		{
 			name: "When node has NTH taint and machine is not interruptible it should not delete the machine",
 			node: func() *corev1.Node {
 				n := baseNode()
@@ -181,7 +194,7 @@ func TestReconcile(t *testing.T) {
 	}
 }
 
-func TestNthTaintKey(t *testing.T) {
+func TestTerminationTaintKey(t *testing.T) {
 	testCases := []struct {
 		name     string
 		node     *corev1.Node
@@ -210,6 +223,17 @@ func TestNthTaintKey(t *testing.T) {
 			expected: "aws-node-termination-handler/spot-itn",
 		},
 		{
+			name: "When node has GCP preempted taint, it should return the taint key",
+			node: &corev1.Node{
+				Spec: corev1.NodeSpec{
+					Taints: []corev1.Taint{
+						{Key: "gcp-node-termination-handler/preempted", Effect: corev1.TaintEffectNoSchedule},
+					},
+				},
+			},
+			expected: "gcp-node-termination-handler/preempted",
+		},
+		{
 			name: "When node has no NTH taints, it should return empty string",
 			node: &corev1.Node{
 				Spec: corev1.NodeSpec{
@@ -232,7 +256,7 @@ func TestNthTaintKey(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			g.Expect(nthTaintKey(tc.node)).To(Equal(tc.expected))
+			g.Expect(terminationTaintKey(tc.node)).To(Equal(tc.expected))
 		})
 	}
 }
