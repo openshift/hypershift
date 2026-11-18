@@ -105,6 +105,12 @@ type NodeExporterCollectorConfigApplyConfiguration struct {
 	// nvmExpressSubsystem is optional.
 	// When omitted, this means no opinion and the platform is left to choose a reasonable default,
 	// which is subject to change over time. The current default is enabled.
+	// When enabled, if /sys/class/nvme-subsystem/ is missing or inaccessible, node-exporter
+	// reports node_scrape_collector_success{collector="nvmesubsystem"} as 0.
+	// This is intentional and helps detect missing drivers or configuration problems.
+	// If no nodes in the cluster require NVMe subsystem monitoring, set
+	// nvmExpressSubsystem.collectionPolicy to DoNotCollect to disable this collector cluster-wide.
+	// This setting does not support per-node configuration.
 	NVMExpressSubsystem *NodeExporterCollectorNVMExpressSubsystemConfigApplyConfiguration `json:"nvmExpressSubsystem,omitempty"`
 	// interrupts configures the interrupts collector, which exposes interrupt counts
 	// from /proc/interrupts.

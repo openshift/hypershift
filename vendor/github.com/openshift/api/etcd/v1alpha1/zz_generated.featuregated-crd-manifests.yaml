@@ -4,7 +4,8 @@ pacemakerclusters.etcd.openshift.io:
   CRDName: pacemakerclusters.etcd.openshift.io
   Capability: ""
   Category: ""
-  FeatureGates: []
+  FeatureGates:
+  - TNFObservability
   FilenameOperatorName: etcd
   FilenameOperatorOrdering: "01"
   FilenameRunLevel: "0000_25"
