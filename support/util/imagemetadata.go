@@ -396,13 +396,17 @@ func getRepository(ctx context.Context, ref reference.DockerImageReference, pull
 	return registryContext.Repository(ctx, ref.DockerClientDefaults().RegistryURL(), ref.RepositoryName(), false)
 }
 
-// ImageLabels returns labels on a given image metadata
+// ImageLabels returns the labels recorded in the given image metadata. It returns
+// Config.Labels when Config carries at least one label and otherwise falls back to
+// ContainerConfig.Labels, which may be nil when the image carries no labels at all.
+// Labels may live on either field depending on how the image was built; returning
+// Config.Labels unconditionally would make labels that only live on ContainerConfig
+// read as absent.
 func ImageLabels(metadata *dockerv1client.DockerImageConfig) map[string]string {
-	if metadata.Config != nil {
+	if metadata.Config != nil && len(metadata.Config.Labels) > 0 {
 		return metadata.Config.Labels
-	} else {
-		return metadata.ContainerConfig.Labels
 	}
+	return metadata.ContainerConfig.Labels
 }
 
 // Attempts only a root registry override match.

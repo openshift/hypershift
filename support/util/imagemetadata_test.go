@@ -9,7 +9,10 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+
+	"github.com/openshift/api/image/docker10"
 
 	"k8s.io/apimachinery/pkg/util/cache"
 
@@ -1073,4 +1076,84 @@ func TestCacheCleanupOnExpiration(t *testing.T) {
 	testCache.mutex.RUnlock()
 
 	g.Expect(remainingEntries).To(Equal(1))
+}
+
+func TestImageLabels(t *testing.T) {
+	testCases := []struct {
+		name     string
+		metadata *dockerv1client.DockerImageConfig
+		expected map[string]string
+	}{
+		{
+			name: "When Config carries labels, it should return Config labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{"from": "config"},
+				},
+				ContainerConfig: docker10.DockerConfig{
+					Labels: map[string]string{"from": "container-config"},
+				},
+			},
+			expected: map[string]string{"from": "config"},
+		},
+		{
+			name: "When Config is nil, it should fall back to ContainerConfig labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				ContainerConfig: docker10.DockerConfig{
+					Labels: map[string]string{"from": "container-config"},
+				},
+			},
+			expected: map[string]string{"from": "container-config"},
+		},
+		{
+			// Regression: some images carry labels only on ContainerConfig while
+			// still having a Config without labels. Returning Config.Labels
+			// unconditionally would drop them, so a present label (for example a
+			// control plane operator capability label) would read as absent.
+			name: "When Config has no labels, it should fall back to ContainerConfig labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{},
+				ContainerConfig: docker10.DockerConfig{
+					Labels: map[string]string{"from": "container-config"},
+				},
+			},
+			expected: map[string]string{"from": "container-config"},
+		},
+		{
+			name: "When Config has an empty labels map, it should fall back to ContainerConfig labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{},
+				},
+				ContainerConfig: docker10.DockerConfig{
+					Labels: map[string]string{"from": "container-config"},
+				},
+			},
+			expected: map[string]string{"from": "container-config"},
+		},
+		{
+			// An empty Config labels map is treated like a missing one: the
+			// ContainerConfig labels are returned even when they are nil, so
+			// callers see nil rather than an empty map.
+			name: "When Config has an empty labels map and ContainerConfig has no labels, it should return nil",
+			metadata: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{},
+				},
+			},
+			expected: nil,
+		},
+		{
+			name:     "When neither Config nor ContainerConfig carry labels, it should return nil",
+			metadata: &dockerv1client.DockerImageConfig{},
+			expected: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(ImageLabels(tc.metadata)).To(Equal(tc.expected))
+		})
+	}
 }
