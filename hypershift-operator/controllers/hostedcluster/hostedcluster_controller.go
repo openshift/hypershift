@@ -3404,6 +3404,11 @@ func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Co
 	return nil
 }
 
+// errTrustedCABundleRefresh classifies a failure to write the trusted CA bundle after the existing ConfigMap was read
+// successfully. It is used only for that case: creation, read and source file errors are not classified this way. The
+// outcome of the failed write is not asserted, because errors such as timeouts can leave it unknown.
+var errTrustedCABundleRefresh = errors.New("failed to refresh existing trusted CA bundle ConfigMap")
+
 // reconcileOpenShiftTrustedCAs checks for the existence of /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem, if it exists,
 // creates or updates a ConfigMap with the file's current contents to be mounted by control plane components such as the
 // CPO deployment. A missing, empty, or whitespace-only file leaves the ConfigMap untouched.
@@ -3442,7 +3447,11 @@ func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Conte
 	// so data assigned beforehand would be overwritten and an existing ConfigMap would never be refreshed.
 	caBundle := string(trustCABundleFile)
 	openShiftTrustedCABundleConfigMapForCPO := manifests.OpenShiftTrustedCABundleForNamespace(hostedControlPlane.Namespace)
+	// existing records whether CreateOrUpdate read a stored ConfigMap before calling the mutate function: a stored
+	// object has a resourceVersion, while a ConfigMap about to be created does not.
+	existing := false
 	if _, err = controllerutil.CreateOrUpdate(ctx, r.Client, openShiftTrustedCABundleConfigMapForCPO, func() error {
+		existing = openShiftTrustedCABundleConfigMapForCPO.ResourceVersion != ""
 		if openShiftTrustedCABundleConfigMapForCPO.Data == nil {
 			openShiftTrustedCABundleConfigMapForCPO.Data = map[string]string{}
 		}
@@ -3451,8 +3460,12 @@ func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Conte
 		delete(openShiftTrustedCABundleConfigMapForCPO.BinaryData, caBundleKey)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile ConfigMap %s/%s: %w",
+		err = fmt.Errorf("failed to reconcile ConfigMap %s/%s: %w",
 			openShiftTrustedCABundleConfigMapForCPO.Namespace, openShiftTrustedCABundleConfigMapForCPO.Name, err)
+		if existing {
+			return fmt.Errorf("%w: %w", errTrustedCABundleRefresh, err)
+		}
+		return err
 	}
 
 	return nil
