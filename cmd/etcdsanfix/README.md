@@ -10,20 +10,36 @@ downtime during the heal, then you unpause and accept a one-time, safe rolling r
 **not** cure the cert bug: the bridge cert is reverted by the CPO at unpause, so ambient peer-TLS
 flakiness returns until the durable per-member-SAN fix ships.
 
-It is a subcommand of the `hypershift` CLI. Point `KUBECONFIG` at the management cluster; it runs
-from your workstation and works out how to reach etcd itself (see **Modes** below).
+## Subcommands
+
+It is a parent command on the `hypershift` CLI. Point `KUBECONFIG` at the management cluster; it
+runs from your workstation and works out how to reach etcd itself (see **Modes** below).
+
+| Command | Mutates? | What it does |
+|---------|----------|--------------|
+| `heal` | yes (gated) | the guided recovery: pause, bridge cert, re-admit, bounce, unpause |
+| `cert` | no | inspect `etcd-peer-tls`: SANs, expiry, and whether it is wildcard-only or bridged |
+| `health` | no | member list, per-endpoint health, leader, db size, alarms |
+| `preflight` | no | before-checks: is this the SAN-bug situation, and is healing safe? |
+| `verify` | no | after-checks: are all members back, healthy, and fault-tolerant? |
+
+The four read-only subcommands are safe to run any time. The typical flow is `preflight` to confirm
+the situation, `heal` to recover, `verify` to confirm. Every subcommand takes `--namespace` (the
+hosted control plane namespace).
 
 ## Modes
 
-`heal` auto-detects how to reach etcd:
+Every subcommand auto-detects how to reach etcd:
 
 - **Out-of-cluster (default on a workstation):** when the in-pod cert files are absent, it reads the
   etcd CA and client cert from the cluster secrets and port-forwards to the etcd pods itself. No
-  manual `oc port-forward`, no cert extraction, so it runs from your laptop with just `--namespace`.
+  manual `oc port-forward`, no cert extraction, so `health` / `preflight` / `verify` work from your
+  laptop with just `--namespace`.
 - **In-cluster (default inside an etcd pod):** when the in-pod cert files are present, it dials the
   etcd service DNS directly with them.
 
-Force out-of-cluster with `--local`; pass a specific `--etcd-endpoint` to route directly.
+Force out-of-cluster with `--local`; pass a specific `--etcd-endpoint` to route directly. `cert` only
+ever needs `KUBECONFIG` (it reads the secret through the kube API and never talks to etcd).
 
 ## heal
 
@@ -48,6 +64,19 @@ Other flags: `--member` (stuck member, auto-detected by default), `--etcd-endpoi
 port-forward; defaults to the in-cluster `etcd-client` service), `--etcd-ca-cert` /
 `--etcd-client-cert` / `--etcd-client-key` (in-pod defaults), `--max-retries` (default 5),
 `--pause-window` (default 2h).
+
+## Inspect and check
+
+```
+hypershift etcd-sanfix preflight --namespace <hcp-namespace>   # safe to run before heal
+hypershift etcd-sanfix cert      --namespace <hcp-namespace>   # SANs + wildcard-only/bridged verdict
+hypershift etcd-sanfix health    --namespace <hcp-namespace>   # members, health, leader, alarms
+hypershift etcd-sanfix verify    --namespace <hcp-namespace>   # safe to run after heal
+```
+
+`preflight` and `verify` exit non-zero on a failing verdict (`NO-GO` / `NOT-RECOVERED`), so you can
+gate a script on them. `cert` classifies the peer cert as `WILDCARD-ONLY` (the bug), `BRIDGED` (has
+the per-member SANs), or `PARTIAL`.
 
 ## Recovery sequence
 

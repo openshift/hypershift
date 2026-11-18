@@ -53,10 +53,17 @@ func NewCommand() *cobra.Command {
 		Use:   "etcd-sanfix",
 		Short: "Break-glass tooling for a hosted etcd stuck on the peer-cert SAN bug",
 		Long: "Break-glass tooling for a hosted etcd stuck on the peer-cert SAN bug (OCPBUGS-76530).\n" +
-			"heal drives the guided, SRE-gated recovery. See hcp-etcd-sanfix plan.md.",
+			"heal drives the guided, SRE-gated recovery; cert, health, preflight and verify are\n" +
+			"read-only and safe to run any time. See hcp-etcd-sanfix plan.md.",
 		SilenceUsage: true,
 	}
-	cmd.AddCommand(newHealCommand())
+	cmd.AddCommand(
+		newHealCommand(),
+		newCertCommand(),
+		newHealthCommand(),
+		newPreflightCommand(),
+		newVerifyCommand(),
+	)
 	return cmd
 }
 
