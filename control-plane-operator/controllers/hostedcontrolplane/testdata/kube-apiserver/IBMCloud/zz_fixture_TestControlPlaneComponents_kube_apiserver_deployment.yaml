@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 4f2a1e80d376fa43c9201f8d6318ccbfd55e689b25a9e78cffc3d24a3ce05bb9
+    hypershift.openshift.io/desired-state-hash: aafb3f727f61021d16bc11dc8c1c05e6039b5090029847bf673fcd0dc316e7f1
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -256,6 +256,10 @@ spec:
           successThreshold: 1
           timeoutSeconds: 30
         name: konnectivity-server
+        ports:
+        - containerPort: 2041
+          name: konnect-health
+          protocol: TCP
         readinessProbe:
           failureThreshold: 3
           httpGet:

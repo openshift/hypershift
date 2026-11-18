@@ -179,6 +179,10 @@ spec:
         - /usr/bin/proxy-server
         image: apiserver-network-proxy
         imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 2041
+          name: konnect-health
+          protocol: TCP
         lifecycle:
           preStop:
             exec:
