@@ -162,7 +162,7 @@ Three metrics sets are available:
 |---|---|---|
 | `Telemetry` (default) | Only a small curated subset of metrics per component | Minimal resource usage |
 | `SRE` | Configurable via a `sre-metric-set` ConfigMap with custom RelabelConfigs per component | Fine-grained control for alerting and troubleshooting |
-| `All` | All metrics from each component (some legacy metrics are still dropped) | Full observability |
+| `All` | All metrics from each component, without filtering by the metrics-proxy | Full observability |
 
 The metrics set is configured globally on the HyperShift Operator deployment:
 
@@ -214,6 +214,16 @@ The configurable components are:
 
 !!! note
     PodMonitor-based components (cluster-autoscaler, ignition-server, karpenter, etc.) are not subject to metric filtering and always forward all their metrics regardless of the configured metrics set.
+
+#### How the filter rules are applied
+
+With the `Telemetry` and `SRE` sets, the metrics-proxy evaluates the component's rules against every exposed sample, in order:
+
+- Only the `keep` and `drop` actions are applied. Other actions (for example `replace` or `labeldrop`) are logged once and ignored.
+- The values of `sourceLabels` are joined with `separator` (default `;`) and matched against the fully anchored `regex` (default `(.*)`). The values come from the sample name (`__name__`), the sample's labels, and the labels the metrics-proxy injects (see [Label compatibility](#label-compatibility)).
+- Histogram and summary samples are evaluated individually, so a rule can select `<name>_bucket`, `<name>_sum` or `<name>_count`, or specific buckets with `sourceLabels: ["__name__", "le"]`. When only some samples of a histogram or summary are kept, they are forwarded as untyped samples with unchanged names and labels.
+- With the `SRE` set, a ServiceMonitor-based component that has no rules in the `sre-metric-set` ConfigMap forwards no metrics.
+- If a `keep` or `drop` regex is invalid, the component forwards no metrics.
 
 ### Label compatibility
 
