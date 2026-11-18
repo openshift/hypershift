@@ -186,13 +186,14 @@ func (f *sampleFilter) apply(log logr.Logger, batches []map[string]*dto.MetricFa
 	}
 
 	// results now hold every family of every batch that survived filtering
-	// unchanged or as a subset, so derived names are checked against surviving
-	// families only, in any batch: a family that filtering removed entirely
-	// must not suppress permitted samples. A partially kept source family is
-	// never in results.
+	// unchanged or as a subset, so derived names are checked against the names
+	// those surviving families emit, in any batch: a family that filtering
+	// removed entirely must not suppress permitted samples. A partially kept
+	// source family is never in results.
+	emitted := emittedNames(results)
 	var collisions []string
 	for name, d := range derived {
-		if d.collided || survives(results, name) {
+		if _, clashes := emitted[name]; d.collided || clashes {
 			collisions = append(collisions, name)
 			continue
 		}
@@ -206,15 +207,28 @@ func (f *sampleFilter) apply(log logr.Logger, batches []map[string]*dto.MetricFa
 	return results
 }
 
-// survives reports whether a family with the given name survived filtering in
-// any batch.
-func survives(results []map[string]*dto.MetricFamily, name string) bool {
+// emittedNames returns the metric names the text encoder emits for the given
+// families: each family name and, for summaries and (gauge) histograms, the
+// _sum, _count and _bucket sample names that a text-format parser attributes
+// to the family of the base name. The encoder writes these sample names even
+// when the scraped metric lacks the corresponding fields.
+func emittedNames(results []map[string]*dto.MetricFamily) map[string]struct{} {
+	names := make(map[string]struct{})
 	for _, result := range results {
-		if _, ok := result[name]; ok {
-			return true
+		for name, mf := range result {
+			names[name] = struct{}{}
+			switch mf.GetType() {
+			case dto.MetricType_SUMMARY:
+				names[name+"_sum"] = struct{}{}
+				names[name+"_count"] = struct{}{}
+			case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
+				names[name+"_bucket"] = struct{}{}
+				names[name+"_sum"] = struct{}{}
+				names[name+"_count"] = struct{}{}
+			}
 		}
 	}
-	return false
+	return names
 }
 
 // filterSimpleFamily filters a counter, gauge or untyped family, where every

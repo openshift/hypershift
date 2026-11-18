@@ -778,6 +778,23 @@ latency_count 7
 		standaloneCount := serveExposition(t, "", `# TYPE latency_count gauge
 latency_count 9
 `)
+		completeLatencySummary := serveExposition(t, "", `# TYPE latency summary
+latency{quantile="0.5"} 0.2
+latency_sum 1
+latency_count 5
+`)
+		completeLatencyHistogram := serveExposition(t, "", `# TYPE latency histogram
+latency_bucket{le="1"} 3
+latency_bucket{le="+Inf"} 5
+latency_sum 1
+latency_count 5
+`)
+		latencyCountSummary := serveExposition(t, "", `# TYPE latency_count summary
+latency_count{quantile="0.5"} 0.3
+latency_count{quantile="0.99"} 0.9
+latency_count_sum 2
+latency_count_count 7
+`)
 		gaugeLatency := serveExposition(t, "", `# TYPE latency gauge
 latency 1
 `)
@@ -858,6 +875,40 @@ rpc_latency_seconds_count 5
 					"latency_sum":   dto.MetricType_UNTYPED,
 				},
 				wantSampleKeys: []string{"latency pod=pod-summary quantile=0.5", "latency_count pod=pod-summary", "latency_sum pod=pod-summary"},
+			},
+			{
+				name:    "When a surviving summary emits the name of another target's flattened family, it should drop only that flattened family",
+				targets: []ScrapeTarget{withPod(completeLatencySummary, "pod-a"), withPod(latencyCountSummary, "pod-b")},
+				rules:   []prometheusoperatorv1.RelabelConfig{dropQuantile("latency_count")},
+				wantTypes: map[string]dto.MetricType{
+					"latency":             dto.MetricType_SUMMARY,
+					"latency_count_count": dto.MetricType_UNTYPED,
+					"latency_count_sum":   dto.MetricType_UNTYPED,
+				},
+				wantSampleKeys: []string{
+					"latency pod=pod-a quantile=0.5", "latency_count pod=pod-a", "latency_count_count pod=pod-b",
+					"latency_count_sum pod=pod-b", "latency_sum pod=pod-a",
+				},
+			},
+			{
+				name:    "When the summary emitting that name is rejected, it should keep the other target's flattened family",
+				targets: []ScrapeTarget{withPod(completeLatencySummary, "pod-a"), withPod(latencyCountSummary, "pod-b")},
+				rules:   []prometheusoperatorv1.RelabelConfig{dropPod("pod-a"), dropQuantile("latency_count")},
+				wantTypes: map[string]dto.MetricType{
+					"latency_count":       dto.MetricType_UNTYPED,
+					"latency_count_count": dto.MetricType_UNTYPED,
+					"latency_count_sum":   dto.MetricType_UNTYPED,
+				},
+				wantSampleKeys: []string{"latency_count pod=pod-b quantile=0.5", "latency_count_count pod=pod-b", "latency_count_sum pod=pod-b"},
+			},
+			{
+				name:    "When a surviving histogram of another batch emits the names of a flattened summary, it should drop the flattened samples",
+				targets: []ScrapeTarget{withPod(completeLatencyHistogram, "pod-h"), withPod(summaryWithTwoQuantiles, "pod-s")},
+				rules:   []prometheusoperatorv1.RelabelConfig{dropQuantile("latency")},
+				wantTypes: map[string]dto.MetricType{
+					"latency": dto.MetricType_HISTOGRAM,
+				},
+				wantSampleKeys: []string{"latency pod=pod-h"},
 			},
 			{
 				name: "When a filtered-away family of another type comes first, it should still merge the same-type families of later targets",

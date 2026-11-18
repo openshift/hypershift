@@ -633,6 +633,169 @@ latency_count{pod="pod-a"} 7
 		})
 	}
 
+	dropQuantile := func(family string) prometheusoperatorv1.RelabelConfig {
+		return prometheusoperatorv1.RelabelConfig{
+			Action: "drop", Regex: family + `;0\.99`, SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "quantile"},
+		}
+	}
+	// partialSummary is a summary whose 0.99 quantile the dropQuantile rule removes.
+	partialSummary := func(name string) string {
+		return fmt.Sprintf("# TYPE %[1]s summary\n%[1]s{pod=\"pod-b\",quantile=\"0.5\"} 0.3\n%[1]s{pod=\"pod-b\",quantile=\"0.99\"} 0.9\n%[1]s_sum{pod=\"pod-b\"} 2\n%[1]s_count{pod=\"pod-b\"} 7\n", name)
+	}
+	completeSummary := "# TYPE latency summary\nlatency{pod=\"pod-a\",quantile=\"0.5\"} 0.2\nlatency_sum{pod=\"pod-a\"} 1\nlatency_count{pod=\"pod-a\"} 5\n"
+	completeHistogram := "# TYPE latency histogram\nlatency_bucket{pod=\"pod-a\",le=\"1\"} 3\nlatency_bucket{pod=\"pod-a\",le=\"+Inf\"} 5\nlatency_sum{pod=\"pod-a\"} 1\nlatency_count{pod=\"pod-a\"} 5\n"
+	typedSummaryLines := []string{
+		"# TYPE latency summary", `latency{pod="pod-a",quantile="0.5"} 0.2`, `latency_sum{pod="pod-a"} 1`, `latency_count{pod="pod-a"} 5`,
+	}
+	typedHistogramLines := []string{
+		"# TYPE latency histogram", `latency_bucket{pod="pod-a",le="1"} 3`, `latency_bucket{pod="pod-a",le="+Inf"} 5`,
+		`latency_sum{pod="pod-a"} 1`, `latency_count{pod="pod-a"} 5`,
+	}
+	flattenedLines := func(name string, withQuantile bool) []string {
+		var lines []string
+		if withQuantile {
+			lines = append(lines, "# TYPE "+name+" untyped", name+`{pod="pod-b",quantile="0.5"} 0.3`)
+		}
+		return append(lines,
+			"# TYPE "+name+"_count untyped", name+`_count{pod="pod-b"} 7`,
+			"# TYPE "+name+"_sum untyped", name+`_sum{pod="pod-b"} 2`,
+		)
+	}
+	gaugeHistogram := func() map[string]*dto.MetricFamily {
+		families := parseFamilies(t, completeHistogram)
+		families["latency"].Type = dto.MetricType_GAUGE_HISTOGRAM.Enum()
+		return families
+	}
+	merge := func(maps ...map[string]*dto.MetricFamily) map[string]*dto.MetricFamily {
+		merged := map[string]*dto.MetricFamily{}
+		for _, m := range maps {
+			for k, v := range m {
+				merged[k] = v
+			}
+		}
+		return merged
+	}
+
+	emittedNameTests := []struct {
+		name        string
+		rules       []prometheusoperatorv1.RelabelConfig
+		batches     func(t *testing.T) []map[string]*dto.MetricFamily
+		wantBatches [][]string
+	}{
+		{
+			name:  "When a surviving summary emits the _count name of a flattened family, it should drop only that flattened family",
+			rules: []prometheusoperatorv1.RelabelConfig{dropQuantile("latency_count")},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{merge(parseFamilies(t, completeSummary), parseFamilies(t, partialSummary("latency_count")))}
+			},
+			wantBatches: [][]string{concatLines(typedSummaryLines, flattenedLines("latency_count", false))},
+		},
+		{
+			name:  "When a surviving summary emits the _sum name of a flattened family, it should drop only that flattened family",
+			rules: []prometheusoperatorv1.RelabelConfig{dropQuantile("latency_sum")},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{merge(parseFamilies(t, completeSummary), parseFamilies(t, partialSummary("latency_sum")))}
+			},
+			wantBatches: [][]string{concatLines(typedSummaryLines, flattenedLines("latency_sum", false))},
+		},
+		{
+			name:  "When a surviving histogram emits the _bucket name of a flattened family, it should drop only that flattened family",
+			rules: []prometheusoperatorv1.RelabelConfig{dropQuantile("latency_bucket")},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{merge(parseFamilies(t, completeHistogram), parseFamilies(t, partialSummary("latency_bucket")))}
+			},
+			wantBatches: [][]string{concatLines(typedHistogramLines, flattenedLines("latency_bucket", false))},
+		},
+		{
+			name:  "When a surviving histogram emits the _count name of a flattened family, it should drop only that flattened family",
+			rules: []prometheusoperatorv1.RelabelConfig{dropQuantile("latency_count")},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{merge(parseFamilies(t, completeHistogram), parseFamilies(t, partialSummary("latency_count")))}
+			},
+			wantBatches: [][]string{concatLines(typedHistogramLines, flattenedLines("latency_count", false))},
+		},
+		{
+			name:  "When a surviving gauge histogram emits the _sum name of a flattened family, it should drop only that flattened family",
+			rules: []prometheusoperatorv1.RelabelConfig{dropQuantile("latency_sum")},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{merge(gaugeHistogram(), parseFamilies(t, partialSummary("latency_sum")))}
+			},
+			wantBatches: [][]string{concatLines(typedHistogramLines, flattenedLines("latency_sum", false))},
+		},
+		{
+			name:  "When a surviving histogram lacks sum and count fields, it should still reserve the names the encoder writes for them",
+			rules: []prometheusoperatorv1.RelabelConfig{dropQuantile("latency_count")},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				histogram := parseFamilies(t, completeHistogram)
+				histogram["latency"].Metric[0].Histogram.SampleSum = nil
+				histogram["latency"].Metric[0].Histogram.SampleCount = nil
+				return []map[string]*dto.MetricFamily{merge(histogram, parseFamilies(t, partialSummary("latency_count")))}
+			},
+			wantBatches: [][]string{concatLines(
+				[]string{
+					"# TYPE latency histogram", `latency_bucket{pod="pod-a",le="1"} 3`, `latency_bucket{pod="pod-a",le="+Inf"} 5`,
+					`latency_sum{pod="pod-a"} 0`, `latency_count{pod="pod-a"} 0`,
+				},
+				flattenedLines("latency_count", false),
+			)},
+		},
+		{
+			name:  "When a surviving histogram in another batch emits the names of a flattened summary, it should drop the flattened samples",
+			rules: []prometheusoperatorv1.RelabelConfig{dropQuantile("latency")},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{parseFamilies(t, completeHistogram), parseFamilies(t, partialSummary("latency"))}
+			},
+			wantBatches: [][]string{typedHistogramLines, nil},
+		},
+		{
+			name: "When the typed summary emitting the name is rejected entirely, it should keep the flattened family",
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "drop", Regex: "pod-a", SourceLabels: []prometheusoperatorv1.LabelName{"pod"}},
+				dropQuantile("latency_count"),
+			},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{merge(parseFamilies(t, completeSummary), parseFamilies(t, partialSummary("latency_count")))}
+			},
+			wantBatches: [][]string{flattenedLines("latency_count", true)},
+		},
+		{
+			name:  "When a surviving summary shares the base name, it should not reserve the histogram-only _bucket name",
+			rules: []prometheusoperatorv1.RelabelConfig{dropQuantile("latency_bucket")},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{merge(parseFamilies(t, completeSummary), parseFamilies(t, partialSummary("latency_bucket")))}
+			},
+			wantBatches: [][]string{concatLines(typedSummaryLines, flattenedLines("latency_bucket", true))},
+		},
+		{
+			name:  "When a surviving gauge shares the base name, it should not reserve summary or histogram names",
+			rules: []prometheusoperatorv1.RelabelConfig{dropQuantile("latency_count")},
+			batches: func(t *testing.T) []map[string]*dto.MetricFamily {
+				return []map[string]*dto.MetricFamily{merge(parseFamilies(t, "# TYPE latency gauge\nlatency{pod=\"pod-a\"} 1\n"), parseFamilies(t, partialSummary("latency_count")))}
+			},
+			wantBatches: [][]string{concatLines([]string{"# TYPE latency gauge", `latency{pod="pod-a"} 1`}, flattenedLines("latency_count", true))},
+		},
+	}
+	for _, tt := range emittedNameTests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			cfg := ComponentConfig{sampleFilter: newSampleFilter(logr.Discard(), "test-component", MetricsFilterRelabel, tt.rules)}
+			got := NewFilter(logr.Discard()).Apply("test-component", cfg, tt.batches(t))
+			g.Expect(got).To(HaveLen(len(tt.wantBatches)))
+			var exposition []string
+			for i, want := range tt.wantBatches {
+				lines := renderFamilies(t, got[i])
+				g.Expect(lines).To(Equal(want), "batch %d", i)
+				exposition = append(exposition, lines...)
+			}
+			// The pinned text parser must accept the combined exposition.
+			parser := expfmt.NewTextParser(model.LegacyValidation)
+			_, err := parser.TextToMetricFamilies(strings.NewReader(strings.Join(exposition, "\n") + "\n"))
+			g.Expect(err).NotTo(HaveOccurred(), "exposition:\n%s", strings.Join(exposition, "\n"))
+		})
+	}
+
 	t.Run("When a collision is evaluated repeatedly, it should give the same result regardless of map order and log once", func(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
