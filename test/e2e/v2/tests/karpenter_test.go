@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -16,16 +17,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	"github.com/openshift/hypershift/pkg/manifests"
 	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -41,6 +46,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
@@ -78,6 +84,7 @@ func RegisterKarpenterTests(getTestCtx internal.TestContextGetter) {
 	KarpenterKubeletPropagationTest(getTestCtx)
 	KarpenterAutoNodeLifecycleTest(getTestCtx)
 	KarpenterCPUOptionsNestedVirtualization(getTestCtx)
+	KarpenterInterruptionQueueTest(getTestCtx)
 	// This test intentionally leaves dangling resources so cluster teardown must
 	// force-terminate nodes despite a blocking PDB. It must run last.
 	KarpenterBillingConsolidationTest(getTestCtx)
@@ -1590,6 +1597,171 @@ func KarpenterCPUOptionsNestedVirtualization(getTestCtx internal.TestContextGett
 			}
 		})
 	})
+}
+
+func KarpenterInterruptionQueueTest(getTestCtx internal.TestContextGetter) {
+	Context("[Feature:AutoNode] Interruption queue", func() {
+		BeforeEach(func() {
+			tc := getTestCtx()
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+				Skip("AutoNode not configured on hosted cluster")
+			}
+		})
+
+		It("should replace a node on a spot interruption event from the configured queue", func() {
+			tc := getTestCtx()
+			ctx := tc.Context
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
+			awsRegion := hc.Spec.Platform.AWS.Region
+
+			awsSession := awsutil.NewSession(ctx, "e2e-karpenter-interruption", internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE"), "", "", awsRegion)
+			sqsClient := sqs.NewFromConfig(*awsSession)
+			queueName := hc.Spec.InfraID + "-karpenter-interruption-" + utilrand.String(5)
+			queueTags := map[string]string{
+				supportawsutil.HypershiftSourceTagKey:      "e2e",
+				supportawsutil.HypershiftInfraIDTagKey:     hc.Spec.InfraID,
+				supportawsutil.HypershiftClusterNameTagKey: hc.Name,
+			}
+			By(fmt.Sprintf("Creating SQS queue %q", queueName))
+			queue, err := sqsClient.CreateQueue(ctx, &sqs.CreateQueueInput{QueueName: aws.String(queueName), Tags: queueTags})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				_, err := sqsClient.DeleteQueue(ctx, &sqs.DeleteQueueInput{QueueUrl: queue.QueueUrl})
+				if _, notFound := errors.AsType[*sqstypes.QueueDoesNotExist](err); err != nil && !notFound {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete SQS queue %s", queueName)
+				}
+			})
+
+			originalQueueName := hc.Spec.AutoNode.Provisioner.Karpenter.AWS.InterruptionQueueName
+			DeferCleanup(func() { setKarpenterInterruptionQueue(ctx, tc.MgmtClient, hc, originalQueueName) })
+			setKarpenterInterruptionQueue(ctx, tc.MgmtClient, hc, queueName)
+
+			nodePool := v2util.BaseNodePool("interruption-test", "default")
+			nodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: nodePool.Name}
+			workload := v2util.TestWorkload("interruption-test-app", 1, nodeLabels)
+			podLabels := map[string]string{"app": workload.Name}
+			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, nodePool, workload, nodeLabels, false)
+			pods := v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nil, nil, 1, podLabels)
+			node := corev1.Node{}
+			Expect(hcClient.Get(ctx, crclient.ObjectKey{Name: pods[0].Spec.NodeName}, &node)).To(Succeed())
+
+			nodeClaims := &karpenterv1.NodeClaimList{}
+			Expect(hcClient.List(ctx, nodeClaims, crclient.MatchingLabels(nodeLabels))).To(Succeed())
+			Expect(nodeClaims.Items).To(HaveLen(1))
+			nodeClaim := &nodeClaims.Items[0]
+
+			providerID := node.Spec.ProviderID
+			instanceID := providerID[strings.LastIndex(providerID, "/")+1:]
+			By(fmt.Sprintf("Sending a spot interruption warning for instance %s", instanceID))
+			event, err := json.Marshal(map[string]any{
+				"version":     "0",
+				"source":      "aws.ec2",
+				"detail-type": "EC2 Spot Instance Interruption Warning",
+				"region":      awsRegion,
+				"time":        time.Now().UTC().Format(time.RFC3339),
+				"detail":      map[string]string{"instance-id": instanceID, "instance-action": "terminate"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = sqsClient.SendMessage(ctx, &sqs.SendMessageInput{QueueUrl: queue.QueueUrl, MessageBody: aws.String(string(event))})
+			Expect(err).NotTo(HaveOccurred())
+
+			By(fmt.Sprintf("Waiting for NodeClaim %s to be deleted", nodeClaim.Name))
+			Eventually(func(g Gomega, ctx context.Context) {
+				err := hcClient.Get(ctx, crclient.ObjectKeyFromObject(nodeClaim), nodeClaim)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "NodeClaim %s still exists, err: %v", nodeClaim.Name, err)
+			}).WithContext(ctx).WithTimeout(10 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+			By("Waiting for Karpenter to consume the message and disrupt the NodeClaim")
+			hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+			mgmtClientset, err := kubeclient.NewForConfig(tc.MgmtRESTConfig)
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func(g Gomega, ctx context.Context) {
+				karpenterPods := &corev1.PodList{}
+				g.Expect(tc.MgmtClient.List(ctx, karpenterPods, crclient.InNamespace(hcpNamespace), crclient.MatchingLabels{"app": cpconst.KarpenterComponentName})).To(Succeed())
+				var podName string
+				for _, pod := range karpenterPods.Items {
+					if pod.Status.Phase == corev1.PodRunning && pod.DeletionTimestamp == nil {
+						podName = pod.Name
+					}
+				}
+				g.Expect(podName).NotTo(BeEmpty(), "no running karpenter pod")
+				metrics, err := v2util.GetMetricsFromPod(ctx, mgmtClientset, tc.MgmtRESTConfig, hcpNamespace, podName, cpconst.KarpenterComponentName, 8080)
+				g.Expect(err).NotTo(HaveOccurred())
+				deleted, ok := metrics["karpenter_interruption_deleted_messages_total"]
+				g.Expect(ok).To(BeTrue(), "deleted messages metric not exposed yet")
+				g.Expect(deleted.GetMetric()).NotTo(BeEmpty(), "deleted messages counter not incremented yet")
+				g.Expect(deleted.GetMetric()[0].GetCounter().GetValue()).To(BeNumerically(">=", 1))
+
+				disrupted, ok := metrics["karpenter_nodeclaims_disrupted_total"]
+				g.Expect(ok).To(BeTrue(), "nodeclaims disrupted metric not exposed yet")
+				disruptedCount, found := getNodeClaimsDisruptedCounter(disrupted, nodePool.Name, "spot_interrupted")
+				g.Expect(found).To(BeTrue(), "no disrupted nodeclaims reported for NodePool %s yet", nodePool.Name)
+				g.Expect(disruptedCount).To(BeNumerically(">=", 1))
+			}).WithContext(ctx).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+			By("Waiting for the workload to run on a replacement node")
+			v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nil, []corev1.Node{node}, 1, podLabels)
+
+			setKarpenterInterruptionQueue(ctx, tc.MgmtClient, hc, "")
+		})
+	})
+}
+
+// setKarpenterInterruptionQueue sets interruptionQueueName on the HostedCluster and
+// waits for the karpenter Deployment to roll out with a matching INTERRUPTION_QUEUE.
+func setKarpenterInterruptionQueue(ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster, queueName string) {
+	GinkgoHelper()
+	By(fmt.Sprintf("Setting interruptionQueueName to %q", queueName))
+	current := &hyperv1.HostedCluster{}
+	Expect(mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), current)).To(Succeed())
+	original := current.DeepCopy()
+	current.Spec.AutoNode.Provisioner.Karpenter.AWS.InterruptionQueueName = queueName
+	Expect(mgmtClient.Patch(ctx, current, crclient.MergeFrom(original))).To(Succeed())
+
+	key := crclient.ObjectKey{Namespace: manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name), Name: "karpenter"}
+	Eventually(func(g Gomega, ctx context.Context) {
+		deployment := &appsv1.Deployment{}
+		g.Expect(mgmtClient.Get(ctx, key, deployment)).To(Succeed())
+		env := deployment.Spec.Template.Spec.Containers[0].Env
+		if queueName == "" {
+			g.Expect(env).NotTo(ContainElement(HaveField("Name", "INTERRUPTION_QUEUE")))
+		} else {
+			g.Expect(env).To(ContainElement(corev1.EnvVar{Name: "INTERRUPTION_QUEUE", Value: queueName}))
+		}
+		replicas := ptr.Deref(deployment.Spec.Replicas, 1)
+		g.Expect(deployment.Status.ObservedGeneration).To(Equal(deployment.Generation), "observedGeneration")
+		g.Expect(deployment.Status.Replicas).To(Equal(replicas), "replicas")
+		g.Expect(deployment.Status.UpdatedReplicas).To(Equal(replicas), "updatedReplicas")
+		g.Expect(deployment.Status.AvailableReplicas).To(Equal(replicas), "availableReplicas")
+	}).WithContext(ctx).WithTimeout(10 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+}
+
+// getNodeClaimsDisruptedCounter sums karpenter_nodeclaims_disrupted_total for the given
+// NodePool and interruption reason, e.g. "spot_interrupted".
+func getNodeClaimsDisruptedCounter(family *dto.MetricFamily, nodePoolName, reason string) (float64, bool) {
+	var total float64
+	var found bool
+	for _, m := range family.GetMetric() {
+		var matchedNodePool, matchedReason bool
+		for _, l := range m.GetLabel() {
+			if l.GetName() == "nodepool" && l.GetValue() == nodePoolName {
+				matchedNodePool = true
+			}
+			if l.GetName() == "reason" && l.GetValue() == reason {
+				matchedReason = true
+			}
+		}
+		if matchedNodePool && matchedReason {
+			total += m.GetCounter().GetValue()
+			found = true
+		}
+	}
+	return total, found
 }
 
 func KarpenterBillingConsolidationTest(getTestCtx internal.TestContextGetter) {
