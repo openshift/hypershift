@@ -57295,6 +57295,27 @@ Example:
 }</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>interruptionQueueName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>interruptionQueueName is the name of the SQS queue from which Karpenter reads
+EC2 interruption events to drain and replace affected nodes ahead of time.
+When omitted, interruption handling is disabled.
+It must be an SQS queue name, not a URL or ARN: at most 80 characters in total,
+consisting of alphanumeric characters, &lsquo;-&rsquo; or &lsquo;_&rsquo;, with an optional &lsquo;.fifo&rsquo; suffix.
+The queue must be in the same AWS account as the roleARN role and in the region
+set in spec.platform.aws.region, and be used only by this cluster&rsquo;s Karpenter,
+which deletes every message it receives.
+The roleARN role needs sqs:GetQueueUrl, sqs:ReceiveMessage and sqs:DeleteMessage
+on the queue, plus kms:Decrypt on its key if the queue uses SSE-KMS.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KarpenterAzureConfig { #hypershift.openshift.io/v1beta1.KarpenterAzureConfig }
