@@ -2,6 +2,7 @@ package konnectivity
 
 import (
 	"fmt"
+	"maps"
 	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -50,6 +51,19 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityPa
 		useHostNetwork = false
 	}
 
+	// Copy the annotations so that the pod template does not share the params map.
+	annotations := make(map[string]string, len(params.AdditionalAnnotations)+1)
+	maps.Copy(annotations, params.AdditionalAnnotations)
+	// Without a new hash, keep the existing one: dropping or resetting it would
+	// roll the agents without new credentials.
+	agentSecretHash := params.AgentSecretHash
+	if agentSecretHash == "" {
+		agentSecretHash = daemonset.Spec.Template.Annotations[AgentSecretHashAnnotation]
+	}
+	if agentSecretHash != "" {
+		annotations[AgentSecretHashAnnotation] = agentSecretHash
+	}
+
 	daemonset.Spec = appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: labels,
@@ -57,7 +71,7 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityPa
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels:      labels,
-				Annotations: params.AdditionalAnnotations,
+				Annotations: annotations,
 			},
 			Spec: corev1.PodSpec{
 				// Default is not the default, it means that the kubelets will reuse the hosts DNS resolver

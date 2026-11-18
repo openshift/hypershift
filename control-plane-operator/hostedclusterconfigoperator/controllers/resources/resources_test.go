@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	kasconst "github.com/openshift/hypershift/pkg/kas"
@@ -27,6 +29,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -2461,6 +2464,326 @@ func newCondition(conditionType string, status metav1.ConditionStatus, reason, m
 		Status:  status,
 		Message: message,
 	}
+}
+
+func TestReconciler_ReconcileKonnectivityAgent(t *testing.T) {
+	t.Parallel()
+	const (
+		releaseImage         = "quay.io/openshift-release-dev/ocp-release:5.1.0-x86_64"
+		restartDate          = "2026-11-10T13:00:00Z"
+		agentImage           = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:7f0d2c8a3b1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a"
+		sourceReadErrPrefix  = "failed to get control plane konnectivity agent secret: "
+		hostedWriteErrPrefix = "failed to reconcile konnectivity agent secret: "
+		daemonSetErrPrefix   = "failed to reconcile konnectivity agent daemonset: "
+	)
+	errSourceUnavailable := errors.New("control plane API server unavailable")
+	errHostedUnavailable := errors.New("hosted cluster API server unavailable")
+	errDaemonSetUpdate := errors.New("hosted cluster rejected the DaemonSet update")
+	hashAnnotation := konnectivity.AgentSecretHashAnnotation
+	hostedAgentSecretKey := client.ObjectKeyFromObject(manifests.KonnectivityAgentSecret())
+	hostedAgentDaemonSetKey := client.ObjectKeyFromObject(hccomanifests.KonnectivityAgentDaemonSet())
+	sourceAgentSecretKey := client.ObjectKeyFromObject(manifests.KonnectivityControlPlaneAgentSecret(fakeHCP().Namespace))
+
+	agentData := func(cert, key string) map[string][]byte {
+		return map[string][]byte{
+			corev1.TLSCertKey:       []byte("fake-agent-cert-" + cert),
+			corev1.TLSPrivateKeyKey: []byte("fake-agent-key-" + key),
+			"ca.crt":                []byte("fake-konnectivity-signer-ca"),
+		}
+	}
+	releaseImageInfo := &releaseinfo.ReleaseImage{
+		ImageStream: &imageapi.ImageStream{
+			Spec: imageapi.ImageStreamSpec{
+				Tags: []imageapi.TagReference{
+					{Name: "apiserver-network-proxy", From: &corev1.ObjectReference{Name: agentImage}},
+				},
+			},
+		},
+	}
+
+	type testEnv struct {
+		r                   *reconciler
+		hcp                 *hyperv1.HostedControlPlane
+		cpClient            client.Client
+		hostedClient        client.Client
+		failSourceRead      bool
+		failHostedWrite     bool
+		failDaemonSetUpdate bool
+	}
+	newEnv := func(sourceData map[string][]byte) *testEnv {
+		env := &testEnv{hcp: fakeHCP()}
+		env.hcp.Spec.ReleaseImage = releaseImage
+
+		cpObjects := []client.Object{fakeControlPlaneKonnectivityCAConfigMap()}
+		if sourceData != nil {
+			source := manifests.KonnectivityControlPlaneAgentSecret(env.hcp.Namespace)
+			source.Data = sourceData
+			cpObjects = append(cpObjects, source)
+		}
+		env.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, isSecret := obj.(*corev1.Secret); isSecret && env.failSourceRead && key == sourceAgentSecretKey {
+					return errSourceUnavailable
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+
+		shouldFailWrite := func(obj client.Object) bool {
+			_, isSecret := obj.(*corev1.Secret)
+			return isSecret && env.failHostedWrite && client.ObjectKeyFromObject(obj) == hostedAgentSecretKey
+		}
+		env.hostedClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(manifests.NamespaceKubeSystem(), globalconfig.ProxyConfig()).WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if shouldFailWrite(obj) {
+					return errHostedUnavailable
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				if shouldFailWrite(obj) {
+					return errHostedUnavailable
+				}
+				if _, isDaemonSet := obj.(*appsv1.DaemonSet); isDaemonSet && env.failDaemonSetUpdate && client.ObjectKeyFromObject(obj) == hostedAgentDaemonSetKey {
+					return errDaemonSetUpdate
+				}
+				return c.Update(ctx, obj, opts...)
+			},
+		}).Build()
+
+		env.r = &reconciler{
+			client:                    env.hostedClient,
+			cpClient:                  env.cpClient,
+			CreateOrUpdateProvider:    upsert.New(false),
+			konnectivityServerAddress: "konnectivity-clusters-example.apps.mgmt.example.com",
+			konnectivityServerPort:    443,
+		}
+		return env
+	}
+	reconcile := func(t *testing.T, env *testEnv) error {
+		t.Helper()
+		return env.r.reconcileKonnectivityAgent(t.Context(), env.hcp, releaseImageInfo)
+	}
+	getDaemonSet := func(t *testing.T, env *testEnv) *appsv1.DaemonSet {
+		t.Helper()
+		daemonset := hccomanifests.KonnectivityAgentDaemonSet()
+		NewWithT(t).Expect(env.hostedClient.Get(t.Context(), client.ObjectKeyFromObject(daemonset), daemonset)).To(Succeed())
+		return daemonset
+	}
+	getHostedAgentSecret := func(t *testing.T, env *testEnv) *corev1.Secret {
+		t.Helper()
+		secret := manifests.KonnectivityAgentSecret()
+		NewWithT(t).Expect(env.hostedClient.Get(t.Context(), client.ObjectKeyFromObject(secret), secret)).To(Succeed())
+		return secret
+	}
+	setSourceData := func(t *testing.T, env *testEnv, data map[string][]byte) {
+		t.Helper()
+		g := NewWithT(t)
+		source := manifests.KonnectivityControlPlaneAgentSecret(env.hcp.Namespace)
+		g.Expect(env.cpClient.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		source.Data = data
+		g.Expect(env.cpClient.Update(t.Context(), source)).To(Succeed())
+	}
+
+	t.Run("When the agent secret is copied to the hosted cluster, it should set the hash annotation to the hash of the copied data", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		data := agentData("agent-cert-1", "agent-key-1")
+		env := newEnv(data)
+
+		g.Expect(reconcile(t, env)).To(Succeed())
+
+		hostedSecret := getHostedAgentSecret(t, env)
+		g.Expect(hostedSecret.Data).To(Equal(data))
+		annotations := getDaemonSet(t, env).Spec.Template.Annotations
+		g.Expect(annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(hostedSecret.Data)))
+		g.Expect(annotations).To(HaveKeyWithValue(hyperv1.ReleaseImageAnnotation, releaseImage))
+		g.Expect(annotations).ToNot(HaveKey(hyperv1.RestartDateAnnotation))
+	})
+
+	t.Run("When the HostedControlPlane has a restart-date annotation, it should keep the release-image and restart-date annotations alongside the hash", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		data := agentData("agent-cert-1", "agent-key-1")
+		env := newEnv(data)
+		env.hcp.Annotations = map[string]string{hyperv1.RestartDateAnnotation: restartDate}
+
+		g.Expect(reconcile(t, env)).To(Succeed())
+
+		g.Expect(getDaemonSet(t, env).Spec.Template.Annotations).To(Equal(map[string]string{
+			hyperv1.ReleaseImageAnnotation: releaseImage,
+			hyperv1.RestartDateAnnotation:  restartDate,
+			hashAnnotation:                 util.HashSimple(data),
+		}))
+	})
+
+	t.Run("When the agent certificate or key changes, it should copy the new data and change the pod template", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		env := newEnv(agentData("agent-cert-1", "agent-key-1"))
+		g.Expect(reconcile(t, env)).To(Succeed())
+		initial := getDaemonSet(t, env)
+
+		rotatedCert := agentData("agent-cert-2", "agent-key-1")
+		setSourceData(t, env, rotatedCert)
+		g.Expect(reconcile(t, env)).To(Succeed())
+		g.Expect(getHostedAgentSecret(t, env).Data).To(Equal(rotatedCert))
+		afterCertRotation := getDaemonSet(t, env)
+		g.Expect(afterCertRotation.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(rotatedCert)))
+		g.Expect(afterCertRotation.Spec.Template.Annotations[hashAnnotation]).ToNot(Equal(initial.Spec.Template.Annotations[hashAnnotation]))
+		g.Expect(afterCertRotation.ResourceVersion).ToNot(Equal(initial.ResourceVersion))
+
+		rotatedKey := agentData("agent-cert-2", "agent-key-2")
+		setSourceData(t, env, rotatedKey)
+		g.Expect(reconcile(t, env)).To(Succeed())
+		g.Expect(getHostedAgentSecret(t, env).Data).To(Equal(rotatedKey))
+		afterKeyRotation := getDaemonSet(t, env)
+		g.Expect(afterKeyRotation.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(rotatedKey)))
+		g.Expect(afterKeyRotation.Spec.Template.Annotations[hashAnnotation]).ToNot(Equal(afterCertRotation.Spec.Template.Annotations[hashAnnotation]))
+	})
+
+	t.Run("When the agent secret data is unchanged, it should not update the DaemonSet on later reconciles", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		data := agentData("agent-cert-1", "agent-key-1")
+		env := newEnv(data)
+		g.Expect(reconcile(t, env)).To(Succeed())
+		initial := getDaemonSet(t, env)
+
+		// Go randomizes map iteration order, so each reconcile may copy and hash the Secret data
+		// in a different order. Repeating the reconcile proves that the hash, and therefore the
+		// pod template, does not depend on that order and that no DaemonSet update is issued.
+		for range 20 {
+			g.Expect(reconcile(t, env)).To(Succeed())
+			again := getDaemonSet(t, env)
+			g.Expect(again.ResourceVersion).To(Equal(initial.ResourceVersion))
+			g.Expect(again.Spec.Template).To(Equal(initial.Spec.Template))
+		}
+		g.Expect(initial.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(data)))
+	})
+
+	t.Run("When the control plane agent secret cannot be read, it should return the existing error and keep the previous hash", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		data := agentData("agent-cert-1", "agent-key-1")
+		env := newEnv(data)
+		g.Expect(reconcile(t, env)).To(Succeed())
+		initial := getDaemonSet(t, env)
+
+		env.failSourceRead = true
+		err := reconcile(t, env)
+		g.Expect(err).To(MatchError(errSourceUnavailable))
+		g.Expect(err).To(MatchError(ContainSubstring(sourceReadErrPrefix + errSourceUnavailable.Error())))
+
+		afterFailure := getDaemonSet(t, env)
+		g.Expect(afterFailure.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(data)))
+		g.Expect(afterFailure.ResourceVersion).To(Equal(initial.ResourceVersion))
+	})
+
+	t.Run("When writing the agent secret to the hosted cluster fails, it should return the existing error and keep the previous hash until the write succeeds", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		original := agentData("agent-cert-1", "agent-key-1")
+		env := newEnv(original)
+		g.Expect(reconcile(t, env)).To(Succeed())
+		initial := getDaemonSet(t, env)
+
+		rotated := agentData("agent-cert-2", "agent-key-2")
+		setSourceData(t, env, rotated)
+		env.failHostedWrite = true
+		err := reconcile(t, env)
+		g.Expect(err).To(MatchError(errHostedUnavailable))
+		g.Expect(err).To(MatchError(ContainSubstring(hostedWriteErrPrefix + errHostedUnavailable.Error())))
+
+		g.Expect(getHostedAgentSecret(t, env).Data).To(Equal(original))
+		afterFailure := getDaemonSet(t, env)
+		g.Expect(afterFailure.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(original)))
+		g.Expect(afterFailure.ResourceVersion).To(Equal(initial.ResourceVersion))
+
+		env.failHostedWrite = false
+		g.Expect(reconcile(t, env)).To(Succeed())
+		g.Expect(getHostedAgentSecret(t, env).Data).To(Equal(rotated))
+		afterRecovery := getDaemonSet(t, env)
+		g.Expect(afterRecovery.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(rotated)))
+		g.Expect(afterRecovery.ResourceVersion).ToNot(Equal(initial.ResourceVersion))
+	})
+
+	t.Run("When the agent secret cannot be read and the DaemonSet has no previous hash, it should create the DaemonSet without a hash annotation", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		env := newEnv(nil)
+
+		g.Expect(reconcile(t, env)).To(MatchError(ContainSubstring(sourceReadErrPrefix)))
+
+		annotations := getDaemonSet(t, env).Spec.Template.Annotations
+		g.Expect(annotations).ToNot(HaveKey(hashAnnotation))
+		g.Expect(annotations).To(HaveKeyWithValue(hyperv1.ReleaseImageAnnotation, releaseImage))
+		err := env.hostedClient.Get(t.Context(), hostedAgentSecretKey, &corev1.Secret{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+
+	t.Run("When a DaemonSet without a hash annotation is reconciled after the agent secret is copied, it should add the hash once", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		data := agentData("agent-cert-1", "agent-key-1")
+		env := newEnv(data)
+
+		// The first write fails, so the DaemonSet is created without a hash annotation, which is
+		// the state an existing cluster has before this hash was introduced.
+		env.failHostedWrite = true
+		err := reconcile(t, env)
+		g.Expect(err).To(MatchError(errHostedUnavailable))
+		g.Expect(err).To(MatchError(ContainSubstring(hostedWriteErrPrefix)))
+		withoutHash := getDaemonSet(t, env)
+		g.Expect(withoutHash.Spec.Template.Annotations).ToNot(HaveKey(hashAnnotation))
+		g.Expect(withoutHash.Spec.Template.Annotations).To(HaveKeyWithValue(hyperv1.ReleaseImageAnnotation, releaseImage))
+
+		env.failHostedWrite = false
+		g.Expect(reconcile(t, env)).To(Succeed())
+		withHash := getDaemonSet(t, env)
+		g.Expect(withHash.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(data)))
+		g.Expect(withHash.ResourceVersion).ToNot(Equal(withoutHash.ResourceVersion))
+
+		g.Expect(reconcile(t, env)).To(Succeed())
+		g.Expect(getDaemonSet(t, env).ResourceVersion).To(Equal(withHash.ResourceVersion))
+	})
+
+	t.Run("When the agent secret is copied but the DaemonSet update fails, it should keep the previous hash until a retry applies the new hash", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		original := agentData("agent-cert-1", "agent-key-1")
+		env := newEnv(original)
+		g.Expect(reconcile(t, env)).To(Succeed())
+		initial := getDaemonSet(t, env)
+		g.Expect(initial.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(original)))
+
+		rotated := agentData("agent-cert-2", "agent-key-2")
+		setSourceData(t, env, rotated)
+		env.failDaemonSetUpdate = true
+		err := reconcile(t, env)
+		g.Expect(err).To(MatchError(errDaemonSetUpdate))
+		// The DaemonSet failure is the only error: copying the rotated Secret succeeded.
+		g.Expect(err).To(MatchError(daemonSetErrPrefix + errDaemonSetUpdate.Error()))
+
+		// The rotated credentials reached the hosted cluster, but the stored DaemonSet keeps the old hash.
+		hostedAfterFailure := getHostedAgentSecret(t, env)
+		g.Expect(hostedAfterFailure.Data).To(Equal(rotated))
+		afterFailure := getDaemonSet(t, env)
+		g.Expect(afterFailure.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(original)))
+		g.Expect(afterFailure.ResourceVersion).To(Equal(initial.ResourceVersion))
+
+		// On retry the hosted Secret is already up to date, so its reconcile is a no-op,
+		// but the hash must still be computed and applied to the DaemonSet.
+		env.failDaemonSetUpdate = false
+		g.Expect(reconcile(t, env)).To(Succeed())
+		g.Expect(getHostedAgentSecret(t, env).ResourceVersion).To(Equal(hostedAfterFailure.ResourceVersion))
+		afterRetry := getDaemonSet(t, env)
+		g.Expect(afterRetry.Spec.Template.Annotations).To(HaveKeyWithValue(hashAnnotation, util.HashSimple(rotated)))
+		g.Expect(afterRetry.ResourceVersion).ToNot(Equal(initial.ResourceVersion))
+
+		g.Expect(reconcile(t, env)).To(Succeed())
+		g.Expect(getDaemonSet(t, env).ResourceVersion).To(Equal(afterRetry.ResourceVersion))
+	})
 }
 
 func TestReconcileDataPlaneConnectionAvailable(t *testing.T) {
