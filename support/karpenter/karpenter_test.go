@@ -13,6 +13,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -356,4 +357,16 @@ func TestKarpenterBaseTaintMap(t *testing.T) {
 			g.Expect(taint["effect"]).To(Equal(string(KarpenterBaseTaints[i].Effect)))
 		}
 	})
+}
+
+func TestKarpenterBaseTaintTolerations(t *testing.T) {
+	g := NewWithT(t)
+
+	tolerations := KarpenterBaseTaintTolerations()
+	g.Expect(tolerations).To(HaveLen(len(KarpenterBaseTaints)))
+	for i, toleration := range tolerations {
+		g.Expect(toleration.Key).To(Equal(KarpenterBaseTaints[i].Key))
+		g.Expect(toleration.Operator).To(Equal(corev1.TolerationOpExists))
+		g.Expect(toleration.Effect).To(Equal(KarpenterBaseTaints[i].Effect))
+	}
 }
