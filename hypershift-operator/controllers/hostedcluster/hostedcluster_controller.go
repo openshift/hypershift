@@ -6035,10 +6035,12 @@ func (r *HostedClusterReconciler) effectiveGMPMonitoring(log logr.Logger, platfo
 }
 
 // reconcileSREMetricsConfig loads the SRE metrics configuration (avoids parsing if the content is the same)
-// and ensures that it is synced to the hosted control plane
+// and ensures that it is synced to the hosted control plane when the SRE metrics set is used for collection
+// or for metrics forwarding.
 func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
-	if r.effectiveMetricsSet(hcp.Spec.Monitoring) != metrics.MetricsSetSRE {
+	if r.effectiveMetricsSet(hcp.Spec.Monitoring) != metrics.MetricsSetSRE &&
+		hcp.Spec.Monitoring.MetricsForwarding.MetricsSet != hyperv1.MetricsSetSRE {
 		return nil
 	}
 	log.Info("Reconciling SRE metrics configuration")

@@ -9992,14 +9992,11 @@ func TestReconcileSREMetricsConfig_EffectiveMetricsSet(t *testing.T) {
 		},
 	}
 
-	noopCreateOrUpdate := func(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
-		return controllerutil.OperationResultNone, nil
-	}
-
 	tests := []struct {
 		name               string
 		operatorMetricSet  metrics.MetricsSet
 		hcpMetricsSet      hyperv1.MetricsSet
+		forwardingSet      hyperv1.MetricsSet
 		expectSREReconcile bool
 	}{
 		{
@@ -10026,6 +10023,19 @@ func TestReconcileSREMetricsConfig_EffectiveMetricsSet(t *testing.T) {
 			hcpMetricsSet:      hyperv1.MetricsSetTelemetry,
 			expectSREReconcile: false,
 		},
+		{
+			name:               "When only metricsForwarding.metricsSet is SRE it should reconcile and copy the SRE configuration",
+			operatorMetricSet:  metrics.MetricsSetTelemetry,
+			hcpMetricsSet:      hyperv1.MetricsSetTelemetry,
+			forwardingSet:      hyperv1.MetricsSetSRE,
+			expectSREReconcile: true,
+		},
+		{
+			name:               "When metricsForwarding.metricsSet is Telemetry and collection is not SRE it should skip SRE reconcile",
+			operatorMetricSet:  metrics.MetricsSetTelemetry,
+			forwardingSet:      hyperv1.MetricsSetTelemetry,
+			expectSREReconcile: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -10034,6 +10044,7 @@ func TestReconcileSREMetricsConfig_EffectiveMetricsSet(t *testing.T) {
 
 			hcp := baseHCP.DeepCopy()
 			hcp.Spec.Monitoring.MetricsSet = tt.hcpMetricsSet
+			hcp.Spec.Monitoring.MetricsForwarding.MetricsSet = tt.forwardingSet
 
 			objs := []crclient.Object{}
 			if tt.expectSREReconcile {
@@ -10048,13 +10059,20 @@ func TestReconcileSREMetricsConfig_EffectiveMetricsSet(t *testing.T) {
 			}
 
 			ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.Level(zapcore.InfoLevel)))
-			err := r.reconcileSREMetricsConfig(ctx, noopCreateOrUpdate, hcp)
+			var copied []crclient.ObjectKey
+			recordingCreateOrUpdate := func(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				copied = append(copied, crclient.ObjectKeyFromObject(obj))
+				return controllerutil.OperationResultNone, nil
+			}
+			err := r.reconcileSREMetricsConfig(ctx, recordingCreateOrUpdate, hcp)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			if tt.expectSREReconcile {
 				g.Expect(r.SREConfigHash).ToNot(BeEmpty(), "SRE config hash should be set when SRE metrics are active")
+				g.Expect(copied).To(Equal([]crclient.ObjectKey{{Namespace: hcpNS, Name: "sre-metric-set"}}))
 			} else {
 				g.Expect(r.SREConfigHash).To(BeEmpty(), "SRE config hash should not be set when SRE metrics are not active")
+				g.Expect(copied).To(BeEmpty())
 			}
 		})
 	}
