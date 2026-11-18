@@ -176,10 +176,13 @@ func (f *sampleFilter) apply(log logr.Logger, families map[string]*dto.MetricFam
 		}
 	}
 
+	// result now holds every family that survived filtering unchanged or as a
+	// subset, so derived names are checked against surviving families only:
+	// a family that filtering removed entirely must not suppress permitted
+	// samples. A partially kept source family is never in result.
 	var collisions []string
 	for name, d := range derived {
-		_, clashes := families[name]
-		if d.collided || (clashes && name != d.source) {
+		if _, clashes := result[name]; d.collided || clashes {
 			collisions = append(collisions, name)
 			continue
 		}

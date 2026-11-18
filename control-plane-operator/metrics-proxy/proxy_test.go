@@ -23,6 +23,8 @@ import (
 
 	"github.com/openshift/hypershift/support/metrics"
 
+	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr"
@@ -644,20 +646,9 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 	t.Run("When several targets expose the same metric families, it should encode each family once with one exposition type", func(t *testing.T) {
 		t.Parallel()
 
-		serve := func(exposition string) *httptest.Server {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-				if _, err := fmt.Fprint(w, exposition); err != nil {
-					t.Errorf("failed to write metrics fixture: %v", err)
-				}
-			}))
-			// The subtests run in parallel after this function returns.
-			t.Cleanup(server.Close)
-			return server
-		}
 		// Pod a exposes a complete summary with one quantile; pod b adds a
 		// second quantile that the drop rule below removes.
-		podA := serve(`# TYPE rpc_latency_seconds summary
+		podA := serveExposition(t, "pod-a", `# TYPE rpc_latency_seconds summary
 rpc_latency_seconds{quantile="0.5"} 0.2
 rpc_latency_seconds_sum 1
 rpc_latency_seconds_count 5
@@ -666,7 +657,7 @@ requests_total 1
 # TYPE conflicting_metric gauge
 conflicting_metric 3
 `)
-		podB := serve(`# TYPE rpc_latency_seconds summary
+		podB := serveExposition(t, "pod-b", `# TYPE rpc_latency_seconds summary
 rpc_latency_seconds{quantile="0.5"} 0.3
 rpc_latency_seconds{quantile="0.99"} 0.9
 rpc_latency_seconds_sum 2
@@ -676,8 +667,6 @@ requests_total 2
 # TYPE conflicting_metric counter
 conflicting_metric 4
 `)
-		hostA, portA := parseHostPort(t, podA.URL)
-		hostB, portB := parseHostPort(t, podB.URL)
 
 		tests := []struct {
 			name           string
@@ -732,15 +721,15 @@ conflicting_metric 4
 				handler := newTestHandler(
 					map[string]ComponentConfig{
 						"openshift-apiserver": {
-							MetricsPort:   portA,
+							MetricsPort:   podA.Port,
 							MetricsPath:   "/metrics",
 							MetricsScheme: "http",
 							sampleFilter:  newSampleFilter(logr.Discard(), "openshift-apiserver", tt.filter, tt.rules),
 						},
 					},
 					&fakeTargetDiscoverer{targets: []ScrapeTarget{
-						{PodName: "pod-a", PodIP: hostA, Port: portA},
-						{PodName: "pod-b", PodIP: hostB, Port: portB},
+						podA,
+						podB,
 					}},
 				)
 				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/openshift-apiserver", nil)
@@ -770,6 +759,136 @@ conflicting_metric 4
 				}
 				g.Expect(sampleKeysWithPod(families)).To(Equal(tt.wantSampleKeys))
 			})
+		}
+	})
+
+	t.Run("When filtered families from several targets share names, it should keep permitted samples with one family per name in any target order", func(t *testing.T) {
+		t.Parallel()
+
+		withPod := func(target ScrapeTarget, pod string) ScrapeTarget {
+			target.PodName = pod
+			return target
+		}
+		summaryWithTwoQuantiles := serveExposition(t, "", `# TYPE latency summary
+latency{quantile="0.5"} 0.2
+latency{quantile="0.99"} 0.9
+latency_sum 2
+latency_count 7
+`)
+		standaloneCount := serveExposition(t, "", `# TYPE latency_count gauge
+latency_count 9
+`)
+		gaugeRPC := serveExposition(t, "", `# TYPE rpc_latency_seconds gauge
+rpc_latency_seconds 1
+`)
+		partialRPCSummary := serveExposition(t, "", `# TYPE rpc_latency_seconds summary
+rpc_latency_seconds{quantile="0.5"} 0.3
+rpc_latency_seconds{quantile="0.99"} 0.9
+rpc_latency_seconds_sum 2
+rpc_latency_seconds_count 7
+`)
+		completeRPCSummary := serveExposition(t, "", `# TYPE rpc_latency_seconds summary
+rpc_latency_seconds{quantile="0.5"} 0.2
+rpc_latency_seconds_sum 1
+rpc_latency_seconds_count 5
+`)
+		dropQuantile := func(family string) prometheusoperatorv1.RelabelConfig {
+			return prometheusoperatorv1.RelabelConfig{
+				Action: "drop", Regex: family + `;0\.99`, SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "quantile"},
+			}
+		}
+		dropPod := func(pod string) prometheusoperatorv1.RelabelConfig {
+			return prometheusoperatorv1.RelabelConfig{Action: "drop", Regex: pod, SourceLabels: []prometheusoperatorv1.LabelName{"pod"}}
+		}
+
+		tests := []struct {
+			name           string
+			targets        []ScrapeTarget
+			rules          []prometheusoperatorv1.RelabelConfig
+			wantTypes      map[string]dto.MetricType
+			wantSampleKeys []string
+		}{
+			{
+				name:    "When a rejected target exposes a family named like a flattened sample of another target, it should keep the permitted sample",
+				targets: []ScrapeTarget{withPod(summaryWithTwoQuantiles, "pod-a"), withPod(standaloneCount, "pod-b")},
+				rules:   []prometheusoperatorv1.RelabelConfig{dropPod("pod-b"), dropQuantile("latency")},
+				wantTypes: map[string]dto.MetricType{
+					"latency":       dto.MetricType_UNTYPED,
+					"latency_count": dto.MetricType_UNTYPED,
+					"latency_sum":   dto.MetricType_UNTYPED,
+				},
+				wantSampleKeys: []string{"latency pod=pod-a quantile=0.5", "latency_count pod=pod-a", "latency_sum pod=pod-a"},
+			},
+			{
+				name:    "When a surviving family is named like a flattened sample of another target, it should keep only the surviving family",
+				targets: []ScrapeTarget{withPod(summaryWithTwoQuantiles, "pod-a"), withPod(standaloneCount, "pod-b")},
+				rules:   []prometheusoperatorv1.RelabelConfig{dropQuantile("latency")},
+				wantTypes: map[string]dto.MetricType{
+					"latency":       dto.MetricType_UNTYPED,
+					"latency_count": dto.MetricType_GAUGE,
+					"latency_sum":   dto.MetricType_UNTYPED,
+				},
+				wantSampleKeys: []string{"latency pod=pod-a quantile=0.5", "latency_count pod=pod-b", "latency_sum pod=pod-a"},
+			},
+			{
+				name: "When a filtered-away family of another type comes first, it should still merge the same-type families of later targets",
+				targets: []ScrapeTarget{
+					withPod(gaugeRPC, "pod-gauge"), withPod(partialRPCSummary, "pod-partial"), withPod(completeRPCSummary, "pod-complete"),
+				},
+				rules: []prometheusoperatorv1.RelabelConfig{dropPod("pod-gauge"), dropQuantile("rpc_latency_seconds")},
+				wantTypes: map[string]dto.MetricType{
+					"rpc_latency_seconds":       dto.MetricType_UNTYPED,
+					"rpc_latency_seconds_count": dto.MetricType_UNTYPED,
+					"rpc_latency_seconds_sum":   dto.MetricType_UNTYPED,
+				},
+				wantSampleKeys: []string{
+					"rpc_latency_seconds pod=pod-complete quantile=0.5", "rpc_latency_seconds pod=pod-partial quantile=0.5",
+					"rpc_latency_seconds_count pod=pod-complete", "rpc_latency_seconds_count pod=pod-partial",
+					"rpc_latency_seconds_sum pod=pod-complete", "rpc_latency_seconds_sum pod=pod-partial",
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			for _, order := range permutations(len(tt.targets)) {
+				targets := make([]ScrapeTarget, 0, len(order))
+				pods := make([]string, 0, len(order))
+				for _, i := range order {
+					targets = append(targets, tt.targets[i])
+					pods = append(pods, tt.targets[i].PodName)
+				}
+				t.Run(fmt.Sprintf("%s (target order %s)", tt.name, strings.Join(pods, ",")), func(t *testing.T) {
+					t.Parallel()
+					g := NewWithT(t)
+
+					handler := newTestHandler(
+						map[string]ComponentConfig{
+							"openshift-apiserver": {
+								MetricsPort:   targets[0].Port,
+								MetricsPath:   "/metrics",
+								MetricsScheme: "http",
+								sampleFilter:  newSampleFilter(logr.Discard(), "openshift-apiserver", MetricsFilterRelabel, tt.rules),
+							},
+						},
+						&fakeTargetDiscoverer{targets: targets},
+					)
+					req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics/openshift-apiserver", nil)
+					g.Expect(err).NotTo(HaveOccurred())
+					rec := httptest.NewRecorder()
+					handler.ServeHTTP(rec, req)
+					g.Expect(rec.Code).To(Equal(http.StatusOK))
+
+					parser := expfmt.NewTextParser(model.LegacyValidation)
+					families, err := parser.TextToMetricFamilies(strings.NewReader(rec.Body.String()))
+					g.Expect(err).NotTo(HaveOccurred(), "response:\n%s", rec.Body.String())
+					g.Expect(families).To(HaveLen(len(tt.wantTypes)), "response:\n%s", rec.Body.String())
+					for name, wantType := range tt.wantTypes {
+						g.Expect(families).To(HaveKey(name))
+						g.Expect(families[name].GetType()).To(Equal(wantType), name)
+					}
+					g.Expect(sampleKeysWithPod(families)).To(Equal(tt.wantSampleKeys))
+				})
+			}
 		}
 	})
 }
@@ -843,6 +962,38 @@ func sampleKeysWithPod(families map[string]*dto.MetricFamily) []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// serveExposition starts a metrics endpoint that serves the given text
+// exposition until the test and its subtests complete, and returns it as a
+// scrape target for pod.
+func serveExposition(t *testing.T, pod, exposition string) ScrapeTarget {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if _, err := fmt.Fprint(w, exposition); err != nil {
+			t.Errorf("failed to write metrics fixture: %v", err)
+		}
+	}))
+	// Parallel subtests run after the parent test function returns.
+	t.Cleanup(server.Close)
+	host, port := parseHostPort(t, server.URL)
+	return ScrapeTarget{PodName: pod, PodIP: host, Port: port}
+}
+
+// permutations returns every ordering of the indexes 0..n-1.
+func permutations(n int) [][]int {
+	if n == 0 {
+		return [][]int{{}}
+	}
+	var result [][]int
+	for _, rest := range permutations(n - 1) {
+		for i := 0; i <= len(rest); i++ {
+			order := append(append(append([]int{}, rest[:i]...), n-1), rest[i:]...)
+			result = append(result, order)
+		}
+	}
+	return result
 }
 
 // canonicalizeExposition parses Prometheus exposition text and re-encodes it with
@@ -967,4 +1118,63 @@ func TestRequireClientCert(t *testing.T) {
 		g.Expect(string(body)).To(ContainSubstring("ok"))
 	})
 
+}
+
+func TestAddToBatches(t *testing.T) {
+	t.Parallel()
+
+	family := func(name string, metricType dto.MetricType, pod string) *dto.MetricFamily {
+		return &dto.MetricFamily{
+			Name:   ptr.To(name),
+			Type:   metricType.Enum(),
+			Metric: []*dto.Metric{{Label: []*dto.LabelPair{{Name: ptr.To("pod"), Value: ptr.To(pod)}}}},
+		}
+	}
+	targets := []map[string]*dto.MetricFamily{
+		{"rpc": family("rpc", dto.MetricType_GAUGE, "t1"), "other": family("other", dto.MetricType_COUNTER, "t1")},
+		{"rpc": family("rpc", dto.MetricType_SUMMARY, "t2")},
+		{"rpc": family("rpc", dto.MetricType_SUMMARY, "t3"), "other": family("other", dto.MetricType_COUNTER, "t3")},
+		{"rpc": family("rpc", dto.MetricType_HISTOGRAM, "t4")},
+		{"rpc": family("rpc", dto.MetricType_GAUGE, "t5")},
+	}
+
+	t.Run("When families of the same name have several types, it should group each type across all targets", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		batches := []map[string]*dto.MetricFamily{make(map[string]*dto.MetricFamily)}
+		for _, families := range targets {
+			batches = addToBatches(batches, families)
+		}
+
+		pods := func(mf *dto.MetricFamily) []string {
+			var result []string
+			for _, m := range mf.Metric {
+				result = append(result, m.Label[0].GetValue())
+			}
+			return result
+		}
+		g.Expect(batches).To(HaveLen(3))
+		g.Expect(batches[0]).To(HaveLen(2))
+		g.Expect(batches[0]["rpc"].GetType()).To(Equal(dto.MetricType_GAUGE))
+		g.Expect(pods(batches[0]["rpc"])).To(Equal([]string{"t1", "t5"}))
+		g.Expect(batches[0]["other"].GetType()).To(Equal(dto.MetricType_COUNTER))
+		g.Expect(pods(batches[0]["other"])).To(Equal([]string{"t1", "t3"}))
+		g.Expect(batches[1]).To(HaveLen(1))
+		g.Expect(batches[1]["rpc"].GetType()).To(Equal(dto.MetricType_SUMMARY))
+		g.Expect(pods(batches[1]["rpc"])).To(Equal([]string{"t2", "t3"}))
+		g.Expect(batches[2]).To(HaveLen(1))
+		g.Expect(batches[2]["rpc"].GetType()).To(Equal(dto.MetricType_HISTOGRAM))
+		g.Expect(pods(batches[2]["rpc"])).To(Equal([]string{"t4"}))
+	})
+
+	t.Run("When a target has no families, it should leave the batches unchanged", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		batches := []map[string]*dto.MetricFamily{make(map[string]*dto.MetricFamily)}
+		batches = addToBatches(batches, map[string]*dto.MetricFamily{})
+		g.Expect(batches).To(HaveLen(1))
+		g.Expect(batches[0]).To(BeEmpty())
+	})
 }

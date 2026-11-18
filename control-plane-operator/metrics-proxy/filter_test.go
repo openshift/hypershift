@@ -486,6 +486,39 @@ offset_seconds_count 2
 			wantLines: nil,
 		},
 		{
+			name: "When a family named like a flattened sample is rejected entirely, it should keep the flattened sample",
+			mode: MetricsFilterRelabel,
+			rules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "drop", Regex: "pod-b", SourceLabels: []prometheusoperatorv1.LabelName{"pod"}},
+				{Action: "drop", Regex: `latency;0\.99`, SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "quantile"}},
+			},
+			families: func(t *testing.T) map[string]*dto.MetricFamily {
+				families := parseFamilies(t, `# TYPE latency summary
+latency{pod="pod-a",quantile="0.5"} 0.2
+latency{pod="pod-a",quantile="0.99"} 0.9
+latency_sum{pod="pod-a"} 2
+latency_count{pod="pod-a"} 7
+`)
+				families["latency_count"] = &dto.MetricFamily{
+					Name: ptr.To("latency_count"),
+					Type: dto.MetricType_GAUGE.Enum(),
+					Metric: []*dto.Metric{{
+						Label: []*dto.LabelPair{{Name: ptr.To("pod"), Value: ptr.To("pod-b")}},
+						Gauge: &dto.Gauge{Value: ptr.To(9.0)},
+					}},
+				}
+				return families
+			},
+			wantLines: []string{
+				"# TYPE latency untyped",
+				`latency{pod="pod-a",quantile="0.5"} 0.2`,
+				"# TYPE latency_count untyped",
+				`latency_count{pod="pod-a"} 7`,
+				"# TYPE latency_sum untyped",
+				`latency_sum{pod="pod-a"} 2`,
+			},
+		},
+		{
 			name: "When a flattened histogram sample name collides with another family, it should drop the flattened samples",
 			mode: MetricsFilterRelabel,
 			rules: []prometheusoperatorv1.RelabelConfig{

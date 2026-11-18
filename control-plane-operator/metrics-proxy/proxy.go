@@ -82,10 +82,9 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	successes := 0
 	var failedTargets []ScrapeTarget
-	// Families are merged across targets so each family is filtered and
-	// encoded once, with a single TYPE declaration.
-	merged := make(map[string]*dto.MetricFamily)
-	var conflicting []map[string]*dto.MetricFamily
+	// Families of the same name and type are merged across targets so each
+	// family is filtered and encoded once, with a single TYPE declaration.
+	batches := []map[string]*dto.MetricFamily{make(map[string]*dto.MetricFamily)}
 	for i, result := range results {
 		if result.Err != nil {
 			h.log.Error(result.Err, "scrape error", "target", targets[i].PodName)
@@ -97,9 +96,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Inject labels first so the relabel rules see each sample with the
 		// labels it is exposed with.
 		families := h.labeler.Inject(result.Families, targets[i], componentName, componentConfig)
-		if rest := mergeFamilies(merged, families); len(rest) > 0 {
-			conflicting = append(conflicting, rest)
-		}
+		batches = addToBatches(batches, families)
 	}
 
 	encodeFiltered := func(families map[string]*dto.MetricFamily) {
@@ -110,9 +107,8 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	encodeFiltered(merged)
-	for _, families := range conflicting {
-		encodeFiltered(families)
+	for _, batch := range batches {
+		encodeFiltered(batch)
 	}
 
 	// Emit synthetic scrape error counter for failed targets.
@@ -156,10 +152,25 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(buf.Bytes())
 }
 
+// addToBatches merges families into the first batch that has no family of the
+// same name or has one of the same type, and adds a batch when every batch
+// holds a family of that name with another type. Families of the same name and
+// type from any targets therefore share one batch, while incompatible types
+// stay in separate batches and are exposed separately, as before merging.
+func addToBatches(batches []map[string]*dto.MetricFamily, families map[string]*dto.MetricFamily) []map[string]*dto.MetricFamily {
+	for i := 0; len(families) > 0; i++ {
+		if i == len(batches) {
+			batches = append(batches, make(map[string]*dto.MetricFamily))
+		}
+		families = mergeFamilies(batches[i], families)
+	}
+	return batches
+}
+
 // mergeFamilies appends the metrics of families to the family of the same
 // name in merged, or adds the family when merged has none. Families whose type
 // differs from the merged family of the same name cannot share one family; they
-// are returned so the caller can expose them separately, as before merging.
+// are returned so the caller can try another batch.
 func mergeFamilies(merged, families map[string]*dto.MetricFamily) map[string]*dto.MetricFamily {
 	var conflicting map[string]*dto.MetricFamily
 	for name, mf := range families {
