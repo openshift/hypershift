@@ -30383,6 +30383,7 @@ It isn't necessary for the user defined in the kubeconfig used for the external 
 The user or service account used in the provided kubeconfig should have full permissions over the following resources:
 * `virtualmachines.kubevirt.io`
 * `virtualmachineinstances.kubevirt.io`
+* `virtualmachineinstancemigrations.kubevirt.io` (create only)
 * `virtualmachines.kubevirt.io/finalizers`
 * `datavolumes.cdi.kubevirt.io`
 * `services`
@@ -30417,6 +30418,12 @@ rules:
       - virtualmachineinstances
     verbs:
       - '*'
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstancemigrations
+    verbs:
+      - create
   - apiGroups:
       - cdi.kubevirt.io
     resources:
@@ -30478,6 +30485,12 @@ rules:
     verbs:
     - get
 ```
+
+Existing external-infrastructure installations must apply the updated Role in
+the namespace specified by `--infra-namespace` on the infrastructure cluster.
+Without the `virtualmachineinstancemigrations` permission, CAPK cannot create
+the migration object required to live-migrate worker VMs during an
+infrastructure-node drain.
 
 For full virt-launcher network isolation, also create a ClusterRole and ClusterRoleBinding
 to allow reading the infrastructure cluster's network configuration:

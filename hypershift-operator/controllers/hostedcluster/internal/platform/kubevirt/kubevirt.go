@@ -290,6 +290,11 @@ func (Kubevirt) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 			Verbs:     []string{rbacv1.VerbAll},
 		},
 		{
+			APIGroups: []string{"kubevirt.io"},
+			Resources: []string{"virtualmachineinstancemigrations"},
+			Verbs:     []string{"create"},
+		},
+		{
 			APIGroups: []string{cdicore.GroupName},
 			Resources: []string{"datavolumes"},
 			Verbs:     []string{"get", "list", "watch"},
