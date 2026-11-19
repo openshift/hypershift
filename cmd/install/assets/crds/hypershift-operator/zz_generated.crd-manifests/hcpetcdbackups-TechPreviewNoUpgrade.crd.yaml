@@ -290,8 +290,10 @@ spec:
                   failed attempts, which are not deleted automatically.
                 maxLength: 2048
                 minLength: 1
-                pattern: ^.*//[0-9]+$
                 type: string
+                x-kubernetes-validations:
+                - message: attemptKeyPrefix must be in the format <keyPrefix>/<unix-timestamp>
+                  rule: self.matches('^.+/[0-9]+$')
               conditions:
                 description: |-
                   conditions contains details for the current state of the etcd backup.

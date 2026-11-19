@@ -256,7 +256,7 @@ type HCPEtcdBackupStatus struct {
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
-	// +kubebuilder:validation:Pattern=`^.*//[0-9]+$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^.+/[0-9]+$')",message="attemptKeyPrefix must be in the format <keyPrefix>/<unix-timestamp>"
 	AttemptKeyPrefix string `json:"attemptKeyPrefix,omitempty"`
 }
 
