@@ -1384,16 +1384,30 @@ func (r *GCPPrivateServiceConnectReconciler) updateStatusFromEndpoint(ctx contex
 // reconcileDelete handles cleanup when the CR is being deleted.
 // For each resource: delete, check operation status/error, then verify resource is gone.
 func (r *GCPPrivateServiceConnectReconciler) reconcileDelete(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, customerGCPClient *compute.Service, log logr.Logger) (bool, error) {
+	// Clean up DNS zones and records using zone names from PSC status. A DNS failure does
+	// not skip the endpoint/IP deletion below: those don't depend on DNS, and skipping them
+	// would leak them if pscCleanupDeletionTimeout later releases the finalizers.
+	log.Info("Cleaning up DNS zones and records")
+	dnsErr := r.cleanupDNS(ctx, gcpPSC, hcp)
+	if dnsErr != nil {
+		log.Error(dnsErr, "failed to clean up DNS zones, continuing with endpoint/IP deletion")
+		dnsErr = fmt.Errorf("failed to clean up DNS zones: %w", dnsErr)
+	} else {
+		log.Info("DNS cleanup completed successfully")
+	}
+
+	completed, computeErr := r.deletePSCComputeResources(ctx, gcpPSC, customerGCPClient, log)
+	if dnsErr != nil {
+		return false, errors.Join(dnsErr, computeErr)
+	}
+	return completed, computeErr
+}
+
+// deletePSCComputeResources deletes the PSC endpoint (forwarding rule) and then its reserved
+// IP. It returns true only once both are confirmed deleted.
+func (r *GCPPrivateServiceConnectReconciler) deletePSCComputeResources(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, customerGCPClient *compute.Service, log logr.Logger) (bool, error) {
 	customerProject := r.gcpClientBuilder.customerProject
 	region := r.gcpClientBuilder.region
-
-	// Clean up DNS zones and records using zone names from PSC status (following AWS blocking pattern)
-	log.Info("Cleaning up DNS zones and records")
-	if dnsErr := r.cleanupDNS(ctx, gcpPSC, hcp); dnsErr != nil {
-		log.Error(dnsErr, "failed to clean up DNS zones")
-		return false, fmt.Errorf("failed to clean up DNS zones: %w", dnsErr)
-	}
-	log.Info("DNS cleanup completed successfully")
 
 	// No service attachment name means the endpoint and IP were never created
 	// (their names derive from it), so there's nothing to delete here.
