@@ -7,9 +7,10 @@ backend. They are staged here, outside `v2/assets`, on purpose:
   is reconciled by the component framework (`support/controlplane-component`).
 - This directory is **not embedded and not reconciled**. Nothing in the
   control-plane-operator reads it at runtime today.
-- `TestGMPAssetsAreNotEmbedded` fails if any manifest from this tree becomes
-  part of the embedded asset FS, which the walk in that test checks for a
-  `gmpassets` path segment at any depth.
+- `TestGMPAssetsAreNotEmbedded` fails if any embedded manifest declares a GMP
+  resource (a `PodMonitoring` kind or a `monitoring.googleapis.com`
+  apiVersion), or if a file staged here also exists at the same relative path
+  in `v2/assets`. The follow-up that activates GMP monitoring replaces it.
 
 The CoreOS `ServiceMonitor` / `PodMonitor` assets under `v2/assets` remain the
 source of truth. `hack/gmp-config-gen` derives these files from them:
