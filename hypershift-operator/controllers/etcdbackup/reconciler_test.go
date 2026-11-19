@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 
@@ -2324,19 +2323,18 @@ func TestCreateBackupJob(t *testing.T) {
 		// The expected shard set is recorded on the Job for the completion path.
 		g.Expect(job.Annotations[annotationExpectedShardSnapshots]).To(Equal("default"))
 
-		// The upload container receives the attempt timestamp used in object keys.
+		// Single-shard backups must NOT receive --attempt-timestamp: older
+		// uploaders at the merge base do not recognize the flag, and the
+		// legacy uploader picks its own timestamp, so publishing a prefix
+		// would be incorrect.
 		var uploadArgs []string
 		for _, c := range job.Spec.Template.Spec.Containers {
 			if c.Name == "upload" {
 				uploadArgs = c.Command
 			}
 		}
-		g.Expect(uploadArgs).To(ContainElement("--attempt-timestamp"))
-		ts, err := strconv.ParseInt(uploadArgs[indexOf(uploadArgs, "--attempt-timestamp")+1], 10, 64)
-		g.Expect(err).ToNot(HaveOccurred())
-
-		// The status records the exact object key prefix for the attempt.
-		g.Expect(backup.Status.AttemptKeyPrefix).To(Equal(fmt.Sprintf("backups/test/%d", ts)))
+		g.Expect(uploadArgs).ToNot(ContainElement("--attempt-timestamp"))
+		g.Expect(backup.Status.AttemptKeyPrefix).To(BeEmpty())
 	})
 }
 
@@ -4061,12 +4059,23 @@ func TestAttemptKeyPrefix(t *testing.T) {
 		backup.Spec.Storage.AzureBlob.KeyPrefix = "backups"
 		g.Expect(attemptKeyPrefix(backup, 1700000000)).To(Equal("backups/1700000000"))
 	})
+	t.Run("When keyPrefix is a single slash it should produce a root-prefixed key", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		backup.Spec.Storage.S3.KeyPrefix = "/"
+		prefix := attemptKeyPrefix(backup, 1700000000)
+		// "/" trimmed to "" then replaced with "root" so the XValidation
+		// rule `^.+/[0-9]+$` always matches.
+		g.Expect(prefix).To(Equal("root/1700000000"))
+	})
+
 	t.Run("empty key prefix matches etcd-upload key construction", func(t *testing.T) {
 		t.Parallel()
 		g := NewGomegaWithT(t)
 		backup := newHCPEtcdBackup()
 		backup.Spec.Storage.S3.KeyPrefix = ""
-		g.Expect(attemptKeyPrefix(backup, 1700000000)).To(Equal("/1700000000"))
+		g.Expect(attemptKeyPrefix(backup, 1700000000)).To(Equal("root/1700000000"))
 	})
 }
 
@@ -4154,14 +4163,6 @@ func TestExpectedShardNames(t *testing.T) {
 		g.Expect(expectedShardNames(job, hcp)).To(Equal(shardIdentities(etcdShards(hcp))))
 	})
 }
-func indexOf(slice []string, value string) int {
-	for i, v := range slice {
-		if v == value {
-			return i
-		}
-	}
-	return -1
-}
 
 func TestGetShardSnapshots(t *testing.T) {
 	t.Parallel()
@@ -4222,6 +4223,42 @@ func TestGetShardSnapshots(t *testing.T) {
 			},
 		}
 		r := newReconciler(backup, job, pod)
+
+		snapshots, err := r.getShardSnapshots(t.Context(), backup, job)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(Equal([]hyperv1.HCPEtcdShardSnapshot{
+			{Name: "default", SnapshotURL: "s3://bucket/snapshot.db"},
+		}))
+	})
+
+	t.Run("When the result ConfigMap is empty (single-shard backup) it should fall back to the Pod termination message", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		job := newCompletedJob()
+		// The pre-created ConfigMap exists but is empty: ensureRBAC
+		// pre-creates it for all backups, while the single-shard
+		// uploader writes its result only to the Pod termination log.
+		cm := newResultConfigMap(backup, "")
+		// A valid single-shard Pod result.
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "backup-pod", Namespace: testHONamespace,
+				Labels: map[string]string{"batch.kubernetes.io/job-name": "etcd-backup-test"},
+			},
+			Spec: corev1.PodSpec{
+				Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+				RestartPolicy: corev1.RestartPolicyNever,
+			},
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{
+					{Name: "upload", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+						ExitCode: 0, Message: "s3://bucket/snapshot.db",
+					}}},
+				},
+			},
+		}
+		r := newReconciler(backup, job, cm, pod)
 
 		snapshots, err := r.getShardSnapshots(t.Context(), backup, job)
 		g.Expect(err).ToNot(HaveOccurred())

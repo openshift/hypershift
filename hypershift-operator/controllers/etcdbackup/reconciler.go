@@ -907,6 +907,16 @@ func (r *HCPEtcdBackupReconciler) getShardSnapshots(ctx context.Context, backup 
 		Namespace: r.OperatorNamespace,
 	}, cm)
 	if err == nil {
+		// An empty ConfigMap means no results were written to it: the
+		// Job ran but the upload container did not update the ConfigMap.
+		// This happens for single-shard backups, where runSingle writes
+		// its result only to the Pod termination log (the ConfigMap is
+		// pre-created unconditionally by ensureRBAC). Fall through to the
+		// Pod result instead of returning no snapshots, which would
+		// report a false BackupResultIncomplete.
+		if cm.Data[resultConfigMapKey] == "" {
+			return r.getShardSnapshotsFromPod(ctx, job)
+		}
 		return parseShardSnapshots(cm.Data[resultConfigMapKey])
 	}
 	if !apierrors.IsNotFound(err) {
@@ -1342,9 +1352,20 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 	// records it in the backup status (attemptKeyPrefix) so operators can
 	// identify, and clean up, objects left behind by failed attempts without
 	// needing signed URLs.
-	attemptTimestamp := time.Now().Unix()
-	uploadArgs = append(uploadArgs, "--attempt-timestamp", strconv.FormatInt(attemptTimestamp, 10))
-	backup.Status.AttemptKeyPrefix = attemptKeyPrefix(backup, attemptTimestamp)
+	//
+	// --attempt-timestamp is only passed for multi-shard backups: older
+	// single-shard uploaders (at the merge base) do not recognize the flag
+	// and would fail with an unknown-flag error before uploading anything.
+	// The legacy single-shard uploader picks its own timestamp, so
+	// AttemptKeyPrefix is omitted for single-shard backups to avoid
+	// publishing an incorrect prefix. Multi-shard backups already require
+	// a CPO image with the multi-shard capability label, which guarantees
+	// --attempt-timestamp support.
+	if len(shards) > 1 {
+		attemptTimestamp := time.Now().Unix()
+		uploadArgs = append(uploadArgs, "--attempt-timestamp", strconv.FormatInt(attemptTimestamp, 10))
+		backup.Status.AttemptKeyPrefix = attemptKeyPrefix(backup, attemptTimestamp)
+	}
 
 	jobLabels := map[string]string{
 		LabelApp:          LabelName,
@@ -1500,6 +1521,13 @@ func attemptKeyPrefix(backup *hyperv1.HCPEtcdBackup, timestamp int64) string {
 		keyPrefix = backup.Spec.Storage.AzureBlob.KeyPrefix
 	}
 	keyPrefix = strings.TrimSuffix(keyPrefix, "/")
+	if keyPrefix == "" {
+		// The spec accepts keyPrefix="/" (and the empty string); after
+		// trimming the trailing slash, a "/" prefix becomes "". Use
+		// "root" so the generated prefix always matches the
+		// XValidation rule `^.+/[0-9]+$`.
+		keyPrefix = "root"
+	}
 	return fmt.Sprintf("%s/%d", keyPrefix, timestamp)
 }
 
@@ -1531,7 +1559,8 @@ func (r *HCPEtcdBackupReconciler) getCredentialSecretName(backup *hyperv1.HCPEtc
 }
 
 // buildSnapshotInitContainers creates the init container list for the backup Job:
-// one fetch-certs container followed by one snapshot container per shard.
+// one fetch-certs container followed by a single snapshot container that
+// concurrently snapshots every shard.
 // All shards share the same etcd-client-tls credentials because the single etcd CA
 // signs all shard certificates and KAS uses one --etcd-certfile/keyfile pair.
 func (r *HCPEtcdBackupReconciler) buildSnapshotInitContainers(cpoImage, etcdImage, namespace string, shards []etcdShardInfo) []corev1.Container {
