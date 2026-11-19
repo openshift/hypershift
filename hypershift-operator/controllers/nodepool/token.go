@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -368,7 +369,7 @@ func (t *Token) repairMissingReferencedSecrets(ctx context.Context, tokenBytes [
 				case embedErr != nil:
 					// Unparsable content cannot be served to a Machine either.
 					repairReason = "ignition config is unparsable"
-				case embedded != string(pairedTokenSecret.Data[TokenSecretTokenKey]) && embedded != string(tokenBytes):
+				case !tokensEqual(embedded, string(pairedTokenSecret.Data[TokenSecretTokenKey])) && !tokensEqual(embedded, string(tokenBytes)):
 					// The paired token Secret was rotated past the embedded
 					// token. A Secret already carrying the current token (a
 					// previous repair) is left alone.
@@ -392,6 +393,12 @@ func (t *Token) repairMissingReferencedSecrets(ctx context.Context, tokenBytes [
 		}
 	}
 	return nil
+}
+
+// tokensEqual compares ignition bootstrap tokens in constant time so the
+// comparison does not leak the token served to a Machine through timing.
+func tokensEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 func (t *Token) cleanupOutdated(ctx context.Context) error {

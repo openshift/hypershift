@@ -742,6 +742,49 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			got := &corev1.Secret{}
 			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)).To(Succeed(), "rollout MachineSet-referenced outdated user data Secret should be kept")
 		})
+
+		t.Run("When a NodePool Machine references a different user data Secret, the outdated Secret should be deleted", func(t *testing.T) {
+			g := NewWithT(t)
+			currentUserDataName := fmt.Sprintf("%s-%s-currenthash", UserDataSecrePrefix, nodePoolName)
+			currentUserDataSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlplaneNamespace,
+					Name:      currentUserDataName,
+				},
+			}
+			machine := &capiv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machine",
+					Namespace: controlplaneNamespace,
+					Annotations: map[string]string{
+						nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, nodePoolName),
+					},
+				},
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{
+						DataSecretName: &currentUserDataName,
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), tokenSecret.DeepCopy(), currentUserDataSecret, machine).Build()
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					Client:                fakeClient,
+					nodePool:              nodePool(hyperv1.AzurePlatform),
+					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
+				},
+			}
+			g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup should succeed when a Machine references a different Secret")
+			got := &corev1.Secret{}
+			err := fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "unreferenced outdated user data Secret should be deleted, got: %v", err)
+			// The Machine keeps the pair of the generation it references; the
+			// outdated pair is expired as in the no-reference case.
+			gotToken := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedTokenName}, gotToken)).To(Succeed(), "unreferenced token Secret should still exist, only annotated")
+			g.Expect(gotToken.Annotations).To(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation), "token Secret whose pair is unreferenced should be annotated to expire")
+		})
 	})
 }
 

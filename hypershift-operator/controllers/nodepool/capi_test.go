@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
 )
@@ -5158,7 +5159,7 @@ func TestMachineBootstrapDataSecretNameChangedPredicate(t *testing.T) {
 				ObjectOld: tt.old,
 				ObjectNew: tt.new,
 			}
-			g.Expect(pred.Update(e)).To(Equal(tt.expected))
+			g.Expect(pred.Update(e)).To(Equal(tt.expected), "unexpected reconcile decision for Machine update %q", tt.name)
 		})
 	}
 
@@ -5171,4 +5172,28 @@ func TestMachineBootstrapDataSecretNameChangedPredicate(t *testing.T) {
 		g.Expect(pred.Delete(event.DeleteEvent{Object: newMachine(ptr.To("user-data-np-hash"))})).To(BeTrue(),
 			"Machine deletion must trigger reconciliation: the bootstrap reference going away re-enables Secret cleanup")
 	})
+}
+
+func TestEnqueueParentNodePool(t *testing.T) {
+	t.Parallel()
+
+	const (
+		nodePoolNamespace = "clusters"
+		nodePoolName      = "test-nodepool"
+	)
+
+	newMachine := func(annotations map[string]string) *capiv1.Machine {
+		return &capiv1.Machine{ObjectMeta: metav1.ObjectMeta{Annotations: annotations}}
+	}
+
+	g := NewWithT(t)
+
+	g.Expect(enqueueParentNodePool(t.Context(), newMachine(map[string]string{
+		nodePoolAnnotation: nodePoolNamespace + "/" + nodePoolName,
+	}))).To(Equal([]reconcile.Request{
+		{NamespacedName: client.ObjectKey{Namespace: nodePoolNamespace, Name: nodePoolName}},
+	}), "an annotated Machine must enqueue its parent NodePool")
+
+	g.Expect(enqueueParentNodePool(t.Context(), newMachine(nil))).To(BeEmpty(),
+		"an unannotated Machine must not enqueue a NodePool reconcile")
 }
