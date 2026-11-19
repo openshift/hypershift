@@ -31,7 +31,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: Check for non-contrib changes
+      - name: Check for non-docs changes
         id: changes
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -46,7 +46,9 @@ jobs:
             fi
             FILES=$(git diff --name-only ${{ github.event.before }}..${{ github.sha }})
           fi
-          if echo "$FILES" | grep -qvE '^(contrib|\.github|docs)/'; then
+          # contrib/ is executable Go code that the "other" shard tests, so it
+          # must not skip the shards; only docs and workflow-only changes do.
+          if echo "$FILES" | grep -qvE '^(\.github|docs)/'; then
             echo "run_tests=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_tests=false" >> "$GITHUB_OUTPUT"
@@ -87,11 +89,86 @@ jobs:
           cache: false
       - name: Run tests
         run: make test-shard TEST_PACKAGES="${{ matrix.packages }}" COVER_PROFILE="cover-${{ matrix.shard }}.out"
+      - name: Upload coverage profile
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cover-${{ matrix.shard }}
+          path: cover-${{ matrix.shard }}.out
+          retention-days: 1
+          if-no-files-found: error
+
+  # Pull requests that only touch docs/ or .github/ skip the shards, so nothing is
+  # uploaded and codecov/patch is never posted: the context then waits forever and
+  # only /override clears it. empty-upload is Codecov's command for exactly this
+  # case (no report is possible for the commit): it makes Codecov post the statuses
+  # configured in codecov.yml instead of staying silent.
+  coverage-empty:
+    name: Upload coverage (no tests)
+    needs: [changes]
+    if: needs.changes.outputs.run_tests != 'true'
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        env:
+          HOME: /tmp
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          run_command: empty-upload
+          # No force: Codecov only reports when every changed file is in the
+          # ignore list of codecov.yml. Anything else means tests were skipped for
+          # coverable code, which must fail here instead of passing silently.
+          fail_ci_if_error: true
+
+  # Single uploader. Codecov creates the codecov/patch check run as in_progress and
+  # then needs a second API call to complete it; that call is occasionally lost and
+  # Codecov never retries or reconciles, which leaves the check pending forever
+  # (see openshift/hypershift#10208). Uploading once per commit instead of once per
+  # shard keeps that exposure to a single notification, and running only after every
+  # shard succeeded keeps the report complete so no carryforward flags are needed.
+  coverage:
+    name: Upload coverage
+    needs: [changes, test]
+    if: needs.changes.outputs.run_tests == 'true' && needs.test.result == 'success'
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      # The CLI reads codecov.yml from the working tree; without a checkout it
+      # reports "No config file could be found" and applies no ignore rules.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: cover-*
+          path: coverage
+          merge-multiple: true
+      - name: Merge shard profiles
+        run: |
+          set -euo pipefail
+          # One profile per shard of the test matrix in this file. A retest after
+          # the one-day artifact retention has expired would leave fewer profiles
+          # here, and the partial report would then be uploaded as if complete.
+          expected=5
+          found=$(ls coverage/cover-*.out | wc -l | tr -d ' ')
+          if [ "$found" -ne "$expected" ]; then
+            echo "expected $expected shard profiles, found $found" >&2
+            ls -l coverage >&2
+            exit 1
+          fi
+          first=$(ls coverage/cover-*.out | head -n 1)
+          head -n 1 "$first" > coverage/cover.out
+          for profile in coverage/cover-*.out; do
+            tail -n +2 "$profile" >> coverage/cover.out
+          done
+          echo "merged $found shard profiles"
       - name: Upload to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         env:
           HOME: /tmp
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          files: cover-${{ matrix.shard }}.out
-          flags: ${{ matrix.shard }}
+          files: coverage/cover.out
+          # A failed upload must not leave the run green: without this, the
+          # report silently never reaches Codecov and no status is ever posted.
+          fail_ci_if_error: true
