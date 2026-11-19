@@ -185,7 +185,7 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 # Targets that conflict, such as deleting or mutating a directory another target
 # reads, must move to verify-serial-targets instead of running in parallel here.
 .PHONY: verify-parallel-targets
-verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs verify-hypershift-ci-daily-health
 
 # Run target checks sequentially after preparation.
 .PHONY: verify-serial-targets
@@ -195,7 +195,7 @@ verify-serial-targets:
 	$(MAKE) verify-capi-decoupling
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs verify-hypershift-ci-daily-health ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-serial-targets
 	$(MAKE) lint
 	$(MAKE) verify-git-clean
@@ -917,3 +917,11 @@ $(CODESPELL): $(PYTHON_VENV_STAMP)
 
 gitlint: $(GITLINT) ## Install local copy of gitlint.
 $(GITLINT): $(PYTHON_VENV_STAMP)
+
+.PHONY: verify-hypershift-ci-daily-health
+verify-hypershift-ci-daily-health: $(PYTHON_VENV_STAMP) ## Verify the offline HyperShift CI daily health companion.
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q .chai-bot/hypershift-ci-daily-health/scripts/test_hypershift_ci_daily_health.py; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q .chai-bot/hypershift-ci-daily-health/scripts/test_hypershift_ci_daily_health.py; \
+	fi
