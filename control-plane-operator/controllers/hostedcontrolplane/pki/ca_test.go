@@ -949,33 +949,46 @@ func TestReconcileTotalClientCA_SequentialRotation(t *testing.T) {
 }
 
 func TestReconcileCASecretMirror(t *testing.T) {
+	now := time.Now()
+	rootCA := string(mustGenerateCA(t, "root-ca", now.Add(-time.Hour), now.Add(time.Hour)))
+	ingressCA := string(mustGenerateCA(t, "ingress-ca", now.Add(-time.Hour), now.Add(time.Hour)))
+	etcdCA := string(mustGenerateCA(t, "etcd-ca", now.Add(-time.Hour), now.Add(time.Hour)))
+	privateKey := string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: []byte("not-a-real-key")}))
+
+	configMapWith := func(name, bundle string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test"},
+			Data:       map[string]string{certs.CASignerCertMapKey: bundle},
+		}
+	}
+
 	tests := []struct {
 		name        string
 		configMap   *corev1.ConfigMap
 		secret      *corev1.Secret
-		expectError bool
+		expectError string
 		expected    map[string][]byte
 	}{
 		{
-			name: "When the CA ConfigMap has a ca.crt bundle, it should mirror it into the Secret",
-			configMap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: "root-ca", Namespace: "test"},
-				Data:       map[string]string{certs.CASignerCertMapKey: "root-ca-pem"},
-			},
-			secret:   &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
-			expected: map[string][]byte{certs.CASignerCertMapKey: []byte("root-ca-pem")},
+			name:      "When the CA ConfigMap has a ca.crt bundle, it should mirror it into the Secret",
+			configMap: configMapWith("root-ca", rootCA),
+			secret:    &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
+			expected:  map[string][]byte{certs.CASignerCertMapKey: []byte(rootCA)},
 		},
 		{
-			name: "When the Secret already has data, it should replace it with the mirrored CA",
-			configMap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: "etcd-ca", Namespace: "test"},
-				Data:       map[string]string{certs.CASignerCertMapKey: "etcd-ca-pem"},
-			},
+			name:      "When the ca.crt bundle holds several certificates, it should mirror them byte for byte",
+			configMap: configMapWith("root-ca", rootCA+ingressCA),
+			secret:    &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
+			expected:  map[string][]byte{certs.CASignerCertMapKey: []byte(rootCA + ingressCA)},
+		},
+		{
+			name:      "When the Secret already has data, it should replace it with the mirrored CA",
+			configMap: configMapWith("etcd-ca", etcdCA),
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "etcd-ca-cert", Namespace: "test"},
 				Data:       map[string][]byte{"stale-key": []byte("stale")},
 			},
-			expected: map[string][]byte{certs.CASignerCertMapKey: []byte("etcd-ca-pem")},
+			expected: map[string][]byte{certs.CASignerCertMapKey: []byte(etcdCA)},
 		},
 		{
 			name: "When the CA ConfigMap has no ca.crt key, it should return an error",
@@ -983,25 +996,52 @@ func TestReconcileCASecretMirror(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "root-ca", Namespace: "test"},
 			},
 			secret:      &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
-			expectError: true,
+			expectError: "has no \"ca.crt\" value to mirror",
 		},
 		{
-			name: "When the ca.crt value is empty, it should return an error",
-			configMap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: "root-ca", Namespace: "test"},
-				Data:       map[string]string{certs.CASignerCertMapKey: ""},
-			},
+			name:        "When the ca.crt value is empty, it should return an error",
+			configMap:   configMapWith("root-ca", ""),
 			secret:      &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
-			expectError: true,
+			expectError: "has no \"ca.crt\" value to mirror",
+		},
+		{
+			name:        "When the bundle holds a private key block next to a certificate, it should refuse to mirror it",
+			configMap:   configMapWith("root-ca", rootCA+privateKey),
+			secret:      &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
+			expectError: `holds a "EC PRIVATE KEY" PEM block`,
+		},
+		{
+			name:        "When the bundle is only a private key, it should refuse to mirror it",
+			configMap:   configMapWith("root-ca", privateKey),
+			secret:      &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
+			expectError: `holds a "EC PRIVATE KEY" PEM block`,
+		},
+		{
+			name:        "When the bundle is not PEM, it should refuse to mirror it",
+			configMap:   configMapWith("root-ca", "root-ca-pem"),
+			secret:      &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
+			expectError: "has data after the last PEM block",
+		},
+		{
+			name:        "When data follows the last certificate, it should refuse to mirror it",
+			configMap:   configMapWith("root-ca", rootCA+"trailing data"),
+			secret:      &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "root-ca-cert", Namespace: "test"}},
+			expectError: "has data after the last PEM block",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			err := ReconcileCASecretMirror(tc.secret, tc.configMap, newOwnerRef())
-			if tc.expectError {
+			if tc.expectError != "" {
 				if err == nil {
 					t.Fatal("expected an error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.expectError) {
+					t.Errorf("expected error containing %q, got %q", tc.expectError, err.Error())
+				}
+				if len(tc.secret.Data) != 0 {
+					t.Errorf("expected a refused mirror to leave the Secret data untouched, got %v", tc.secret.Data)
 				}
 				return
 			}

@@ -194,10 +194,17 @@ func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, ro
 // signer Secrets that hold the same CA also hold its private key, so the GMP
 // collector must read this mirror rather than the signer. The mirror is
 // recomputed from the ConfigMap on every reconcile, so it follows CA rotation.
+//
+// The bundle is mirrored byte for byte so the collector trusts exactly what the
+// CoreOS path trusts. It is refused, not filtered, when it holds anything other
+// than certificates, so the mirror can never carry key material.
 func ReconcileCASecretMirror(secret *corev1.Secret, configMap *corev1.ConfigMap, ownerRef config.OwnerRef) error {
 	caCert, ok := configMap.Data[certs.CASignerCertMapKey]
 	if !ok || caCert == "" {
 		return fmt.Errorf("CA configmap %s/%s has no %q value to mirror", configMap.Namespace, configMap.Name, certs.CASignerCertMapKey)
+	}
+	if err := requireOnlyCertificates([]byte(caCert)); err != nil {
+		return fmt.Errorf("CA configmap %s/%s %q cannot be mirrored: %w", configMap.Namespace, configMap.Name, certs.CASignerCertMapKey, err)
 	}
 
 	ownerRef.ApplyTo(secret)
@@ -205,6 +212,33 @@ func ReconcileCASecretMirror(secret *corev1.Secret, configMap *corev1.ConfigMap,
 	// Replace the data instead of merging so a removed key cannot linger.
 	secret.Data = map[string][]byte{
 		certs.CASignerCertMapKey: []byte(caCert),
+	}
+	return nil
+}
+
+// requireOnlyCertificates fails unless the bundle is a sequence of PEM
+// CERTIFICATE blocks. Any other block type, such as a private key, and any
+// trailing data that is not a PEM block is an error. The error never includes
+// the bundle contents.
+func requireOnlyCertificates(bundle []byte) error {
+	certificates := 0
+	rest := bundle
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			return fmt.Errorf("bundle holds a %q PEM block; only CERTIFICATE blocks are allowed", block.Type)
+		}
+		certificates++
+	}
+	if len(bytes.TrimSpace(rest)) > 0 {
+		return fmt.Errorf("bundle has data after the last PEM block")
+	}
+	if certificates == 0 {
+		return fmt.Errorf("bundle holds no PEM certificate")
 	}
 	return nil
 }
