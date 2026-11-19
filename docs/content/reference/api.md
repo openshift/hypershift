@@ -10235,11 +10235,12 @@ string
 <td>
 <em>(Optional)</em>
 <p>attemptKeyPrefix is the object key prefix used by the most recent
-backup attempt for this HCPEtcdBackup. Objects written by the attempt
-are <attemptKeyPrefix>/<shard>.db for multi-shard backups, or
-<attemptKeyPrefix>.db for single-shard backups. The field lets
-operators identify and clean up objects left behind by failed
-attempts, which are not deleted automatically.</p>
+backup attempt for this HCPEtcdBackup, in the format
+&ldquo;<keyPrefix>/<unix-timestamp>&rdquo; (e.g. &ldquo;backups/my-cluster/1731400000&rdquo;).
+Objects written by the attempt are <attemptKeyPrefix>/<shard>.db for
+multi-shard backups, or <attemptKeyPrefix>.db for single-shard backups.
+The field lets operators identify and clean up objects left behind by
+failed attempts, which are not deleted automatically.</p>
 </td>
 </tr>
 </tbody>
@@ -10357,7 +10358,8 @@ string
 <td>
 <p>name is the public shard identity: &ldquo;default&rdquo; for the default shard,
 or the exact ManagedEtcdShardSpec.name for a named shard
-(e.g., &ldquo;events&rdquo;).
+(e.g., &ldquo;events&rdquo;). It is a DNS1123 label matching the shard&rsquo;s
+spec name, or the reserved value &ldquo;default&rdquo;.
 It must be between 1 and 63 characters.</p>
 </td>
 </tr>

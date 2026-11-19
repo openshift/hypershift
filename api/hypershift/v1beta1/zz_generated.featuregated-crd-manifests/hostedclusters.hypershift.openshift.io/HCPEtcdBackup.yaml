@@ -2852,8 +2852,8 @@ spec:
                             - message: restoreSnapshotURL is immutable
                               rule: self == oldSelf
                             - message: restoreSnapshotURL must be a valid URL with
-                                scheme https
-                              rule: self.size() == 0 || self[0].matches('^https://.*')
+                                scheme https and a non-empty authority
+                              rule: self.size() == 0 || self[0].matches('^https://[^/]+')
                           type:
                             description: |-
                               type is the kind of persistent storage implementation to use for etcd.
@@ -7572,8 +7572,8 @@ spec:
                 type: string
                 x-kubernetes-validations:
                 - message: lastSuccessfulEtcdBackupURL must be a valid URL with scheme
-                    https or s3
-                  rule: self.matches('^(https|s3)://.*')
+                    https or s3 and a non-empty authority
+                  rule: self.matches('^(https|s3)://[^/]+')
               lastSuccessfulEtcdShardBackupURLs:
                 description: |-
                   lastSuccessfulEtcdShardBackupURLs is the versioned per-shard snapshot
@@ -7594,7 +7594,8 @@ spec:
                       description: |-
                         name is the public shard identity: "default" for the default shard,
                         or the exact ManagedEtcdShardSpec.name for a named shard
-                        (e.g., "events").
+                        (e.g., "events"). It is a DNS1123 label matching the shard's
+                        spec name, or the reserved value "default".
                         It must be between 1 and 63 characters.
                       maxLength: 63
                       minLength: 1
@@ -7608,8 +7609,8 @@ spec:
                       type: string
                       x-kubernetes-validations:
                       - message: snapshotURL must be a valid URL with scheme https
-                          or s3
-                        rule: self.matches('^(https|s3)://.*')
+                          or s3 and a non-empty authority
+                        rule: self.matches('^(https|s3)://[^/]+')
                   required:
                   - name
                   - snapshotURL

@@ -3540,8 +3540,8 @@ spec:
                             - message: restoreSnapshotURL is immutable
                               rule: self == oldSelf
                             - message: restoreSnapshotURL must be a valid URL with
-                                scheme https
-                              rule: self.size() == 0 || self[0].matches('^https://.*')
+                                scheme https and a non-empty authority
+                              rule: self.size() == 0 || self[0].matches('^https://[^/]+')
                           type:
                             description: |-
                               type is the kind of persistent storage implementation to use for etcd.

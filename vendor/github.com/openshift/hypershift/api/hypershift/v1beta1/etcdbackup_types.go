@@ -225,7 +225,7 @@ type HCPEtcdBackupStatus struct {
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
-	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="snapshotURL must be a valid URL with scheme https or s3"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://[^/]+')",message="snapshotURL must be a valid URL with scheme https or s3 and a non-empty authority"
 	SnapshotURL string `json:"snapshotURL,omitempty"`
 
 	// shardSnapshots contains the snapshot URLs for each etcd shard that was
@@ -247,14 +247,16 @@ type HCPEtcdBackupStatus struct {
 	EncryptionMetadata HCPEtcdBackupEncryptionMetadata `json:"encryptionMetadata,omitzero"`
 
 	// attemptKeyPrefix is the object key prefix used by the most recent
-	// backup attempt for this HCPEtcdBackup. Objects written by the attempt
-	// are <attemptKeyPrefix>/<shard>.db for multi-shard backups, or
-	// <attemptKeyPrefix>.db for single-shard backups. The field lets
-	// operators identify and clean up objects left behind by failed
-	// attempts, which are not deleted automatically.
+	// backup attempt for this HCPEtcdBackup, in the format
+	// "<keyPrefix>/<unix-timestamp>" (e.g. "backups/my-cluster/1731400000").
+	// Objects written by the attempt are <attemptKeyPrefix>/<shard>.db for
+	// multi-shard backups, or <attemptKeyPrefix>.db for single-shard backups.
+	// The field lets operators identify and clean up objects left behind by
+	// failed attempts, which are not deleted automatically.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:Pattern=`^.*//[0-9]+$`
 	AttemptKeyPrefix string `json:"attemptKeyPrefix,omitempty"`
 }
 
@@ -290,9 +292,11 @@ func MissingPersistentShards(mapping []HCPEtcdShardSnapshot, managed *ManagedEtc
 
 // HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.
 type HCPEtcdShardSnapshot struct {
+
 	// name is the public shard identity: "default" for the default shard,
 	// or the exact ManagedEtcdShardSpec.name for a named shard
-	// (e.g., "events").
+	// (e.g., "events"). It is a DNS1123 label matching the shard's
+	// spec name, or the reserved value "default".
 	// It must be between 1 and 63 characters.
 	// +required
 	// +kubebuilder:validation:MinLength=1
@@ -304,7 +308,7 @@ type HCPEtcdShardSnapshot struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
-	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="snapshotURL must be a valid URL with scheme https or s3"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://[^/]+')",message="snapshotURL must be a valid URL with scheme https or s3 and a non-empty authority"
 	SnapshotURL string `json:"snapshotURL,omitempty"`
 }
 

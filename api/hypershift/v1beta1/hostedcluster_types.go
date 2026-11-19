@@ -2247,7 +2247,7 @@ type ManagedEtcdStorageSpec struct {
 	// +kubebuilder:validation:items:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="self.size() <= 1", message="RestoreSnapshotURL shouldn't contain more than 1 entry"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="restoreSnapshotURL is immutable"
-	// +kubebuilder:validation:XValidation:rule="self.size() == 0 || self[0].matches('^https://.*')", message="restoreSnapshotURL must be a valid URL with scheme https"
+	// +kubebuilder:validation:XValidation:rule="self.size() == 0 || self[0].matches('^https://[^/]+')", message="restoreSnapshotURL must be a valid URL with scheme https and a non-empty authority"
 	RestoreSnapshotURL []string `json:"restoreSnapshotURL,omitempty"`
 }
 
@@ -2443,7 +2443,7 @@ type ManagedEtcdShardSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="restoreSnapshotURL is immutable"
-	// +kubebuilder:validation:XValidation:rule="self.matches('^https://.*')",message="restoreSnapshotURL must be a valid URL with scheme https"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[^/]+')",message="restoreSnapshotURL must be a valid URL with scheme https and a non-empty authority"
 	RestoreSnapshotURL string `json:"restoreSnapshotURL,omitempty"`
 }
 
@@ -2880,7 +2880,7 @@ type HostedClusterStatus struct {
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
-	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="lastSuccessfulEtcdBackupURL must be a valid URL with scheme https or s3"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://[^/]+')",message="lastSuccessfulEtcdBackupURL must be a valid URL with scheme https or s3 and a non-empty authority"
 	LastSuccessfulEtcdBackupURL string `json:"lastSuccessfulEtcdBackupURL,omitempty"`
 
 	// lastSuccessfulEtcdShardBackupURLs is the versioned per-shard snapshot

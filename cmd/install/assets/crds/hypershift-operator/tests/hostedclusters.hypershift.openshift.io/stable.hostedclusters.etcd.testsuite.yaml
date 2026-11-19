@@ -140,7 +140,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "restoreSnapshotURL must be a valid URL with scheme https"
+    expectedError: "restoreSnapshotURL must be a valid URL with scheme https and a non-empty authority"
 
   - name: When restoreSnapshotURL has https scheme it should pass
     initial: |
@@ -231,7 +231,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "restoreSnapshotURL must be a valid URL with scheme https"
+    expectedError: "restoreSnapshotURL must be a valid URL with scheme https and a non-empty authority"
 
   onUpdate:
   - name: When restoreSnapshotURL is changed it should fail
