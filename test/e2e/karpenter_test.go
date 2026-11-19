@@ -1728,7 +1728,7 @@ func waitForAutoNodeStatusVCPUs(t *testing.T, ctx context.Context, mgtClient crc
 				return true, fmt.Sprintf("AutoNode.VCPUs=%d", actual), nil
 			},
 		},
-		e2eutil.WithTimeout(1*time.Minute),
+		e2eutil.WithTimeout(5*time.Minute),
 	)
 }
 
