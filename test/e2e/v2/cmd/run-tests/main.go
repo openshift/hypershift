@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
@@ -74,6 +75,9 @@ func main() {
 	log.Printf("Using test plan %q", plan.Name)
 
 	if err := plan.TestMatrix.Validate(); err != nil {
+		log.Fatalf("Invalid test plan: %v", err)
+	}
+	if err := validateRunPrerequisites(plan, os.Getenv); err != nil {
 		log.Fatalf("Invalid test plan: %v", err)
 	}
 
@@ -163,6 +167,8 @@ func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitP
 
 	args := []string{
 		fmt.Sprintf("--ginkgo.label-filter=%s", labelFilter),
+		// A label filter that matches nothing is a configuration error.
+		"--ginkgo.fail-on-empty",
 		fmt.Sprintf("--e2e.junit-report=%s", junitPath),
 		fmt.Sprintf("--ginkgo.timeout=%s", ginkgoTimeout),
 		"--ginkgo.v",
@@ -181,6 +187,28 @@ func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitP
 	)
 
 	return cmd.Run()
+}
+
+func validateRunPrerequisites(plan *lifecycle.TestPlan, getenv func(string) string) error {
+	for _, variant := range plan.TestMatrix.Variants() {
+		if variant != "deterministic-lb" {
+			continue
+		}
+		var missing []string
+		for _, key := range []string{
+			"HYPERSHIFT_DETERMINISTIC_LB_EIP",
+			"HYPERSHIFT_DETERMINISTIC_LB_SUBNET",
+			"E2E_EXPECTED_DETERMINISTIC_LB_IP",
+		} {
+			if getenv(key) == "" {
+				missing = append(missing, key)
+			}
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("deterministic-lb requires %s", strings.Join(missing, ", "))
+		}
+	}
+	return nil
 }
 
 func requireEnv(key string) string {

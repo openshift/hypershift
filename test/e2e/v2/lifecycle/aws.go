@@ -150,20 +150,12 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
 	}
 
-	deterministicLBArgs := []string{
-		"--endpoint-access=PublicAndPrivate",
-		"--feature-set=TechPreviewNoUpgrade",
-	}
-	if eip := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_EIP"); eip != "" {
-		if subnet := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET"); subnet != "" {
-			deterministicLBArgs = append(deterministicLBArgs,
-				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+eip,
-				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+subnet,
-			)
-		}
-	}
+	// Keep the variant in the catalog even without CI inputs: only plans that
+	// select it require the EIP and subnet at provisioning time.
+	deterministicLBEIP := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_EIP")
+	deterministicLBSubnet := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET")
 
-	return []ClusterSpec{
+	specs := []ClusterSpec{
 		{
 			Variant:     "public",
 			DestroyArgs: destroyArgs,
@@ -267,16 +259,25 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 				"--control-plane-availability-policy=HighlyAvailable",
 			}, v2util.EtcdShardingCreateArgs("")...)...),
 		},
-		{
-			// Dedicated cluster for the deterministic LoadBalancer IP test.
-			// The EIP and public subnet belong to the management cluster and
-			// are reserved by the CI pre-step before create-guests runs.
-			Variant:                 "deterministic-lb",
-			DestroyArgs:             destroyArgs,
-			InitialNodePoolReplicas: &oneInitialReplica,
-			CreateArgs:              clusterArgs(deterministicLBArgs...),
-		},
 	}
+
+	specs = append(specs, ClusterSpec{
+		// Dedicated cluster for the deterministic LoadBalancer IP test.
+		// The EIP and public subnet belong to the management cluster and
+		// are reserved by the CI pre-step before create-guests runs.
+		Variant:                 "deterministic-lb",
+		RequiredEnv:             []string{"HYPERSHIFT_DETERMINISTIC_LB_EIP", "HYPERSHIFT_DETERMINISTIC_LB_SUBNET"},
+		DestroyArgs:             destroyArgs,
+		InitialNodePoolReplicas: &oneInitialReplica,
+		CreateArgs: clusterArgs(
+			"--endpoint-access=PublicAndPrivate",
+			"--feature-set=TechPreviewNoUpgrade",
+			"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+deterministicLBEIP,
+			"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+deterministicLBSubnet,
+		),
+	})
+
+	return specs
 }
 
 // PreCreate deploys the external OIDC provider and the mirror registry fixture

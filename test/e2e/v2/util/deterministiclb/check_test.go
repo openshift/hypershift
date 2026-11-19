@@ -264,6 +264,41 @@ func TestWaitForPrimaryServiceIncludesLastObservation(t *testing.T) {
 	}
 }
 
+func TestCheckRequiresServiceAnnotations(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := hyperv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add hyperv1 to scheme: %v", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 to scheme: %v", err)
+	}
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hc", Namespace: "clusters-test"},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type:         hyperv1.LoadBalancer,
+						LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+					},
+				},
+			},
+		},
+	}
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	err := Check(Options{
+		Client:                client,
+		HostedCluster:         hc,
+		ControlPlaneNamespace: "clusters-test",
+	})
+	if err == nil || !strings.Contains(err.Error(), "no serviceAnnotations") {
+		t.Fatalf("Check() = %v, want the missing-annotations error", err)
+	}
+}
+
 func testService(ingress []corev1.LoadBalancerIngress, lb *hyperv1.LoadBalancerPublishingStrategy, uid string, classOverride ...string) *corev1.Service {
 	class := lb.LoadBalancerClass
 	if len(classOverride) > 0 {

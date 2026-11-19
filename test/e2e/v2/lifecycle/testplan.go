@@ -25,11 +25,12 @@ type TestPlan struct {
 }
 
 // Validate checks that all variants referenced by the TestMatrix
-// exist in allSpecs. Returns an error listing all problems.
+// exist in allSpecs and have their required environment inputs.
+// Returns an error listing all problems.
 func (p *TestPlan) Validate(allSpecs []ClusterSpec) error {
-	known := make(map[string]bool, len(allSpecs))
+	known := make(map[string]ClusterSpec, len(allSpecs))
 	for _, s := range allSpecs {
-		known[s.Variant] = true
+		known[s.Variant] = s
 	}
 
 	var errs []error
@@ -37,8 +38,19 @@ func (p *TestPlan) Validate(allSpecs []ClusterSpec) error {
 		errs = append(errs, err)
 	}
 	for _, v := range p.TestMatrix.Variants() {
-		if !known[v] {
+		spec, ok := known[v]
+		if !ok {
 			errs = append(errs, fmt.Errorf("variant %q not found", v))
+			continue
+		}
+		var missing []string
+		for _, key := range spec.RequiredEnv {
+			if os.Getenv(key) == "" {
+				missing = append(missing, key)
+			}
+		}
+		if len(missing) > 0 {
+			errs = append(errs, fmt.Errorf("variant %q requires %s, which are not set", v, strings.Join(missing, ", ")))
 		}
 	}
 

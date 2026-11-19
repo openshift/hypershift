@@ -23,6 +23,11 @@ type ClusterSpec struct {
 	// InitialNodePoolReplicas overrides the default initial NodePool replica count.
 	// A nil value uses HYPERSHIFT_NODE_COUNT.
 	InitialNodePoolReplicas *int `json:"initialNodePoolReplicas,omitempty"`
+
+	// RequiredEnv lists environment variables that must be non-empty before this
+	// variant is provisioned. The variant remains in the catalog when inputs are
+	// absent, so plans can report a validation error without hiding it.
+	RequiredEnv []string `json:"-"`
 }
 
 // TestGroup describes one logical group of e2e tests to execute.

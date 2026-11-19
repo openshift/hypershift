@@ -871,6 +871,16 @@ func testReconcilePrivateServiceAnnotationPassthrough(t *testing.T) {
 			},
 		},
 		{
+			name:     "When a user annotation conflicts with a CPO-managed private Service annotation, it should retain the CPO value",
+			platform: hyperv1.AWSPlatform,
+			serviceAnnotations: map[string]string{
+				"service.beta.kubernetes.io/aws-load-balancer-attributes": "load_balancing.cross_zone.enabled=false",
+			},
+			wantAnnotations: map[string]string{
+				"service.beta.kubernetes.io/aws-load-balancer-attributes": "load_balancing.cross_zone.enabled=true",
+			},
+		},
+		{
 			name:            "When reconciling a private service it should preserve external annotations not in serviceAnnotations",
 			platform:        hyperv1.AWSPlatform,
 			endpointAccess:  hyperv1.Private,
