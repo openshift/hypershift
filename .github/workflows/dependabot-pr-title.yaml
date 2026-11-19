@@ -1,0 +1,24 @@
+name: Prefix Dependabot PR Titles
+
+on:
+  pull_request_target:
+    branches:
+      - main
+      - release-4.22
+    types: [opened, reopened, edited, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: dependabot-pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  prefix-title:
+    if: >-
+      github.repository == 'openshift/hypershift' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.user.id == 49699333
+    uses: openshift/hypershift/.github/workflows/dependabot-pr-title-reusable.yaml@main
+    permissions:
+      pull-requests: write

@@ -1,0 +1,39 @@
+name: Prefix Dependabot PR Titles (Reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  pull-requests: write
+
+jobs:
+  prefix-title:
+    runs-on: arc-runner-set
+    timeout-minutes: 5
+    steps:
+      - name: Prefix the current Dependabot PR title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: python3 {0}
+        run: |
+          import json
+          import os
+          import subprocess
+
+          endpoint = f"repos/{os.environ['GH_REPO']}/pulls/{os.environ['PR_NUMBER']}"
+          pull = json.loads(subprocess.check_output(["gh", "api", endpoint]))
+          if pull["user"]["login"] != "dependabot[bot]" or pull["user"]["id"] != 49699333:
+              raise SystemExit(0)
+
+          title = pull["title"]
+          if title.startswith("NO-JIRA:"):
+              raise SystemExit(0)
+
+          subprocess.run(
+              ["gh", "api", "--method", "PATCH", endpoint, "--input", "-"],
+              input=json.dumps({"title": f"NO-JIRA: {title}"}),
+              text=True,
+              check=True,
+          )

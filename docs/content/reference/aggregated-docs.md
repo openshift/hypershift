@@ -15004,12 +15004,15 @@ Pull request callers resolve their reusable workflows from `main`, while post-me
 |--------|----------|---------|
 | `cpo-container-sync.yaml` | `cpo-container-sync-reusable.yaml` | Validate CPO container image references are in sync |
 | `dependabot-commit-fix.yaml` | `dependabot-commit-fix-reusable.yaml` | Rewrite dependabot commit messages to pass gitlint |
+| `dependabot-pr-title.yaml` | `dependabot-pr-title-reusable.yaml` | Prefix official Dependabot PR titles with `NO-JIRA:` while preserving conventional commit messages |
 | `gocacheprog-test.yaml` | `gocacheprog-test-reusable.yaml` | Tests for the `contrib/ci/gocacheprog` build cache tool (path-filtered) |
 | `test-commit-layout.yaml` | `test-commit-layout-reusable.yaml` | Tests for the `skills/restructure-commits` layout tool and ownership generator (path-filtered) |
 | `validate-cpo-overrides.yaml` | — | Validate CPO override images contain the PRs claimed in the PR description |
 
 !!! note
     The `sync-community-fork.yaml` workflow runs on push to `main` only (not on PRs) and does not use the reusable pattern. See Sync Community Fork for details.
+
+The Dependabot title workflow runs on PR creation, reopening, title edits, and new commits targeting `main` or `release-4.22`. It checks the PR author's login and numeric ID, reads the current title, and adds `NO-JIRA: ` only when absent. It updates PR metadata without checking out code or rewriting commits. Run its handler tests with `python3 -m unittest discover -s hack/ci -p 'test_dependabot_pr_title.py'` after installing PyYAML.
 
 ## ➕ Adding a New Workflow
 
