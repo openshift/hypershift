@@ -18,9 +18,11 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -135,6 +137,48 @@ func getCRD(t *testing.T, cl client.Client, name string) *apiextensionsv1.Custom
 	crd := &apiextensionsv1.CustomResourceDefinition{}
 	NewWithT(t).Expect(cl.Get(t.Context(), client.ObjectKey{Name: name}, crd)).To(Succeed())
 	return crd
+}
+
+// mutateCRDBeforeFirstPatch returns interceptor funcs that, before forwarding the first CRD patch,
+// simulate another writer changing the CRD after it was listed. patchCalls counts every CRD patch attempt.
+func mutateCRDBeforeFirstPatch(patchCalls *int, mutate func(*apiextensionsv1.CustomResourceDefinition)) interceptor.Funcs {
+	return interceptor.Funcs{
+		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+			if _, ok := obj.(*apiextensionsv1.CustomResourceDefinition); !ok {
+				return c.Patch(ctx, obj, patch, opts...)
+			}
+			*patchCalls++
+			if *patchCalls == 1 {
+				latest := &apiextensionsv1.CustomResourceDefinition{}
+				if err := c.Get(ctx, client.ObjectKeyFromObject(obj), latest); err != nil {
+					return err
+				}
+				mutate(latest)
+				if err := c.Update(ctx, latest); err != nil {
+					return err
+				}
+			}
+			return c.Patch(ctx, obj, patch, opts...)
+		},
+	}
+}
+
+// retargetToCAPIWebhookService retargets the CRD's conversion webhook to the CAPI webhook Service.
+func retargetToCAPIWebhookService(crd *apiextensionsv1.CustomResourceDefinition) {
+	crd.Spec.Conversion.Webhook.ClientConfig.Service.Namespace = "capi-system"
+	crd.Spec.Conversion.Webhook.ClientConfig.Service.Name = "capi-webhook-service"
+}
+
+// expectRetargetedCRDUntouched asserts that a CRD retargeted to the CAPI webhook Service kept its
+// annotation and caBundle.
+func expectRetargetedCRDUntouched(t *testing.T, cl client.Client, name string, caBundle []byte) {
+	t.Helper()
+	g := NewWithT(t)
+	crd := getCRD(t, cl, name)
+	g.Expect(crd.Spec.Conversion.Webhook.ClientConfig.Service.Namespace).To(Equal("capi-system"))
+	g.Expect(crd.Spec.Conversion.Webhook.ClientConfig.Service.Name).To(Equal("capi-webhook-service"))
+	g.Expect(crd.Annotations).To(HaveKeyWithValue(injectCABundleAnnotation, "true"))
+	g.Expect(crd.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(caBundle))
 }
 
 func TestReconcile(t *testing.T) {
@@ -526,6 +570,27 @@ func TestReconcile(t *testing.T) {
 		g.Expect(restored.Annotations).ToNot(HaveKey(injectCABundleAnnotation))
 		g.Expect(restored.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(webhookCA))
 	})
+
+	t.Run("When a CRD is retargeted to another service after it was listed, it should return a conflict and leave the CRD untouched", func(t *testing.T) {
+		g := NewWithT(t)
+
+		_, foreignCA := testCABundles(t)
+		crd := newConversionCRD("machines", "hypershift", "operator", foreignCA, map[string]string{injectCABundleAnnotation: "true"})
+		patchCalls := 0
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(crd).WithInterceptorFuncs(mutateCRDBeforeFirstPatch(&patchCalls, retargetToCAPIWebhookService)).Build()
+		r := newReconciler(cl)
+
+		_, err := r.Reconcile(t.Context(), caRequest())
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(apierrors.IsConflict(err)).To(BeTrue(), "expected a conflict so the reconcile is retried, got: %v", err)
+		expectRetargetedCRDUntouched(t, cl, crd.Name, foreignCA)
+
+		// The retried reconcile lists the CRD again, no longer selects it, and leaves it untouched.
+		_, err = r.Reconcile(t.Context(), caRequest())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(patchCalls).To(Equal(1))
+		expectRetargetedCRDUntouched(t, cl, crd.Name, foreignCA)
+	})
 }
 
 func TestGenerateInitialWebhookCerts(t *testing.T) {
@@ -849,10 +914,12 @@ func TestPatchCRDConversionWebhookCABundles(t *testing.T) {
 
 		webhookCA, foreignCA := testCABundles(t)
 		crd := newConversionCRD("machinepools", "hypershift", "operator", foreignCA, map[string]string{injectCABundleAnnotation: "true"})
+		var listedResourceVersion string
 		var patchType types.PatchType
 		var patchData []byte
 		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(crd).WithInterceptorFuncs(interceptor.Funcs{
 			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				listedResourceVersion = obj.GetResourceVersion()
 				patchType = patch.Type()
 				data, err := patch.Data(obj)
 				if err != nil {
@@ -866,41 +933,38 @@ func TestPatchCRDConversionWebhookCABundles(t *testing.T) {
 		g.Expect(patchCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator", webhookCA)).To(Succeed())
 
 		g.Expect(patchType).To(Equal(types.MergePatchType))
+		g.Expect(listedResourceVersion).ToNot(BeEmpty())
 		g.Expect(string(patchData)).To(MatchJSON(fmt.Sprintf(
-			`{"metadata":{"annotations":{%q:null}},"spec":{"conversion":{"webhook":{"clientConfig":{"caBundle":%q}}}}}`,
-			injectCABundleAnnotation, base64.StdEncoding.EncodeToString(webhookCA))))
+			`{"metadata":{"annotations":{%q:null},"resourceVersion":%q},"spec":{"conversion":{"webhook":{"clientConfig":{"caBundle":%q}}}}}`,
+			injectCABundleAnnotation, listedResourceVersion, base64.StdEncoding.EncodeToString(webhookCA))))
 		updated := getCRD(t, cl, crd.Name)
 		g.Expect(updated.Annotations).To(BeEmpty())
 		g.Expect(updated.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(webhookCA))
 	})
 
-	t.Run("When another writer adds an unrelated annotation before the patch is applied, it should preserve that annotation", func(t *testing.T) {
+	t.Run("When another writer adds an unrelated annotation before the patch is applied, it should conflict and preserve that annotation when the CRD is repaired", func(t *testing.T) {
 		g := NewWithT(t)
 
 		webhookCA, foreignCA := testCABundles(t)
 		crd := newConversionCRD("machinedeployments", "hypershift", "operator", foreignCA, map[string]string{injectCABundleAnnotation: "true"})
-		concurrentWriteDone := false
-		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(crd).WithInterceptorFuncs(interceptor.Funcs{
-			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-				if !concurrentWriteDone {
-					// Another writer adds an annotation after the CRD was listed but before our patch is applied.
-					latest := &apiextensionsv1.CustomResourceDefinition{}
-					if err := c.Get(ctx, client.ObjectKeyFromObject(obj), latest); err != nil {
-						return err
-					}
-					latest.Annotations["example.com/added-concurrently"] = "true"
-					if err := c.Update(ctx, latest); err != nil {
-						return err
-					}
-					concurrentWriteDone = true
-				}
-				return c.Patch(ctx, obj, patch, opts...)
-			},
-		}).Build()
+		patchCalls := 0
+		// Another writer adds an annotation after the CRD was listed but before our patch is applied.
+		addAnnotation := func(crd *apiextensionsv1.CustomResourceDefinition) {
+			crd.Annotations["example.com/added-concurrently"] = "true"
+		}
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(crd).WithInterceptorFuncs(mutateCRDBeforeFirstPatch(&patchCalls, addAnnotation)).Build()
 
+		// The stale patch is rejected and changes nothing.
+		err := patchCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator", webhookCA)
+		g.Expect(patchCalls).To(Equal(1))
+		g.Expect(apierrors.IsConflict(err)).To(BeTrue(), "expected a conflict, got: %v", err)
+		unchanged := getCRD(t, cl, crd.Name)
+		g.Expect(unchanged.Annotations).To(Equal(map[string]string{injectCABundleAnnotation: "true", "example.com/added-concurrently": "true"}))
+		g.Expect(unchanged.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(foreignCA))
+
+		// The next pass lists the CRD again, removes only the inject-cabundle annotation and repairs the caBundle.
 		g.Expect(patchCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator", webhookCA)).To(Succeed())
-
-		g.Expect(concurrentWriteDone).To(BeTrue())
+		g.Expect(patchCalls).To(Equal(2))
 		updated := getCRD(t, cl, crd.Name)
 		g.Expect(updated.Annotations).To(Equal(map[string]string{"example.com/added-concurrently": "true"}))
 		g.Expect(updated.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(webhookCA))
@@ -1003,6 +1067,64 @@ func TestPatchCRDConversionWebhookCABundles(t *testing.T) {
 		}
 	})
 
+	t.Run("When a CRD is retargeted to another service after it was listed, it should return a conflict and leave the CRD untouched", func(t *testing.T) {
+		webhookCA, foreignCA := testCABundles(t)
+		for _, tc := range []struct {
+			name     string
+			caBundle []byte
+		}{
+			{name: "When the caBundle already matches and only the annotation would be removed, it should conflict", caBundle: webhookCA},
+			{name: "When the caBundle differs, it should conflict", caBundle: foreignCA},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				g := NewWithT(t)
+
+				crd := newConversionCRD("clusters", "hypershift", "operator", tc.caBundle, map[string]string{injectCABundleAnnotation: "true"})
+				patchCalls := 0
+				cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(crd).WithInterceptorFuncs(mutateCRDBeforeFirstPatch(&patchCalls, retargetToCAPIWebhookService)).Build()
+
+				err := patchCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator", webhookCA)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(apierrors.IsConflict(err)).To(BeTrue(), "expected a conflict, got: %v", err)
+				expectRetargetedCRDUntouched(t, cl, crd.Name, tc.caBundle)
+
+				// The next pass lists the CRD again, no longer selects it, and leaves it untouched.
+				g.Expect(patchCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator", webhookCA)).To(Succeed())
+				g.Expect(patchCalls).To(Equal(1))
+				expectRetargetedCRDUntouched(t, cl, crd.Name, tc.caBundle)
+			})
+		}
+	})
+
+	t.Run("When one CRD conflicts, it should still repair the other CRDs in the same pass and return the conflict", func(t *testing.T) {
+		g := NewWithT(t)
+
+		webhookCA, foreignCA := testCABundles(t)
+		conflicting := newConversionCRD("clusters", "hypershift", "operator", foreignCA, map[string]string{injectCABundleAnnotation: "true"})
+		other := newConversionCRD("machines", "hypershift", "operator", foreignCA, map[string]string{injectCABundleAnnotation: "true"})
+		patchCalls := 0
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(conflicting, other).WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				patchCalls++
+				if obj.GetName() == conflicting.Name {
+					return apierrors.NewConflict(apiextensionsv1.Resource("customresourcedefinitions"), obj.GetName(), errors.New("the object has been modified"))
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).Build()
+
+		err := patchCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator", webhookCA)
+		g.Expect(apierrors.IsConflict(err)).To(BeTrue(), "expected a conflict, got: %v", err)
+		g.Expect(err.Error()).To(ContainSubstring(conflicting.Name))
+		g.Expect(patchCalls).To(Equal(2))
+		repaired := getCRD(t, cl, other.Name)
+		g.Expect(repaired.Annotations).ToNot(HaveKey(injectCABundleAnnotation))
+		g.Expect(repaired.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(webhookCA))
+		notPatched := getCRD(t, cl, conflicting.Name)
+		g.Expect(notPatched.Annotations).To(HaveKeyWithValue(injectCABundleAnnotation, "true"))
+		g.Expect(notPatched.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(foreignCA))
+	})
+
 	t.Run("When the caBundle is empty, it should return an error without patching any CRD", func(t *testing.T) {
 		g := NewWithT(t)
 
@@ -1040,20 +1162,20 @@ func TestBuildCRDConversionCABundlePatch(t *testing.T) {
 	t.Run("When the inject-cabundle annotation must be removed, it should delete only that key and set the caBundle", func(t *testing.T) {
 		g := NewWithT(t)
 
-		data, err := buildCRDConversionCABundlePatch([]byte("ca-bundle"), true)
+		data, err := buildCRDConversionCABundlePatch([]byte("ca-bundle"), "12345", true)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(string(data)).To(MatchJSON(fmt.Sprintf(
-			`{"metadata":{"annotations":{%q:null}},"spec":{"conversion":{"webhook":{"clientConfig":{"caBundle":%q}}}}}`,
+			`{"metadata":{"annotations":{%q:null},"resourceVersion":"12345"},"spec":{"conversion":{"webhook":{"clientConfig":{"caBundle":%q}}}}}`,
 			injectCABundleAnnotation, base64.StdEncoding.EncodeToString([]byte("ca-bundle")))))
 	})
 
-	t.Run("When the inject-cabundle annotation is absent, it should only set the caBundle", func(t *testing.T) {
+	t.Run("When the inject-cabundle annotation is absent, it should only set the caBundle with the resourceVersion precondition", func(t *testing.T) {
 		g := NewWithT(t)
 
-		data, err := buildCRDConversionCABundlePatch([]byte("ca-bundle"), false)
+		data, err := buildCRDConversionCABundlePatch([]byte("ca-bundle"), "12345", false)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(string(data)).To(MatchJSON(fmt.Sprintf(
-			`{"spec":{"conversion":{"webhook":{"clientConfig":{"caBundle":%q}}}}}`,
+			`{"metadata":{"resourceVersion":"12345"},"spec":{"conversion":{"webhook":{"clientConfig":{"caBundle":%q}}}}}`,
 			base64.StdEncoding.EncodeToString([]byte("ca-bundle")))))
 	})
 }
@@ -1522,5 +1644,71 @@ func TestEnsureCRDConversionWebhookCABundles(t *testing.T) {
 		updated := getCRD(t, cl, crd.Name)
 		g.Expect(updated.Annotations).ToNot(HaveKey(injectCABundleAnnotation))
 		g.Expect(updated.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(webhookCA))
+	})
+
+	t.Run("When a CRD is retargeted to another service after it was listed, it should retry with a fresh list and leave the CRD untouched", func(t *testing.T) {
+		g := NewWithT(t)
+
+		webhookCA, foreignCA := testCABundles(t)
+		caSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: "hypershift"},
+			Data:       map[string][]byte{certs.CASignerCertMapKey: webhookCA},
+		}
+		crd := newConversionCRD("clusters", "hypershift", "operator", foreignCA, map[string]string{injectCABundleAnnotation: "true"})
+		patchCalls := 0
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, crd).WithInterceptorFuncs(mutateCRDBeforeFirstPatch(&patchCalls, retargetToCAPIWebhookService)).Build()
+
+		g.Expect(EnsureCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator")).To(Succeed())
+		g.Expect(patchCalls).To(Equal(1))
+		expectRetargetedCRDUntouched(t, cl, crd.Name, foreignCA)
+	})
+
+	t.Run("When patching conflicts once, it should retry and repair the CRD", func(t *testing.T) {
+		g := NewWithT(t)
+
+		webhookCA, foreignCA := testCABundles(t)
+		caSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: "hypershift"},
+			Data:       map[string][]byte{certs.CASignerCertMapKey: webhookCA},
+		}
+		crd := newConversionCRD("clusters", "hypershift", "operator", foreignCA, map[string]string{injectCABundleAnnotation: "true"})
+		patchCalls := 0
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, crd).WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				patchCalls++
+				if patchCalls == 1 {
+					return apierrors.NewConflict(apiextensionsv1.Resource("customresourcedefinitions"), obj.GetName(), errors.New("the object has been modified"))
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).Build()
+
+		g.Expect(EnsureCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator")).To(Succeed())
+		g.Expect(patchCalls).To(Equal(2))
+		updated := getCRD(t, cl, crd.Name)
+		g.Expect(updated.Annotations).ToNot(HaveKey(injectCABundleAnnotation))
+		g.Expect(updated.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(webhookCA))
+	})
+
+	t.Run("When patching keeps conflicting, it should return the conflict after bounded retries", func(t *testing.T) {
+		g := NewWithT(t)
+
+		webhookCA, foreignCA := testCABundles(t)
+		caSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: "hypershift"},
+			Data:       map[string][]byte{certs.CASignerCertMapKey: webhookCA},
+		}
+		crd := newConversionCRD("clusters", "hypershift", "operator", foreignCA, map[string]string{injectCABundleAnnotation: "true"})
+		patchCalls := 0
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, crd).WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				patchCalls++
+				return apierrors.NewConflict(apiextensionsv1.Resource("customresourcedefinitions"), obj.GetName(), errors.New("the object has been modified"))
+			},
+		}).Build()
+
+		err := EnsureCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator")
+		g.Expect(apierrors.IsConflict(err)).To(BeTrue(), "expected a conflict, got: %v", err)
+		g.Expect(patchCalls).To(Equal(retry.DefaultBackoff.Steps))
 	})
 }

@@ -31,6 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -524,11 +525,22 @@ func conversionWebhookTargetsService(crd *apiextensionsv1.CustomResourceDefiniti
 
 // buildCRDConversionCABundlePatch returns a JSON merge patch that sets the CRD conversion webhook
 // caBundle and, when removeInjectAnnotation is true, deletes only the service-ca inject-cabundle
-// annotation key. An explicit patch is used instead of client.MergeFrom because deleting the last
-// annotation with MergeFrom serializes as "annotations": null, which would also remove annotations
-// added concurrently by other writers.
-func buildCRDConversionCABundlePatch(caBundle []byte, removeInjectAnnotation bool) ([]byte, error) {
+// annotation key. The observed resourceVersion makes the API server reject the patch with a conflict
+// if the CRD changed after it was read, for example if its conversion webhook was retargeted to another
+// Service or another writer added an annotation. Deleting only the annotation key, instead of using
+// client.MergeFrom (which serializes "annotations": null when the last annotation is deleted), keeps
+// the patch from ever touching other annotations.
+func buildCRDConversionCABundlePatch(caBundle []byte, resourceVersion string, removeInjectAnnotation bool) ([]byte, error) {
+	metadata := map[string]any{
+		"resourceVersion": resourceVersion,
+	}
+	if removeInjectAnnotation {
+		metadata["annotations"] = map[string]any{
+			injectCABundleAnnotation: nil,
+		}
+	}
 	patch := map[string]any{
+		"metadata": metadata,
 		"spec": map[string]any{
 			"conversion": map[string]any{
 				"webhook": map[string]any{
@@ -538,13 +550,6 @@ func buildCRDConversionCABundlePatch(caBundle []byte, removeInjectAnnotation boo
 				},
 			},
 		},
-	}
-	if removeInjectAnnotation {
-		patch["metadata"] = map[string]any{
-			"annotations": map[string]any{
-				injectCABundleAnnotation: nil,
-			},
-		}
 	}
 	return json.Marshal(patch)
 }
@@ -568,6 +573,7 @@ func patchCRDConversionWebhookCABundles(ctx context.Context, c client.Client, na
 	}
 
 	patchedCount := 0
+	var conflictErr error
 	for i := range crdList.Items {
 		crd := &crdList.Items[i]
 
@@ -583,13 +589,24 @@ func patchCRDConversionWebhookCABundles(ctx context.Context, c client.Client, na
 			continue
 		}
 
-		// Remove the inject-cabundle annotation (if present) and set the caBundle in a single patch.
-		data, err := buildCRDConversionCABundlePatch(caBundle, hasInjectAnnotation)
+		// Remove the inject-cabundle annotation (if present) and set the caBundle in a single patch,
+		// conditional on the CRD not having changed since it was listed.
+		data, err := buildCRDConversionCABundlePatch(caBundle, crd.ResourceVersion, hasInjectAnnotation)
 		if err != nil {
 			return fmt.Errorf("failed to build patch for CRD %s: %w", crd.Name, err)
 		}
 		if err := c.Patch(ctx, crd, client.RawPatch(types.MergePatchType, data)); err != nil {
-			return fmt.Errorf("failed to patch CRD %s conversion webhook caBundle/annotation: %w", crd.Name, err)
+			err = fmt.Errorf("failed to patch CRD %s conversion webhook caBundle/annotation: %w", crd.Name, err)
+			// The CRD changed after it was listed. Keep patching the other CRDs and return the conflict
+			// at the end so that the caller lists the CRDs and selects them again.
+			if apierrors.IsConflict(err) {
+				log.Info("CRD changed after it was listed, skipping it in this pass", "crd", crd.Name)
+				if conflictErr == nil {
+					conflictErr = err
+				}
+				continue
+			}
+			return err
 		}
 		patchedCount++
 		if hasInjectAnnotation {
@@ -603,7 +620,7 @@ func patchCRDConversionWebhookCABundles(ctx context.Context, c client.Client, na
 	if patchedCount > 0 {
 		log.Info("CRD conversion webhook caBundles patched", "count", patchedCount)
 	}
-	return nil
+	return conflictErr
 }
 
 // EnsureCRDConversionWebhookCABundles patches the caBundle field on all CRDs with conversion
@@ -629,7 +646,10 @@ func EnsureCRDConversionWebhookCABundles(ctx context.Context, c client.Client, n
 		return fmt.Errorf("webhook CA secret exists but has empty caBundle")
 	}
 
-	if err := patchCRDConversionWebhookCABundles(ctx, c, namespace, serviceName, caBundle); err != nil {
+	// Retry conflicts with a fresh list, for example when another operator replica bootstraps at the same time.
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		return patchCRDConversionWebhookCABundles(ctx, c, namespace, serviceName, caBundle)
+	}); err != nil {
 		return err
 	}
 
