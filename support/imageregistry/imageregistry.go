@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/hypershift-operator/omnihypershift"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"github.com/blang/semver"
@@ -33,8 +34,8 @@ func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
 //
 //  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
 //     HostedCluster resource itself
-//  2. The CPO-from-main image, when CPO-from-main is enabled (ENABLE_CPO_FROM_MAIN)
-//     and the release's MAJOR.MINOR is in CPO_FROM_MAIN_VERSIONS
+//  2. The Omni HyperShift image, when Omni HyperShift is enabled (ENABLE_OMNI_HYPERSHIFT)
+//     and the release's MAJOR.MINOR is in OMNI_HYPERSHIFT_VERSIONS
 //  3. A static CPO override for the exact release version, when overrides are
 //     enabled (ENABLE_CPO_OVERRIDES)
 //  4. The hypershift image specified in the release payload indicated by the
@@ -55,10 +56,10 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 		return "", err
 	}
 
-	// CPO-from-main takes precedence over the static CPO overrides: when enabled for
+	// Omni HyperShift takes precedence over the static CPO overrides: when enabled for
 	// this release's MAJOR.MINOR, drive the CPO from the HyperShift Operator's main build.
-	if fromMainImage := controlplaneoperatoroverrides.CPOFromMainImage(version, hypershiftOperatorImage); fromMainImage != "" {
-		return fromMainImage, nil
+	if omniImage := omnihypershift.CPOImage(version, hypershiftOperatorImage); omniImage != "" {
+		return omniImage, nil
 	}
 
 	if controlplaneoperatoroverrides.IsOverridesEnabled() {

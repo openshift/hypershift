@@ -5,7 +5,7 @@ import (
 
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/omnicpo"
+	"github.com/openshift/hypershift/support/omnihypershift"
 	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -34,16 +34,19 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	return nil
 }
 
-// omniCPOTransforms lists the drift adjustments a main-built CPO applies to the
+// omniHypershiftTransforms lists the drift adjustments a main-built CPO applies to the
 // csi-snapshot-controller-operator Deployment when it drives an older control plane. See
-// support/omnicpo.
-func omniCPOTransforms() []omnicpo.Transform[*appsv1.Deployment] {
-	return []omnicpo.Transform[*appsv1.Deployment]{
+// support/omnihypershift.
+func omniHypershiftTransforms() []omnihypershift.Transform[*appsv1.Deployment] {
+	if !config.IsOmniHypershiftEnabled() {
+		return nil
+	}
+	return []omnihypershift.Transform[*appsv1.Deployment]{
 		{
 			// --config arrived at 4.23; a pre-4.23 csi-snapshot-controller-operator rejects it.
 			Reason: "pre-4.23 csi-snapshot-controller-operator rejects --config",
-			When:   omnicpo.Below(config.Version423),
-			Do:     omnicpo.StripArgs(ComponentName, "--config="),
+			When:   omnihypershift.Below(config.Version423),
+			Do:     omnihypershift.StripArgs(ComponentName, "--config="),
 		},
 	}
 }

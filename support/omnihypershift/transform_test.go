@@ -1,4 +1,4 @@
-package omnicpo
+package omnihypershift
 
 import (
 	"errors"
@@ -176,19 +176,19 @@ func TestApply(t *testing.T) {
 		return deploymentWith(corev1.Container{Name: "op", Args: []string{"--serve", "--config=/x"}})
 	}
 
-	t.Run("no-op when OMNI-CPO is off", func(t *testing.T) {
-		t.Setenv(config.OmniCPOEnvVar, "0")
+	t.Run("no-op when Omni HyperShift is off", func(t *testing.T) {
+		t.Setenv(config.OmniHypershiftEnvVar, "0")
 		d := newDeploy()
 		if err := Apply(fakeResolveContext{version: "4.20.0"}, d, []Transform[*appsv1.Deployment]{strip}); err != nil {
 			t.Fatal(err)
 		}
 		if len(container(d, "op").Args) != 2 {
-			t.Errorf("expected args untouched when OMNI-CPO off, got %v", container(d, "op").Args)
+			t.Errorf("expected args untouched when Omni HyperShift off, got %v", container(d, "op").Args)
 		}
 	})
 
 	t.Run("applies in-range transform when on", func(t *testing.T) {
-		t.Setenv(config.OmniCPOEnvVar, "1")
+		t.Setenv(config.OmniHypershiftEnvVar, "1")
 		d := newDeploy()
 		if err := Apply(fakeResolveContext{version: "4.20.0"}, d, []Transform[*appsv1.Deployment]{strip}); err != nil {
 			t.Fatal(err)
@@ -199,7 +199,7 @@ func TestApply(t *testing.T) {
 	})
 
 	t.Run("skips out-of-range transform when on", func(t *testing.T) {
-		t.Setenv(config.OmniCPOEnvVar, "1")
+		t.Setenv(config.OmniHypershiftEnvVar, "1")
 		d := newDeploy()
 		if err := Apply(fakeResolveContext{version: "5.0.0"}, d, []Transform[*appsv1.Deployment]{strip}); err != nil {
 			t.Fatal(err)
@@ -210,7 +210,7 @@ func TestApply(t *testing.T) {
 	})
 
 	t.Run("propagates a mutation error with the reason", func(t *testing.T) {
-		t.Setenv(config.OmniCPOEnvVar, "1")
+		t.Setenv(config.OmniHypershiftEnvVar, "1")
 		boom := Transform[*appsv1.Deployment]{
 			Reason: "boom",
 			When:   Below(semver.MustParse("4.23.0")),

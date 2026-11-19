@@ -1,18 +1,18 @@
-// Package omnicpo declares, as data, how a main-built control-plane-operator adjusts the render
-// targets it produces when it drives an older OpenShift control plane (OMNI-CPO mode).
+// Package omnihypershift declares, as data, how a main-built control-plane-operator adjusts the render
+// targets it produces when it drives an older OpenShift control plane (Omni HyperShift mode).
 //
 // A component renders for main (the newest payload) unconditionally, then registers Transforms
 // that adjust a target for the driven (older) control plane. A Transform is generic over its
 // target T: a Transform[*appsv1.Deployment] mutates a Deployment, a Transform[*kcpv1.KubeAPIServerConfig]
 // mutates the KAS config, and so on. Apply runs the in-range transforms for the driven version and
-// is a no-op unless OMNI-CPO is enabled, so a stock CPO renders exactly as before.
+// is a no-op unless Omni HyperShift is enabled, so a stock CPO renders exactly as before.
 //
 // This expresses drift as "when driving a control plane in <version range>, do <named mutation>"
 // rather than an opaque per-flag boolean or scattered inline version checks. Because main is the
 // newest payload, most adjustments strip a flag/image an older operand rejects or swap an image its
 // payload lacks; the range type also supports the reverse direction (Between) for something main has
 // dropped but a middle band of operands still needs.
-package omnicpo
+package omnihypershift
 
 import (
 	"fmt"
@@ -48,7 +48,7 @@ type Transform[T any] struct {
 }
 
 // Range is a half-open control-plane version range, compared at MAJOR.MINOR (patch and prerelease
-// are ignored, matching config.OmniCPOSupportsVersion). A plane reporting 4.23.0-ec.2 is treated as
+// are ignored, matching config.OmniHypershiftSupportsVersion). A plane reporting 4.23.0-ec.2 is treated as
 // 4.23, so it is not mis-sorted below the 4.23.0 release the way a full-semver comparison would.
 type Range struct {
 	hasLower bool
@@ -71,7 +71,7 @@ func Between(lower, upper semver.Version) Range {
 
 // Contains reports whether the given control-plane version string falls in the range, compared at
 // MAJOR.MINOR. An unparsable version is never in range, so a Transform does not apply and the main
-// render stands (OmniCPOCheckVersion has already rejected such a version at reconcile start).
+// render stands (OmniHypershiftCheckVersion has already rejected such a version at reconcile start).
 func (r Range) Contains(version string) bool {
 	v, err := semver.Parse(version)
 	if err != nil {
@@ -95,10 +95,10 @@ func lessMajorMinor(a, b semver.Version) bool {
 }
 
 // Apply runs, in order, each Transform whose range contains the driven control plane's version,
-// against target. It is a no-op unless OMNI-CPO is enabled, so a control-plane-operator not deployed
+// against target. It is a no-op unless Omni HyperShift is enabled, so a control-plane-operator not deployed
 // from main is unaffected and renders exactly as before.
 func Apply[T any](rc ResolveContext, target T, transforms []Transform[T]) error {
-	if !config.IsOmniCPOEnabled() {
+	if !config.IsOmniHypershiftEnabled() {
 		return nil
 	}
 	version := rc.ControlPlaneVersion()
@@ -107,7 +107,7 @@ func Apply[T any](rc ResolveContext, target T, transforms []Transform[T]) error 
 			continue
 		}
 		if err := t.Do(rc, target); err != nil {
-			return fmt.Errorf("OMNI-CPO transform %q: %w", t.Reason, err)
+			return fmt.Errorf("applying Omni HyperShift transform %q: %w", t.Reason, err)
 		}
 	}
 	return nil

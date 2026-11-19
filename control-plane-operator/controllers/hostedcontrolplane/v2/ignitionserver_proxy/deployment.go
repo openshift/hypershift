@@ -6,7 +6,7 @@ import (
 
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/omnicpo"
+	"github.com/openshift/hypershift/support/omnihypershift"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 
@@ -20,11 +20,11 @@ import (
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	podspec.UpdateContainer("haproxy", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		proxy.SetEnvVars(&c.Env)
-		// Render for main: haproxy-router-haproxy32 is the current payload's haproxy image. The
-		// provider is always set in production; it can be nil in unit tests that don't exercise
-		// image resolution. OMNI-CPO swaps this for haproxy-router on pre-4.23 payloads, which only
-		// ship haproxy-router (see omniCPOTransforms).
-		if cpContext.ReleaseImageProvider != nil {
+		// Omni HyperShift renders the haproxy image for main (haproxy-router-haproxy32) so the pre-4.23
+		// transform can swap it for haproxy-router (see omniHypershiftTransforms). A stock CPO leaves the
+		// haproxy image to the payload default, so this is a no-op when Omni HyperShift is off. The provider
+		// is always set in production; it can be nil in unit tests that don't exercise image resolution.
+		if config.IsOmniHypershiftEnabled() && cpContext.ReleaseImageProvider != nil {
 			c.Image = cpContext.ReleaseImageProvider.GetImage("haproxy-router-haproxy32")
 		}
 	})
@@ -38,17 +38,20 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	return nil
 }
 
-// omniCPOTransforms lists the drift adjustments a main-built CPO applies to the ignition-server
-// proxy Deployment when it drives an older control plane. See support/omnicpo.
-func omniCPOTransforms() []omnicpo.Transform[*appsv1.Deployment] {
-	return []omnicpo.Transform[*appsv1.Deployment]{
+// omniHypershiftTransforms lists the drift adjustments a main-built CPO applies to the ignition-server
+// proxy Deployment when it drives an older control plane. See support/omnihypershift.
+func omniHypershiftTransforms() []omnihypershift.Transform[*appsv1.Deployment] {
+	if !config.IsOmniHypershiftEnabled() {
+		return nil
+	}
+	return []omnihypershift.Transform[*appsv1.Deployment]{
 		{
 			// The haproxy-router-haproxy32 payload component arrived at 4.23; older payloads only
 			// ship haproxy-router, so the haproxy-router-haproxy32 reference is unresolvable
 			// (ImagePullBackOff) there. Select the haproxy image the driven payload actually ships.
 			Reason: "pre-4.23 payloads ship haproxy-router, not haproxy-router-haproxy32",
-			When:   omnicpo.Below(config.Version423),
-			Do:     omnicpo.SetImage("haproxy", "haproxy-router"),
+			When:   omnihypershift.Below(config.Version423),
+			Do:     omnihypershift.SetImage("haproxy", "haproxy-router"),
 		},
 	}
 }

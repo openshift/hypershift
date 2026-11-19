@@ -21,7 +21,7 @@ import (
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/omnicpo"
+	"github.com/openshift/hypershift/support/omnihypershift"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -61,7 +61,7 @@ func adaptKubeAPIServerConfig(cpContext component.WorkloadContext, config *corev
 	if err != nil {
 		return err
 	}
-	if err := omnicpo.Apply(cpContext, kasConfig, kasConfigTransforms(featureGates)); err != nil {
+	if err := omnihypershift.Apply(cpContext, kasConfig, kasConfigTransforms(featureGates)); err != nil {
 		return err
 	}
 	serializedConfig, err := json.Marshal(kasConfig)
@@ -76,10 +76,10 @@ func adaptKubeAPIServerConfig(cpContext component.WorkloadContext, config *corev
 	return nil
 }
 
-// kasConfigTransforms lists the OMNI-CPO adjustments a main-built CPO applies to the rendered
-// kube-apiserver config when it drives an older control plane. See support/omnicpo.
-func kasConfigTransforms(featureGates []string) []omnicpo.Transform[*kcpv1.KubeAPIServerConfig] {
-	return []omnicpo.Transform[*kcpv1.KubeAPIServerConfig]{
+// kasConfigTransforms lists the Omni HyperShift adjustments a main-built CPO applies to the rendered
+// kube-apiserver config when it drives an older control plane. See support/omnihypershift.
+func kasConfigTransforms(featureGates []string) []omnihypershift.Transform[*kcpv1.KubeAPIServerConfig] {
+	return []omnihypershift.Transform[*kcpv1.KubeAPIServerConfig]{
 		{
 			// MutatingAdmissionPolicy is served at admissionregistration.k8s.io/v1alpha1 until it
 			// graduated to v1beta1 at 4.23 (k8s 1.36). main no longer emits the v1alpha1
@@ -87,8 +87,8 @@ func kasConfigTransforms(featureGates []string) []omnicpo.Transform[*kcpv1.KubeA
 			// gate without serving its API, and the KAS never finishes starting (the informer for
 			// v1alpha1.MutatingAdmissionPolicy never syncs). Re-emit it for the older operand.
 			Reason: "pre-4.23 MutatingAdmissionPolicy is served at v1alpha1",
-			When:   omnicpo.Below(hcpconfig.Version423),
-			Do: func(_ omnicpo.ResolveContext, cfg *kcpv1.KubeAPIServerConfig) error {
+			When:   omnihypershift.Below(hcpconfig.Version423),
+			Do: func(_ omnihypershift.ResolveContext, cfg *kcpv1.KubeAPIServerConfig) error {
 				if slices.Contains(featureGates, "MutatingAdmissionPolicy=true") {
 					cfg.APIServerArguments["runtime-config"] = append(
 						cfg.APIServerArguments["runtime-config"], "admissionregistration.k8s.io/v1alpha1=true")

@@ -6,7 +6,7 @@ import (
 	"github.com/blang/semver"
 )
 
-func TestOmniCPOSupportsVersion(t *testing.T) {
+func TestOmniHypershiftSupportsVersion(t *testing.T) {
 	tests := []struct {
 		version string
 		want    bool
@@ -22,34 +22,34 @@ func TestOmniCPOSupportsVersion(t *testing.T) {
 		{"5.1.0", false},
 	}
 	for _, tc := range tests {
-		if got := OmniCPOSupportsVersion(semver.MustParse(tc.version)); got != tc.want {
-			t.Errorf("OmniCPOSupportsVersion(%s) = %v, want %v", tc.version, got, tc.want)
+		if got := OmniHypershiftSupportsVersion(semver.MustParse(tc.version)); got != tc.want {
+			t.Errorf("OmniHypershiftSupportsVersion(%s) = %v, want %v", tc.version, got, tc.want)
 		}
 	}
 }
 
-func TestOmniCPOCheckVersion(t *testing.T) {
+func TestOmniHypershiftCheckVersion(t *testing.T) {
 	t.Run("off is a no-op even for an unsupported version", func(t *testing.T) {
-		t.Setenv(OmniCPOEnvVar, "0")
-		if err := OmniCPOCheckVersion("4.19.0"); err != nil {
+		t.Setenv(OmniHypershiftEnvVar, "0")
+		if err := OmniHypershiftCheckVersion("4.19.0"); err != nil {
 			t.Errorf("expected nil, got %v", err)
 		}
 	})
 	t.Run("on and supported", func(t *testing.T) {
-		t.Setenv(OmniCPOEnvVar, "1")
-		if err := OmniCPOCheckVersion("4.20.0"); err != nil {
+		t.Setenv(OmniHypershiftEnvVar, "1")
+		if err := OmniHypershiftCheckVersion("4.20.0"); err != nil {
 			t.Errorf("expected nil, got %v", err)
 		}
 	})
 	t.Run("on and unsupported errors", func(t *testing.T) {
-		t.Setenv(OmniCPOEnvVar, "1")
-		if err := OmniCPOCheckVersion("4.19.0"); err == nil {
+		t.Setenv(OmniHypershiftEnvVar, "1")
+		if err := OmniHypershiftCheckVersion("4.19.0"); err == nil {
 			t.Error("expected error, got nil")
 		}
 	})
 	t.Run("on and unparsable errors", func(t *testing.T) {
-		t.Setenv(OmniCPOEnvVar, "1")
-		if err := OmniCPOCheckVersion("not-a-version"); err == nil {
+		t.Setenv(OmniHypershiftEnvVar, "1")
+		if err := OmniHypershiftCheckVersion("not-a-version"); err == nil {
 			t.Error("expected error, got nil")
 		}
 	})

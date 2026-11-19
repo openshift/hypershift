@@ -47,9 +47,9 @@ var installerFlagPolicies = map[string]installerFlagPolicy{
 	"--enable-ci-debug-output":                     installerFlagRequired,
 	"--enable-size-tagging":                        installerFlagRequired,
 	"--enable-cpo-overrides":                       installerFlagRequired,
-	"--cpo-from-main":                              installerFlagRequired,
-	"--cpo-from-main-versions":                     installerFlagRequired,
-	"--cpo-from-main-image":                        installerFlagRequired,
+	"--omni-hypershift":                            installerFlagRequired,
+	"--omni-hypershift-versions":                   installerFlagRequired,
+	"--omni-hypershift-image":                      installerFlagRequired,
 	"--disable-capi-migration":                     installerFlagRequired,
 	"--enable-dedicated-request-serving-isolation": installerFlagRequired,
 	"--enable-etcd-recovery":                       installerFlagRequired,
@@ -360,13 +360,13 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 	if opts.EnableCPOOverrides {
 		args = append(args, "--enable-cpo-overrides")
 	}
-	if opts.CPOFromMain {
-		args = append(args, "--cpo-from-main")
-		if opts.CPOFromMainVersions != "" {
-			args = append(args, "--cpo-from-main-versions", opts.CPOFromMainVersions)
+	if opts.OmniHypershift {
+		args = append(args, "--omni-hypershift")
+		if opts.OmniHypershiftVersions != "" {
+			args = append(args, "--omni-hypershift-versions", opts.OmniHypershiftVersions)
 		}
-		if opts.CPOFromMainImage != "" {
-			args = append(args, "--cpo-from-main-image", opts.CPOFromMainImage)
+		if opts.OmniHypershiftImage != "" {
+			args = append(args, "--omni-hypershift-image", opts.OmniHypershiftImage)
 		}
 	}
 	if opts.DisableCAPIMigration {

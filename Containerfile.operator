@@ -47,13 +47,14 @@ COPY --from=builder /tmp/release-manifests/ /release-manifests/
 
 ENTRYPOINT ["/usr/bin/hypershift"]
 
-# TEMPORARY (cpo-from-image branch, DO NOT MERGE): turn CPO-from-main on for 4.20 so the
-# e2e-from-pr-aws release-matrix job exercises the feature with a plain `hypershift install`.
-# The HO reads these at runtime (os.Getenv); CPO_FROM_MAIN_IMAGE is deliberately unset so
-# from-main falls back to this image, which now bundles control-plane-operator. Remove before
-# merge; the feature must stay off by default.
-ENV ENABLE_CPO_FROM_MAIN=1
-ENV CPO_FROM_MAIN_VERSIONS=4.20
+# TEMPORARY: Omni HyperShift is turned on for 4.20 here so the e2e release-matrix job exercises
+# the feature with a plain `hypershift install`. This is intentional for this PR: there is no CI
+# yet that enables the feature. Remove these ENV lines once the per-release e2e matrix turns it on
+# instead. The HO reads these at runtime (os.Getenv); OMNI_HYPERSHIFT_IMAGE is deliberately unset
+# so Omni HyperShift falls back to this image, which now bundles control-plane-operator. The
+# feature stays off by default in the code; only this image opts in.
+ENV ENABLE_OMNI_HYPERSHIFT=1
+ENV OMNI_HYPERSHIFT_VERSIONS=4.20
 
 LABEL name="multicluster-engine/hypershift-operator"
 LABEL cpe="cpe:/a:redhat:multicluster_engine:5.0::el9"

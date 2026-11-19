@@ -14,7 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/omnicpo"
+	"github.com/openshift/hypershift/support/omnihypershift"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -583,7 +583,7 @@ func TestAdaptDeployment(t *testing.T) {
 		})
 	}
 
-	// OMNI-CPO drift gating: a main-built CPO driving a pre-4.23 control plane must strip the
+	// Omni HyperShift drift gating: a main-built CPO driving a pre-4.23 control plane must strip the
 	// CVO TLS args, which a pre-4.23 CVO binary rejects. 4.23 and 5.0 are the same release.
 	omniHCP := func() *hyperv1.HostedControlPlane {
 		return &hyperv1.HostedControlPlane{
@@ -598,30 +598,30 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		}
 	}
-	t.Run("When OMNI-CPO drives a pre-4.23 control plane, it should strip the CVO TLS args", func(t *testing.T) {
+	t.Run("When Omni HyperShift drives a pre-4.23 control plane, it should strip the CVO TLS args", func(t *testing.T) {
 		g := NewWithT(t)
-		t.Setenv(config.OmniCPOEnvVar, "1")
+		t.Setenv(config.OmniHypershiftEnvVar, "1")
 		cpContext := createTestContext(omniHCP())
 		cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion("4.20.0"))
 		deployment, err := assets.LoadDeploymentManifest(ComponentName)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect((&clusterVersionOperator{}).adaptDeployment(cpContext, deployment)).ToNot(HaveOccurred())
-		g.Expect(omnicpo.Apply(cpContext, deployment, omniCPOTransforms())).ToNot(HaveOccurred())
+		g.Expect(omnihypershift.Apply(cpContext, deployment, omniHypershiftTransforms())).ToNot(HaveOccurred())
 		c := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
 		g.Expect(c).ToNot(BeNil())
 		args := strings.Join(c.Args, " ")
 		g.Expect(args).ToNot(ContainSubstring("--tls-min-version"))
 		g.Expect(args).ToNot(ContainSubstring("--tls-cipher-suites"))
 	})
-	t.Run("When OMNI-CPO drives a 4.23/5.0 control plane, it should keep the CVO TLS args", func(t *testing.T) {
+	t.Run("When Omni HyperShift drives a 4.23/5.0 control plane, it should keep the CVO TLS args", func(t *testing.T) {
 		g := NewWithT(t)
-		t.Setenv(config.OmniCPOEnvVar, "1")
+		t.Setenv(config.OmniHypershiftEnvVar, "1")
 		cpContext := createTestContext(omniHCP())
 		cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion("5.0.0"))
 		deployment, err := assets.LoadDeploymentManifest(ComponentName)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect((&clusterVersionOperator{}).adaptDeployment(cpContext, deployment)).ToNot(HaveOccurred())
-		g.Expect(omnicpo.Apply(cpContext, deployment, omniCPOTransforms())).ToNot(HaveOccurred())
+		g.Expect(omnihypershift.Apply(cpContext, deployment, omniHypershiftTransforms())).ToNot(HaveOccurred())
 		c := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
 		g.Expect(c).ToNot(BeNil())
 		g.Expect(strings.Join(c.Args, " ")).To(ContainSubstring("--tls-min-version"))

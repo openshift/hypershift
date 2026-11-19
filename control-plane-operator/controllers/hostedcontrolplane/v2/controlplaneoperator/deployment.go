@@ -154,10 +154,10 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 				},
 			)
 		}
-		if cpo.CPOFromMain {
+		if cpo.OmniHypershift {
 			c.Env = append(c.Env,
 				corev1.EnvVar{
-					Name:  config.OmniCPOEnvVar,
+					Name:  config.OmniHypershiftEnvVar,
 					Value: "1",
 				},
 			)

@@ -14,7 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/omnicpo"
+	"github.com/openshift/hypershift/support/omnihypershift"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -149,16 +149,19 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 	return nil
 }
 
-// omniCPOTransforms lists the drift adjustments a main-built CPO applies to the
-// cluster-version-operator Deployment when it drives an older control plane. See support/omnicpo.
-func omniCPOTransforms() []omnicpo.Transform[*appsv1.Deployment] {
-	return []omnicpo.Transform[*appsv1.Deployment]{
+// omniHypershiftTransforms lists the drift adjustments a main-built CPO applies to the
+// cluster-version-operator Deployment when it drives an older control plane. See support/omnihypershift.
+func omniHypershiftTransforms() []omnihypershift.Transform[*appsv1.Deployment] {
+	if !config.IsOmniHypershiftEnabled() {
+		return nil
+	}
+	return []omnihypershift.Transform[*appsv1.Deployment]{
 		{
 			// --tls-min-version/--tls-cipher-suites on the cluster-version-operator arrived at 4.23;
 			// a pre-4.23 CVO binary rejects them ("unknown flag: --tls-min-version").
 			Reason: "pre-4.23 cluster-version-operator rejects --tls-min-version/--tls-cipher-suites",
-			When:   omnicpo.Below(config.Version423),
-			Do:     omnicpo.StripArgs(ComponentName, "--tls-min-version", "--tls-cipher-suites"),
+			When:   omnihypershift.Below(config.Version423),
+			Do:     omnihypershift.StripArgs(ComponentName, "--tls-min-version", "--tls-cipher-suites"),
 		},
 	}
 }

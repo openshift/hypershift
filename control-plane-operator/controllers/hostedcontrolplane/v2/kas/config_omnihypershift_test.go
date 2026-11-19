@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	hcpconfig "github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/omnicpo"
+	"github.com/openshift/hypershift/support/omnihypershift"
 
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 )
@@ -26,9 +26,9 @@ func TestKasConfigTransforms(t *testing.T) {
 	}
 
 	t.Run("When driving a pre-4.23 plane with MutatingAdmissionPolicy enabled, it should re-emit the v1alpha1 runtime-config", func(t *testing.T) {
-		t.Setenv(hcpconfig.OmniCPOEnvVar, "1")
+		t.Setenv(hcpconfig.OmniHypershiftEnvVar, "1")
 		cfg := newConfig()
-		if err := omnicpo.Apply(fakeOmniContext{version: "4.20.0"}, cfg, kasConfigTransforms(withMAP)); err != nil {
+		if err := omnihypershift.Apply(fakeOmniContext{version: "4.20.0"}, cfg, kasConfigTransforms(withMAP)); err != nil {
 			t.Fatal(err)
 		}
 		if !hasAlpha(cfg) {
@@ -37,9 +37,9 @@ func TestKasConfigTransforms(t *testing.T) {
 	})
 
 	t.Run("When driving a 4.23 or newer plane, it should not re-emit the v1alpha1 runtime-config", func(t *testing.T) {
-		t.Setenv(hcpconfig.OmniCPOEnvVar, "1")
+		t.Setenv(hcpconfig.OmniHypershiftEnvVar, "1")
 		cfg := newConfig()
-		if err := omnicpo.Apply(fakeOmniContext{version: "5.0.0"}, cfg, kasConfigTransforms(withMAP)); err != nil {
+		if err := omnihypershift.Apply(fakeOmniContext{version: "5.0.0"}, cfg, kasConfigTransforms(withMAP)); err != nil {
 			t.Fatal(err)
 		}
 		if hasAlpha(cfg) {
@@ -48,9 +48,9 @@ func TestKasConfigTransforms(t *testing.T) {
 	})
 
 	t.Run("When MutatingAdmissionPolicy is not enabled, it should not re-emit the runtime-config", func(t *testing.T) {
-		t.Setenv(hcpconfig.OmniCPOEnvVar, "1")
+		t.Setenv(hcpconfig.OmniHypershiftEnvVar, "1")
 		cfg := newConfig()
-		if err := omnicpo.Apply(fakeOmniContext{version: "4.20.0"}, cfg, kasConfigTransforms(nil)); err != nil {
+		if err := omnihypershift.Apply(fakeOmniContext{version: "4.20.0"}, cfg, kasConfigTransforms(nil)); err != nil {
 			t.Fatal(err)
 		}
 		if hasAlpha(cfg) {
@@ -58,14 +58,14 @@ func TestKasConfigTransforms(t *testing.T) {
 		}
 	})
 
-	t.Run("When OMNI-CPO is off, it should not change the runtime-config", func(t *testing.T) {
-		t.Setenv(hcpconfig.OmniCPOEnvVar, "0")
+	t.Run("When Omni HyperShift is off, it should not change the runtime-config", func(t *testing.T) {
+		t.Setenv(hcpconfig.OmniHypershiftEnvVar, "0")
 		cfg := newConfig()
-		if err := omnicpo.Apply(fakeOmniContext{version: "4.20.0"}, cfg, kasConfigTransforms(withMAP)); err != nil {
+		if err := omnihypershift.Apply(fakeOmniContext{version: "4.20.0"}, cfg, kasConfigTransforms(withMAP)); err != nil {
 			t.Fatal(err)
 		}
 		if hasAlpha(cfg) {
-			t.Error("expected no change when OMNI-CPO is off")
+			t.Error("expected no change when Omni HyperShift is off")
 		}
 	})
 }

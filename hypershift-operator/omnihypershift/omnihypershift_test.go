@@ -1,4 +1,4 @@
-package controlplaneoperatoroverrides
+package omnihypershift
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/blang/semver"
 )
 
-func TestShouldUseFromMain(t *testing.T) {
+func TestShouldUse(t *testing.T) {
 	tests := []struct {
 		name     string
 		enabled  bool
@@ -24,49 +24,49 @@ func TestShouldUseFromMain(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.enabled {
-				t.Setenv(CPOFromMainEnvVar, "1")
+				t.Setenv(EnableEnvVar, "1")
 			} else {
-				t.Setenv(CPOFromMainEnvVar, "0")
+				t.Setenv(EnableEnvVar, "0")
 			}
-			t.Setenv(CPOFromMainVersionsEnvVar, tc.versions)
-			if got := ShouldUseFromMain(semver.MustParse(tc.version)); got != tc.want {
-				t.Errorf("ShouldUseFromMain(%s) = %v, want %v", tc.version, got, tc.want)
+			t.Setenv(VersionsEnvVar, tc.versions)
+			if got := ShouldUse(semver.MustParse(tc.version)); got != tc.want {
+				t.Errorf("ShouldUse(%s) = %v, want %v", tc.version, got, tc.want)
 			}
 		})
 	}
 }
 
-func TestCPOFromMainImage(t *testing.T) {
+func TestCPOImage(t *testing.T) {
 	v := semver.MustParse("4.20.0")
 	const hoImage = "ho-image"
 
 	t.Run("disabled returns empty", func(t *testing.T) {
-		t.Setenv(CPOFromMainEnvVar, "0")
-		if got := CPOFromMainImage(v, hoImage); got != "" {
+		t.Setenv(EnableEnvVar, "0")
+		if got := CPOImage(v, hoImage); got != "" {
 			t.Errorf("got %q, want empty", got)
 		}
 	})
 	t.Run("enabled with explicit image", func(t *testing.T) {
-		t.Setenv(CPOFromMainEnvVar, "1")
-		t.Setenv(CPOFromMainVersionsEnvVar, "4.20")
-		t.Setenv(CPOFromMainImageEnvVar, "my-image")
-		if got := CPOFromMainImage(v, hoImage); got != "my-image" {
+		t.Setenv(EnableEnvVar, "1")
+		t.Setenv(VersionsEnvVar, "4.20")
+		t.Setenv(ImageEnvVar, "my-image")
+		if got := CPOImage(v, hoImage); got != "my-image" {
 			t.Errorf("got %q, want my-image", got)
 		}
 	})
 	t.Run("enabled without explicit image falls back to HO image", func(t *testing.T) {
-		t.Setenv(CPOFromMainEnvVar, "1")
-		t.Setenv(CPOFromMainVersionsEnvVar, "4.20")
-		t.Setenv(CPOFromMainImageEnvVar, "")
-		if got := CPOFromMainImage(v, hoImage); got != hoImage {
+		t.Setenv(EnableEnvVar, "1")
+		t.Setenv(VersionsEnvVar, "4.20")
+		t.Setenv(ImageEnvVar, "")
+		if got := CPOImage(v, hoImage); got != hoImage {
 			t.Errorf("got %q, want %q", got, hoImage)
 		}
 	})
 	t.Run("enabled but version not in list", func(t *testing.T) {
-		t.Setenv(CPOFromMainEnvVar, "1")
-		t.Setenv(CPOFromMainVersionsEnvVar, "4.21")
-		t.Setenv(CPOFromMainImageEnvVar, "my-image")
-		if got := CPOFromMainImage(v, hoImage); got != "" {
+		t.Setenv(EnableEnvVar, "1")
+		t.Setenv(VersionsEnvVar, "4.21")
+		t.Setenv(ImageEnvVar, "my-image")
+		if got := CPOImage(v, hoImage); got != "" {
 			t.Errorf("got %q, want empty", got)
 		}
 	})

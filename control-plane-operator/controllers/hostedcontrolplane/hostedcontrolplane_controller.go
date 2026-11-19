@@ -672,6 +672,19 @@ func (r *HostedControlPlaneReconciler) reconcileDegradedStatus(ctx context.Conte
 	return nil
 }
 
+// checkOmniHypershiftVersion fails loud when a main-built CPO in Omni HyperShift mode cannot manage
+// the control-plane version, persisting any conditions computed so far before blocking. It is a
+// no-op when Omni HyperShift is off.
+func (r *HostedControlPlaneReconciler) checkOmniHypershiftVersion(ctx context.Context, hostedControlPlane, originalHostedControlPlane *hyperv1.HostedControlPlane, controlPlaneVersion string) error {
+	if err := config.OmniHypershiftCheckVersion(controlPlaneVersion); err != nil {
+		if patchErr := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); patchErr != nil {
+			return fmt.Errorf("%w (failed to update status: %w)", err, patchErr)
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
 	r.Log.Info("Reconciling")
@@ -780,10 +793,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
-	// OMNI-CPO: a main-built CPO running in omni mode must only manage a control-plane
+	// Omni HyperShift: a main-built CPO running in omni mode must only manage a control-plane
 	// version it explicitly supports; fail loud rather than render flags an older payload
-	// rejects (which would CrashLoop opaquely). No-op when OMNI-CPO is off.
-	if err := config.OmniCPOCheckVersion(releaseImage.Version()); err != nil {
+	// rejects (which would CrashLoop opaquely). No-op when Omni HyperShift is off.
+	if err := r.checkOmniHypershiftVersion(ctx, hostedControlPlane, originalHostedControlPlane, releaseImage.Version()); err != nil {
 		return reconcile.Result{}, err
 	}
 
