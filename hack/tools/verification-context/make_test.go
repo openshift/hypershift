@@ -44,7 +44,7 @@ func makeFixture(t *testing.T) repositoryFixture {
 	g.Expect(os.Symlink(filepath.Join(source, "hack/tools"), filepath.Join(repo.root, "hack/tools"))).To(Succeed())
 	writeFile(t, repo.root, "api/go.mod", "module github.com/openshift/hypershift/api\n\ngo 1.26.0\n")
 	writeFile(t, repo.root, "stamp", "")
-	for _, name := range []string{"lint", "hypershift-plugin", "kube-plugin", "mockgen", "gitlint"} {
+	for _, name := range []string{"lint", "hypershift-plugin", "kube-plugin", "mockgen", "controller-gen", "gitlint"} {
 		writeFile(t, repo.root, "capture-"+name, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '"+filepath.Join(repo.root, "arguments")+"'\n")
 		g.Expect(os.Chmod(filepath.Join(repo.root, "capture-"+name), 0755)).To(Succeed())
 	}
@@ -59,6 +59,7 @@ func makeCommand(t *testing.T, repo repositoryFixture, environment []string, arg
 		"HYPERSHIFTLINTER_PLUGIN=" + filepath.Join(repo.root, "capture-hypershift-plugin"),
 		"KUBEAPILINTER_PLUGIN=" + filepath.Join(repo.root, "capture-kube-plugin"),
 		"MOCKGEN=" + filepath.Join(repo.root, "capture-mockgen"),
+		"CONTROLLER_GEN=" + filepath.Join(repo.root, "capture-controller-gen"),
 		"GITLINT=" + filepath.Join(repo.root, "capture-gitlint"),
 		"PYTHON_VENV_STAMP=" + filepath.Join(repo.root, "stamp"),
 		"CRD_SCHEMA_CHECK=" + testChecker,
