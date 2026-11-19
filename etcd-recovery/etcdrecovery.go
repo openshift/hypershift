@@ -35,9 +35,10 @@ import (
 )
 
 const (
-	defaultEtcdClientTimeout = 5 * time.Second
-	defaultDialTimeout       = 3 * time.Second
-	healthyClusterWait       = 5 * time.Minute
+	defaultEtcdClientTimeout   = 5 * time.Second
+	defaultDialTimeout         = 3 * time.Second
+	healthyClusterWait         = 5 * time.Minute
+	healthyClusterPollInterval = 30 * time.Second
 )
 
 type options struct {
@@ -197,10 +198,34 @@ func NewStatusCommand(opts *options) *cobra.Command {
 	return cmd
 }
 
+// recovery runs the steps of an etcd recovery: check the status, recover the broken
+// member and wait for the cluster to be healthy. The steps and the wait timing are
+// fields so a test can drive the whole flow without Kubernetes or etcd clients and
+// without real polling delays.
+type recovery struct {
+	getStatus     func(ctx context.Context, opts options) (*etcdStatus, error)
+	recoverMember func(ctx context.Context, opts options, status etcdStatus) error
+	pollInterval  time.Duration
+	waitTimeout   time.Duration
+}
+
+func newRecovery() recovery {
+	return recovery{
+		getStatus:     runStatus,
+		recoverMember: recoverEtcd,
+		pollInterval:  healthyClusterPollInterval,
+		waitTimeout:   healthyClusterWait,
+	}
+}
+
 func runRecovery(ctx context.Context, opts options) error {
+	return newRecovery().run(ctx, opts)
+}
+
+func (r recovery) run(ctx context.Context, opts options) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	status, err := runStatus(ctx, opts)
+	status, err := r.getStatus(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -210,17 +235,17 @@ func runRecovery(ctx context.Context, opts options) error {
 	// waitForHealthyCluster delays its first check by one poll interval, so keep the
 	// already-healthy path immediate.
 	if status.shouldWaitWithoutRecovery() {
-		return waitForHealthyCluster(ctx, opts)
+		return r.waitForHealthyCluster(ctx, opts)
 	}
 	if !status.isUnhealthy() {
 		return nil
 	}
 
-	if err := recoverEtcd(ctx, opts, *status); err != nil {
+	if err := r.recoverMember(ctx, opts, *status); err != nil {
 		return err
 	}
 
-	if err := waitForHealthyCluster(ctx, opts); err != nil {
+	if err := r.waitForHealthyCluster(ctx, opts); err != nil {
 		return err
 	}
 
@@ -229,13 +254,13 @@ func runRecovery(ctx context.Context, opts options) error {
 	return nil
 }
 
-func waitForHealthyCluster(ctx context.Context, opts options) error {
+func (r recovery) waitForHealthyCluster(ctx context.Context, opts options) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Waiting for etcd cluster to become healthy")
-	timeOutCtx, cancel := context.WithTimeout(ctx, healthyClusterWait)
+	timeOutCtx, cancel := context.WithTimeout(ctx, r.waitTimeout)
 	defer cancel()
-	return wait.PollUntilContextCancel(timeOutCtx, 30*time.Second, false, func(ctx context.Context) (done bool, err error) {
-		status, err := runStatus(ctx, opts)
+	return wait.PollUntilContextCancel(timeOutCtx, r.pollInterval, false, func(ctx context.Context) (done bool, err error) {
+		status, err := r.getStatus(ctx, opts)
 		if err != nil {
 			return false, err
 		}
