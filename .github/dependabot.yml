@@ -6,8 +6,7 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "friday"
+      interval: "daily"
       time: "01:00"
       timezone: "Etc/UTC"
     commit-message:
@@ -41,8 +40,7 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/hack/tools"
     schedule:
-      interval: "weekly"
-      day: "friday"
+      interval: "daily"
       time: "01:00"
       timezone: "Etc/UTC"
     commit-message:
@@ -62,8 +60,7 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/api/"
     schedule:
-      interval: "weekly"
-      day: "friday"
+      interval: "daily"
       time: "01:00"
       timezone: "Etc/UTC"
     commit-message:
@@ -91,8 +88,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "friday"
+      interval: "daily"
       time: "01:00"
       timezone: "Etc/UTC"
     commit-message:
@@ -108,8 +104,7 @@ updates:
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "friday"
+      interval: "daily"
       time: "01:00"
       timezone: "Etc/UTC"
     commit-message:
