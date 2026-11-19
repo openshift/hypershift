@@ -150,15 +150,10 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
 	}
 
-	// The deterministic-lb variant requires both pre-step values. When they are
-	// absent the variant is not offered at all, so a plan that selects it fails
-	// validation instead of provisioning a cluster without the annotations and
-	// letting the spec skip. Setting only one of them is a misconfiguration.
+	// Keep the variant in the catalog even without CI inputs: only plans that
+	// select it require the EIP and subnet at provisioning time.
 	deterministicLBEIP := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_EIP")
 	deterministicLBSubnet := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET")
-	if (deterministicLBEIP == "") != (deterministicLBSubnet == "") {
-		panic("HYPERSHIFT_DETERMINISTIC_LB_EIP and HYPERSHIFT_DETERMINISTIC_LB_SUBNET must be set together")
-	}
 
 	specs := []ClusterSpec{
 		{
@@ -266,22 +261,21 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		},
 	}
 
-	if deterministicLBEIP != "" && deterministicLBSubnet != "" {
-		specs = append(specs, ClusterSpec{
-			// Dedicated cluster for the deterministic LoadBalancer IP test.
-			// The EIP and public subnet belong to the management cluster and
-			// are reserved by the CI pre-step before create-guests runs.
-			Variant:                 "deterministic-lb",
-			DestroyArgs:             destroyArgs,
-			InitialNodePoolReplicas: &oneInitialReplica,
-			CreateArgs: clusterArgs(
-				"--endpoint-access=PublicAndPrivate",
-				"--feature-set=TechPreviewNoUpgrade",
-				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+deterministicLBEIP,
-				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+deterministicLBSubnet,
-			),
-		})
-	}
+	specs = append(specs, ClusterSpec{
+		// Dedicated cluster for the deterministic LoadBalancer IP test.
+		// The EIP and public subnet belong to the management cluster and
+		// are reserved by the CI pre-step before create-guests runs.
+		Variant:                 "deterministic-lb",
+		RequiredEnv:             []string{"HYPERSHIFT_DETERMINISTIC_LB_EIP", "HYPERSHIFT_DETERMINISTIC_LB_SUBNET"},
+		DestroyArgs:             destroyArgs,
+		InitialNodePoolReplicas: &oneInitialReplica,
+		CreateArgs: clusterArgs(
+			"--endpoint-access=PublicAndPrivate",
+			"--feature-set=TechPreviewNoUpgrade",
+			"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+deterministicLBEIP,
+			"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+deterministicLBSubnet,
+		),
+	})
 
 	return specs
 }

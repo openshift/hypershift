@@ -52,25 +52,28 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 			}
 		}
 	})
-	t.Run("When deterministic LB env vars are absent, it should not offer the variant", func(t *testing.T) {
+	t.Run("When deterministic LB env vars are absent, it should keep the variant in the catalog", func(t *testing.T) {
 		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "")
 		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "")
 		g := NewWithT(t)
 		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
 
-		g.Expect(specs).To(HaveLen(10))
+		g.Expect(specs).To(HaveLen(11))
+		var found bool
 		for _, spec := range specs {
-			g.Expect(spec.Variant).NotTo(Equal("deterministic-lb"))
+			if spec.Variant == "deterministic-lb" {
+				found = true
+				g.Expect(spec.RequiredEnv).To(ConsistOf("HYPERSHIFT_DETERMINISTIC_LB_EIP", "HYPERSHIFT_DETERMINISTIC_LB_SUBNET"))
+			}
 		}
+		g.Expect(found).To(BeTrue())
 	})
-	t.Run("When only one deterministic LB env var is set, it should panic", func(t *testing.T) {
+	t.Run("When only one deterministic LB env var is set, it should still build the diagnostic catalog", func(t *testing.T) {
 		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "eipalloc-test")
 		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "")
 		g := NewWithT(t)
 
-		g.Expect(func() {
-			(&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
-		}).To(Panic())
+		g.Expect((&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")).To(HaveLen(11))
 	})
 	t.Run("When AWS cluster specs are built, it should omit Azure dump credentials for every variant", func(t *testing.T) {
 		g := NewWithT(t)
@@ -169,7 +172,17 @@ func TestDeterministicLBTestPlan(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred())
 		err = plan.Validate(cfg.ClusterSpecs(t.Context(), "current", "previous"))
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring(`variant "deterministic-lb" not found`))
+		g.Expect(err.Error()).To(ContainSubstring("HYPERSHIFT_DETERMINISTIC_LB_EIP"))
+		g.Expect(err.Error()).To(ContainSubstring("HYPERSHIFT_DETERMINISTIC_LB_SUBNET"))
+	})
+	t.Run("When only one EIP pre-step value is set, it should reject the plan but retain the catalog", func(t *testing.T) {
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "eipalloc-test")
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "")
+		g := NewWithT(t)
+		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+		plan, err := ReadTestPlan(filepath.Join("plans", "deterministic-lb.yaml"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(plan.Validate(cfg.ClusterSpecs(t.Context(), "current", "previous"))).To(MatchError(ContainSubstring("HYPERSHIFT_DETERMINISTIC_LB_SUBNET")))
 	})
 }
 

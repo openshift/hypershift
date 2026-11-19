@@ -9,7 +9,72 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 )
+
+func TestValidateRunPrerequisites(t *testing.T) {
+	plan := &lifecycle.TestPlan{TestMatrix: lifecycle.TestMatrix{
+		Sequential: []lifecycle.SequentialGroup{{Name: "deterministic-lb", Steps: []lifecycle.TestGroup{{Name: "deterministic-lb", Variant: "deterministic-lb"}}}},
+	}}
+	for _, tt := range []struct {
+		name    string
+		plan    *lifecycle.TestPlan
+		values  map[string]string
+		wantErr string
+	}{
+		{
+			name:    "When both EIP inputs are missing after provisioning, it should reject the deterministic lane",
+			values:  map[string]string{"E2E_EXPECTED_DETERMINISTIC_LB_IP": "192.0.2.1"},
+			wantErr: "HYPERSHIFT_DETERMINISTIC_LB_EIP",
+		},
+		{
+			name: "When the subnet is missing after provisioning, it should reject the deterministic lane",
+			values: map[string]string{
+				"HYPERSHIFT_DETERMINISTIC_LB_EIP":  "eipalloc-test",
+				"E2E_EXPECTED_DETERMINISTIC_LB_IP": "192.0.2.1",
+			},
+			wantErr: "HYPERSHIFT_DETERMINISTIC_LB_SUBNET",
+		},
+		{
+			name: "When the expected IP is missing after provisioning, it should reject the deterministic lane",
+			values: map[string]string{
+				"HYPERSHIFT_DETERMINISTIC_LB_EIP":    "eipalloc-test",
+				"HYPERSHIFT_DETERMINISTIC_LB_SUBNET": "subnet-test",
+			},
+			wantErr: "E2E_EXPECTED_DETERMINISTIC_LB_IP",
+		},
+		{
+			name: "When all EIP inputs are present, it should accept the deterministic lane",
+			values: map[string]string{
+				"HYPERSHIFT_DETERMINISTIC_LB_EIP":    "eipalloc-test",
+				"HYPERSHIFT_DETERMINISTIC_LB_SUBNET": "subnet-test",
+				"E2E_EXPECTED_DETERMINISTIC_LB_IP":   "192.0.2.1",
+			},
+		},
+		{
+			name: "When the plan does not select deterministic-lb, it should not require its inputs",
+			plan: &lifecycle.TestPlan{TestMatrix: lifecycle.TestMatrix{
+				Parallel: []lifecycle.TestGroup{{Name: "public", Variant: "public"}},
+			}},
+			values: map[string]string{},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			selectedPlan := plan
+			if tt.plan != nil {
+				selectedPlan = tt.plan
+			}
+			err := validateRunPrerequisites(selectedPlan, func(key string) string { return tt.values[key] })
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("unexpected prerequisite error: %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("got %v, want missing %s", err, tt.wantErr)
+			}
+		})
+	}
+}
 
 func TestRunTestBinary(t *testing.T) {
 	binary := buildJUnitFixture(t)

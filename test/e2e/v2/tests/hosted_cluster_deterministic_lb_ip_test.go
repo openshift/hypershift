@@ -18,7 +18,6 @@ package tests
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,7 +30,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:DeterministicLBIP] Hosted Cluster Deterministic LoadBalancer IP", Label("lifecycle", "deterministic-lb-ip", internal.InformingLabel), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:DeterministicLBIP] Hosted Cluster Deterministic LoadBalancer IP", Label("lifecycle", "deterministic-lb-ip"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
@@ -43,13 +42,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:DeterministicLBIP] H
 			"HYPERSHIFT_DETERMINISTIC_LB_SUBNET",
 			"E2E_EXPECTED_DETERMINISTIC_LB_IP",
 		} {
-			if internal.GetEnvVarValue(name) == "" {
-				// The variant is only created when the pre-step values are
-				// present. If they are lost between create-guests and this
-				// step, the runner's --ginkgo.fail-on-empty turns the all-skip
-				// run into a suite failure instead of a green job.
-				Skip(fmt.Sprintf("deterministic LB EIP pre-step did not provide %s", name))
-			}
+			// run-tests validates the same inputs before dispatching this lane;
+			// direct invocations must fail rather than silently skip.
+			Expect(internal.GetEnvVarValue(name)).NotTo(BeEmpty(), "deterministic LB EIP pre-step did not provide %s", name)
 		}
 	})
 
