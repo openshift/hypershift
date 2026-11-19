@@ -170,6 +170,11 @@ func init() {
 		false,
 		filepath.Join(os.Getenv("HOME"), ".aws", "credentials"),
 	)
+	RegisterEnvVar(
+		"E2E_EXPECTED_VELERO_VERSION",
+		"Expected Velero server major.minor version for the standalone Velero suite, taken from the OADP/Velero version matrix. Optional; the version is only logged when empty.",
+		false,
+	)
 	RegisterEnvVarWithDefault(
 		"E2E_SERVICE_DOMAIN",
 		"Service domain used for custom DNS endpoint testing. Optional; test is skipped when empty.",
