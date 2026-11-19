@@ -957,10 +957,10 @@ func reconcileACMECNAMECondition(gcpPSC *hyperv1.GCPPrivateServiceConnect, outco
 	meta.SetStatusCondition(&gcpPSC.Status.Conditions, condition)
 }
 
-// cleanupDNS cleans up DNS zones and the DNSEndpoint during deletion. The HCP is
-// passed in by the caller (already fetched on the deletion path) rather than re-fetched
-// here: a re-fetch failure while status has no zones would silently yield an empty zone
-// list and let the finalizers release while zones leak.
+// cleanupDNS cleans up DNS zones and the DNSEndpoint during deletion. The caller passes
+// the HCP it already fetched on the deletion path, so the DNSEndpoint is named without a
+// second lookup. Zones come only from status (see dnsZonesToDelete); a zone that was
+// created but never recorded is not deleted here.
 func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
 
