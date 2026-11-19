@@ -23061,7 +23061,7 @@ graph LR
 
 ## Failed Backups Leave Objects Behind
 
-Multi-shard uploads are not transactional: each shard is uploaded as a separate object, and the per-shard snapshot init containers run before the upload container. A failure partway through — a later shard's upload failing or the Job exceeding its deadline — can leave some or all snapshot objects in cloud storage even though the backup failed.
+Multi-shard uploads are not transactional: each shard is uploaded as a separate object, and the concurrent snapshot processes in the single `snapshot` init container run before the upload container. A failure partway through — a later shard's upload failing or the Job exceeding its deadline — can leave some or all snapshot objects in cloud storage even though the backup failed.
 
 The controller does **not** delete backup objects automatically. Operators are responsible for cleaning up objects left behind by failed attempts. To identify the affected objects without handling signed URLs, read `HCPEtcdBackup.Status.AttemptKeyPrefix`: every object written by that attempt lives under that prefix (`<attemptKeyPrefix>.db` for single-shard backups, `<attemptKeyPrefix>/<shard>.db` for multi-shard).
 
