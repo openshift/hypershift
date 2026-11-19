@@ -128,9 +128,6 @@ spec:
   - source: quay.io/openshift-release-dev/ocp-release
     mirrors:
     - registry.<dns.base.domain.name>:5000/openshift/release-images
-  - source: registry.redhat.io/multicluster-engine
-    mirrors:
-    - registry.<dns.base.domain.name>:5000/openshift/multicluster-engine
   - mirrors:
   ...
   ...
@@ -160,7 +157,7 @@ spec:
   pullSecret:
     name: hosted-ipv6-pull-secret
   release:
-    image: registry.hypershiftbm.lab:5000/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
+    image: registry.<dns.base.domain.name>:5000/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
   secretEncryption:
     aescbc:
       activeKey:
@@ -203,6 +200,8 @@ status:
 !!! note
 
     The `imageContentSources` section within the `spec` field contains mirror references for user workloads within the HostedCluster.
+    The images the management cluster pulls — HyperShift, MCE and the rest of the management stack — are mirrored
+    as part of the management cluster setup and are not listed here.
 
 As you can see, all the objects created before are referenced here. You can also refer to the [documentation](https://hypershift.pages.dev/reference/api/#hypershift.openshift.io%2fv1beta1) where all the fields are described.
 
