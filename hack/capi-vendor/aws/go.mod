@@ -67,3 +67,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace sigs.k8s.io/cluster-api-provider-aws/v2 => github.com/openshift/cluster-api-provider-aws/v2 v2.0.0-20261112100713-203b1a2417ee

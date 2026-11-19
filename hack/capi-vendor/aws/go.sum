@@ -88,6 +88,8 @@ github.com/onsi/ginkgo/v2 v2.28.1 h1:S4hj+HbZp40fNKuLUQOYLDgZLwNUVn19N3Atb98NCyI
 github.com/onsi/ginkgo/v2 v2.28.1/go.mod h1:CLtbVInNckU3/+gC8LzkGUb9oF+e8W8TdUsxPwvdOgE=
 github.com/onsi/gomega v1.39.1 h1:1IJLAad4zjPn2PsnhH70V4DKRFlrCzGBNrNaru+Vf28=
 github.com/onsi/gomega v1.39.1/go.mod h1:hL6yVALoTOxeWudERyfppUcZXjMwIMLnuSfruD2lcfg=
+github.com/openshift/cluster-api-provider-aws/v2 v2.0.0-20261112100713-203b1a2417ee h1:NvnPXuelGxQ0zpAqmFkNhXrjsUMogC0SoJm+S6Llz2A=
+github.com/openshift/cluster-api-provider-aws/v2 v2.0.0-20261112100713-203b1a2417ee/go.mod h1:V1Wjhe8+AJ5Exk8OXGYbYX/b81XKpVVLxPls4OQxl+E=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
@@ -160,8 +162,6 @@ k8s.io/utils v0.0.0-20260108192941-914a6e750570 h1:JT4W8lsdrGENg9W+YwwdLJxklIuKW
 k8s.io/utils v0.0.0-20260108192941-914a6e750570/go.mod h1:xDxuJ0whA3d0I4mf/C4ppKHxXynQ+fxnkmQH0vTHnuk=
 sigs.k8s.io/cluster-api v1.13.4 h1:27PPEKSqESKeUIf475Ga6hSW1+gKxd5V5sCmMDgeBDo=
 sigs.k8s.io/cluster-api v1.13.4/go.mod h1:suV3Ixu7yUMD651EtBULa/RtwHRxU30eojF3wifGe8Y=
-sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.1 h1:/IgIR9/m9rYj7CSTBWMm2Kn3EIKOpwK06GheYvhMFEc=
-sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.1/go.mod h1:V1Wjhe8+AJ5Exk8OXGYbYX/b81XKpVVLxPls4OQxl+E=
 sigs.k8s.io/controller-runtime v0.23.3 h1:VjB/vhoPoA9l1kEKZHBMnQF33tdCLQKJtydy4iqwZ80=
 sigs.k8s.io/controller-runtime v0.23.3/go.mod h1:B6COOxKptp+YaUT5q4l6LqUJTRpizbgf9KSRNdQGns0=
 sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 h1:IpInykpT6ceI+QxKBbEflcR5EXP7sU1kvOlxwZh5txg=

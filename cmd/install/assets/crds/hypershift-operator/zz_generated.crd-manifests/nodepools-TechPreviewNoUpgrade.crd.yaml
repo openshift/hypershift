@@ -781,6 +781,22 @@ spec:
                           type: object
                         maxItems: 50
                         type: array
+                      sourceDestCheck:
+                        description: |-
+                          sourceDestCheck configures the source/destination check on the EC2
+                          instance's network interfaces.
+                          When set to "Disabled", the instance can forward traffic for which it is
+                          not the source or destination. This is required for workloads that forward
+                          or route traffic, such as advertising routes to an AWS VPC Route Server
+                          with OVN-Kubernetes BGP and user-defined networking (UDN).
+                          When omitted or set to "Enabled", AWS enforces its default
+                          source/destination check, dropping any packet whose source or destination
+                          is not the instance itself.
+                          Changing this value triggers a replacement of the NodePool's instances.
+                        enum:
+                        - Enabled
+                        - Disabled
+                        type: string
                       subnet:
                         description: subnet is the subnet to use for node instances.
                         properties:
