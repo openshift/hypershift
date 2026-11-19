@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
-	github.com/go-git/go-git/v5 v5.19.1
+	github.com/go-git/go-git/v5 v5.19.2
 	github.com/gobwas/glob v0.2.3
 	github.com/golangci/golangci-lint/v2 v2.11.4
 	github.com/google/cel-go v0.26.1
