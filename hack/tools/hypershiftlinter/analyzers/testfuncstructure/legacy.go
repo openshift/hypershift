@@ -863,7 +863,6 @@ var legacyExceptions = sets.Set[string]{
 	"support/awsutil/sg_test.go|TestUpdateResourceTags_FiltersAWSReservedKeys":                                                                      {},
 	"support/azureutil/azureutil_test.go|TestGetNetworkSecurityGroupNameFromNetworkSecurityGroupID":                                                 {},
 	"support/capabilities/hosted_control_plane_capabilities_test.go|TestCalculateEnabledCapabilities":                                               {},
-	"support/capabilities/hosted_control_plane_capabilities_test.go|TestCalculateEnabledCapabilitiesIncludesCompatibilityRequirements":              {},
 	"support/capabilities/management_cluster_capabilities_test.go|TestDetectManagementCapabilities":                                                 {},
 	"support/capabilities/management_cluster_capabilities_test.go|TestDetectNativeSidecarCapability":                                                {},
 	"support/catalogs/images_test.go|TestImageExistsFnGuestCluster":                                                                                 {},

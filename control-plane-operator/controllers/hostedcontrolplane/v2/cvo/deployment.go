@@ -63,10 +63,15 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		return fmt.Errorf("failed to parse control plane release version: %w", err)
 	}
 
-	// The CVO prepare-payload script needs the ReleaseImage digest for disconnected environments
-	controlPlaneReleaseImage, dataPlaneReleaseImage, err := discoverCVOReleaseImages(cpContext)
+	// The CVO prepare-payload script needs the ReleaseImage digest for disconnected environments.
+	// The payload manifests must always come from the data plane (spec.release) payload:
+	// they are applied to the hosted cluster data plane, which must not follow
+	// spec.controlPlaneRelease. Using the control plane payload here would deploy
+	// data plane operands from the control plane payload and leak its version on
+	// the ClusterOperators the CVO reports for them.
+	dataPlaneReleaseImage, err := discoverCVOReleaseImage(cpContext)
 	if err != nil {
-		return fmt.Errorf("failed to discover CVO release images: %w", err)
+		return fmt.Errorf("failed to discover CVO release image: %w", err)
 	}
 
 	podspec.UpdateContainer("prepare-payload", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
@@ -74,7 +79,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 			"-c",
 			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, reconcilerpolicy.HCPOAuthEnabled(cpContext.HCP), featureSetForPayloadFilter),
 		}
-		c.Image = controlPlaneReleaseImage
+		c.Image = dataPlaneReleaseImage
 	})
 
 	// the ClusterVersion resource is created by the CVO bootstrap container.
@@ -94,7 +99,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 	}
 	cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 		BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-		AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities, featureSet, releaseVersion),
+		AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities, releaseVersion),
 	}
 	clusterVersionJSON, err := json.Marshal(cv)
 	if err != nil {
@@ -227,6 +232,23 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 
+	// The CVO CRDs (clusterversions, clusteroperators, clusterversionoperators)
+	// used to be shipped in the CVO image's /manifests directory, which the
+	// payload assembler mirrors into the release image's /manifests directory.
+	// Payloads built after openshift/api#3155 ship them from the openshift/api
+	// image via /release-manifests only (cluster-version-operator#1507 removes
+	// the CVO image copies), and hypershift's bootstrap container applies CRDs
+	// from the manifests directory only. Copy them over when they are missing
+	// so both payload layouts work; the feature-set filter below then prunes
+	// the clusterversions variants exactly like it does for older payloads.
+	// The existence guards keep this a no-op for older payloads and tolerate
+	// payloads that ship the CRDs in neither directory.
+	stmts = append(stmts, fmt.Sprintf(`for crd in %s/release-manifests/0000_00_cluster-version-operator_01_*.crd.yaml; do
+    if [[ -f "$crd" ]] && [[ ! -f "%s/manifests/${crd##*/}" ]]; then
+        cp "$crd" %s/manifests/
+    fi
+done`, payloadDir, payloadDir, payloadDir))
+
 	// NOTE: We would need to leverage part of the manifest.Include logic (https://github.com/openshift/library-go/blob/0064ad7bd060b9fd52f7840972c1d3e72186d0f0/pkg/manifest/manifest.go#L190-L196)
 	// to properly evaluate which CVO manifests to select based on featureset.
 	// We only have access to bash, so we must filter based on the feature-set annotation in the manifests manually.
@@ -319,39 +341,20 @@ func resourcesToRemove(platformType hyperv1.PlatformType) []client.Object {
 	}
 }
 
-func discoverCVOReleaseImages(cpContext component.WorkloadContext) (string, string, error) {
-	var (
-		controlPlaneReleaseImage string
-		dataPlaneReleaseImage    string
-	)
-
+// discoverCVOReleaseImage resolves the data plane (spec.release) release image
+// to a digest-pinned pullspec, for the CVO prepare-payload init container and
+// the RELEASE_IMAGE environment variable.
+func discoverCVOReleaseImage(cpContext component.WorkloadContext) (string, error) {
 	pullSecret := common.PullSecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext.Context, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-		return "", "", fmt.Errorf("failed to get pull secret for namespace %s: %w", cpContext.HCP.Namespace, err)
+		return "", fmt.Errorf("failed to get pull secret for namespace %s: %w", cpContext.HCP.Namespace, err)
 	}
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
 
-	cpReleaseImage := cpContext.HCP.Spec.ReleaseImage
-	if cpContext.HCP.Spec.ControlPlaneReleaseImage != nil {
-		cpReleaseImage = *cpContext.HCP.Spec.ControlPlaneReleaseImage
-	}
-
-	_, controlPlaneReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, cpReleaseImage, pullSecretBytes)
+	_, releaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, cpContext.HCP.Spec.ReleaseImage, pullSecretBytes)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get control plane release image digest %s: %w", controlPlaneReleaseImageRef, err)
-	}
-	controlPlaneReleaseImage = controlPlaneReleaseImageRef.String()
-
-	if cpReleaseImage != cpContext.HCP.Spec.ReleaseImage {
-		_, dataPlaneReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, cpContext.HCP.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
-		if err != nil {
-			return "", "", fmt.Errorf("failed to get data plane release image digest %s: %w", cpContext.HCP.Spec.ReleaseImage, err)
-		}
-
-		dataPlaneReleaseImage = dataPlaneReleaseImageRef.String()
-	} else {
-		dataPlaneReleaseImage = controlPlaneReleaseImage
+		return "", fmt.Errorf("failed to get data plane release image digest %s: %w", cpContext.HCP.Spec.ReleaseImage, err)
 	}
 
-	return controlPlaneReleaseImage, dataPlaneReleaseImage, nil
+	return releaseImageRef.String(), nil
 }

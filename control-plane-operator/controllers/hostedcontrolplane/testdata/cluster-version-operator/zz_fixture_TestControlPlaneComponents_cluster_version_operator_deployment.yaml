@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a70ce18f0cc2f375fb168d9d24623c84b7b27b0cb77d788690c8aa34544d3bc1
+    hypershift.openshift.io/desired-state-hash: bef87e8b309b78e3e42baaf0753326ea8de6e2d5dc5aef07a9a2a1e1bf7869cd
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator
@@ -142,6 +142,11 @@ spec:
           rm -f /var/payload/manifests/*_servicemonitor.yaml
           rm -f /var/payload/manifests/0000_50_cluster-update-console-plugin_*
           cp -R /release-manifests /var/payload/
+          for crd in /var/payload/release-manifests/0000_00_cluster-version-operator_01_*.crd.yaml; do
+              if [[ -f "$crd" ]] && [[ ! -f "/var/payload/manifests/${crd##*/}" ]]; then
+                  cp "$crd" /var/payload/manifests/
+              fi
+          done
           for file in $(find /var/payload/manifests/ -name "*.yaml"); do
               IFS=',' read -ra feature_sets <<< "$(cat $file | grep "release.openshift.io/feature-set:" | awk '{print $2}')"
               if [[ "${#feature_sets[@]}" -gt 0 ]] && ! [[ " ${feature_sets[*]} " =~ "Default" ]]; then
@@ -361,7 +366,18 @@ spec:
           EOF
           oc get ns openshift-config &> /dev/null || oc create ns openshift-config
           oc get ns openshift-config-managed &> /dev/null || oc create ns openshift-config-managed
-          oc apply -f /var/payload/manifests/0000_00_cluster-version-operator_01_clusterversions*
+          # Apply the ClusterVersion CRD so the ClusterVersion object can be created
+          # below. The prepare-payload container copies the CVO CRDs into
+          # /var/payload/manifests regardless of whether the payload ships them in
+          # /manifests (older payloads) or only in /release-manifests (payloads built
+          # after openshift/api#3155 and cluster-version-operator#1507). nullglob keeps
+          # an unexpectedly missing CRD from failing on the unexpanded glob; the
+          # clusterversion apply below surfaces a clear error instead.
+          shopt -s nullglob
+          clusterversion_crds=(/var/payload/manifests/0000_00_cluster-version-operator_01_clusterversions*)
+          if [[ ${#clusterversion_crds[@]} -gt 0 ]]; then
+            oc apply -f "${clusterversion_crds[@]}"
+          fi
           oc apply -f /tmp/clusterversion.json
           while true; do
             echo "Applying CVO bootstrap manifests..."

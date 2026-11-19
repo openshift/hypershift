@@ -47,6 +47,9 @@
                     },
                     {
                         "name": "KubeAPIServerEventTTL"
+                    },
+                    {
+                        "name": "IgnitionPayloadSystem"
                     }
                 ],
                 "enabled": [

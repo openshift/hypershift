@@ -83,9 +83,10 @@ func (a *AWSPlatformConfig) DefaultBaseDomain() string {
 //   - n1Image:      pullspec of the N-1 release used as the upgrade starting point.
 //
 // Variants:
-//   - public:           default target for non-lifecycle tests.
-//   - upgrade:          starts on n1Image, upgraded to releaseImage.
-//   - karpenter:        AutoNode/Karpenter node provisioning.
+//   - public:            default target for non-lifecycle tests.
+//   - public-rollouts:   identical config to public, dedicated to nodepool rollout tests.
+//   - upgrade:           starts on n1Image, upgraded to releaseImage.
+//   - karpenter:         AutoNode/Karpenter node provisioning.
 //   - karpenter-upgrade: karpenter, starting on n1Image.
 //
 // Environment inputs:
@@ -149,9 +150,27 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
 	}
 
+	deterministicLBArgs := []string{
+		"--endpoint-access=PublicAndPrivate",
+		"--feature-set=TechPreviewNoUpgrade",
+	}
+	if eip := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_EIP"); eip != "" {
+		if subnet := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET"); subnet != "" {
+			deterministicLBArgs = append(deterministicLBArgs,
+				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+eip,
+				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+subnet,
+			)
+		}
+	}
+
 	return []ClusterSpec{
 		{
 			Variant:     "public",
+			DestroyArgs: destroyArgs,
+			CreateArgs:  clusterArgs(publicArgs...),
+		},
+		{
+			Variant:     "public-rollouts",
 			DestroyArgs: destroyArgs,
 			CreateArgs:  clusterArgs(publicArgs...),
 		},
@@ -247,6 +266,15 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 				// Shards run 3 replicas, which needs an HA control plane.
 				"--control-plane-availability-policy=HighlyAvailable",
 			}, v2util.EtcdShardingCreateArgs("")...)...),
+		},
+		{
+			// Dedicated cluster for the deterministic LoadBalancer IP test.
+			// The EIP and public subnet belong to the management cluster and
+			// are reserved by the CI pre-step before create-guests runs.
+			Variant:                 "deterministic-lb",
+			DestroyArgs:             destroyArgs,
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs:              clusterArgs(deterministicLBArgs...),
 		},
 	}
 }
@@ -364,9 +392,14 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || storage-kms || " +
 							"hosted-cluster-event-ttl",
 					},
+				},
+			},
+			{
+				Name: "public-rollouts",
+				Steps: []TestGroup{
 					{
 						Name:    "public-nodepool-rollouts",
-						Variant: "public",
+						Variant: "public-rollouts",
 						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
 							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-osimagestream-upgrade || " +
 							"nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config",

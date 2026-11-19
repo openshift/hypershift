@@ -62,16 +62,14 @@ func TestSupportsCompatibilityRequirements(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name           string
-		featureSet     configv1.FeatureSet
 		releaseVersion string
 		expected       bool
 	}{
-		{name: "When the release is before 5.1, it should not support compatibility requirements", featureSet: configv1.TechPreviewNoUpgrade, releaseVersion: "5.0.99", expected: false},
-		{name: "When TechPreviewNoUpgrade is used on 5.1, it should support compatibility requirements", featureSet: configv1.TechPreviewNoUpgrade, releaseVersion: "5.1.0", expected: true},
-		{name: "When DevPreviewNoUpgrade is used on 5.1, it should support compatibility requirements", featureSet: configv1.DevPreviewNoUpgrade, releaseVersion: "5.1.0", expected: true},
-		{name: "When a 5.1 prerelease is used, it should support compatibility requirements", featureSet: configv1.TechPreviewNoUpgrade, releaseVersion: "5.1.0-0.ci-20260909", expected: true},
-		{name: "When a later release is used, it should support compatibility requirements", featureSet: configv1.TechPreviewNoUpgrade, releaseVersion: "6.0.0", expected: true},
-		{name: "When the default feature set is used, it should not support compatibility requirements", featureSet: configv1.Default, releaseVersion: "5.1.0", expected: false},
+		{name: "When the release version is zero, it should not support compatibility requirements", releaseVersion: "0.0.0", expected: false},
+		{name: "When the release is before 5.1, it should not support compatibility requirements", releaseVersion: "5.0.99", expected: false},
+		{name: "When the release is 5.1, it should support compatibility requirements", releaseVersion: "5.1.0", expected: true},
+		{name: "When a 5.1 prerelease is used, it should support compatibility requirements", releaseVersion: "5.1.0-0.ci-20260909", expected: true},
+		{name: "When a later release is used, it should support compatibility requirements", releaseVersion: "6.0.0", expected: true},
 	}
 
 	for _, test := range tests {
@@ -80,23 +78,26 @@ func TestSupportsCompatibilityRequirements(t *testing.T) {
 			g := NewWithT(t)
 			version, err := semver.Parse(test.releaseVersion)
 			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(SupportsCompatibilityRequirements(test.featureSet, version)).To(Equal(test.expected))
+			g.Expect(SupportsCompatibilityRequirements(version)).To(Equal(test.expected))
 		})
 	}
 }
 
 func TestCalculateEnabledCapabilities(t *testing.T) {
+	t.Run("When capabilities are nil on 5.1, it should include compatibility requirements", func(t *testing.T) {
+		g := NewWithT(t)
+		g.Expect(CalculateEnabledCapabilities(nil, config.Version510)).To(ContainElement(configv1.ClusterVersionCapabilityCompatibilityRequirements))
+	})
+
 	tests := []struct {
 		name                 string
-		featureSet           configv1.FeatureSet
 		releaseVersion       semver.Version
 		enabledCapabilities  []hyperv1.OptionalCapability
 		disabledCapabilities []hyperv1.OptionalCapability
 		expectedCapabilities []configv1.ClusterVersionCapability
 	}{
 		{
-			name:                 "returns default capability set when enabledCapabilities and disabledCapabilities are nil",
-			featureSet:           configv1.Default,
+			name:                 "When capability overrides are nil on 5.1, it should include compatibility requirements",
 			releaseVersion:       config.Version510,
 			enabledCapabilities:  nil,
 			disabledCapabilities: nil,
@@ -105,6 +106,7 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityCSISnapshot,
 				configv1.ClusterVersionCapabilityCloudControllerManager,
 				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				configv1.ClusterVersionCapabilityImageRegistry,
@@ -120,8 +122,7 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 			},
 		},
 		{
-			name:                 "returns default set minus image registry capability when ImageRegistry capability is Disabled",
-			featureSet:           configv1.Default,
+			name:                 "When ImageRegistry is disabled, it should retain compatibility requirements",
 			releaseVersion:       config.Version510,
 			enabledCapabilities:  nil,
 			disabledCapabilities: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
@@ -130,6 +131,7 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityCSISnapshot,
 				configv1.ClusterVersionCapabilityCloudControllerManager,
 				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				// configv1.ClusterVersionCapabilityImageRegistry,
@@ -145,8 +147,7 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 			},
 		},
 		{
-			name:                 "returns default set plus baremetal capability when baremetal capability is Enabled",
-			featureSet:           configv1.Default,
+			name:                 "When baremetal is enabled, it should retain compatibility requirements",
 			releaseVersion:       config.Version510,
 			enabledCapabilities:  []hyperv1.OptionalCapability{hyperv1.BaremetalCapability},
 			disabledCapabilities: nil,
@@ -155,6 +156,7 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityCSISnapshot,
 				configv1.ClusterVersionCapabilityCloudControllerManager,
 				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				configv1.ClusterVersionCapabilityImageRegistry,
@@ -178,7 +180,7 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				Enabled:  test.enabledCapabilities,
 				Disabled: test.disabledCapabilities,
 			}
-			enabledCapabilities := CalculateEnabledCapabilities(caps, test.featureSet, test.releaseVersion)
+			enabledCapabilities := CalculateEnabledCapabilities(caps, test.releaseVersion)
 			if !reflect.DeepEqual(test.expectedCapabilities, enabledCapabilities) {
 				t.Logf("expected enabled capabilities: %v", test.expectedCapabilities)
 				t.Logf("calculated enabled capabilities: %v", enabledCapabilities)
@@ -186,14 +188,6 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestCalculateEnabledCapabilitiesIncludesCompatibilityRequirements(t *testing.T) {
-	t.Parallel()
-
-	enabledCapabilities := CalculateEnabledCapabilities(nil, configv1.TechPreviewNoUpgrade, config.Version510)
-	g := NewWithT(t)
-	g.Expect(enabledCapabilities).To(ContainElement(configv1.ClusterVersionCapabilityCompatibilityRequirements))
 }
 
 func TestFilterByKnownCapabilities(t *testing.T) {

@@ -2,6 +2,7 @@ package hostedcluster
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -19,11 +20,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -43,29 +47,35 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		cpNamespace = "clusters-test-cluster" // manifests.HostedControlPlaneNamespace(hcNamespace, hcName)
 	)
 
+	now := metav1.Now()
+	readError := errors.New("injected read failure")
+	patchError := errors.New("injected patch failure")
+	conflictError := apierrors.NewConflict(schema.GroupResource{Group: hyperv1.GroupVersion.Group, Resource: "hostedcontrolplanes"}, hcName, errors.New("stale resource version"))
+
 	tests := []struct {
 		name            string
 		hc              *hyperv1.HostedCluster
 		objects         []crclient.Object
 		expectFinalizer *bool // nil = don't check (HCP doesn't exist), true/false = check
-		expectError     bool
+		expectedError   error
+		interceptors    interceptor.Funcs
 	}{
 		{
-			name: "When karpenter is not enabled and HCP has no finalizer it should no-op",
+			name: "When karpenter is disabled and HCP is absent, it should no-op",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{},
 			},
 		},
 		{
-			name: "When HCP is not found it should no-op",
+			name: "When HCP is not found, it should no-op",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
 			},
 		},
 		{
-			name: "When HCP exists without finalizer it should no-op",
+			name: "When HCP exists without finalizer, it should no-op",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -78,10 +88,10 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "When karpenter is enabled and KAS is available it should retain the finalizer",
+			name: "When AWS conditions are missing and KAS is available, it should retain the finalizer",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
-				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 			},
 			objects: []crclient.Object{
 				hcpWithFinalizer(hcName, cpNamespace),
@@ -90,7 +100,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(true),
 		},
 		{
-			name: "When karpenter is enabled and KAS deployment is missing it should remove the finalizer",
+			name: "When karpenter is enabled and KAS deployment is missing, it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -101,7 +111,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "When karpenter is enabled and KAS exists but is not available it should remove the finalizer",
+			name: "When karpenter is enabled and KAS exists but is not available, it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -113,7 +123,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "When karpenter is enabled and KAS exists but has no Available condition it should remove the finalizer",
+			name: "When karpenter is enabled and KAS exists but has no Available condition, it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
@@ -130,7 +140,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "When karpenter is disabled and HCP has a stale finalizer it should remove the finalizer immediately",
+			name: "When karpenter is disabled and HCP has a stale finalizer, it should remove the finalizer immediately",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{},
@@ -141,7 +151,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			expectFinalizer: ptr.To(false),
 		},
 		{
-			name: "When karpenter is disabled and KAS is still available it should remove the finalizer immediately",
+			name: "When karpenter is disabled and KAS is still available, it should remove the finalizer immediately",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
 				Spec:       hyperv1.HostedClusterSpec{},
@@ -152,6 +162,206 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			},
 			expectFinalizer: ptr.To(false),
 		},
+		{
+			name: "When AWS OIDC is invalid, it should remove the finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidOIDCConfiguration), Status: metav1.ConditionFalse},
+						{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(false),
+		},
+		{
+			name: "When AWS identity is invalid, it should remove the finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidOIDCConfiguration), Status: metav1.ConditionTrue},
+						{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(false),
+		},
+		{
+			name: "When both AWS credentials are invalid on a deleting HCP, it should remove the finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidOIDCConfiguration), Status: metav1.ConditionFalse},
+						{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			objects: []crclient.Object{
+				&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+					Name: hcName, Namespace: cpNamespace,
+					DeletionTimestamp: &now,
+					Finalizers:        []string{karpenterutil.KarpenterFinalizer},
+				}},
+				kasDeployment(cpNamespace, true),
+			},
+			expectFinalizer: ptr.To(false),
+		},
+		{
+			name: "When AWS credentials are valid, it should retain the finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidOIDCConfiguration), Status: metav1.ConditionTrue},
+						{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(true),
+		},
+		{
+			name: "When AWS OIDC is unknown and identity is missing, it should retain the finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidOIDCConfiguration), Status: metav1.ConditionUnknown},
+					},
+				},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(true),
+		},
+		{
+			name: "When AWS OIDC is missing and identity is invalid, it should remove the finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(false),
+		},
+		{
+			name: "When AWS conditions are invalid on Azure, it should retain the finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidOIDCConfiguration), Status: metav1.ConditionFalse},
+						{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(true),
+		},
+		{
+			name: "When a deleting HCP has valid AWS credentials, it should retain the finalizer",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidOIDCConfiguration), Status: metav1.ConditionTrue},
+						{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			objects: []crclient.Object{
+				&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+					Name: hcName, Namespace: cpNamespace,
+					DeletionTimestamp: &now,
+					Finalizers:        []string{karpenterutil.KarpenterFinalizer},
+				}},
+				kasDeployment(cpNamespace, true),
+			},
+			expectFinalizer: ptr.To(true),
+		},
+		{
+			name: "When reading the HCP fails, it should return the read error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(true),
+			expectedError:   readError,
+			interceptors: interceptor.Funcs{Get: func(ctx context.Context, delegate crclient.WithWatch, key crclient.ObjectKey, object crclient.Object, opts ...crclient.GetOption) error {
+				if _, matches := object.(*hyperv1.HostedControlPlane); matches {
+					return readError
+				}
+				return delegate.Get(ctx, key, object, opts...)
+			}},
+		},
+		{
+			name: "When reading KAS fails, it should retain the finalizer and return the read error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(true),
+			expectedError:   readError,
+			interceptors: interceptor.Funcs{Get: func(ctx context.Context, delegate crclient.WithWatch, key crclient.ObjectKey, object crclient.Object, opts ...crclient.GetOption) error {
+				if _, matches := object.(*appsv1.Deployment); matches {
+					return readError
+				}
+				return delegate.Get(ctx, key, object, opts...)
+			}},
+		},
+		{
+			name: "When removing an invalid AWS finalizer fails, it should retain it and return the patch error",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidOIDCConfiguration), Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(true),
+			expectedError:   patchError,
+			interceptors: interceptor.Funcs{Patch: func(context.Context, crclient.WithWatch, crclient.Object, crclient.Patch, ...crclient.PatchOption) error {
+				return patchError
+			}},
+		},
+		{
+			name: "When removing an invalid AWS finalizer conflicts, it should retain it and return the conflict",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+			expectFinalizer: ptr.To(true),
+			expectedError:   conflictError,
+			interceptors: interceptor.Funcs{Patch: func(context.Context, crclient.WithWatch, crclient.Object, crclient.Patch, ...crclient.PatchOption) error {
+				return conflictError
+			}},
+		},
 	}
 
 	for _, tc := range tests {
@@ -159,28 +369,35 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 			g := NewWithT(t)
 			ctx := context.Background()
 
+			for _, object := range tc.objects {
+				if hcp, ok := object.(*hyperv1.HostedControlPlane); ok {
+					hcp.Finalizers = append(hcp.Finalizers, "test.hypershift.openshift.io/unrelated")
+				}
+			}
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
 				WithObjects(tc.objects...).
 				Build()
 
 			r := &HostedClusterReconciler{
-				Client: fakeClient,
+				Client: interceptor.NewClient(fakeClient, tc.interceptors),
 			}
 
-			err := r.resolveKarpenterFinalizer(ctx, tc.hc)
-			if tc.expectError {
-				g.Expect(err).To(HaveOccurred())
-				return
-			}
-			g.Expect(err).ToNot(HaveOccurred())
-
-			if tc.expectFinalizer != nil {
-				hcp := &hyperv1.HostedControlPlane{}
-				err := fakeClient.Get(ctx, crclient.ObjectKey{Namespace: cpNamespace, Name: hcName}, hcp)
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer)).To(Equal(*tc.expectFinalizer),
-					"finalizer presence mismatch")
+			for attempt := 0; attempt < 2; attempt++ {
+				err := r.resolveKarpenterFinalizer(ctx, tc.hc)
+				if tc.expectedError != nil {
+					g.Expect(err).To(MatchError(tc.expectedError))
+				} else {
+					g.Expect(err).ToNot(HaveOccurred(), "resolving Karpenter finalizer")
+				}
+				if tc.expectFinalizer != nil {
+					hcp := &hyperv1.HostedControlPlane{}
+					err := fakeClient.Get(ctx, crclient.ObjectKey{Namespace: cpNamespace, Name: hcName}, hcp)
+					g.Expect(err).ToNot(HaveOccurred(), "reading persisted HCP")
+					g.Expect(controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer)).To(Equal(*tc.expectFinalizer),
+						"finalizer presence mismatch")
+					g.Expect(hcp.Finalizers).To(ContainElement("test.hypershift.openshift.io/unrelated"), "unrelated HCP finalizer must be preserved")
+				}
 			}
 		})
 	}

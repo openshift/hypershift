@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/gcputil"
@@ -366,7 +367,42 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		return fmt.Errorf("failed to reconcile GCP credentials: %v", errs)
 	}
 
+	p.reconcileIngressCredentialsCondition(hcluster)
 	return nil
+}
+
+// reconcileIngressCredentialsCondition maintains the non-blocking
+// IngressCredentialsFound condition in memory on the HostedCluster. It reaches
+// the API server through the unconditional status update of the
+// PlatformOIDCAndCSI step (reconcilePlatformSpecific ->
+// reconcileOIDCDocumentsWithStatus), which runs after PlatformCredentials on
+// every reconcile; the PlatformCredentials status write itself only happens
+// when PlatformCredentialsFound flips. The ingress service account is optional
+// at the API level and enforced at creation time by the CLI only; clusters
+// created without it (e.g. via direct YAML) keep reconciling (the guest
+// ingress operator simply runs without cloud credentials and cannot publish
+// *.apps records), with the reason surfaced here instead of failing the
+// critical PlatformCredentials step. The condition's inputs (capabilities,
+// workload identity) are immutable, so it never changes after it is first set.
+func (p GCP) reconcileIngressCredentialsCondition(hcluster *hyperv1.HostedCluster) {
+	condition := metav1.Condition{
+		Type:               string(hyperv1.IngressCredentialsFound),
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "Ingress credentials are configured",
+		ObservedGeneration: hcluster.Generation,
+	}
+
+	switch {
+	case !capabilities.IsIngressCapabilityEnabled(hcluster.Spec.Capabilities):
+		condition.Message = "The Ingress capability is disabled; no ingress credentials are required"
+	case hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Ingress == "":
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.IngressServiceAccountNotFoundReason
+		condition.Message = "The Ingress capability is enabled but spec.platform.gcp.workloadIdentity.serviceAccountsEmails.ingress is not set; the guest ingress operator runs without Cloud DNS credentials and *.apps records are not published. The field is immutable and can only be set at creation time."
+	}
+
+	meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 }
 
 // NodePoolManagementCredsSecret returns the secret containing Workload Identity Federation credentials
@@ -593,6 +629,14 @@ func validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) erro
 	if wif.ServiceAccountsEmails.Network == "" {
 		return fmt.Errorf("network service account email is required")
 	}
+
+	// Note: the ingress service account is deliberately not validated here.
+	// It is capability-gated and enforced only at creation time by the CLI;
+	// the API does not require it. Clusters created without it (via direct
+	// YAML) may have the Ingress capability enabled; failing validation here
+	// would block the critical PlatformCredentials step for those clusters
+	// with a misleading error. The missing account is instead surfaced as a
+	// non-blocking condition in ReconcileCredentials.
 
 	return nil
 }

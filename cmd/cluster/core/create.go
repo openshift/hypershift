@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"sort"
 	"strconv"
@@ -169,6 +170,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
+	flags.StringArrayVar(&opts.KASServiceAnnotations, "kas-service-annotations", opts.KASServiceAnnotations, "Annotations to apply to the kube-apiserver LoadBalancer Service (key=value). Can be specified multiple times. Requires the APIServer service publishing strategy to be LoadBalancer and the management cluster HostedCluster CRD to include the DeterministicLBIP fields (install the HyperShift Operator with --tech-preview-no-upgrade).")
+	flags.StringVar(&opts.KASLoadBalancerClass, "kas-load-balancer-class", opts.KASLoadBalancerClass, "loadBalancerClass to set on the kube-apiserver LoadBalancer Service. Requires the APIServer service publishing strategy to be LoadBalancer and the management cluster HostedCluster CRD to include the DeterministicLBIP fields (install the HyperShift Operator with --tech-preview-no-upgrade).")
 	flags.BoolVar(&opts.DisableMultiNetwork, "disable-multi-network", opts.DisableMultiNetwork, "Disables the Multus CNI plugin and related components in the hosted cluster")
 	flags.Int32Var(&opts.OVNKubernetesMTU, "ovn-kubernetes-mtu", opts.OVNKubernetesMTU, "The MTU to use for the OVN-Kubernetes tunnel interface. Must be 100 bytes smaller than the uplink MTU. Only valid when network-type is OVNKubernetes. When unset, the cluster-network-operator auto-detects the MTU.")
 	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
@@ -237,6 +240,8 @@ type RawCreateOptions struct {
 	EnableClusterCapabilities        []string
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
+	KASServiceAnnotations            []string
+	KASLoadBalancerClass             string
 	DisableMultiNetwork              bool
 	OVNKubernetesMTU                 int32
 	VersionCheck                     bool
@@ -687,13 +692,50 @@ func applyFeatureSet(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
 	}
 }
 
-func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, client crclient.Client, mutate func(crclient.Object)) error {
+// applyDeterministicLBIP wires the deterministic LoadBalancer IP flags into
+// the APIServer service publishing strategy. Both fields are immutable on the
+// HostedCluster once created, so they must be set before the object is applied.
+func applyDeterministicLBIP(cluster *hyperv1.HostedCluster, opts *CreateOptions) error {
+	if len(opts.KASServiceAnnotations) == 0 && opts.KASLoadBalancerClass == "" {
+		return nil
+	}
+
+	annotations, err := parseKeyValuePairs(opts.KASServiceAnnotations, "KAS service annotation")
+	if err != nil {
+		return err
+	}
+
+	for i := range cluster.Spec.Services {
+		if cluster.Spec.Services[i].Service != hyperv1.APIServer {
+			continue
+		}
+
+		strategy := &cluster.Spec.Services[i].ServicePublishingStrategy
+		if strategy.Type != hyperv1.LoadBalancer {
+			return fmt.Errorf("--kas-service-annotations and --kas-load-balancer-class require the APIServer service publishing strategy to be LoadBalancer, got %q", strategy.Type)
+		}
+
+		if strategy.LoadBalancer == nil {
+			strategy.LoadBalancer = &hyperv1.LoadBalancerPublishingStrategy{}
+		}
+		if len(annotations) > 0 {
+			strategy.LoadBalancer.ServiceAnnotations = annotations
+		}
+		if opts.KASLoadBalancerClass != "" {
+			strategy.LoadBalancer.LoadBalancerClass = opts.KASLoadBalancerClass
+		}
+		return nil
+	}
+
+	return errors.New("APIServer service publishing strategy not found")
+}
+
+func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, client crclient.Client, mutate func(crclient.Object)) error {
 	if mutate != nil {
 		for _, object := range objects {
 			mutate(object)
 		}
 	}
-	var hostedCluster *hyperv1.HostedCluster
 	for _, object := range objects {
 		key := crclient.ObjectKeyFromObject(object)
 
@@ -706,7 +748,6 @@ func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclien
 
 		var err error
 		if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
-			hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}
 			err = client.Create(ctx, object)
 		} else {
 			err = client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli"))
@@ -717,22 +758,22 @@ func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclien
 		l.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
 	}
 
-	if waitForRollout {
-		l.Info("Waiting for cluster rollout")
-		return wait.PollUntilContextCancel(ctx, 30*time.Second, true, func(ctx context.Context) (bool, error) {
-			hostedCluster := hostedCluster.DeepCopy()
-			if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
-				return false, fmt.Errorf("failed to get hostedcluster %s: %w", crclient.ObjectKeyFromObject(hostedCluster), err)
-			}
-			rolledOut := hostedCluster.Status.Version != nil && len(hostedCluster.Status.Version.History) > 0 && hostedCluster.Status.Version.History[0].CompletionTime != nil
-			if !rolledOut {
-				l.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
-			}
-			return rolledOut, nil
-		})
-	}
-
 	return nil
+}
+
+func waitForClusterRollout(ctx context.Context, l logr.Logger, client crclient.Client, hc *hyperv1.HostedCluster) error {
+	l.Info("Waiting for cluster rollout")
+	return wait.PollUntilContextCancel(ctx, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		fresh := &hyperv1.HostedCluster{}
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hc), fresh); err != nil {
+			return false, fmt.Errorf("failed to get hostedcluster %s: %w", crclient.ObjectKeyFromObject(hc), err)
+		}
+		rolledOut := fresh.Status.Version != nil && len(fresh.Status.Version.History) > 0 && fresh.Status.Version.History[0].CompletionTime != nil
+		if !rolledOut {
+			l.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
+		}
+		return rolledOut, nil
+	})
 }
 
 func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger, client crclient.Client) (string, error) {
@@ -818,6 +859,16 @@ func (opts *RawCreateOptions) Validate(ctx context.Context, clientProvider *Clie
 	// infrastructure is created.
 	if _, err := parseEtcdShards(opts.EtcdShards); err != nil {
 		return nil, err
+	}
+
+	// Parse the KAS service annotations early for the same reason. External DNS
+	// selects the Route publishing strategy for the APIServer Service, so the
+	// deterministic LoadBalancer flags can never be satisfied in that mode.
+	if _, err := parseKeyValuePairs(opts.KASServiceAnnotations, "KAS service annotation"); err != nil {
+		return nil, err
+	}
+	if opts.ExternalDNSDomain != "" && (len(opts.KASServiceAnnotations) > 0 || opts.KASLoadBalancerClass != "") {
+		return nil, errors.New("--kas-service-annotations and --kas-load-balancer-class cannot be used with --external-dns-domain because --external-dns-domain selects the Route publishing strategy for the APIServer service")
 	}
 
 	return &ValidatedCreateOptions{
@@ -1084,6 +1135,9 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	if err := platform.ApplyPlatformSpecifics(resources.Cluster); err != nil {
 		return fmt.Errorf("failed to apply platform specifics: %w", err)
 	}
+	if err := applyDeterministicLBIP(resources.Cluster, opts); err != nil {
+		return err
+	}
 
 	if opts.NodePoolReplicas > -1 {
 		nodePools := platform.GenerateNodePools(defaultNodePool(opts))
@@ -1141,7 +1195,47 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	if err != nil {
 		return fmt.Errorf("failed to get client: %w", err)
 	}
-	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, client, opts.BeforeApply)
+	if err := apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), client, opts.BeforeApply); err != nil {
+		return err
+	}
+	if err := verifyDeterministicLBIPPersisted(ctx, client, resources.Cluster, opts); err != nil {
+		return err
+	}
+	if opts.Wait {
+		return waitForClusterRollout(ctx, opts.Log, client, resources.Cluster)
+	}
+	return nil
+}
+
+func verifyDeterministicLBIPPersisted(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *CreateOptions) error {
+	if len(opts.KASServiceAnnotations) == 0 && opts.KASLoadBalancerClass == "" {
+		return nil
+	}
+
+	fresh := &hyperv1.HostedCluster{}
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(hc), fresh); err != nil {
+		return fmt.Errorf("failed to read back the created HostedCluster: %w", err)
+	}
+
+	var strategy *hyperv1.LoadBalancerPublishingStrategy
+	for i := range fresh.Spec.Services {
+		if fresh.Spec.Services[i].Service == hyperv1.APIServer {
+			strategy = fresh.Spec.Services[i].ServicePublishingStrategy.LoadBalancer
+			break
+		}
+	}
+	if strategy == nil {
+		return fmt.Errorf("the management cluster did not persist the deterministic LoadBalancer fields on HostedCluster %s/%s; install the HyperShift Operator with --tech-preview-no-upgrade so the DeterministicLBIP fields are present in the HostedCluster CRD", hc.Namespace, hc.Name)
+	}
+
+	expected, err := parseKeyValuePairs(opts.KASServiceAnnotations, "KAS service annotation")
+	if err != nil {
+		return err
+	}
+	if !maps.Equal(strategy.ServiceAnnotations, expected) || strategy.LoadBalancerClass != opts.KASLoadBalancerClass {
+		return fmt.Errorf("the management cluster did not persist the requested deterministic LoadBalancer fields on HostedCluster %s/%s; verify that the DeterministicLBIP feature gate is enabled and the HostedCluster CRD includes the loadBalancer fields", hc.Namespace, hc.Name)
+	}
+	return nil
 }
 
 type DefaultNodePoolConstructor func(platformType hyperv1.PlatformType, suffix string) *hyperv1.NodePool

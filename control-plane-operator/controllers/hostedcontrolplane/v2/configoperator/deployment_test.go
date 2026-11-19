@@ -54,8 +54,9 @@ func TestAdaptDeploymentIBMCloudControllerSelection(t *testing.T) {
 	}
 
 	err := (&hcco{}).adaptDeployment(controlplanecomponent.WorkloadContext{
-		HCP:                  hcp,
-		ReleaseImageProvider: fakeReleaseImageProvider{},
+		HCP:                      hcp,
+		ReleaseImageProvider:     fakeReleaseImageProvider{},
+		UserReleaseImageProvider: fakeReleaseImageProvider{},
 	}, deployment)
 	g.Expect(err).ToNot(HaveOccurred())
 

@@ -465,6 +465,18 @@ func TestCheckDependencies(t *testing.T) {
 			},
 		},
 		{
+			// capi-provider mounts the service-network-admin-kubeconfig secret the
+			// kube-apiserver component applies, so unlike the other components that
+			// predate the kube-apiserver (cluster-api, router, ...) it must wait for
+			// its rollout.
+			testName:        "Should include kube-apiserver as dependency for the capi-provider component",
+			mockComponents:  []hyperv1.ControlPlaneComponent{},
+			expectedMissing: []string{kubeAPIServerComponentName},
+			setup: func(cpContext *ControlPlaneContext) *controlPlaneWorkload[*appsv1.Deployment] {
+				return createMockWorkload("capi-provider", nil)
+			},
+		},
+		{
 			testName: "Should remove etcd from dependencies when etcd management type is unmanaged",
 			mockComponents: []hyperv1.ControlPlaneComponent{
 				createMockControlPlaneComponent(kubeAPIServerComponentName, true, true, testVersion),

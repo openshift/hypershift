@@ -1,5 +1,5 @@
 ---
-name: Debug Cluster
+name: debug-cluster
 description: "Provides systematic debugging approaches for HyperShift hosted-cluster issues. Auto-applies when debugging cluster problems, investigating stuck deletions, or troubleshooting control plane issues."
 ---
 

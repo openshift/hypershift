@@ -154,6 +154,16 @@ func init() {
 		false,
 	)
 	RegisterEnvVar(
+		"E2E_GCP_CREDENTIALS_FILE",
+		"Path to the GCP workload identity credentials file for resource label tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_GCP_CONTROL_PLANE_PROJECT_ID_FILE",
+		"Path to the file containing the GCP control-plane project ID for resource label tests.",
+		false,
+	)
+	RegisterEnvVar(
 		"E2E_SHOW_ENV_HELP",
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,
@@ -229,6 +239,21 @@ func init() {
 	RegisterEnvVar(
 		"E2E_EXTERNAL_OIDC_TEST_USERS",
 		"Comma-separated list of test users in user:password format for External OIDC testing. Written by the lifecycle PostCreate.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_EXPECTED_DETERMINISTIC_LB_IP",
+		"Expected IPv4 address for the deterministic KAS LoadBalancer when the provider annotation carries an allocation ID instead of an IP.",
+		false,
+	)
+	RegisterEnvVar(
+		"HYPERSHIFT_DETERMINISTIC_LB_EIP",
+		"AWS EIP allocation ID used by the deterministic LoadBalancer IP lifecycle variant.",
+		false,
+	)
+	RegisterEnvVar(
+		"HYPERSHIFT_DETERMINISTIC_LB_SUBNET",
+		"Management cluster public subnet ID used by the deterministic LoadBalancer IP lifecycle variant.",
 		false,
 	)
 }

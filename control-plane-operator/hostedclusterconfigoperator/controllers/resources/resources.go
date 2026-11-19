@@ -50,6 +50,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -451,7 +452,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	}
 
 	log.Info("reconciling clusterversion")
-	params.FeatureSet = hcp.Spec.Configuration.GetFeatureGateSelection().FeatureSet
 	params.ControlPlaneReleaseVersion = controlPlaneReleaseVersion
 	if err := configuration.Reconcile(ctx, r.client, r.CreateOrUpdate, params, configuration.ClusterVersion); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile clusterversion: %w", err))
@@ -3293,7 +3293,7 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 					ServiceAccountName: ccm.CloudNodeManagerName,
 					HostNetwork:        true,
 					// https://github.com/openshift/cluster-cloud-controller-manager-operator/blob/release-4.15/pkg/cloud/azure/assets/cloud-node-manager-daemonset.yaml#L34
-					Tolerations: []corev1.Toleration{
+					Tolerations: append([]corev1.Toleration{
 						{
 							Operator: corev1.TolerationOpExists,
 							Effect:   corev1.TaintEffectNoSchedule,
@@ -3308,15 +3308,8 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 							Operator: corev1.TolerationOpExists,
 							Effect:   corev1.TaintEffectNoExecute,
 						},
-						// TODO(maxcao13): remove this when we fix this in karpenter-operator which will set the providerId instead
-						// https://redhat.atlassian.net/browse/AUTOSCALE-1036
-						// Karpenter nodes register with karpenter.sh/unregistered taint until providerID is set.
-						{
-							Key:      "karpenter.sh/unregistered",
-							Operator: corev1.TolerationOpExists,
-							Effect:   corev1.TaintEffectNoExecute,
-						},
-					},
+						// Run on unregistered Karpenter nodes to set the providerID they need to register.
+					}, karpenterutil.KarpenterBaseTaintTolerations()...),
 					Containers: []corev1.Container{
 						{
 							Name:    ccm.CloudNodeManagerName,

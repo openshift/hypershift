@@ -34,6 +34,15 @@ for supply chain security. This is what
 `.github/workflows/docs-build-reusable.yaml` uses when running
 `uv run --frozen zensical build --strict`.
 
+Use uv 0.12.22 or newer to regenerate `uv.lock`: it is the first uv release
+that writes lockfile revision 5, which `uv.lock` uses. Older uv releases
+(tested back to 0.4.0) can still read the lockfile with `uv run --frozen`,
+but `uv lock` rewrites it with an older revision when dependencies change.
+
+Keep the default container image in `Makefile` (`IMG`) on the same Zensical
+version as `pyproject.toml`; Renovate groups updates to both into one pull
+request.
+
 ### Adding or updating a dependency
 
 1. Add or update the package in `pyproject.toml`

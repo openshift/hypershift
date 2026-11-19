@@ -1,5 +1,5 @@
 ---
-name: Create HC AWS
+name: create-hc-aws
 description: "Create a HyperShift HostedCluster on AWS for development and testing, with optional custom CPO/HO images."
 ---
 

@@ -17280,8 +17280,20 @@ graph LR
 
 ## Configure the HostedCluster
 
-The `hypershift` CLI does not expose flags for these fields. Render the HostedCluster manifest,
-add the fields under `spec.services`, and apply the manifest.
+The `hypershift` CLI sets these fields at creation time:
+
+- `--kas-service-annotations key=value` is repeatable and populates
+  `spec.services[APIServer].servicePublishingStrategy.loadBalancer.serviceAnnotations`.
+- `--kas-load-balancer-class <class>` populates
+  `spec.services[APIServer].servicePublishingStrategy.loadBalancer.loadBalancerClass`.
+
+Both flags require the `LoadBalancer` APIServer publishing strategy. They cannot be combined
+with `--external-dns-domain`, which selects the `Route` strategy. Malformed annotations are
+rejected before provisioning, and after creation the CLI verifies that the API server
+persisted the fields. If the management cluster HostedCluster CRD lacks the `DeterministicLBIP`
+schema, the API server drops the fields and the command fails after the HostedCluster is
+created. Delete that HostedCluster, install the HyperShift Operator with
+`--tech-preview-no-upgrade`, and create the cluster again.
 
 ### Field reference
 
@@ -17334,8 +17346,17 @@ spec:
     not configured with a class only process Services **without** a class. If you use the
     default MetalLB configuration, omit `loadBalancerClass` and keep `serviceAnnotations`.
 
-Render the HostedCluster manifest, edit it to add the `loadBalancer` fields, and apply it to
-create the cluster:
+Create the cluster directly with the flags:
+
+```bash
+hypershift create cluster <platform> \
+  ... \
+  --kas-load-balancer-class=metallb.io/metallb \
+  --kas-service-annotations=metallb.io/loadBalancerIPs=10.1.1.100
+```
+
+Alternatively, render the HostedCluster manifest, add the fields under `spec.services`, and
+apply the manifest:
 
 ```bash
 hypershift create cluster <platform> \
@@ -27561,6 +27582,18 @@ spec:
           value: engineering
 ```
 
+#### HyperShift system labels
+
+On GCPCluster and NodePool machine resources, HyperShift sets the following labels
+after merging user-supplied labels:
+
+- `hypershift-openshift-io-cluster`: the HostedCluster name.
+- `hypershift-openshift-io-infra-id`: the infrastructure ID, when available.
+
+HyperShift's values take precedence over user-supplied values for these keys.
+For other keys, NodePool labels take precedence over HostedCluster labels on
+NodePool machine resources.
+
 #### LoadBalancer Service label ownership
 
 For legacy GCP LoadBalancer Services, HyperShift reconciles
@@ -28125,6 +28158,7 @@ hypershift create cluster gcp \
   --storage-service-account=<storage-sa-email> \
   --image-registry-service-account=<image-registry-sa-email> \
   --network-service-account=<network-sa-email> \
+  --ingress-service-account=<ingress-sa-email> \
   --service-account-signing-key-path=<path-to-sa-signer.key> \
   --oidc-issuer-url=<oidc-issuer-url> \
   --base-domain=<your-dns-domain> \
@@ -28175,6 +28209,7 @@ hypershift create cluster gcp \
 | `--storage-service-account` | Yes | GCP PD CSI Driver SA email |
 | `--image-registry-service-account` | Yes | Image Registry Operator SA email |
 | `--network-service-account` | Yes | Cloud Network Config Controller SA email |
+| `--ingress-service-account` | Conditional | Ingress Operator SA email (manages *.apps Cloud DNS). Required when the Ingress capability is enabled (the default); omit it only when Ingress is disabled via `--disable-cluster-capabilities=Ingress,Console`. |
 | `--service-account-signing-key-path` | Yes | Path to RSA private key for OIDC token signing |
 | `--oidc-issuer-url` | Yes | OIDC issuer URL |
 | `--node-pool-replicas` | Yes | Number of worker nodes (default: 0) |
@@ -28184,6 +28219,16 @@ hypershift create cluster gcp \
 | `--machine-type` | No | GCP machine type (default: `n2-standard-4`) |
 | `--zone` | Conditional | GCP zone for nodes. Required when `--node-pool-replicas >= 0` (default). Optional when `--node-pool-replicas=-1` (no NodePool created). |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
+| `--resource-labels` | No | GCP resource labels as comma-separated `key=value` pairs; can be specified multiple times |
+
+## DNS
+
+The control plane operator creates three Cloud DNS zones in the hosted cluster's project: a private `{cluster}-hypershift.local` zone, and public/private ingress zones for `--base-domain`. Records for the API server and `*.apps` endpoints are managed in these zones automatically.
+
+Two things are expected from the deployment, not from HyperShift:
+
+- **Zone delegation**: the parent zone of `--base-domain` must delegate to the public ingress zone's name servers (surfaced in the HostedControlPlane status) for the ingress zone to be resolvable.
+- **Ingress certificate**: the ingress operator serves the `*.apps` wildcard with the cluster's default certificate unless a publicly-trusted one is provided. When the deployment runs a certificate issuer outside the cluster that must solve the ACME DNS-01 challenge for the wildcard (e.g. a central cert-manager with access to the parent zone, but not to the ingress zone in the hosted cluster's project), set `spec.platform.gcp.delegation.acmeChallengeTarget` on the HostedCluster to the fully qualified name that issuer is configured to write challenge TXT records for. The value must be lowercase, must start with `_acme-challenge.`, must contain at least two further labels (e.g. `_acme-challenge.central.example.com`), must not end with a dot, and is limited to 253 characters. The operator then creates a CNAME `_acme-challenge.<ingress domain>` → that target in the public ingress zone, so the external issuer can solve the challenge by following the CNAME. No record is created when the cluster's ingress domain is outside its base domain, or when the target equals the record name; the `GCPACMECNAMEAvailable` condition on the HostedCluster reports why. The field can be set at creation or added later, but once set it cannot be changed or removed. When the field is unset no record is created and the deployment handles the ingress wildcard certificate's DNS-01 challenge itself.
 
 ## Monitor Cluster Creation
 
@@ -50657,6 +50702,13 @@ recovery job was triggered.</p>
 A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
 and registered correctly.</p>
 </td>
+</tr><tr><td><p>&#34;GCPACMECNAMEAvailable&#34;</p></td>
+<td><p>GCPACMECNAMEAvailable indicates whether the ACME DNS-01 challenge CNAME
+requested through the HostedCluster&rsquo;s
+spec.platform.gcp.delegation.acmeChallengeTarget was published in the
+cluster&rsquo;s public ingress DNS zone. The condition is only present when
+that field is set.</p>
+</td>
 </tr><tr><td><p>&#34;GCPDNSAvailable&#34;</p></td>
 <td><p>GCPDNSAvailable indicates whether the DNS configuration has been
 created in the customer VPC</p>
@@ -50740,6 +50792,14 @@ and reports missing images if any.</p>
 <td><p>InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
 e.g. load balancers were created successfully.
 A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
+</td>
+</tr><tr><td><p>&#34;IngressCredentialsFound&#34;</p></td>
+<td><p>IngressCredentialsFound indicates whether the optional ingress-operator
+credentials are configured. It is only evaluated for platforms whose
+ingress operator needs cloud credentials (today: GCP). A False condition
+is non-blocking: the HostedCluster keeps reconciling, but the guest
+ingress operator runs without cloud credentials and cannot publish the
+*.apps DNS records.</p>
 </td>
 </tr><tr><td><p>&#34;IngressDefaultCertificateSynced&#34;</p></td>
 <td><p>IngressDefaultCertificateSynced indicates whether the user-provided default
@@ -50882,6 +50942,39 @@ A failure here is unlikely to resolve without the changing user input.</p>
 and reports missing images if any.</p>
 </td>
 </tr></tbody>
+</table>
+###ConfigMapReference { #hypershift.openshift.io/v1beta1.ConfigMapReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadSpec">IgnitionPayloadSpec</a>)
+</p>
+<p>
+<p>ConfigMapReference references a ConfigMap by name.
+The ConfigMap must exist in the same namespace as the referencing resource.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of a ConfigMap in the same namespace as this resource. It must
+be a valid DNS-1123 subdomain: at most 253 characters, consisting of lowercase
+alphanumeric characters, hyphens, and periods. Each period-separated segment must
+start and end with an alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###ConfigurationStatus { #hypershift.openshift.io/v1beta1.ConfigurationStatus }
 <p>
@@ -52241,6 +52334,59 @@ If not specified, Google-managed encryption keys are used.</p>
 </tr>
 </tbody>
 </table>
+###GCPDNSDelegationSpec { #hypershift.openshift.io/v1beta1.GCPDNSDelegationSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPDNSDelegationSpec configures DNS delegation for the ingress wildcard
+certificate of a GCP hosted cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>acmeChallengeTarget</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>acmeChallengeTarget delegates the ACME DNS-01 challenge for the ingress
+wildcard certificate (*.apps) to a solver running outside the cluster.
+When set, HyperShift publishes a CNAME record at
+_acme-challenge.<ingress domain> in the cluster&rsquo;s public ingress DNS zone,
+pointing at this target, so an external certificate issuer that can write
+the target&rsquo;s zone but not the cluster&rsquo;s ingress zone (for example a central
+cert-manager) can solve the challenge by following the CNAME.</p>
+<p>The value is the fully qualified name the external solver writes its
+challenge TXT records to. It must be lowercase, must start with the
+_acme-challenge. label, must contain at least two further labels, must not
+end with a dot, and is limited to 253 characters.</p>
+<p>The record is only created when the cluster&rsquo;s ingress domain
+(apps.<name>.<baseDomain> by default, apps.<baseDomainPrefix>.<baseDomain>
+when spec.dns.baseDomainPrefix is set, or the spec.configuration.ingress
+domain or appsDomain override when set) is within the cluster&rsquo;s base
+domain, and when the target differs from the record name. When the record
+is not created, the GCPACMECNAMEAvailable condition on the HostedCluster
+reports why.</p>
+<p>When this field is not set, no record is created and the deployment is
+responsible for issuing the ingress wildcard certificate, solving its
+DNS-01 challenge in the ingress zone itself.</p>
+<p>The field can be set when the cluster is created or added later, but once
+set it cannot be changed or removed.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPDiskEncryptionKey { #hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey }
 <p>
 (<em>Appears on:</em>
@@ -52465,7 +52611,10 @@ If not specified, uses the default compute service account for the project.</p>
 <p>resourceLabels is an optional list of additional labels to apply to GCP node
 instances and their associated resources (disks, etc.).
 Labels will be merged with cluster-level resource labels, with NodePool labels
-taking precedence in case of conflicts.</p>
+taking precedence in case of conflicts.
+HyperShift overrides user values for hypershift-openshift-io-cluster with the
+HostedCluster name and, when an infrastructure ID is available,
+hypershift-openshift-io-infra-id with that ID.</p>
 <p>Keys and values must conform to GCP labeling requirements:
 - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9<em>-]
 - Values: empty or 1–63 chars; allowed [a-z0-9</em>-]
@@ -52697,6 +52846,10 @@ Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults 
 Labels are key-value pairs used for organizing and managing GCP resources.
 Changes to this field will be propagated in-place to GCP resources where supported.
 GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
+HyperShift sets hypershift-openshift-io-cluster to the HostedCluster name and,
+when an infrastructure ID is available, hypershift-openshift-io-infra-id to that ID.
+These system values override user-supplied values for those keys on GCPCluster
+and NodePool machine resources.
 For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a></p>
 </td>
 </tr>
@@ -52737,6 +52890,21 @@ tag propagation. When that capability is unavailable, reconciliation fails
 with a message identifying resourceTags on the ReconciliationSucceeded
 condition, and dependent component deployments are blocked until a
 supporting control plane operator image is configured.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delegation,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPDNSDelegationSpec">
+GCPDNSDelegationSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delegation configures DNS delegation for the ingress wildcard certificate
+of the hosted cluster. When omitted, no delegation record is created.</p>
 </td>
 </tr>
 <tr>
@@ -52866,7 +53034,7 @@ Auto-populated by the HyperShift Operator</p>
 <td>
 <em>(Optional)</em>
 <p>conditions represent the current state of PSC infrastructure
-Current condition types are: &ldquo;GCPPrivateServiceConnectAvailable&rdquo;, &ldquo;GCPServiceAttachmentAvailable&rdquo;, &ldquo;GCPEndpointAvailable&rdquo;, &ldquo;GCPDNSAvailable&rdquo;</p>
+Current condition types are: &ldquo;GCPPrivateServiceConnectAvailable&rdquo;, &ldquo;GCPServiceAttachmentAvailable&rdquo;, &ldquo;GCPEndpointAvailable&rdquo;, &ldquo;GCPDNSAvailable&rdquo;, &ldquo;GCPACMECNAMEAvailable&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -53293,6 +53461,36 @@ This GSA requires the following IAM roles:
 - roles/compute.networkUser (Compute Network User - for using subnets)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingress is the Google Service Account email for the cluster Ingress Operator
+that manages the default IngressController&rsquo;s wildcard (*.apps) Cloud DNS records.
+This GSA requires the following IAM role:
+- roles/dns.admin (DNS Admin - for managing records in the ingress managed zone)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.</p>
+<p>When the Ingress capability is enabled (the default), creating the cluster
+through the CLI without this field fails fast, and a cluster created
+without it (e.g. via direct YAML) reports a non-blocking
+IngressCredentialsFound condition: the guest ingress operator runs
+without credentials and cannot publish the *.apps DNS records. Because
+the field is immutable, such a cluster cannot be fixed after creation.
+When the Ingress capability is disabled, this field is ignored. The email
+must belong to the GCP project in spec.platform.gcp.project, and it can
+only be set at creation time.</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
 Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
 the required service accounts with appropriate IAM roles and WIF bindings.</p>
@@ -56100,6 +56298,338 @@ github.com/openshift/api/config/v1.IBMCloudProviderType
 <td>
 <em>(Optional)</em>
 <p>providerType is a specific supported infrastructure provider within IBM Cloud.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IgnitionPayload { #hypershift.openshift.io/v1beta1.IgnitionPayload }
+<p>
+<p>IgnitionPayload requests an Ignition payload for booting nodes. spec describes the
+inputs used to generate the payload, and status reports the generated payloads and
+rollout progress.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the standard object metadata.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadSpec">
+IgnitionPayloadSpec
+</a>
+</em>
+</td>
+<td>
+<p>spec describes the inputs used to generate the payload.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>status,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadStatus">
+IgnitionPayloadStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status reports the generated payloads and rollout progress.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IgnitionPayloadSpec { #hypershift.openshift.io/v1beta1.IgnitionPayloadSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayload">IgnitionPayload</a>)
+</p>
+<p>
+<p>IgnitionPayloadSpec is written entirely by the consumer; the PayloadController
+treats it as read-only input.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>releaseImage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>releaseImage is the pullspec of the OCP release whose machine-config-server
+binaries render the payload. It is resolved to an immutable digest before the
+payload is generated. This field is required.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>pullSecret,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretReference">
+SecretReference
+</a>
+</em>
+</td>
+<td>
+<p>pullSecret references the pull-secret Secret in the IgnitionPayload&rsquo;s namespace
+(conventionally named &ldquo;pull-secret&rdquo;) that the generator reads to fetch the release
+image and embed in the generated payload. This field is required and immutable:
+change the pull secret in place (via the global pull secret mechanism) rather than
+updating this reference, so it never triggers a node rollout.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalTrustBundle,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigMapReference">
+ConfigMapReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalTrustBundle optionally references a ConfigMap in the IgnitionPayload&rsquo;s namespace
+holding additional CA certificates for booting nodes to trust. The CA bundle is
+read from the &ldquo;ca-bundle.crt&rdquo; key, PEM-encoded. When omitted, no additional
+trust bundle is embedded in the payload.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>osImageStream,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
+OSImageStreamReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>osImageStream selects the RHEL OS stream the payload targets. Valid values are
+&ldquo;rhel-9&rdquo; (RHEL 9 boot images) and &ldquo;rhel-10&rdquo; (RHEL 10 boot images). When omitted,
+the stream defaults to the one implied by the release version (rhel-9 for OCP &lt; 5.0,
+rhel-10 for OCP &gt;= 5.0). rhel-9 is the legacy stream and is expected to be retired
+as supported releases move to RHEL 10. If the generator does not support the selected
+stream, it does not render a payload and reports PayloadGenerated=False.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutGlobalConfig,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigMapReference">
+ConfigMapReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>rolloutGlobalConfig references an IgnitionPayload-owned ConfigMap in the
+IgnitionPayload&rsquo;s namespace holding the rollout-relevant subset of the hosted
+cluster&rsquo;s global configuration, canonicalized and authored by the consumer. The
+content is read from the &ldquo;config&rdquo; key and feeds the rollout hash; a ConfigMap
+missing that key contributes nothing. When omitted, no global configuration
+contributes to the payload.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalRolloutInputs</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalRolloutInputs is an opaque, consumer-authored summary of rollout-relevant inputs
+that are not otherwise captured by the referenced ConfigMaps. It is folded into the rollout
+hash only (never into configHash), so setting or changing it advances rolloutGeneration and
+rolls running nodes, while the payload bytes (and configHash) are unaffected. Use it to roll
+running nodes for a change the rollout hash would otherwise miss — typically an input that
+lives in a managementConfigMaps ConfigMap (which on its own only refreshes the payload for new
+nodes) but must also roll existing nodes, e.g. the API server endpoint identity (access mode,
+advertise address, port) carried in the apiserver-HAProxy config. It stays out of configHash
+so configHash remains the payload&rsquo;s byte identity. Must be printable ASCII with no whitespace
+so the rollout hash stays deterministic. When omitted, no out-of-band input contributes to the
+rollout hash.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutConfigMaps</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigMapReference">
+[]ConfigMapReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>rolloutConfigMaps lists ConfigMaps in the IgnitionPayload&rsquo;s namespace whose
+contents are rollout-relevant (user, core, and NTO machine configs). Each referenced
+ConfigMap provides its content under the &ldquo;config&rdquo; key as multi-document YAML of
+MachineConfig manifests; a ConfigMap missing that key contributes nothing. Names
+must be unique (enforced as a map keyed by name) and must not also appear in
+managementConfigMaps. A change to any listed ConfigMap feeds the rollout hash and
+can therefore trigger a node rollout. When omitted, no rollout-relevant ConfigMaps
+contribute to the payload. At least 1 and at most 100 entries.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managementConfigMaps</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigMapReference">
+[]ConfigMapReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managementConfigMaps lists ConfigMaps in the IgnitionPayload&rsquo;s namespace whose
+contents are management-side only (e.g. the apiserver-HAProxy config). Each
+referenced ConfigMap provides its content under the &ldquo;config&rdquo; key as multi-document
+YAML of MachineConfig manifests; a ConfigMap missing that key contributes nothing.
+Names must be unique (enforced as a map keyed by name) and must not also appear in
+rolloutConfigMaps. A change to any listed ConfigMap refreshes the generated payload
+bytes WITHOUT advancing rolloutGeneration, so it does not trigger a node rollout.
+When omitted, no management-only ConfigMaps contribute to the payload. At least 1
+and at most 100 entries.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>retiredRolloutGeneration</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>retiredRolloutGeneration releases the previous payload early. At most two payloads
+are retained — current and previous — and a new rollout always evicts the old
+previous regardless of this field. Set it to the highest rolloutGeneration whose
+nodes have all been replaced to free previous before the next rollout; the current
+payload is always kept. It only ever increases. Minimum 1.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IgnitionPayloadStatus { #hypershift.openshift.io/v1beta1.IgnitionPayloadStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayload">IgnitionPayload</a>)
+</p>
+<p>
+<p>IgnitionPayloadStatus has two writers. The PayloadController owns current,
+previous, and the PayloadGenerated condition, and resets IgnitionReached to False
+when rolloutGeneration advances; the serving tier sets IgnitionReached to True
+(field-scoped patch) once a node fetches the current payload.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions reports generation and rollout progress. Known condition types are
+PayloadGenerated and IgnitionReached. PayloadGenerated is True when the payload for
+the current spec has been generated; its observedGeneration is the metadata.generation
+last processed, so it shows whether current reflects the latest spec. IgnitionReached
+is False after each new rollout until a node has fetched the current payload, then
+True. At least 1 and at most 100 entries.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>current,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PayloadReference">
+PayloadReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>current describes the payload for the latest validated, generated config. It is
+absent until the first payload has been generated.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>previous,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PayloadReference">
+PayloadReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>previous describes the immediately prior payload, retained during a rollout so
+in-flight boots on the previous generation are served until they drain. It is absent when
+there is no prior payload (e.g. the first generation) or once the prior payload
+has fully drained.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutHashVersion</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>rolloutHashVersion identifies the version of the formula used to compute
+current.rolloutHash. It is absent until the first payload has been generated. When a
+newer formula is adopted, current.rolloutHash is recomputed and this field is updated
+without advancing rolloutGeneration, so a formula change does not trigger a node
+rollout. When present, it must be at least 1.</p>
 </td>
 </tr>
 </tbody>
@@ -59966,6 +60496,7 @@ the management cluster.</p>
 ###OSImageStreamReference { #hypershift.openshift.io/v1beta1.OSImageStreamReference }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadSpec">IgnitionPayloadSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.NodePoolStatus">NodePoolStatus</a>)
 </p>
@@ -59988,7 +60519,7 @@ string
 </em>
 </td>
 <td>
-<p>name is a required reference to an OSImageStream to be used for the pool.</p>
+<p>name is a required reference to an OSImageStream. Valid values are &ldquo;rhel-9&rdquo; and &ldquo;rhel-10&rdquo;.</p>
 </td>
 </tr>
 </tbody>
@@ -60934,6 +61465,86 @@ Settings are grouped by platform.</p>
 </tr><tr><td><p>&#34;S390X&#34;</p></td>
 <td></td>
 </tr></tbody>
+</table>
+###PayloadReference { #hypershift.openshift.io/v1beta1.PayloadReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadStatus">IgnitionPayloadStatus</a>)
+</p>
+<p>
+<p>PayloadReference identifies one generated payload version and its store key.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>configHash</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>configHash is the payload-identity hash over the whole validated config. It is an
+opaque hash string: consumers compare it for equality and must not parse it.
+It is required and consists of 1 to 64 lowercase hexadecimal characters (0-9, a-f).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutHash</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>rolloutHash is the hash over the rollout-relevant inputs. It is an opaque hash
+string: consumers compare it for equality and must not parse it.
+It is required and consists of 1 to 64 lowercase hexadecimal characters (0-9, a-f).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>userDataSecret,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretReference">
+SecretReference
+</a>
+</em>
+</td>
+<td>
+<p>userDataSecret references the generator-authored pointer-ignition Secret in the
+IgnitionPayload&rsquo;s namespace, named <code>&lt;ignitionpayload-name&gt;-&lt;rolloutGeneration&gt;</code>. The
+consumer points its machines&rsquo; bootstrap dataSecretName at it; it is a non-secret reference.
+That Secret embeds the per-payload endpoint (<code>/ignition/&lt;name&gt;</code>), the CA, a static
+rollout-generation header, and the bearer token; the token authenticates the fetch, lives
+only inside that Secret (never in the PayloadStore, which holds only payload bytes keyed by
+rollout identity, and never in status).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutGeneration</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<p>rolloutGeneration is a monotonically increasing counter the consumer watches to execute a
+rollout. It advances only when rolloutHash changes (so a management-only payload refresh does
+not advance it); each advance mints a new token, while a refresh re-issues the token with a
+fresh expiry under the same rollout identity. It is also the serving/storage identity: the
+PayloadStore entry, the userDataSecret, and the node&rsquo;s rollout-generation header are all
+keyed on it, so a rolloutHash formula rebaseline — which rewrites rolloutHash without advancing
+this counter — never moves serving identity. Minimum 1.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###PersistentVolumeAccessMode { #hypershift.openshift.io/v1beta1.PersistentVolumeAccessMode }
 <p>
@@ -62826,7 +63437,9 @@ history[0] is not Completed or Interrupted.</p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.AESCBCKeyStatus">AESCBCKeyStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">HCPEtcdBackupAzureBlob</a>,
-<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">HCPEtcdBackupS3</a>)
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">HCPEtcdBackupS3</a>,
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadSpec">IgnitionPayloadSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.PayloadReference">PayloadReference</a>)
 </p>
 <p>
 <p>SecretReference contains a reference to a Secret by name.
@@ -65464,14 +66077,15 @@ In all standard installation methods -- including MCE (Multicluster Engine) and 
 
 Starting with OCP 4.21, the upstream CAPI v1.11 bump introduced the `v1beta2` API version. Since HyperShift did not support CAPI `v1beta2` until 5.0, a backward compatibility mechanism pins specific CAPI images to their 4.20.10 equivalents (which ship CAPI v1.10 / `v1beta1` only) for releases 4.21 and 4.22.
 
-Separately, on `main` and `release-5.0+` (where HyperShift compiles against CAPI v1.11+), hosted clusters running OCP **below 4.19** ship a CAPI controller that writes status via `v1beta1`. The `v1beta1`→`v1beta2` conversion webhook drops the `status.phase` field, leaving it permanently empty. To fix this, the core CAPI manager image is pinned to a known-good OCP 4.22 build that writes status through `v1beta2` natively.
+Separately, on `main` and `release-5.0+` (where HyperShift compiles against CAPI v1.11+), hosted clusters running OCP **below 4.21** ship a CAPI controller that writes status via `v1beta1`. The `v1beta1`→`v1beta2` conversion webhook drops the `status.phase` field, leaving it permanently empty. Additionally, on large environments this causes congestion on the API server due to high conversion volumes.
+To fix this, the core CAPI manager image is pinned to a known-good OCP 4.22 build that writes status through `v1beta2` natively. This removes the need for conversion.
 
 ### Implementation
 
 The pinning is implemented in `support/backwardcompat/backwardcompat.go` via the `GetBackwardCompatibleCAPIImage()` function. The behaviour depends on the branch and the hosted cluster's payload version:
 
 - **release-4.21 / release-4.22** -- for payload version >= 4.21.0, the function extracts the CAPI images from a pinned 4.20.10 release instead of the hosted cluster's own payload.
-- **main / release-5.0+** -- for payload version < 4.19.0, the function returns a pinned OCP 4.22 `cluster-capi-controllers` image. For versions >= 4.19.0 it returns an empty string and the standard image resolution priority applies.
+- **main / release-5.0+** -- for payload version < 4.21.0, the function returns a pinned OCP 4.22 `cluster-capi-controllers` image. For versions >= 4.21.0 it returns an empty string and the standard image resolution priority applies.
 
 In both cases an explicit `hypershift.openshift.io/capi-manager-image` annotation on the HostedCluster takes priority over the pinned image.
 
@@ -65506,24 +66120,25 @@ The following platforms are **not affected** by pinning on any branch: PowerVS, 
 | release-4.20 | No | -- | Not needed -- already ships CAPI v1.10 |
 | release-4.21 | Yes | `cluster-capi-controllers`, CAPA (AWS), CAPZ (Azure) | Pins to 4.20.10 for payloads >= 4.21 |
 | release-4.22 | Yes | `cluster-capi-controllers`, CAPA (AWS), CAPZ (Azure) | Pins to 4.20.10 for payloads >= 4.21 |
-| release-5.0+ | Yes | `cluster-capi-controllers` | Pins to OCP 4.22 CAPI manager for payloads < 4.19 |
-| main | Yes | `cluster-capi-controllers` | Pins to OCP 4.22 CAPI manager for payloads < 4.19 |
+| release-5.0+ | Yes | `cluster-capi-controllers` | Pins to OCP 4.22 CAPI manager for payloads < 4.21 |
+| main | Yes | `cluster-capi-controllers` | Pins to OCP 4.22 CAPI manager for payloads < 4.21 |
 
 !!! note
-    The 4.20.10 pinning was removed once HyperShift gained the ability to compile with CAPI v1.11+, tracked under CNTRLPLANE-2207. The related `v1beta2` client migration is tracked separately under CNTRLPLANE-1200. On `main` and `release-5.0+` the 4.20.10 pinning is replaced by the < 4.19 phase-conversion pinning.
+    The 4.20.10 pinning was removed once HyperShift gained the ability to compile with CAPI v1.11+, tracked under CNTRLPLANE-2207. The related `v1beta2` client migration is tracked separately under CNTRLPLANE-1200. On `main` and `release-5.0+` the 4.20.10 pinning is replaced by the < 4.21 phase-conversion + congestion avoidance pinning.
 
 ### Introducing PRs
 
 - OCPBUGS-74247: CAPI image overrides aware of registry config -- initial implementation (merged to main)
 - OCPBUGS-86295: CAPI image overrides aware of registry config -- backport to release-4.21
 - OCPBUGS-123171: CAPI manager pinning below 4.19 to fix phase conversion -- OCP 4.22 CAPI manager pinning for payloads < 4.19
+- OCPBUGS-140990: fix(capi): extend CAPI manager override up to 4.20 -- OCP 4.22 CAPI manager pinning extended from < 4.19 to < 4.21
 
 ### Known Issues
 
 In disconnected environments, pinned images are not part of the hosted cluster payload's `image-references`, so `oc-mirror` does not discover them automatically:
 
 - On **release-4.21/4.22**: users must manually mirror the 4.20.10 release. Tracked under OCPBUGS-74263 and OCPBUGS-86056.
-- On **main/5.0+**: users must manually mirror the OCP 4.22 `cluster-capi-controllers` image listed above. Tracked under OCPBUGS-123171.
+- On **main/5.0+**: users must manually mirror the OCP 4.22 `cluster-capi-controllers` image listed above. Tracked under OCPBUGS-123171 and OCPBUGS-140990.
 
 ## Related Files
 

@@ -8,6 +8,9 @@
 #   commit:      Full 40-char SHA from the main branch.
 #   description: Short description for the GitHub Release body.
 tags:
+  - name: v0.1.88
+    commit: 44e11303858b799bbdc019fa120300e35925649b
+    description: HyperShift Operator v0.1.88 release
   - name: v0.1.87
     commit: d3173a012ac0a2b188095aaa6722438b33ff7602
     description: HyperShift Operator v0.1.87 release

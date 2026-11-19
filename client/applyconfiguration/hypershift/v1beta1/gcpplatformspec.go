@@ -30,6 +30,7 @@ type GCPPlatformSpecApplyConfiguration struct {
 	EndpointAccess   *hypershiftv1beta1.GCPEndpointAccessType     `json:"endpointAccess,omitempty"`
 	ResourceLabels   []GCPResourceLabelApplyConfiguration         `json:"resourceLabels,omitempty"`
 	ResourceTags     []GCPResourceTagApplyConfiguration           `json:"resourceTags,omitempty"`
+	Delegation       *GCPDNSDelegationSpecApplyConfiguration      `json:"delegation,omitempty"`
 	WorkloadIdentity *GCPWorkloadIdentityConfigApplyConfiguration `json:"workloadIdentity,omitempty"`
 }
 
@@ -94,6 +95,14 @@ func (b *GCPPlatformSpecApplyConfiguration) WithResourceTags(values ...*GCPResou
 		}
 		b.ResourceTags = append(b.ResourceTags, *values[i])
 	}
+	return b
+}
+
+// WithDelegation sets the Delegation field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Delegation field is set to the value of the last call.
+func (b *GCPPlatformSpecApplyConfiguration) WithDelegation(value *GCPDNSDelegationSpecApplyConfiguration) *GCPPlatformSpecApplyConfiguration {
+	b.Delegation = value
 	return b
 }
 

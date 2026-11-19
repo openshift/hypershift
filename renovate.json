@@ -21,6 +21,19 @@
             "github>konflux-ci/mintmaker-presets:update-fedora-to-stable"
         ]
     },
+    "customManagers": [
+        {
+            "customType": "regex",
+            "description": "Update the Zensical container image used by the containerized docs targets",
+            "managerFilePatterns": [
+                "/^docs/Makefile$/"
+            ],
+            "matchStrings": [
+                "IMG \\?= (?<depName>docker\\.io/zensical/zensical):(?<currentValue>\\S+)"
+            ],
+            "datasourceTemplate": "docker"
+        }
+    ],
     "packageRules": [
         {
             "description": "Disable Go dependency updates on all branches by default",
@@ -110,6 +123,14 @@
                 "hack/gmp-api-source/go.mod"
             ],
             "enabled": false
+        },
+        {
+            "description": "Update the Zensical Python package and its container image together so both docs build paths use the same version",
+            "matchPackageNames": [
+                "zensical",
+                "docker.io/zensical/zensical"
+            ],
+            "groupName": "zensical"
         }
     ]
 }

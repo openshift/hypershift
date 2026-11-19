@@ -75,6 +75,7 @@ import (
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -1056,7 +1057,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
+	// Copy GCPEndpointAvailable, GCPServiceAttachmentAvailable and GCPACMECNAMEAvailable conditions from the GCPPrivateServiceConnect resources.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
 		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
@@ -1071,6 +1072,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPEndpointAvailable))
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPServiceAttachmentAvailable))
+			propagateGCPPSCACMECNAMECondition(hcluster, gcpPSCList)
 		}
 	}
 
@@ -1723,6 +1725,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	return result, report.aggregate()
 }
 
+// deprecatedMetricsForwardingMessageFmt is the HostedCluster-only deprecation message surfaced by
+// reconcileDeprecatedConfigurationStatus. It is declared here, where it is produced, so the
+// controller and its test share a single source of truth for the text. It takes a single %q
+// argument identifying the deprecated annotation.
+const deprecatedMetricsForwardingMessageFmt = "The deprecated %q annotation is set; migrate to spec.monitoring.metricsForwarding and remove the annotation"
+
 // reconcileDeprecatedConfigurationStatus aggregates deprecated-configuration warnings
 // from two sources and surfaces them on the generic HostedClusterConfigurationDeprecated
 // condition: mechanisms visible only on the HostedCluster, and those detected by the HCP
@@ -1734,10 +1742,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 func (r *HostedClusterReconciler) reconcileDeprecatedConfigurationStatus(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
 	var messages []string
 
-	// HostedCluster-only deprecation checks go here as they are added, e.g.:
-	// if <deprecated hcluster field/annotation is set> {
-	//     messages = append(messages, "...")
-	// }
+	// HostedCluster-only deprecation checks go here as they are added. Enumerate
+	// deprecations from api/hypershift/v1beta1/*.go only; deprecations in the
+	// generated CRD from embedded configv1 types are OpenShift-owned and out of
+	// scope. Fire on presence so users are guided to migrate even when a newer
+	// field currently overrides the deprecated mechanism.
+	if _, ok := hcluster.Annotations[hyperv1.EnableMetricsForwarding]; ok {
+		messages = append(messages, fmt.Sprintf(deprecatedMetricsForwardingMessageFmt, hyperv1.EnableMetricsForwarding))
+	}
 
 	// Fold in deprecations detected by the HCP controller.
 	if hcp != nil {
@@ -4614,7 +4626,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	}
 
 	var currentVersion *semver.Version
-	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != imageregistry.HCControlPlaneReleaseImage(hc) {
+	if hc.Status.Version != nil && !sameReleaseImage(hc.Status.Version.Desired.Image, imageregistry.HCControlPlaneReleaseImage(hc)) {
 		releaseInfo, err := releaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to lookup release image: %w", err)
@@ -4628,6 +4640,27 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
+}
+
+// sameReleaseImage reports whether two release image pull specs refer to the same
+// release payload. Identical strings always match, which preserves the behavior for
+// pull specs that cannot be parsed. Otherwise both pull specs must parse and pin the
+// same digest, so a mirrored pull spec (for example one resolved through registry
+// overrides or image content policies) matches its source when the digests are equal.
+// Pull specs without a digest only match when the strings are identical.
+func sameReleaseImage(a, b string) bool {
+	if a == b {
+		return true
+	}
+	refA, err := reference.Parse(a)
+	if err != nil {
+		return false
+	}
+	refB, err := reference.Parse(b)
+	if err != nil {
+		return false
+	}
+	return refA.ID != "" && refA.ID == refB.ID
 }
 
 func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, refWithDigest func() (string, error)) (bool, error) {
@@ -4650,7 +4683,7 @@ func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseI
 		return false, err
 	}
 
-	if hc.Status.Version == nil || (hc.Spec.Release.Image != hc.Status.Version.Desired.Image && withDigest != hc.Status.Version.Desired.Image) {
+	if hc.Status.Version == nil || (!sameReleaseImage(hc.Spec.Release.Image, hc.Status.Version.Desired.Image) && !sameReleaseImage(withDigest, hc.Status.Version.Desired.Image)) {
 		// cluster is doing initial rollout or upgrading
 		return true, nil
 	}
@@ -5571,7 +5604,7 @@ func (r *HostedClusterReconciler) syncKVLiveMigratableCondition(ctx context.Cont
 // 2) non-error message about the condition of the upgrade
 // 3) error indicating that the upgrade is not allowed or we were not able to determine
 func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, string, error) {
-	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == imageregistry.HCControlPlaneReleaseImage(hcluster) {
+	if hcluster.Status.Version == nil || sameReleaseImage(hcluster.Status.Version.Desired.Image, imageregistry.HCControlPlaneReleaseImage(hcluster)) {
 		// cluster is either installing or at the version requested by the spec, no upgrade in progress
 		return false, "", nil
 	}
@@ -6257,6 +6290,30 @@ func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, con
 		resourceConditions[i] = psc.Status.Conditions
 	}
 	return computeEndpointServiceCondition(resourceConditions, conditionType, hyperv1.GCPErrorReason, hyperv1.GCPSuccessReason, "GCPPrivateServiceConnect conditions not found")
+}
+
+// propagateGCPPSCACMECNAMECondition copies the GCPACMECNAMEAvailable condition
+// from the GCPPrivateServiceConnect resources to the HostedCluster, preserving
+// its status, reason and message. Unlike the conditions aggregated by
+// computeGCPPSCCondition, this condition is only maintained when the cluster
+// sets spec.platform.gcp.delegation.acmeChallengeTarget, so when no PSC reports
+// it the condition is left unset (and removed if it was previously set) rather
+// than reported as Unknown.
+func propagateGCPPSCACMECNAMECondition(hcluster *hyperv1.HostedCluster, gcpPSCList hyperv1.GCPPrivateServiceConnectList) {
+	for _, psc := range gcpPSCList.Items {
+		condition := meta.FindStatusCondition(psc.Status.Conditions, string(hyperv1.GCPACMECNAMEAvailable))
+		if condition == nil {
+			continue
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:    string(hyperv1.GCPACMECNAMEAvailable),
+			Status:  condition.Status,
+			Reason:  condition.Reason,
+			Message: condition.Message,
+		})
+		return
+	}
+	meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.GCPACMECNAMEAvailable))
 }
 
 // propagateAzureResourceIDAnnotation copies the Azure resource ID annotation set by Cluster Service
