@@ -35,6 +35,9 @@ type ClusterAutoscalingApplyConfiguration struct {
 	Expanders                     []hypershiftv1beta1.ExpanderString `json:"expanders,omitempty"`
 	KubeClientQPS                 *int32                             `json:"kubeClientQPS,omitempty"`
 	KubeClientBurst               *int32                             `json:"kubeClientBurst,omitempty"`
+	ResourceLimits                *ResourceLimitsApplyConfiguration  `json:"resourceLimits,omitempty"`
+	ScaleUp                       *ScaleUpConfigApplyConfiguration   `json:"scaleUp,omitempty"`
+	LogVerbosity                  *int32                             `json:"logVerbosity,omitempty"`
 }
 
 // ClusterAutoscalingApplyConfiguration constructs a declarative configuration of the ClusterAutoscaling type for use with
@@ -132,5 +135,29 @@ func (b *ClusterAutoscalingApplyConfiguration) WithKubeClientQPS(value int32) *C
 // If called multiple times, the KubeClientBurst field is set to the value of the last call.
 func (b *ClusterAutoscalingApplyConfiguration) WithKubeClientBurst(value int32) *ClusterAutoscalingApplyConfiguration {
 	b.KubeClientBurst = &value
+	return b
+}
+
+// WithResourceLimits sets the ResourceLimits field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ResourceLimits field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithResourceLimits(value *ResourceLimitsApplyConfiguration) *ClusterAutoscalingApplyConfiguration {
+	b.ResourceLimits = value
+	return b
+}
+
+// WithScaleUp sets the ScaleUp field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ScaleUp field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithScaleUp(value *ScaleUpConfigApplyConfiguration) *ClusterAutoscalingApplyConfiguration {
+	b.ScaleUp = value
+	return b
+}
+
+// WithLogVerbosity sets the LogVerbosity field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the LogVerbosity field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithLogVerbosity(value int32) *ClusterAutoscalingApplyConfiguration {
+	b.LogVerbosity = &value
 	return b
 }

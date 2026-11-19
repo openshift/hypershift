@@ -66,6 +66,9 @@
                     },
                     {
                         "name": "IgnitionPayloadSystem"
+                    },
+                    {
+                        "name": "HostedClusterAutoscalerConfiguration"
                     }
                 ],
                 "version": ""
