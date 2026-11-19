@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/hypershift/pkg/manifests"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
+	"github.com/openshift/hypershift/support/azureutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -40,6 +41,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -64,7 +66,12 @@ var kubeletCheckerPodTemplate = func() *corev1.Pod {
 func TestKarpenter(t *testing.T) {
 	e2eutil.ShouldRunKarpenterTests(t)
 	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform AWS")
+		if globalOpts.Platform != hyperv1.AzurePlatform || !azureutil.IsAroHCP() {
+			t.Skip("test only supported on AWS and ARO HCP")
+		}
+		if globalOpts.ConfigurableClusterOptions.AzureKarpenterClientID == "" {
+			t.Skip("ARO HCP Karpenter tests require a federated client ID")
+		}
 	}
 	t.Parallel()
 
@@ -72,29 +79,37 @@ func TestKarpenter(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.AWSPlatform.AutoNode = true
-	clusterOpts.AWSPlatform.PublicOnly = false
-	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.PublicAndPrivate)
+	switch globalOpts.Platform {
+	case hyperv1.AWSPlatform:
+		clusterOpts.AWSPlatform.AutoNode = true
+		clusterOpts.AWSPlatform.PublicOnly = false
+		clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.PublicAndPrivate)
+	case hyperv1.AzurePlatform:
+		clusterOpts.AzurePlatform.AutoNode = true
+	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
-		awsCredsFile := clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile
-		awsRegion := clusterOpts.AWSPlatform.Region
-		pullSecretFile := clusterOpts.PullSecretFile
 
 		t.Run("Karpenter operator plumbing and smoketesting", testKarpenterPlumbing(ctx, mgtClient, guestClient, hostedCluster))
 
-		// Parallel subtests that provision nodes must create their own OpenshiftEC2NodeClass
-		// rather than using the "default" class, because the instance-profile test mutates
-		// the default EC2NodeClass which would trigger NodeClassDrift on any NodeClaims referencing it.
-		t.Run("Parallel provisioning tests", func(t *testing.T) {
-			t.Run("ARM64 instance provisioning", testARM64Provisioning(ctx, guestClient, hostedCluster))
-			t.Run("Instance profile annotation propagation", testInstanceProfileAnnotation(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
-			t.Run("OpenshiftEC2NodeClass version field and MetadataOptions", testNodeClassVersionField(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion, pullSecretFile))
-			t.Run("Capacity reservation selector propagation", testCapacityReservation(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
-			t.Run("Arbitrary subnet propagation", testArbitrarySubnet(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
-			t.Run("OpenshiftEC2NodeClass Kubelet propagation", testKubeletPropagation(ctx, mgtClient, guestClient, hostedCluster))
-		})
+		if globalOpts.Platform == hyperv1.AWSPlatform {
+			awsCredsFile := clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile
+			awsRegion := clusterOpts.AWSPlatform.Region
+			pullSecretFile := clusterOpts.PullSecretFile
+
+			// Parallel subtests that provision nodes must create their own OpenshiftEC2NodeClass
+			// rather than using the "default" class, because the instance-profile test mutates
+			// the default EC2NodeClass which would trigger NodeClassDrift on any NodeClaims referencing it.
+			t.Run("Parallel provisioning tests", func(t *testing.T) {
+				t.Run("ARM64 instance provisioning", testARM64Provisioning(ctx, guestClient, hostedCluster))
+				t.Run("Instance profile annotation propagation", testInstanceProfileAnnotation(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
+				t.Run("OpenshiftEC2NodeClass version field and MetadataOptions", testNodeClassVersionField(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion, pullSecretFile))
+				t.Run("Capacity reservation selector propagation", testCapacityReservation(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
+				t.Run("Arbitrary subnet propagation", testArbitrarySubnet(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
+				t.Run("OpenshiftEC2NodeClass Kubelet propagation", testKubeletPropagation(ctx, mgtClient, guestClient, hostedCluster))
+			})
+		}
 
 		t.Run("AutoNode enable/disable lifecycle", testAutoNodeLifecycle(ctx, mgtClient, hostedCluster))
 
@@ -150,11 +165,20 @@ func testKarpenterPlumbing(ctx context.Context, mgtClient, guestClient crclient.
 		waitForAutoNodeStatusVCPUs(t, ctx, mgtClient, hostedCluster, 0)
 
 		t.Log("Validating Karpenter CRDs are installed")
-		expectedCRDs := []string{
-			"ec2nodeclasses.karpenter.k8s.aws",
-			"openshiftec2nodeclasses.karpenter.hypershift.openshift.io",
-			"nodepools.karpenter.sh",
-			"nodeclaims.karpenter.sh",
+		expectedCRDs := []string{"nodepools.karpenter.sh", "nodeclaims.karpenter.sh"}
+		switch hostedCluster.Spec.Platform.Type {
+		case hyperv1.AWSPlatform:
+			expectedCRDs = append(expectedCRDs,
+				"ec2nodeclasses.karpenter.k8s.aws",
+				"openshiftec2nodeclasses.karpenter.hypershift.openshift.io",
+			)
+		case hyperv1.AzurePlatform:
+			expectedCRDs = append(expectedCRDs,
+				"aksnodeclasses.karpenter.azure.com",
+				"openshiftazurenodeclasses.karpenter.hypershift.openshift.io",
+			)
+		default:
+			t.Fatalf("unsupported platform %s", hostedCluster.Spec.Platform.Type)
 		}
 		for _, crdName := range expectedCRDs {
 			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("CRD %s to exist in the guest cluster", crdName),
@@ -168,81 +192,109 @@ func testKarpenterPlumbing(ctx context.Context, mgtClient, guestClient crclient.
 			)
 		}
 
-		t.Log("Validating default OpenshiftEC2NodeClass exists with expected values")
-		infraID := hostedCluster.Spec.InfraID
-		e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have expected spec",
-			func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
-				nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-				err := guestClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, nc)
-				return nc, err
-			},
-			[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
-				func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (bool, string, error) {
-					if len(nc.Spec.SubnetSelectorTerms) == 0 {
-						return false, "SubnetSelectorTerms is empty", nil
-					}
-					subnetTags := nc.Spec.SubnetSelectorTerms[0].Tags
-					internalELBTagKey := "kubernetes.io/role/internal-elb"
-					if subnetTags[internalELBTagKey] != "1" {
-						return false, fmt.Sprintf("expected subnet tag %s=1, got %v", internalELBTagKey, subnetTags), nil
-					}
-					clusterTagKey := fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
-					if subnetTags[clusterTagKey] != "*" {
-						return false, fmt.Sprintf("expected subnet tag %s=*, got %v", clusterTagKey, subnetTags), nil
-					}
-					if len(nc.Spec.SecurityGroupSelectorTerms) == 0 {
-						return false, "SecurityGroupSelectorTerms is empty", nil
-					}
-					sgTags := nc.Spec.SecurityGroupSelectorTerms[0].Tags
-					discoveryTagKey := "karpenter.sh/discovery"
-					if sgTags[discoveryTagKey] != infraID {
-						return false, fmt.Sprintf("expected SG tag %s=%s, got %v", discoveryTagKey, infraID, sgTags), nil
-					}
-					return true, "default OpenshiftEC2NodeClass has expected fields set", nil
+		if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+			t.Log("Validating default OpenshiftEC2NodeClass exists with expected values")
+			infraID := hostedCluster.Spec.InfraID
+			e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have expected spec",
+				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+					nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+					err := guestClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, nc)
+					return nc, err
 				},
-			},
-			e2eutil.WithTimeout(1*time.Minute),
-		)
-
-		t.Log("Validating corresponding default EC2NodeClass has immutable service-owned fields set")
-		e2eutil.EventuallyObject(t, ctx, "EC2NodeClass to have service-owned fields populated",
-			func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
-				nc := &awskarpenterv1.EC2NodeClass{}
-				err := guestClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, nc)
-				return nc, err
-			},
-			[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
-				func(nc *awskarpenterv1.EC2NodeClass) (bool, string, error) {
-					if len(nc.Spec.AMISelectorTerms) == 0 {
-						return false, "AMISelectorTerms is empty", nil
-					}
-					if nc.Spec.AMIFamily == nil || *nc.Spec.AMIFamily != "Custom" {
-						return false, fmt.Sprintf("expected AMIFamily=Custom, got %v", nc.Spec.AMIFamily), nil
-					}
-					if nc.Spec.UserData == nil || strings.TrimSpace(*nc.Spec.UserData) == "" {
-						return false, "UserData is empty", nil
-					}
-					if nc.Spec.Tags["red-hat-clustertype"] != "rosa" {
-						return false, fmt.Sprintf("expected tag red-hat-clustertype=rosa, got %v", nc.Spec.Tags["red-hat-clustertype"]), nil
-					}
-					if nc.Spec.Tags["red-hat-managed"] != "true" {
-						return false, fmt.Sprintf("expected tag red-hat-managed=true, got %v", nc.Spec.Tags["red-hat-managed"]), nil
-					}
-					return true, "default EC2NodeClass has expected fields set", nil
+				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+					func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (bool, string, error) {
+						if len(nc.Spec.SubnetSelectorTerms) == 0 {
+							return false, "SubnetSelectorTerms is empty", nil
+						}
+						subnetTags := nc.Spec.SubnetSelectorTerms[0].Tags
+						internalELBTagKey := "kubernetes.io/role/internal-elb"
+						if subnetTags[internalELBTagKey] != "1" {
+							return false, fmt.Sprintf("expected subnet tag %s=1, got %v", internalELBTagKey, subnetTags), nil
+						}
+						clusterTagKey := fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
+						if subnetTags[clusterTagKey] != "*" {
+							return false, fmt.Sprintf("expected subnet tag %s=*, got %v", clusterTagKey, subnetTags), nil
+						}
+						if len(nc.Spec.SecurityGroupSelectorTerms) == 0 {
+							return false, "SecurityGroupSelectorTerms is empty", nil
+						}
+						sgTags := nc.Spec.SecurityGroupSelectorTerms[0].Tags
+						discoveryTagKey := "karpenter.sh/discovery"
+						if sgTags[discoveryTagKey] != infraID {
+							return false, fmt.Sprintf("expected SG tag %s=%s, got %v", discoveryTagKey, infraID, sgTags), nil
+						}
+						return true, "default OpenshiftEC2NodeClass has expected fields set", nil
+					},
 				},
-			},
-			e2eutil.WithTimeout(1*time.Minute),
-		)
+				e2eutil.WithTimeout(1*time.Minute),
+			)
 
-		t.Log("Validating admin cannot delete EC2NodeClass directly")
-		ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
-		g.Expect(guestClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, ec2NodeClass)).To(Succeed())
-		g.Expect(guestClient.Delete(ctx, ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
+			t.Log("Validating corresponding default EC2NodeClass has immutable service-owned fields set")
+			e2eutil.EventuallyObject(t, ctx, "EC2NodeClass to have service-owned fields populated",
+				func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
+					nc := &awskarpenterv1.EC2NodeClass{}
+					err := guestClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, nc)
+					return nc, err
+				},
+				[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
+					func(nc *awskarpenterv1.EC2NodeClass) (bool, string, error) {
+						if len(nc.Spec.AMISelectorTerms) == 0 {
+							return false, "AMISelectorTerms is empty", nil
+						}
+						if nc.Spec.AMIFamily == nil || *nc.Spec.AMIFamily != "Custom" {
+							return false, fmt.Sprintf("expected AMIFamily=Custom, got %v", nc.Spec.AMIFamily), nil
+						}
+						if nc.Spec.UserData == nil || strings.TrimSpace(*nc.Spec.UserData) == "" {
+							return false, "UserData is empty", nil
+						}
+						if nc.Spec.Tags["red-hat-clustertype"] != "rosa" {
+							return false, fmt.Sprintf("expected tag red-hat-clustertype=rosa, got %v", nc.Spec.Tags["red-hat-clustertype"]), nil
+						}
+						if nc.Spec.Tags["red-hat-managed"] != "true" {
+							return false, fmt.Sprintf("expected tag red-hat-managed=true, got %v", nc.Spec.Tags["red-hat-managed"]), nil
+						}
+						return true, "default EC2NodeClass has expected fields set", nil
+					},
+				},
+				e2eutil.WithTimeout(1*time.Minute),
+			)
 
-		t.Log("Validating admin cannot modify fields on EC2NodeClass directly")
-		ec2NodeClassCopy := ec2NodeClass.DeepCopy()
-		ec2NodeClassCopy.Spec.AMISelectorTerms = []awskarpenterv1.AMISelectorTerm{{ID: "ami-fake123"}}
-		g.Expect(guestClient.Update(ctx, ec2NodeClassCopy)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
+			t.Log("Validating admin cannot delete EC2NodeClass directly")
+			ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+			g.Expect(guestClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, ec2NodeClass)).To(Succeed())
+			g.Expect(guestClient.Delete(ctx, ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
+
+			t.Log("Validating admin cannot modify fields on EC2NodeClass directly")
+			ec2NodeClassCopy := ec2NodeClass.DeepCopy()
+			ec2NodeClassCopy.Spec.AMISelectorTerms = []awskarpenterv1.AMISelectorTerm{{ID: "ami-fake123"}}
+			g.Expect(guestClient.Update(ctx, ec2NodeClassCopy)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
+		} else {
+			t.Log("Validating default OpenShiftAzureNodeClass exists")
+			e2eutil.EventuallyObject(t, ctx, "default OpenShiftAzureNodeClass to exist",
+				func(ctx context.Context) (*unstructured.Unstructured, error) {
+					nc := &unstructured.Unstructured{}
+					nc.SetAPIVersion("karpenter.hypershift.openshift.io/v1")
+					nc.SetKind("OpenShiftAzureNodeClass")
+					err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
+					return nc, err
+				},
+				nil,
+				e2eutil.WithTimeout(1*time.Minute),
+			)
+
+			t.Log("Validating generated default AKSNodeClass exists")
+			e2eutil.EventuallyObject(t, ctx, "default AKSNodeClass to exist",
+				func(ctx context.Context) (*unstructured.Unstructured, error) {
+					nc := &unstructured.Unstructured{}
+					nc.SetAPIVersion("karpenter.azure.com/v1")
+					nc.SetKind("AKSNodeClass")
+					err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
+					return nc, err
+				},
+				nil,
+				e2eutil.WithTimeout(1*time.Minute),
+			)
+		}
 
 		t.Log("Validating AutoNodeEnabled condition is set on HostedCluster")
 		e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled condition", hostedCluster.Namespace, hostedCluster.Name),
@@ -1367,10 +1419,26 @@ func testAutoNodeLifecycle(ctx context.Context, mgtClient crclient.Client, hoste
 	return func(t *testing.T) {
 		g := NewWithT(t)
 
-		// Refresh to get current spec (including AutoNode config with RoleARN).
+		// Refresh to get the current AutoNode configuration before temporarily disabling it.
 		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		g.Expect(err).NotTo(HaveOccurred())
 		savedAutoNode := hostedCluster.Spec.AutoNode
+		autoNodeRestored := false
+		t.Cleanup(func() {
+			if autoNodeRestored {
+				return
+			}
+			hc := &hyperv1.HostedCluster{}
+			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc); err != nil {
+				t.Errorf("failed to get HostedCluster while restoring AutoNode configuration: %v", err)
+				return
+			}
+			if err := e2eutil.UpdateObject(t, ctx, mgtClient, hc, func(obj *hyperv1.HostedCluster) {
+				obj.Spec.AutoNode = savedAutoNode
+			}); err != nil {
+				t.Errorf("failed to restore AutoNode configuration: %v", err)
+			}
+		})
 
 		// Disable Karpenter.
 		t.Log("Disabling AutoNode (Karpenter) on HostedCluster")
@@ -1407,6 +1475,7 @@ func testAutoNodeLifecycle(ctx context.Context, mgtClient crclient.Client, hoste
 			obj.Spec.AutoNode = savedAutoNode
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to re-enable AutoNode")
+		autoNodeRestored = true
 
 		// Expect progressing (enable in flight — components being created/rolled out).
 		t.Log("Waiting for AutoNodeEnabled=False/AutoNodeProgressing (enable in progress)")
@@ -1474,10 +1543,11 @@ func testBillingConsolidationAndPDB(ctx context.Context, mgtClient, guestClient 
 		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 2, nodeLabels)
 		t.Logf("Both nodes ready, validating billing vCPUs")
 
-		// t3.xlarge = 4 vCPUs; 2 nodes = 8 Karpenter vCPUs on top of baseline
-		waitForAutoNodeStatusVCPUs(t, ctx, mgtClient, hostedCluster, 8)
-		waitForAutoNodeStatusVCPUsStable(t, ctx, mgtClient, hostedCluster, 8, 30*time.Second)
-		waitForBillingMetricVCPUs(t, ctx, mgtClient, hostedCluster, baseline+8)
+		vCPUsPerNode := karpenterNodePoolVCPUs(hostedCluster.Spec.Platform.Type)
+		expectedVCPUs := 2 * vCPUsPerNode
+		waitForAutoNodeStatusVCPUs(t, ctx, mgtClient, hostedCluster, expectedVCPUs)
+		waitForAutoNodeStatusVCPUsStable(t, ctx, mgtClient, hostedCluster, expectedVCPUs, 30*time.Second)
+		waitForBillingMetricVCPUs(t, ctx, mgtClient, hostedCluster, baseline+expectedVCPUs)
 
 		t.Logf("Scaling workload to 1 replica to verify deprovisioning and consolidation")
 		err := e2eutil.UpdateObject(t, ctx, guestClient, workLoads, func(obj *appsv1.Deployment) {
@@ -1488,10 +1558,9 @@ func testBillingConsolidationAndPDB(ctx context.Context, mgtClient, guestClient 
 		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, nodeLabels)
 		t.Logf("Karpenter consolidated the extra node")
 
-		// t3.xlarge = 4 vCPUs; 1 node = 4 Karpenter vCPUs on top of baseline
-		waitForAutoNodeStatusVCPUs(t, ctx, mgtClient, hostedCluster, 4)
-		waitForAutoNodeStatusVCPUsStable(t, ctx, mgtClient, hostedCluster, 4, 30*time.Second)
-		waitForBillingMetricVCPUs(t, ctx, mgtClient, hostedCluster, baseline+4)
+		waitForAutoNodeStatusVCPUs(t, ctx, mgtClient, hostedCluster, vCPUsPerNode)
+		waitForAutoNodeStatusVCPUsStable(t, ctx, mgtClient, hostedCluster, vCPUsPerNode, 30*time.Second)
+		waitForBillingMetricVCPUs(t, ctx, mgtClient, hostedCluster, baseline+vCPUsPerNode)
 
 		// Create a blocking PDB and leave everything dangling so cluster teardown
 		// must force-terminate nodes despite a blocking PDB.
@@ -1804,6 +1873,27 @@ func getVCPUsMetric(t *testing.T, ctx context.Context, mgtClient crclient.Client
 }
 
 func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
+	requirements := []karpenterv1.NodeSelectorRequirementWithMinValues{
+		{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}},
+		{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
+	}
+	nodeClassRef := &karpenterv1.NodeClassReference{
+		Group: "karpenter.k8s.aws",
+		Kind:  "EC2NodeClass",
+		Name:  nodeClassName,
+	}
+	if globalOpts.Platform == hyperv1.AzurePlatform {
+		requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
+			{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"Standard_D4s_v5"}},
+			{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
+		}
+		nodeClassRef = &karpenterv1.NodeClassReference{
+			Group: "karpenter.azure.com",
+			Kind:  "AKSNodeClass",
+			Name:  nodeClassName,
+		}
+	}
+
 	return &karpenterv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: karpenterv1.NodePoolSpec{
@@ -1815,18 +1905,76 @@ func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 			},
 			Template: karpenterv1.NodeClaimTemplate{
 				Spec: karpenterv1.NodeClaimTemplateSpec{
-					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
-						{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}},
-						{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
-					},
-					NodeClassRef: &karpenterv1.NodeClassReference{
-						Group: "karpenter.k8s.aws",
-						Kind:  "EC2NodeClass",
-						Name:  nodeClassName,
-					},
+					Requirements: requirements,
+					NodeClassRef: nodeClassRef,
 				},
 			},
 		},
+	}
+}
+
+func karpenterNodePoolVCPUs(platform hyperv1.PlatformType) int32 {
+	switch platform {
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform:
+		return 4
+	default:
+		return 0
+	}
+}
+
+func TestBaseNodePool(t *testing.T) {
+	originalPlatform := globalOpts.Platform
+	t.Cleanup(func() {
+		globalOpts.Platform = originalPlatform
+	})
+
+	tests := []struct {
+		name          string
+		platform      hyperv1.PlatformType
+		expectedRef   *karpenterv1.NodeClassReference
+		instanceType  string
+		expectedVCPUs int32
+	}{
+		{
+			name:     "When the platform is AWS, it should use the existing EC2NodeClass defaults",
+			platform: hyperv1.AWSPlatform,
+			expectedRef: &karpenterv1.NodeClassReference{
+				Group: "karpenter.k8s.aws",
+				Kind:  "EC2NodeClass",
+				Name:  "default",
+			},
+			instanceType:  "t3.xlarge",
+			expectedVCPUs: 4,
+		},
+		{
+			name:     "When the platform is Azure, it should use the AKSNodeClass and four-vCPU Azure SKU",
+			platform: hyperv1.AzurePlatform,
+			expectedRef: &karpenterv1.NodeClassReference{
+				Group: "karpenter.azure.com",
+				Kind:  "AKSNodeClass",
+				Name:  "default",
+			},
+			instanceType:  "Standard_D4s_v5",
+			expectedVCPUs: 4,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			globalOpts.Platform = test.platform
+			nodePool := baseNodePool("on-demand", "default")
+
+			g := NewWithT(t)
+			g.Expect(nodePool.Spec.Template.Spec.NodeClassRef).To(Equal(test.expectedRef))
+			g.Expect(nodePool.Spec.Template.Spec.Requirements).To(ContainElement(
+				karpenterv1.NodeSelectorRequirementWithMinValues{
+					Key:      "node.kubernetes.io/instance-type",
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{test.instanceType},
+				},
+			))
+			g.Expect(karpenterNodePoolVCPUs(test.platform)).To(Equal(test.expectedVCPUs))
+		})
 	}
 }
 
