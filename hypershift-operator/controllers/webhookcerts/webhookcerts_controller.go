@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -162,7 +163,16 @@ func (r *WebhookCertReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// 3. Patch caBundle on CRDs with conversion webhooks.
 	caBundle := caSecret.Data[certs.CASignerCertMapKey]
 	if err := r.patchCRDsCABundle(ctx, caBundle); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to patch CRD caBundle: %w", err)
+		crdErr := fmt.Errorf("failed to patch CRD caBundle: %w", err)
+		if !apierrors.IsConflict(err) {
+			return ctrl.Result{}, crdErr
+		}
+		// A CRD changed after it was listed. The webhook configurations do not depend on the CRDs,
+		// so still update them before returning the conflict to retry the CRDs.
+		if err := r.patchWebhookConfigsCABundle(ctx, caBundle); err != nil {
+			return ctrl.Result{}, errors.Join(crdErr, fmt.Errorf("failed to patch webhook config caBundle: %w", err))
+		}
+		return ctrl.Result{}, crdErr
 	}
 
 	// 4. Patch caBundle on webhook configurations.
@@ -636,18 +646,19 @@ func patchCRDConversionWebhookCABundles(ctx context.Context, c client.Client, na
 func EnsureCRDConversionWebhookCABundles(ctx context.Context, c client.Client, namespace, serviceName string) error {
 	log := ctrl.LoggerFrom(ctx).WithName("crd-cabundle-bootstrap")
 
-	// Get the CA bundle from the webhook-serving-ca secret.
-	ca := &corev1.Secret{}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: CASecretName}, ca); err != nil {
-		return fmt.Errorf("failed to get webhook CA secret: %w", err)
-	}
-	caBundle := ca.Data[certs.CASignerCertMapKey]
-	if len(caBundle) == 0 {
-		return fmt.Errorf("webhook CA secret exists but has empty caBundle")
-	}
-
-	// Retry conflicts with a fresh list, for example when another operator replica bootstraps at the same time.
+	// Retry conflicts, for example when another operator replica bootstraps at the same time. Each
+	// attempt reads the current CA bundle and lists the CRDs again, so a retry never writes a CA
+	// that was replaced while the previous attempt was in progress.
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		// Get the CA bundle from the webhook-serving-ca secret.
+		ca := &corev1.Secret{}
+		if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: CASecretName}, ca); err != nil {
+			return fmt.Errorf("failed to get webhook CA secret: %w", err)
+		}
+		caBundle := ca.Data[certs.CASignerCertMapKey]
+		if len(caBundle) == 0 {
+			return fmt.Errorf("webhook CA secret exists but has empty caBundle")
+		}
 		return patchCRDConversionWebhookCABundles(ctx, c, namespace, serviceName, caBundle)
 	}); err != nil {
 		return err
