@@ -7,11 +7,6 @@ kind: PodMonitoring
 metadata:
   name: openshift-route-controller-manager
   namespace: HCP_NAMESPACE
-  annotations:
-    hypershift.openshift.io/metrics-endpoint: https
-    hypershift.openshift.io/metrics-job: route-controller-manager
-    hypershift.openshift.io/metrics-namespace: openshift-route-controller-manager
-    hypershift.openshift.io/metrics-service: route-controller-manager
 spec:
   selector:
     matchLabels:

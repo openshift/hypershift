@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	kubemanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 
@@ -85,11 +86,12 @@ var coreOSMetadataLabels = []string{"container", "pod"}
 // the CA-only Secret that mirrors it. GMP only accepts Secret references, so a
 // PodMonitoring cannot point at the ConfigMap.
 //
-// The signer Secrets (manifests.RootCASecret, manifests.EtcdSignerSecret) hold
-// the CA private key next to ca.crt, and RBAC grants a whole Secret rather than
-// one key. Referencing them would require granting the GMP collector read access
-// to the signing keys. The mirrors carry only the ConfigMap's ca.crt bytes and
-// are created by the GMP runtime reconciliation, not by the CoreOS path.
+// The signer Secrets hold the CA private key next to ca.crt, and RBAC grants a
+// whole Secret rather than one key. Referencing one would require granting the
+// GMP collector read access to a signing key. The mirrors carry only the
+// ConfigMap's ca.crt bytes. The control-plane-operator creates them through
+// pki.ReconcileCASecretMirror when GMP monitoring is enabled, so the mirrors
+// are the only Secrets a CA reference may name.
 var caConfigMapSecrets = map[string]string{
 	// The root-ca ConfigMap aggregates the self-signed root CA with the default
 	// ingress CA; the mirror copies that bundle byte for byte.
@@ -98,13 +100,17 @@ var caConfigMapSecrets = map[string]string{
 	"etcd-ca": "etcd-ca-cert",
 }
 
-// forbiddenCASecretNames are Secrets that hold a CA private key. A monitor may
-// only reference a CA through the CA-only mirror, so generation fails if a
-// source asset points TLS at one of these directly. A test pins this list.
-var forbiddenCASecretNames = map[string]struct{}{
-	"root-ca":             {},
-	"etcd-signer":         {},
-	"etcd-metrics-signer": {},
+// isCASecretMirror reports whether name is one of the CA-only mirror Secrets in
+// caConfigMapSecrets. A CA reference is an allowlist, not a denylist of known
+// signers: the namespace holds many Secrets with a ca.key, and a signer added
+// later must not become referenceable by omission.
+func isCASecretMirror(name string) bool {
+	for _, mirror := range caConfigMapSecrets {
+		if mirror == name {
+			return true
+		}
+	}
+	return false
 }
 
 // externalServices returns Services that are reconciled in Go rather than from
@@ -392,10 +398,9 @@ func (c *componentAssets) convertServiceMonitor(monitor *prometheusServiceMonito
 			// prometheus-operator sets a ServiceMonitor's job label to the
 			// Service name, and GMP sets it to the PodMonitoring name, so the
 			// PodMonitoring is named after the Service rather than the monitor.
-			Name:        service.Name,
-			Namespace:   monitor.Namespace,
-			Labels:      copyStringMap(monitor.Labels),
-			Annotations: copyStringMap(monitor.Annotations),
+			Name:      service.Name,
+			Namespace: monitor.Namespace,
+			Labels:    copyStringMap(monitor.Labels),
 		},
 		Spec: specDoc{
 			// The monitor's own selector matches Service labels and was consumed
@@ -472,10 +477,9 @@ func (c *componentAssets) convertPodMonitor(monitor *prometheusPodMonitor) (*pod
 			// prometheus-operator sets a PodMonitor's job label to
 			// <namespace>/<name>, which a PodMonitoring name cannot hold. The
 			// monitor name is the closest value GMP can produce.
-			Name:        monitor.Name,
-			Namespace:   monitor.Namespace,
-			Labels:      copyStringMap(monitor.Labels),
-			Annotations: copyStringMap(monitor.Annotations),
+			Name:      monitor.Name,
+			Namespace: monitor.Namespace,
+			Labels:    copyStringMap(monitor.Labels),
 		},
 		Spec: specDoc{
 			Selector:     labelSelectorDoc{MatchLabels: copyStringMap(monitor.Spec.Selector.MatchLabels), MatchExpressions: labelSelectorRequirements(monitor.Spec.Selector.MatchExpressions)},
@@ -720,10 +724,24 @@ func convertEndpoint(httpConfig endpointHTTPConfigFields, path string, scheme *p
 }
 
 // convertMetricRelabeling preserves static metric filters and labels from a
-// CoreOS endpoint. The runtime adapter must add/replace MetricsSet-dependent
-// relabeling from support/metrics/sets.go before reconciling the GMP object.
-// Rules GMP's protected-labels policy would reject are sanitized first, so a
-// rule with no GMP-safe equivalent fails generation instead of admission.
+// CoreOS endpoint. Rules GMP's protected-labels policy would reject are
+// sanitized first, so a rule with no GMP-safe equivalent fails generation
+// instead of admission.
+//
+// The result is a snapshot, not what a cluster runs. The CoreOS adapters replace
+// an endpoint's MetricRelabelConfigs wholesale with the support/metrics/sets.go
+// rules for the cluster's MetricsSet and then append the _id label, so the
+// filter rules staged here are only the Telemetry set. Whatever applies a staged
+// PodMonitoring to a cluster must:
+//   - replace the staged filter rules with the sets.go rules for the cluster's
+//     MetricsSet;
+//   - keep the constant rules the generator adds for labels GMP does not set
+//     (service, endpoint and, for a repeated port written as its number,
+//     container);
+//   - append the _id rule.
+//
+// An adapter that copies a CoreOS one drops the constant rules and _id, and one
+// that appends keeps a Telemetry-only filter under MetricsSet=All.
 func convertMetricRelabeling(source []prometheusoperatorv1.RelabelConfig) ([]relabelingRuleDoc, error) {
 	source, err := metrics.SanitizeGMPRelabelConfigs(source)
 	if err != nil {
@@ -912,7 +930,8 @@ func (c *componentAssets) resolvePodEndpointPort(endpoint prometheusoperatorv1.P
 
 // containerPortRef maps a port reference onto a named container port so the GMP
 // scrape reports the container metadata label. A numeric reference is rewritten
-// to the container port's name when one exists.
+// to the container port's name when one exists, and fails when the number is
+// declared under more than one name.
 func (c *componentAssets) containerPortRef(ref intstr.IntOrString) (intstr.IntOrString, error) {
 	if len(c.containerPorts) == 0 {
 		// The workload is reconciled in Go, so there is no asset to validate
@@ -929,15 +948,24 @@ func (c *componentAssets) containerPortRef(ref intstr.IntOrString) (intstr.IntOr
 		return intstr.IntOrString{}, fmt.Errorf("no container port named %q in the component workload", ref.StrVal)
 	}
 
+	var names []string
 	for _, port := range c.containerPorts {
-		if port.ContainerPort == ref.IntVal {
-			if port.Name != "" {
-				return intstr.FromString(port.Name), nil
-			}
-			return ref, nil
+		if port.ContainerPort == ref.IntVal && !slices.Contains(names, port.Name) {
+			names = append(names, port.Name)
 		}
 	}
-	return intstr.IntOrString{}, fmt.Errorf("no container port %d in the component workload", ref.IntVal)
+	switch {
+	case len(names) == 0:
+		return intstr.IntOrString{}, fmt.Errorf("no container port %d in the component workload", ref.IntVal)
+	case len(names) > 1:
+		// The rewrite to a name is an alias for the same target, so choosing one of
+		// several names would silently pick which container the scrape reports.
+		return intstr.IntOrString{}, fmt.Errorf("container port %d is declared under more than one name in the component workload (%q)", ref.IntVal, names)
+	case names[0] != "":
+		return intstr.FromString(names[0]), nil
+	default:
+		return ref, nil
+	}
 }
 
 // ensureUniqueEndpointPorts makes each endpoint's port unique within the
@@ -1086,8 +1114,11 @@ func convertCASecret(ca prometheusoperatorv1.SecretOrConfigMap) (*secretRefDoc, 
 	case ca.Secret != nil && ca.Secret.Name != "" && ca.ConfigMap != nil && ca.ConfigMap.Name != "":
 		return nil, fmt.Errorf("TLS CA references both a Secret and a ConfigMap")
 	case ca.Secret != nil && ca.Secret.Name != "":
-		if _, forbidden := forbiddenCASecretNames[ca.Secret.Name]; forbidden {
-			return nil, fmt.Errorf("TLS CA references Secret %q, which holds a CA private key; reference the CA-only mirror instead", ca.Secret.Name)
+		if !isCASecretMirror(ca.Secret.Name) {
+			return nil, fmt.Errorf("TLS CA references Secret %q, which is not a CA-only mirror and may hold a CA private key; reference a mirror from caConfigMapSecrets instead", ca.Secret.Name)
+		}
+		if err := requireMirroredCAKey(ca.Secret.Name, ca.Secret.Key); err != nil {
+			return nil, err
 		}
 		return &secretRefDoc{Secret: secretKeyRefDoc{Name: ca.Secret.Name, Key: ca.Secret.Key}}, nil
 	case ca.ConfigMap != nil && ca.ConfigMap.Name != "":
@@ -1095,10 +1126,23 @@ func convertCASecret(ca prometheusoperatorv1.SecretOrConfigMap) (*secretRefDoc, 
 		if !ok {
 			return nil, fmt.Errorf("TLS CA ConfigMap %q has no Secret counterpart; add it to caConfigMapSecrets", ca.ConfigMap.Name)
 		}
+		if err := requireMirroredCAKey(ca.ConfigMap.Name, ca.ConfigMap.Key); err != nil {
+			return nil, err
+		}
 		return &secretRefDoc{Secret: secretKeyRefDoc{Name: secretName, Key: ca.ConfigMap.Key}}, nil
 	default:
 		return nil, nil
 	}
+}
+
+// requireMirroredCAKey fails when a CA reference names a key the mirror Secret
+// does not carry. The mirror holds only ca.crt, so any other key would produce
+// a manifest that validates but gives the collector no CA.
+func requireMirroredCAKey(source, key string) error {
+	if key != certs.CASignerCertMapKey {
+		return fmt.Errorf("TLS CA %q references key %q, but the CA-only mirror carries only %q", source, key, certs.CASignerCertMapKey)
+	}
+	return nil
 }
 
 func convertCertSecretRef(source prometheusoperatorv1.SecretOrConfigMap) (*secretRefDoc, error) {
@@ -1195,10 +1239,9 @@ type podMonitoringDoc struct {
 }
 
 type metadataDoc struct {
-	Name        string            `yaml:"name"`
-	Namespace   string            `yaml:"namespace,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Annotations map[string]string `yaml:"annotations,omitempty"`
+	Name      string            `yaml:"name"`
+	Namespace string            `yaml:"namespace,omitempty"`
+	Labels    map[string]string `yaml:"labels,omitempty"`
 }
 
 type specDoc struct {

@@ -6,11 +6,6 @@ apiVersion: monitoring.googleapis.com/v1
 kind: PodMonitoring
 metadata:
   name: olm-operator-metrics
-  annotations:
-    hypershift.openshift.io/metrics-endpoint: https-metrics
-    hypershift.openshift.io/metrics-job: olm-operator-metrics
-    hypershift.openshift.io/metrics-namespace: openshift-operator-lifecycle-manager
-    hypershift.openshift.io/metrics-service: olm-operator-metrics
 spec:
   selector:
     matchLabels:

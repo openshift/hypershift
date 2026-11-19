@@ -6,11 +6,6 @@ apiVersion: monitoring.googleapis.com/v1
 kind: PodMonitoring
 metadata:
   name: kube-scheduler
-  annotations:
-    hypershift.openshift.io/metrics-endpoint: https
-    hypershift.openshift.io/metrics-job: kube-scheduler
-    hypershift.openshift.io/metrics-namespace: openshift-kube-scheduler
-    hypershift.openshift.io/metrics-service: kube-scheduler
 spec:
   selector:
     matchLabels:

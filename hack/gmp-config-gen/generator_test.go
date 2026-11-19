@@ -79,7 +79,6 @@ func TestComponentAssets_ConvertServiceMonitor(t *testing.T) {
 				assert.Equal(t, "PodMonitoring", doc.Kind)
 				assert.Equal(t, "kube-controller-manager", doc.Metadata.Name)
 				assert.Equal(t, placeholderNamespace, doc.Metadata.Namespace)
-				assert.Equal(t, map[string]string{"hypershift.openshift.io/metrics-endpoint": "kube-controller-manager"}, doc.Metadata.Annotations)
 				// The framework-injected label must not leak into the pod selector.
 				assert.Equal(t, map[string]string{"app": "kube-controller-manager"}, doc.Spec.Selector.MatchLabels)
 				require.Len(t, doc.Spec.Endpoints, 1)
@@ -643,7 +642,7 @@ func TestConvertTLS(t *testing.T) {
 		validate    func(t *testing.T, tls *tlsDoc)
 	}{
 		{
-			name: "When the CA is a Secret, it should pass the Secret reference through",
+			name: "When the CA is a client certificate Secret, it should fail generation",
 			config: &prometheusoperatorv1.SafeTLSConfig{
 				CA: prometheusoperatorv1.SecretOrConfigMap{
 					Secret: &corev1.SecretKeySelector{
@@ -652,9 +651,7 @@ func TestConvertTLS(t *testing.T) {
 					},
 				},
 			},
-			validate: func(t *testing.T, tls *tlsDoc) {
-				assert.Equal(t, &secretRefDoc{Secret: secretKeyRefDoc{Name: "etcd-metrics-client-tls", Key: "ca.crt"}}, tls.CA)
-			},
+			expectError: `references Secret "etcd-metrics-client-tls", which is not a CA-only mirror`,
 		},
 		{
 			name: "When the CA is the root-ca ConfigMap, it should point at the root-ca-cert mirror Secret",
@@ -685,7 +682,7 @@ func TestConvertTLS(t *testing.T) {
 			},
 		},
 		{
-			name: "When the CA is a signer Secret, it should fail generation",
+			name: "When the CA is the root signer Secret, it should fail generation",
 			config: &prometheusoperatorv1.SafeTLSConfig{
 				CA: prometheusoperatorv1.SecretOrConfigMap{
 					Secret: &corev1.SecretKeySelector{
@@ -694,7 +691,57 @@ func TestConvertTLS(t *testing.T) {
 					},
 				},
 			},
-			expectError: `references Secret "root-ca", which holds a CA private key`,
+			expectError: `references Secret "root-ca", which is not a CA-only mirror`,
+		},
+		{
+			name: "When the CA is a signer Secret that is not on any denylist, it should fail generation",
+			config: &prometheusoperatorv1.SafeTLSConfig{
+				CA: prometheusoperatorv1.SecretOrConfigMap{
+					Secret: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "cluster-signer-ca"},
+						Key:                  "ca.crt",
+					},
+				},
+			},
+			expectError: `references Secret "cluster-signer-ca", which is not a CA-only mirror`,
+		},
+		{
+			name: "When the CA is a CA-only mirror Secret, it should be referenced as written",
+			config: &prometheusoperatorv1.SafeTLSConfig{
+				CA: prometheusoperatorv1.SecretOrConfigMap{
+					Secret: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "root-ca-cert"},
+						Key:                  "ca.crt",
+					},
+				},
+			},
+			validate: func(t *testing.T, tls *tlsDoc) {
+				assert.Equal(t, &secretRefDoc{Secret: secretKeyRefDoc{Name: "root-ca-cert", Key: "ca.crt"}}, tls.CA)
+			},
+		},
+		{
+			name: "When the CA Secret reference uses a key the mirror does not carry, it should fail generation",
+			config: &prometheusoperatorv1.SafeTLSConfig{
+				CA: prometheusoperatorv1.SecretOrConfigMap{
+					Secret: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "root-ca-cert"},
+						Key:                  "tls.crt",
+					},
+				},
+			},
+			expectError: `references key "tls.crt", but the CA-only mirror carries only "ca.crt"`,
+		},
+		{
+			name: "When the CA ConfigMap reference uses a key other than ca.crt, it should fail generation",
+			config: &prometheusoperatorv1.SafeTLSConfig{
+				CA: prometheusoperatorv1.SecretOrConfigMap{
+					ConfigMap: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "root-ca"},
+						Key:                  "bundle.pem",
+					},
+				},
+			},
+			expectError: `references key "bundle.pem", but the CA-only mirror carries only "ca.crt"`,
 		},
 		{
 			name: "When the CA ConfigMap has no Secret counterpart, it should fail generation",
@@ -809,6 +856,18 @@ func TestComponentAssets_ContainerPortRef(t *testing.T) {
 			containerPorts: []corev1.ContainerPort{{ContainerPort: 8443}},
 			ref:            intstr.FromInt(8443),
 			expected:       intstr.FromInt(8443),
+		},
+		{
+			name:           "When a numeric reference matches one port declared by two containers, it should rewrite the reference to the shared name",
+			containerPorts: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8443}, {Name: "metrics", ContainerPort: 8443}},
+			ref:            intstr.FromInt(8443),
+			expected:       intstr.FromString("metrics"),
+		},
+		{
+			name:           "When a numeric reference matches a number declared under two names, it should fail generation",
+			containerPorts: []corev1.ContainerPort{{Name: "admin", ContainerPort: 8080}, {Name: "web", ContainerPort: 8080}},
+			ref:            intstr.FromInt(8080),
+			expectError:    `container port 8080 is declared under more than one name in the component workload (["admin" "web"])`,
 		},
 		{
 			name:           "When a numeric reference matches no container port, it should fail generation",
@@ -1143,6 +1202,10 @@ func TestGenerateAll(t *testing.T) {
 		require.True(t, ok)
 		assert.Contains(t, string(generated), generatedHeader)
 		assert.Contains(t, string(generated), "kind: PodMonitoring")
+		// The metrics-* annotations on a CoreOS monitor configure metrics-proxy
+		// forwarding only; GMP derives its labels from the spec, so they must not
+		// be carried over where they would read as the label contract.
+		assert.NotContains(t, string(generated), "hypershift.openshift.io/metrics-")
 		assert.Equal(t, []string{stalePath}, result.stale)
 		assert.False(t, fileExists(filepath.Join(assetsDir, "test-component", generatedPodMonitoring)))
 	})

@@ -12,6 +12,16 @@ backend. They are staged here, outside `v2/assets`, on purpose:
   apiVersion), or if a file staged here also exists at the same relative path
   in `v2/assets`. The follow-up that activates GMP monitoring replaces it.
 
+## Labels
+
+Series labels follow what Prometheus on the management cluster produces for the
+CoreOS monitors (`job` is the Service name, `endpoint` the port name), so
+dashboards and alerts give the same result for CoreOS and GMP control planes on
+one management cluster. The `hypershift.openshift.io/metrics-*` annotations on
+the CoreOS monitors configure `metrics-proxy` forwarding into the hosted
+cluster, a separate path that is only active when metrics forwarding is
+enabled. GMP never reads them, so the generator does not copy them.
+
 The CoreOS `ServiceMonitor` / `PodMonitor` assets under `v2/assets` remain the
 source of truth. `hack/gmp-config-gen` derives these files from them:
 
