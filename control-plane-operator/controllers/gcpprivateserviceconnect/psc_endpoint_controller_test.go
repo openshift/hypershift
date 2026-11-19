@@ -2776,6 +2776,48 @@ func TestReconcileDelete(t *testing.T) {
 		assert.True(t, completed, "cleanup should be considered complete when nothing was provisioned")
 		assert.False(t, called, "no GCP API calls should be made when ServiceAttachmentName is empty")
 	})
+
+	t.Run("When DNS cleanup fails, it should still delete the forwarding rule and reserved IP and report the DNS error", func(t *testing.T) {
+		t.Parallel()
+
+		scheme := newGCPPSCTestScheme(t)
+		psc := newTestGCPPSC("test-psc", "test-ns", true)
+		psc.Status.DNSZones = []hyperv1.DNSZoneStatus{{Name: "recorded-zone"}}
+		hcp := newTestGCPHCP("test-hcp", "test-ns")
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
+
+		var recorded []string
+		svc, err := recordingGCPClientFactory(t, &recorded, http.StatusOK)(t.Context())
+		require.NoError(t, err)
+
+		r := &GCPPrivateServiceConnectReconciler{
+			Client: fakeClient,
+			gcpClientBuilder: gcpClientBuilder{
+				initialized:     true,
+				customerProject: "customer-project",
+				region:          "us-central1",
+			},
+			dnsClientFactory: func(context.Context) (*dns.Service, error) {
+				return nil, errors.New("cloud DNS unavailable")
+			},
+		}
+
+		completed, err := r.reconcileDelete(t.Context(), psc, hcp, svc, testr.New(t))
+		require.ErrorContains(t, err, "cloud DNS unavailable")
+		assert.False(t, completed, "cleanup must not complete while DNS cleanup is failing")
+
+		var deletes []string
+		for _, req := range recorded {
+			if strings.HasPrefix(req, http.MethodDelete+" ") {
+				deletes = append(deletes, req)
+			}
+		}
+		require.Len(t, deletes, 2, "both compute deletes should be attempted despite the DNS failure: %v", recorded)
+		assert.True(t, strings.HasSuffix(deletes[0], "/projects/customer-project/regions/us-central1/forwardingRules/test-service-attachment-endpoint"),
+			"forwarding rule should be deleted first, got %q", deletes[0])
+		assert.True(t, strings.HasSuffix(deletes[1], "/projects/customer-project/regions/us-central1/addresses/test-service-attachment-ip"),
+			"reserved IP should be deleted after the forwarding rule, got %q", deletes[1])
+	})
 }
 
 func TestDnsZonesToDelete(t *testing.T) {
