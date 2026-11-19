@@ -78,6 +78,11 @@ type shardedE2E struct {
 
 	sourceCluster string
 	targetCluster string
+	// targetInfraID is the infrastructure ID of the target cluster's AWS
+	// resources, retained from `create infra` so the deferred cleanup can
+	// destroy them even if the HostedCluster was never created (or was
+	// rejected by admission) and the destroy CLI cannot recover the ID.
+	targetInfraID string
 
 	// sourceEncryptionKey is the source cluster's etcd encryption key,
 	// captured while the source still exists (it is destroyed before the
@@ -332,6 +337,12 @@ func (s *shardedE2E) destroyCluster(ctx context.Context, name string) {
 		"--region=" + s.region,
 		"--base-domain=" + s.baseDomain,
 		"--aws-creds=" + s.awsCreds,
+	}
+	// When the HostedCluster may not exist (the target is created after
+	// its infrastructure), pass the known infrastructure ID explicitly so
+	// the destroy CLI does not fail with "infrastructure ID is required".
+	if name == s.targetCluster && s.targetInfraID != "" {
+		args = append(args, "--infra-id="+s.targetInfraID)
 	}
 	if err := s.runCLI(ctx, fmt.Sprintf("destroy-%s.log", name), args...); err != nil {
 		GinkgoWriter.Printf("WARNING: failed to destroy cluster %s: %v\n", name, err)
@@ -651,6 +662,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Sharde
 			By("Creating target cluster infrastructure")
 			e.targetCluster = "sharded-tgt-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
 			infraJSON := filepath.Join(e.testCtx.ArtifactDir, "target-infra.json")
+			e.targetInfraID = e.targetCluster
 			Expect(e.runCLI(e.testCtx.Context, "create-target-infra.log",
 				"create", "infra", "aws",
 				"--infra-id="+e.targetCluster,
