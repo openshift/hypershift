@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -908,7 +909,10 @@ rpc_latency_seconds_count 5
 				wantTypes: map[string]dto.MetricType{
 					"latency": dto.MetricType_HISTOGRAM,
 				},
-				wantSampleKeys: []string{"latency pod=pod-h"},
+				// Literal fixture values: le="1" 3, sum 1, count 5 (the +Inf bucket is not listed).
+				wantSampleKeys: []string{
+					"latency_bucket pod=pod-h le=1 value=3", "latency_count pod=pod-h value=5", "latency_sum pod=pod-h value=1",
+				},
 			},
 			{
 				name: "When a filtered-away family of another type comes first, it should still merge the same-type families of later targets",
@@ -1009,9 +1013,10 @@ func withoutFamily(body, family string) string {
 }
 
 // sampleKeysWithPod returns the sorted samples of the parsed families as
-// "<name> pod=<pod>" plus the quantile when present. Only counter, untyped
-// and summary families are expanded, which is all the multi-target fixture
-// exposes.
+// "<name> pod=<pod>" plus the quantile when present. Summary samples are
+// expanded per quantile. Histogram samples are expanded per finite bucket and
+// include their values, because the encoder writes a missing sum or count as
+// zero and a names-only key would not detect it.
 func sampleKeysWithPod(families map[string]*dto.MetricFamily) []string {
 	labelValue := func(m *dto.Metric, name string) string {
 		for _, lp := range m.Label {
@@ -1028,9 +1033,29 @@ func sampleKeysWithPod(families map[string]*dto.MetricFamily) []string {
 			switch mf.GetType() {
 			case dto.MetricType_SUMMARY:
 				for _, q := range m.GetSummary().GetQuantile() {
-					keys = append(keys, fmt.Sprintf("%s%s quantile=%s", name, pod, strconv.FormatFloat(q.GetQuantile(), 'g', -1, 64)))
+					keys = append(keys, fmt.Sprintf("%s%s quantile=%s", name, pod, formatValue(q.GetQuantile())))
 				}
 				keys = append(keys, name+"_sum"+pod, name+"_count"+pod)
+			case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
+				h := m.GetHistogram()
+				for _, b := range h.GetBucket() {
+					if math.IsInf(b.GetUpperBound(), +1) {
+						continue
+					}
+					value := b.GetCumulativeCountFloat()
+					if b.CumulativeCountFloat == nil {
+						value = float64(b.GetCumulativeCount())
+					}
+					keys = append(keys, fmt.Sprintf("%s_bucket%s le=%s value=%s", name, pod, formatValue(b.GetUpperBound()), formatValue(value)))
+				}
+				count := h.GetSampleCountFloat()
+				if h.SampleCountFloat == nil {
+					count = float64(h.GetSampleCount())
+				}
+				keys = append(keys,
+					fmt.Sprintf("%s_sum%s value=%s", name, pod, formatValue(h.GetSampleSum())),
+					fmt.Sprintf("%s_count%s value=%s", name, pod, formatValue(count)),
+				)
 			default:
 				if quantile := labelValue(m, "quantile"); quantile != "" {
 					keys = append(keys, name+pod+" quantile="+quantile)
@@ -1042,6 +1067,11 @@ func sampleKeysWithPod(families map[string]*dto.MetricFamily) []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// formatValue formats a sample value or bucket bound for sampleKeysWithPod.
+func formatValue(v float64) string {
+	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 
 // serveExposition starts a metrics endpoint that serves the given text
