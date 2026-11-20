@@ -6031,33 +6031,11 @@ func TestReconcileComponents(t *testing.T) {
 		Build()
 	cpContext.Client = fakeClient
 
-	// capi-provider depends on the kube-apiserver component (it mounts the
-	// service-network-admin-kubeconfig secret the kube-apiserver applies), so
-	// satisfy that dependency to let its deployment reconcile.
-	kubeAPIServerComponent := &hyperv1.ControlPlaneComponent{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kube-apiserver",
-			Namespace: hcp.Namespace,
-		},
-		Status: hyperv1.ControlPlaneComponentStatus{
-			Version: cpContext.ReleaseImageProvider.Version(),
-			Conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ControlPlaneComponentAvailable),
-					Status: metav1.ConditionTrue,
-					Reason: "Ready",
-				},
-				{
-					Type:   string(hyperv1.ControlPlaneComponentRolloutComplete),
-					Status: metav1.ConditionTrue,
-					Reason: "Complete",
-				},
-			},
-		},
-	}
-	if err := fakeClient.Create(t.Context(), kubeAPIServerComponent); err != nil {
-		t.Fatalf("failed to create kube-apiserver component: %v", err)
-	}
+	// No kube-apiserver ControlPlaneComponent is created on purpose. The fake
+	// image provider reports a pre-4.20 release, which may run a v1 CPO, and a
+	// v1 CPO never publishes one. capi-provider must still get its deployment
+	// instead of waiting on a dependency that can never be satisfied
+	// (OCPBUGS-143987).
 
 	version := semver.MustParse("4.16.0")
 	awsPlatform := aws.New("test-image", "capi-provider-image", &version)
