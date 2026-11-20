@@ -2911,6 +2911,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.PrivateIngressControllerAnnotation,
 		hyperv1.IngressControllerLoadBalancerScope,
 		hyperv1.CleanupCloudResourcesAnnotation,
+		hyperv1.PreserveImageRegistryStorageOnDeleteAnnotation,
 		hyperv1.GCPFirewallSkipDeletionAnnotation,
 		hyperv1.ControlPlanePriorityClass,
 		hyperv1.APICriticalPriorityClass,
@@ -4129,21 +4130,42 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, fmt.Errorf("failed to resolve karpenter finalizer: %w", err)
 	}
 
-	// ensure that the cleanup annotation has been propagated to the hcp if it is set
-	if hc.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true" {
+	// ensure that deletion-time annotations have been propagated to the hcp if they are set. These are
+	// applied here (in addition to the normal reconcile mirror) because the annotation may be set at delete
+	// time, after the HostedCluster already has a deletionTimestamp and the normal reconcile no longer runs.
+	deletionAnnotationsToPropagate := []string{
+		hyperv1.CleanupCloudResourcesAnnotation,
+		hyperv1.PreserveImageRegistryStorageOnDeleteAnnotation,
+	}
+	needsPropagation := false
+	for _, key := range deletionAnnotationsToPropagate {
+		if hc.Annotations[key] == "true" {
+			needsPropagation = true
+			break
+		}
+	}
+	if needsPropagation {
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
 		err := r.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("cannot get hosted control plane: %w", err)
 		}
-		if err == nil && hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] != "true" {
+		if err == nil {
 			original := hcp.DeepCopy()
 			if hcp.Annotations == nil {
 				hcp.Annotations = map[string]string{}
 			}
-			hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] = "true"
-			if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(original)); err != nil {
-				return false, fmt.Errorf("cannot patch hosted control plane with cleanup annotation: %w", err)
+			changed := false
+			for _, key := range deletionAnnotationsToPropagate {
+				if hc.Annotations[key] == "true" && hcp.Annotations[key] != "true" {
+					hcp.Annotations[key] = "true"
+					changed = true
+				}
+			}
+			if changed {
+				if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(original)); err != nil {
+					return false, fmt.Errorf("cannot patch hosted control plane with deletion annotations: %w", err)
+				}
 			}
 		}
 	}
