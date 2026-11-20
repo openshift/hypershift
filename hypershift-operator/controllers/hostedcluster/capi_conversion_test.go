@@ -60,6 +60,7 @@ func TestNewCAPIConversionRegistry(t *testing.T) {
 	})
 	testInstalledCAPIConversions(t, scheme, registry, handler)
 	testCAPIRoundTrips(t, scheme, handler)
+	testLegacyMachinePhaseWrites(t, handler)
 	testCAPIFallback(t, registry)
 }
 
@@ -294,6 +295,35 @@ func testCAPIRoundTrips(t *testing.T, scheme *runtime.Scheme, handler http.Handl
 		})
 	}
 
+}
+
+func testLegacyMachinePhaseWrites(t *testing.T, handler http.Handler) {
+	t.Helper()
+	for _, testCase := range []struct {
+		name          string
+		storedPhase   string
+		legacyPhase   string
+		expectedPhase string
+	}{
+		{name: "When a legacy controller sets an absent phase to Running, it should persist Running", legacyPhase: "Running", expectedPhase: "Running"},
+		{name: "When Updating round trips unchanged through legacy Running, it should preserve Updating", storedPhase: "Updating", legacyPhase: "Running", expectedPhase: "Updating"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			source := &capiv1beta2.Machine{
+				TypeMeta:   metav1.TypeMeta{APIVersion: capiv1beta2.GroupVersion.String(), Kind: "Machine"},
+				ObjectMeta: metav1.ObjectMeta{Name: "legacy-machine", Namespace: "clusters"},
+				Status:     capiv1beta2.MachineStatus{Phase: testCase.storedPhase},
+			}
+			legacy := &capiv1beta1.Machine{}
+			convertThroughWebhook(t, handler, source, legacy, capiv1beta1.GroupVersion.String())
+			legacy.Status.Phase = testCase.legacyPhase
+			stored := &capiv1beta2.Machine{}
+			convertThroughWebhook(t, handler, legacy, stored, capiv1beta2.GroupVersion.String())
+			if stored.Status.Phase != testCase.expectedPhase {
+				t.Fatalf("legacy controller wrote %q over stored phase %q; read back %q, want %q", testCase.legacyPhase, testCase.storedPhase, stored.Status.Phase, testCase.expectedPhase)
+			}
+		})
+	}
 }
 
 func testCAPIFallback(t *testing.T, registry conversion.Registry) {
