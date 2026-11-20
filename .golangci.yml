@@ -170,6 +170,10 @@ linters:
       - linters:
           - staticcheck
         text: 'SA1019: ibmCluster.Spec.ServiceInstanceID is deprecated'
+      - linters:
+          - staticcheck
+        text: '^SA1019: "sigs.k8s.io/cluster-api-provider-ibmcloud/api/powervs/v1beta2" is deprecated:'
+        source: '^\s*\w+ "sigs.k8s.io/cluster-api-provider-ibmcloud/api/powervs/v1beta2"$'
       # cluster-api v1beta1 is deprecated but migration to v1beta2 is a separate effort
       - linters:
           - staticcheck

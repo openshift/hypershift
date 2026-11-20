@@ -8,7 +8,7 @@
 # manifests deleted and the tree dirty. Staging the output keeps a failed run
 # a no-op.
 #
-# Usage: capi-crd-gen.sh [--no-workspace] <dest-dir> <command> [args...]
+# Usage: capi-crd-gen.sh [--no-workspace | --module-dir <dir>] <dest-dir> <command> [args...]
 #
 #   <command> is run with output:crd:artifacts:config=<tempdir> appended. By
 #   default it runs inside the CAPI Go workspace (capi-workspace-run.sh) so
@@ -20,12 +20,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 USE_WORKSPACE=true
+MODULE_DIR=""
 if [[ "${1:-}" == "--no-workspace" ]]; then
     USE_WORKSPACE=false
     shift
 fi
 
-DEST="${1:?usage: capi-crd-gen.sh [--no-workspace] <dest-dir> <command> [args...]}"
+if [[ "${1:-}" == "--module-dir" ]]; then
+    USE_WORKSPACE=false
+    MODULE_DIR="${2:?missing module directory}"
+    shift 2
+fi
+
+DEST="${1:?usage: capi-crd-gen.sh [--no-workspace | --module-dir <dir>] <dest-dir> <command> [args...]}"
 shift
 [[ $# -gt 0 ]] || { echo "ERROR: no command given" >&2; exit 1; }
 
@@ -34,6 +41,8 @@ trap 'rm -rf "$TMP_OUT"' EXIT
 
 if [[ "$USE_WORKSPACE" == true ]]; then
     "$ROOT/hack/capi-workspace-run.sh" "$@" output:crd:artifacts:config="$TMP_OUT"
+elif [[ -n "$MODULE_DIR" ]]; then
+    (cd "$MODULE_DIR" && GOWORK=off GOFLAGS=-mod=readonly "$@" output:crd:artifacts:config="$TMP_OUT")
 else
     (cd "$ROOT" && "$@" output:crd:artifacts:config="$TMP_OUT")
 fi
