@@ -310,22 +310,30 @@ func TestAdaptReportedVersionConfigMap(t *testing.T) {
 			status   appsv1.DeploymentStatus
 		}{
 			{
-				// Single replica: no strategy is set, so Kubernetes' default
-				// 25% maxSurge rounds up to one surge pod.
+				// Single replica: maxSurge is 25%, which permits one extra pod.
 				name:     "single replica with an unready surge pod",
 				replicas: 1,
-				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 2, UpdatedReplicas: 1, AvailableReplicas: 1},
+				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 2, UpdatedReplicas: 1, AvailableReplicas: 1, ReadyReplicas: 1, UnavailableReplicas: 1},
 			},
 			{
 				// Two replica request serving topology: maxSurge is one.
 				name:     "two replicas with an unready surge pod",
 				replicas: 2,
-				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 3, UpdatedReplicas: 2, AvailableReplicas: 2},
+				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 3, UpdatedReplicas: 2, AvailableReplicas: 2, ReadyReplicas: 2, UnavailableReplicas: 1},
 			},
 			{
 				name:     "updated pods are not available yet",
 				replicas: 3,
-				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 3, UpdatedReplicas: 3, AvailableReplicas: 2},
+				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 3, UpdatedReplicas: 3, AvailableReplicas: 2, ReadyReplicas: 2, UnavailableReplicas: 1},
+			},
+			{
+				// The old pod is already gone, so every count has reached the
+				// desired replica count, but the old ReplicaSet is still scaled
+				// up and about to recreate a pod that mounts the ConfigMap.
+				// unavailableReplicas is the only field that still reflects it.
+				name:     "single replica whose old pod was evicted mid-rollout",
+				replicas: 1,
+				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 1, UpdatedReplicas: 1, AvailableReplicas: 1, ReadyReplicas: 1, UnavailableReplicas: 1},
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -355,6 +363,7 @@ func TestAdaptReportedVersionConfigMap(t *testing.T) {
 				Replicas:           3,
 				UpdatedReplicas:    3,
 				AvailableReplicas:  3,
+				ReadyReplicas:      3,
 			},
 		}
 		cpContext := newReportedVersionTestContextWithObjects(t, hcp, configs, deployment, existingReportedVersionConfigMap(hcp))
