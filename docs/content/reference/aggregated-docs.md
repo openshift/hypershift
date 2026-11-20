@@ -7550,9 +7550,11 @@ Labels and Annotations reference.
 
 - Access to the management cluster (where the HyperShift Operator runs), with permission to read and annotate
   `machines.cluster.x-k8s.io` and read `machinesets.cluster.x-k8s.io` in the hosted control plane namespace, and to
-  scale the NodePool in the HostedCluster namespace. Machine objects are in the hosted control plane namespace on the
-  management cluster, not in the hosted cluster. If you do not have management cluster access, this procedure is not
-  available to you.
+  read and scale the NodePool in the HostedCluster namespace. Machine objects are in the hosted control plane namespace
+  on the management cluster, not in the hosted cluster. If you do not have management cluster access, this procedure is
+  not available to you.
+- A kubeconfig for the hosted cluster with permission to list Nodes. The Node checks in this procedure run against the
+  hosted cluster.
 - The NodePool sets `spec.replicas`. NodePools that set `spec.autoScaling` are out of scope because their replica count
   is managed by the cluster autoscaler, and the NodePool API does not allow both fields to be set.
 - The NodePool's Nodes are backed by CAPI Machines. NodePools on the `None` platform, and IBM Cloud NodePools that use
@@ -7622,13 +7624,19 @@ Check that no Machine of the same NodePool has a value in the `DELETING` column.
 still counts toward the MachineSet's replicas and is always selected first. A scale-down could therefore be satisfied by
 that Machine instead of the one you annotate. Wait for any such Machine to be removed before you continue.
 
-Also check that the other Machines of the NodePool are healthy: each has a value in the `NODE` column, and that Node is
-`Ready` in the hosted cluster. Unhealthy Machines are also preferred for deletion, and in Cluster API versions earlier
-than v1.9.0 they have the same priority as annotated Machines under the `Random` order. Run the following command
-against the hosted cluster:
+Also check that the other Machines of the NodePool are healthy. Unhealthy Machines are also preferred for deletion, and
+in Cluster API versions earlier than v1.9.0 they have the same priority as annotated Machines under the `Random` order.
+Cluster API treats a Machine as unhealthy if it has no Node, if its Node's `Ready` condition is `False`, or if the Node
+reports memory, disk, or PID pressure. Cluster API v1.7.4 and later also treat a Machine as unhealthy if a
+MachineHealthCheck has set the Machine's `HealthCheckSucceeded` condition to `False`.
+
+In the Machine list above, check that each Machine of the NodePool that you will keep has a value in the `NODE` column.
+Then run the following command against the hosted cluster. For each of those Nodes, `READY` must be `True` and the three
+pressure columns must be `False`:
 
 ```bash
-oc --kubeconfig <hosted_cluster_kubeconfig> get nodes
+oc --kubeconfig <hosted_cluster_kubeconfig> get nodes \
+  -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,MEMORY_PRESSURE:.status.conditions[?(@.type=="MemoryPressure")].status,DISK_PRESSURE:.status.conditions[?(@.type=="DiskPressure")].status,PID_PRESSURE:.status.conditions[?(@.type=="PIDPressure")].status'
 ```
 
 ### 3. Annotate the Machines
