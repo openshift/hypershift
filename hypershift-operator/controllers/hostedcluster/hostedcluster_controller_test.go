@@ -287,8 +287,10 @@ func TestReconcileWhenPullSecretUnavailable(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		extraObjects []crclient.Object
+		name              string
+		extraObjects      []crclient.Object
+		legacy            bool
+		ambiguousExisting bool
 	}{
 		{
 			name: "When the pull secret is missing it should still reconcile the HCP",
@@ -301,6 +303,19 @@ func TestReconcileWhenPullSecretUnavailable(t *testing.T) {
 					Data:       map[string][]byte{},
 				},
 			},
+		},
+		{
+			name:   "When the legacy reconciler recovers from a missing pull secret it should preserve an omitted Route member",
+			legacy: true,
+		},
+		{
+			name:              "When normal reconciliation sees conflicting duplicate services it should not select a winner",
+			ambiguousExisting: true,
+		},
+		{
+			name:              "When legacy reconciliation sees conflicting duplicate services it should not select a winner",
+			legacy:            true,
+			ambiguousExisting: true,
 		},
 	}
 
@@ -344,6 +359,32 @@ func TestReconcileWhenPullSecretUnavailable(t *testing.T) {
 
 			hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 			hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+			hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			}
+			if tc.ambiguousExisting {
+				hcp.Spec.Services = append(hcp.Spec.Services,
+					hyperv1.ServicePublishingStrategyMapping{
+						Service: hyperv1.Ignition,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "first.example.com"},
+						},
+					},
+					hyperv1.ServicePublishingStrategyMapping{
+						Service: hyperv1.Ignition,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "second.example.com"},
+						},
+					},
+				)
+			}
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hcpNs}}
 
 			objects := append([]crclient.Object{hcp, hcluster, ns}, tc.extraObjects...)
@@ -356,6 +397,7 @@ func TestReconcileWhenPullSecretUnavailable(t *testing.T) {
 
 			r := &HostedClusterReconciler{
 				Client:                        client,
+				ReconcileLegacy:               tc.legacy,
 				Clock:                         clocktesting.NewFakeClock(time.Now()),
 				CertRotationScale:             24 * time.Hour,
 				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
@@ -394,6 +436,10 @@ func TestReconcileWhenPullSecretUnavailable(t *testing.T) {
 			g.Expect(updatedHCP.Annotations).To(HaveKeyWithValue(
 				hyperv1.DisableClusterAutoscalerAnnotation, "true"),
 				"it should disable the cluster autoscaler when no NodePools exist")
+			g.Expect(updatedHCP.Spec.Services).To(HaveLen(1))
+			g.Expect(updatedHCP.Spec.Services[0].Service).To(Equal(hyperv1.Ignition))
+			g.Expect(updatedHCP.Spec.Services[0].Route).To(BeNil(),
+				"legacy Route member should remain omitted during pull secret recovery")
 		})
 	}
 }
@@ -540,10 +586,106 @@ func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
 			}
 		})
 	}
+	testReconcileHostedControlPlaneServices(t)
+	testReconcileHostedControlPlaneLabelSync(t)
 }
 
-func TestReconcileHostedControlPlaneLabelSync(t *testing.T) {
-	t.Parallel()
+func testReconcileHostedControlPlaneServices(t *testing.T) {
+	hostedCluster := &hyperv1.HostedCluster{
+		Spec: hyperv1.HostedClusterSpec{
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type:  hyperv1.Route,
+						Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+					},
+				},
+				{
+					Service: hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
+		},
+	}
+	hostedControlPlane := &hyperv1.HostedControlPlane{}
+
+	if err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) {
+		return nil, nil
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if hostedControlPlane.Spec.Services[0].Route == hostedCluster.Spec.Services[0].Route {
+		t.Fatal("HostedControlPlane services must not alias HostedCluster services")
+	}
+	hostedCluster.Spec.Services[0].Route.Hostname = "changed.example.com"
+	if hostedControlPlane.Spec.Services[0].Route.Hostname != "api.example.com" {
+		t.Fatal("HostedControlPlane service route changed when HostedCluster was mutated")
+	}
+	if hostedControlPlane.Spec.Services[1].Route != nil {
+		t.Fatal("legacy HostedCluster Route member must remain unchanged during the mirror")
+	}
+
+	reconcileHostedControlPlaneServices(hostedControlPlane, nil)
+	if hostedControlPlane.Spec.Services[1].Route == nil {
+		t.Fatal("new HostedControlPlane Route service must be normalized")
+	}
+
+	existingHostedControlPlane := hostedControlPlane.DeepCopy()
+	hostedControlPlane.Spec.Services[1].Route = nil
+	reconcileHostedControlPlaneServices(hostedControlPlane, existingHostedControlPlane)
+	if hostedControlPlane.Spec.Services[1].Route == nil {
+		t.Fatal("existing HostedControlPlane must preserve its normalized Route member")
+	}
+
+	existingHostedControlPlane.Spec.Services[1].Route = nil
+	hostedControlPlane.Spec.Services[1].Route = nil
+	reconcileHostedControlPlaneServices(hostedControlPlane, existingHostedControlPlane)
+	if hostedControlPlane.Spec.Services[1].Route != nil {
+		t.Fatal("legacy HostedControlPlane Route member must remain omitted")
+	}
+
+	duplicateSource := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
+		},
+	}
+	duplicateExisting := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type:  hyperv1.Route,
+						Route: &hyperv1.RoutePublishingStrategy{Hostname: "oauth.example.com"},
+					},
+				},
+				{
+					Service: hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
+		},
+	}
+	reconcileHostedControlPlaneServices(duplicateSource, duplicateExisting)
+	if duplicateSource.Spec.Services[0].Route != nil {
+		t.Fatal("ambiguous legacy duplicate services must not be repaired")
+	}
+}
+
+func testReconcileHostedControlPlaneLabelSync(t *testing.T) {
 	tests := []struct {
 		name           string
 		hcLabels       map[string]string
@@ -9547,6 +9689,9 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 		name string
 		// mutateHC applies the fault injection to the HostedCluster before reconcile runs.
 		mutateHC func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client)
+		// existingHCP optionally seeds the HostedControlPlane so the reconcile path
+		// exercises preservation of legacy service members.
+		existingHCP func(namespace, name string) *hyperv1.HostedControlPlane
 		// createOrUpdateOverride optionally overrides the createOrUpdate function to inject failures
 		// for specific resource types. If nil, the default upsert.New(false).CreateOrUpdate is used.
 		createOrUpdateOverride func(reconcile.Request) upsert.CreateOrUpdateFN
@@ -9599,6 +9744,23 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 				if err := client.Create(t.Context(), sshKey); err != nil {
 					t.Fatalf("failed to create SSH key: %v", err)
 				}
+				hc.Spec.Services[0].Route = nil
+			},
+			existingHCP: func(namespace, name string) *hyperv1.HostedControlPlane {
+				hcp := controlplaneoperator.HostedControlPlane(namespace, name)
+				hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "existing.example.com"},
+						},
+					},
+					{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+				}
+				return hcp
 			},
 			expectedErrSubstring: "critical error: spec.platform.gcp.resourceTags requires a control plane operator image",
 			verifyResources: func(t *testing.T, client crclient.Client, hcpNamespace, hcName string) {
@@ -9607,6 +9769,11 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 				g.Expect(client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hcName}, hcp)).To(Succeed())
 				g.Expect(hcp.Spec.Platform.GCP).NotTo(BeNil())
 				g.Expect(hcp.Spec.Platform.GCP.ResourceTags).To(Equal([]hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}}))
+				g.Expect(hcp.Spec.Services[0].Route).NotTo(BeNil())
+				g.Expect(hcp.Spec.Services[0].Route.Hostname).To(Equal("existing.example.com"))
+				g.Expect(hcp.Spec.Services[1].Route).To(BeNil())
+				g.Expect(hcp.Spec.Services[2].Route).To(BeNil())
+				g.Expect(hcp.Spec.Services[3].Route).To(BeNil())
 
 				sshKey := controlplaneoperator.SSHKey(hcpNamespace)
 				g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(sshKey), sshKey)).To(Succeed())
@@ -9711,6 +9878,11 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 				hcpObj := &hyperv1.HostedControlPlane{}
 				if err := client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hcName}, hcpObj); err != nil {
 					t.Fatalf("HCP object should have been created in Phase 7, but got: %v", err)
+				}
+				for i, service := range hcpObj.Spec.Services {
+					if service.ServicePublishingStrategy.Type == hyperv1.Route && service.Route == nil {
+						t.Fatalf("new HCP service %d (%s) must contain a Route member", i, service.Service)
+					}
 				}
 				// Phase 8: CPO Deployment
 				cpoDeployment := &appsv1.Deployment{}
@@ -9888,9 +10060,13 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 				},
 			}
 
+			objects := []crclient.Object{hcluster, pullSecret, ingress}
+			if tc.existingHCP != nil {
+				objects = append(objects, tc.existingHCP(hcpNamespace, hcName))
+			}
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
-				WithObjects(hcluster, pullSecret, ingress).
+				WithObjects(objects...).
 				WithStatusSubresource(hcluster, &capigcp.GCPCluster{}, &capiv1.Cluster{}).
 				Build()
 

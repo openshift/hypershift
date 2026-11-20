@@ -81,17 +81,20 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OIDC
     servicePublishingStrategy:
       type: Route
-      Route:
+      route:
         hostname: <URL>
   - service: Konnectivity
-    servicePublishingStrate
+    servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 If you wanna know more about how to expose the ingress service in the Data Plane side, please access [the Recipes section](../../recipes/index.md) to see how to do it with MetalLB.

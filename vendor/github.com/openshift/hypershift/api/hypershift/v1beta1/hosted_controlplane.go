@@ -39,7 +39,9 @@ type HostedControlPlane struct {
 }
 
 // HostedControlPlaneSpec defines the desired state of HostedControlPlane
-// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
+// + optionalOldSelf grandfathers legacy objects whose service shape is incomplete.
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' || self.services.exists(s, s.service == 'Ignition') || (oldSelf.hasValue() && self.services == oldSelf.value().services && !(oldSelf.value().platform.type == 'IBMCloud' || oldSelf.value().services.exists(s, s.service == 'Ignition')))",message="Services list must contain an Ignition service",optionalOldSelf=true
+// +kubebuilder:validation:XValidation:rule="self.services.all(s, s.servicePublishingStrategy.type != 'Route' || has(s.servicePublishingStrategy.route)) || (self.services == oldSelf.services && oldSelf.services.exists(s, s.servicePublishingStrategy.type == 'Route' && !has(s.servicePublishingStrategy.route)))",message="route is required for Route service publishing strategies"
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.secretEncryption) || has(self.secretEncryption)",message="secretEncryption cannot be removed once configured"
 type HostedControlPlaneSpec struct {
@@ -162,6 +164,12 @@ type HostedControlPlaneSpec struct {
 	// in the management cluster.
 	// +required
 	// +kubebuilder:validation:MaxItems=6
+	// +listType=atomic
+	// +kubebuilder:validation:XValidation:rule="self.exists(s, s.service == 'APIServer')",message="Services list must contain an APIServer service"
+	// +kubebuilder:validation:XValidation:rule="self.exists(s, s.service == 'OAuthServer')",message="Services list must contain an OAuthServer service"
+	// +kubebuilder:validation:XValidation:rule="self.exists(s, s.service == 'Konnectivity')",message="Services list must contain a Konnectivity service"
+	// The list is bounded by MaxItems=6, so the duplicate check remains bounded.
+	// +kubebuilder:validation:XValidation:rule="self.all(s, self.exists_one(t, t.service == s.service))",message="Each service type must be unique within the Services list."
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
 	// auditWebhook contains metadata for configuring an audit webhook

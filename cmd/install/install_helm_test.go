@@ -41,6 +41,11 @@ func TestHelmCommand(t *testing.T) {
 		t.Fatalf("Output directory %s does not exist", tmpDir)
 	}
 
+	_, err = ExecuteTestHelmCommand([]string{"--output-dir", t.TempDir(), "--enable-defaulting-webhook=false"})
+	if err == nil {
+		t.Fatal("expected Helm rendering to reject a disabled defaulting webhook")
+	}
+
 	// check if the crds directory exists ...
 	for _, dir := range []string{"crds", "templates"} {
 		dirPath := tmpDir + "/" + dir

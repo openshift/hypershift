@@ -19,28 +19,48 @@ authoritative support matrix.
 
 Red Hat OpenShift on IBM Cloud may support OCP versions beyond standard
 OCP timelines. As of September 28, 2025:
-- Management cluster (where the HyperShift Operator runs): OpenShift 4.15 or later or Kubernetes 1.30 or later
+- Management cluster (where the HyperShift Operator runs): OpenShift 4.17 or later or Kubernetes 1.30 or later
 - HostedClusters created by HyperShift on IBM Cloud: OpenShift 4.14 or later
 
 Information above is subject to change; check IBM Cloud documentation or
 contact IBM development.
 
 ### Management Cluster
-In general, the upstream HyperShift project does not place strict requirements on the OpenShift version of your 
-management cluster. This may vary depending on the particular platform; for example, Kubevirt requires management 
-clusters with OCP 4.14 and higher.
+The management cluster must run OpenShift 4.17 or later, or Kubernetes 1.30
+or later, because the HostedCluster and HostedControlPlane CRDs use
+validation ratcheting. Individual platforms or downstream products may
+impose additional requirements.
 
-The HO determines what versions of OCP can be installed through the HostedCluster (HC); see the [HO section](#ho) for 
-more details. However, different versions of the HO are thoroughly tested only on a limited set of OpenShift versions, 
+#### Service validation compatibility
+
+The HostedCluster and HostedControlPlane CRDs use Kubernetes validation
+ratcheting to preserve unchanged legacy service publishing configurations while
+enforcing new objects. A single `optionalOldSelf` rule preserves a legacy
+non-IBMCloud HostedControlPlane that omitted Ignition; a separate transition
+rule preserves unchanged legacy Route entries. New objects and changed legacy
+lists must satisfy the current service rules. The management cluster must run
+Kubernetes 1.30 or later (OpenShift 4.17 or later) with the
+`CRDValidationRatcheting` feature gate enabled, which is the default at that
+version floor. The installer and operator reject older management-cluster
+versions before using these CRDs. Kubernetes discovery cannot reliably report
+whether an administrator disabled the feature gate, so a disabled gate is
+unsupported and CRD application/dry-run remains the authoritative check.
+Clients that construct service publishing strategies directly must include
+`route: {}` when setting `type: Route`; the required defaulting webhook adds
+this member on HostedCluster and HostedControlPlane CREATE requests, and the
+HyperShift CLI emits it automatically.
+
+The HO determines what versions of OCP can be installed through the HostedCluster (HC); see the [HO section](#ho) for
+more details. However, different versions of the HO are thoroughly tested only on a limited set of OpenShift versions,
 and this should inform your deployment decisions.
 
 #### Production Use Cases
-For production use & support, it is required to use a downstream product which bundles a supported build of the 
-HyperShift Operator. This downstream product is called [Multi-Cluster Engine](https://docs.openshift.com/container-platform/4.16/architecture/mce-overview-ocp.html) (MCE) and it is available through 
+For production use & support, it is required to use a downstream product which bundles a supported build of the
+HyperShift Operator. This downstream product is called [Multi-Cluster Engine](https://docs.openshift.com/container-platform/4.16/architecture/mce-overview-ocp.html) (MCE) and it is available through
 OpenShift's OperatorHub. 
 
-MCE versions _do_ require specific OCP versions for the Management Cluster to remain in a supported state. 
-Each version documents its own support matrix. For example, 
+MCE versions _do_ require specific OCP versions for the Management Cluster to remain in a supported state.
+Each version documents its own support matrix. For example,
 
 - [MCE 2.5](https://access.redhat.com/articles/7056007)
 - [MCE 2.4](https://access.redhat.com/articles/7027079)
@@ -54,12 +74,12 @@ As a heuristic, a new release of MCE will run on:
 Versions of MCE can also be obtained with the Advanced Cluster Management (ACM) offering. If you are running ACM, refer 
 to product documentation to determine the bundled MCE version.
 
-The full list of HostedCluster OCP versions that can be installed via the HO on a Management Cluster will depend on the 
-version of the installed HO. However, if you are running a tested configuration or MCE, this list will always include at 
-least (a) the same OCP version as the Management Cluster and (b) Two previous minor versions relative to the Management 
-Cluster. For example, if the Management Cluster is running 4.16 and a supported version of MCE, then the HO will at 
-least be able to install 4.16, 4.15, and 4.14 Hosted Clusters. See the Multi-Cluster Engine section, under the expanded 
-section titled "OpenShift Advanced Cluster Management" on [this page](https://access.redhat.com/support/policy/updates/openshift_operators) for more details. 
+The full list of HostedCluster OCP versions that can be installed via the HO on a Management Cluster will depend on the
+version of the installed HO. However, if you are running a tested configuration or MCE, this list will always include at
+least (a) the same OCP version as the Management Cluster and (b) Two previous minor versions relative to the Management
+Cluster. For example, if the Management Cluster is running 4.17 and a supported version of MCE, then the HO will at
+least be able to install 4.17, 4.16, and 4.15 Hosted Clusters. See the Multi-Cluster Engine section, under the expanded
+section titled "OpenShift Advanced Cluster Management" on [this page](https://access.redhat.com/support/policy/updates/openshift_operators) for more details.
 
 ### API
 There are two user facing resources exposed by HyperShift: [HostedClusters and NodePools](https://hypershift.pages.dev/reference/api/).

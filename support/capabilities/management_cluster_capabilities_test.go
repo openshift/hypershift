@@ -402,3 +402,27 @@ func TestDetectNativeSidecarCapability(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateCRDValidationRatcheting(t *testing.T) {
+	tests := []struct {
+		name        string
+		gitVersion  string
+		expectError bool
+	}{
+		{name: "When Kubernetes 1.29 is used, it should reject the management cluster", gitVersion: "v1.29.9", expectError: true},
+		{name: "When Kubernetes 1.30 is used, it should accept the management cluster", gitVersion: "v1.30.0", expectError: false},
+		{name: "When Kubernetes 1.30 has a vendor suffix, it should accept the management cluster", gitVersion: "v1.30.3-gke.1", expectError: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateCRDValidationRatcheting(fakeFailableDiscoveryClient{gitVersion: test.gitVersion})
+			if test.expectError && err == nil {
+				t.Fatal("expected management-cluster version validation to fail")
+			}
+			if !test.expectError && err != nil {
+				t.Fatalf("expected management-cluster version validation to pass: %v", err)
+			}
+		})
+	}
+}

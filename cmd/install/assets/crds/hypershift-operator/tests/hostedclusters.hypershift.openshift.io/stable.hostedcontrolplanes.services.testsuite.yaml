@@ -1,0 +1,1638 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedControlPlane services validation"
+crdName: hostedcontrolplanes.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  - name: When services have unique types and Route configuration it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When IBMCloud HostedControlPlane has the required non-Ignition services it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: IBMCloud
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When APIServer is missing from services it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Services list must contain an APIServer service"
+
+  - name: When OAuthServer is missing from services it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Services list must contain an OAuthServer service"
+
+  - name: When Konnectivity is missing from services it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Services list must contain a Konnectivity service"
+
+  - name: When duplicate service types are set it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: APIServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: 127.0.0.1
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Each service type must be unique within the Services list."
+
+  - name: When a type Route is set without route configuration it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "route is required when type is Route, and forbidden otherwise"
+
+  - name: When Ignition is missing from a non-IBMCloud HostedControlPlane it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Services list must contain an Ignition service"
+
+  onUpdate:
+  - name: When a legacy non-IBMCloud HostedControlPlane without Ignition is unchanged while a sibling is updated it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/0
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+
+  - name: When a legacy non-IBMCloud HostedControlPlane without Ignition changes its service list it should fail
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/0
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OIDC
+          servicePublishingStrategy:
+            type: None
+    expectedError: "Services list must contain an Ignition service"
+
+  - name: When a legacy Route member is unchanged while a sibling is updated it should pass
+    initialCRDPatches:
+      # Permit the pre-PR representation for the initial legacy object.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/items/properties/servicePublishingStrategy/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+
+  - name: When a legacy object missing APIServer is unchanged while a sibling is updated it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/x-kubernetes-validations/0
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+
+  - name: When a legacy object missing OAuthServer is unchanged while a sibling is updated it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+
+  - name: When a legacy object missing Konnectivity is unchanged while a sibling is updated it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/x-kubernetes-validations/2
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+
+  - name: When a legacy object missing APIServer changes its service list it should fail
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/x-kubernetes-validations/0
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OIDC
+          servicePublishingStrategy:
+            type: None
+    expectedError: "Services list must contain an APIServer service"
+
+  - name: When a legacy object missing OAuthServer changes its service list it should fail
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OIDC
+          servicePublishingStrategy:
+            type: None
+    expectedError: "Services list must contain an OAuthServer service"
+
+  - name: When a legacy object missing Konnectivity changes its service list it should fail
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/x-kubernetes-validations/2
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OIDC
+          servicePublishingStrategy:
+            type: None
+    expectedError: "Services list must contain a Konnectivity service"
+
+  - name: When a legacy Route member is followed by an added service it should fail
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/items/properties/servicePublishingStrategy/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OIDC
+          servicePublishingStrategy:
+            type: None
+    expectedError: "route is required for Route service publishing strategies"
+
+  - name: When a legacy Route member has a sibling strategy mutation it should fail
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/items/properties/servicePublishingStrategy/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: 127.0.0.1
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "route is required for Route service publishing strategies"
+
+  - name: When a legacy Route member is repaired while a sibling is updated it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/items/properties/servicePublishingStrategy/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+
+  - name: When a legacy Route member is reordered while it remains omitted it should fail
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/items/properties/servicePublishingStrategy/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "route is required for Route service publishing strategies"
+
+  - name: When a legacy Route member is removed while it remains omitted it should fail
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/items/properties/servicePublishingStrategy/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Services list must contain an APIServer service"
+
+  - name: When a legacy duplicate service list is unchanged while a sibling is updated it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/x-kubernetes-validations/3
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+
+  - name: When a legacy duplicate service list is mutated it should fail
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/services/x-kubernetes-validations/3
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: APIServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: 127.0.0.1
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Each service type must be unique within the Services list."

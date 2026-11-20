@@ -64,6 +64,10 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			hcp = nil
 		}
 	}
+	var existingHCP *hyperv1.HostedControlPlane
+	if hcp != nil {
+		existingHCP = hcp.DeepCopy()
+	}
 
 	// Bubble up ValidIdentityProvider condition from the hostedControlPlane.
 	// We set this condition even if the HC is being deleted. Otherwise, a hostedCluster with a conflicted identity provider
@@ -343,8 +347,12 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		_, hcpErr := createOrUpdate(ctx, r.Client, hcp, func() error {
 			// Skip cert annotation resolution during pull secret recovery — it requires
 			// the pull secret to resolve the CPO image, which is unavailable here.
-			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
-				func() (map[string]string, error) { return nil, nil })
+			if err := reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+				func() (map[string]string, error) { return nil, nil }); err != nil {
+				return err
+			}
+			reconcileHostedControlPlaneServices(hcp, existingHCP)
+			return nil
 		})
 		if hcpErr != nil {
 			log.Error(hcpErr, "failed to reconcile hostedcontrolplane during pull secret recovery")
@@ -1532,12 +1540,16 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		if err := reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
 				r.kasServingCertHashFromSecret(ctx, hcp),
-				r.kasServingCertHashFromEndpoint(ctx, kasHostAndPortFromHCP(hcp))))
+				r.kasServingCertHashFromEndpoint(ctx, kasHostAndPortFromHCP(hcp)))); err != nil {
+			return err
+		}
+		reconcileHostedControlPlaneServices(hcp, existingHCP)
+		return nil
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)

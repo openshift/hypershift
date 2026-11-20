@@ -476,6 +476,7 @@ func TestOptions_Validate(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			test.inputOptions.EnableDefaultingWebhook = true
 			err := test.inputOptions.Complete()
 			if err == nil {
 				err = test.inputOptions.Validate()
@@ -487,6 +488,11 @@ func TestOptions_Validate(t *testing.T) {
 			}
 		})
 	}
+	t.Run("When defaulting webhook is disabled, it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		opts := Options{PrivatePlatform: string(hyperv1.NonePlatform)}
+		g.Expect(opts.Validate()).To(HaveOccurred())
+	})
 }
 
 func TestCRDIncludeFilter(t *testing.T) {
@@ -990,9 +996,10 @@ func TestInstallHyperShiftOperator(t *testing.T) {
 
 func TestRenderOutputsScope(t *testing.T) {
 	baseOpts := Options{
-		PrivatePlatform: string(hyperv1.NonePlatform),
-		Format:          RenderFormatYaml,
-		RenderSensitive: true,
+		PrivatePlatform:         string(hyperv1.NonePlatform),
+		Format:                  RenderFormatYaml,
+		RenderSensitive:         true,
+		EnableDefaultingWebhook: true,
 	}
 
 	tests := []struct {
@@ -2534,6 +2541,7 @@ func TestNewInstallOptionsWithDefaults(t *testing.T) {
 		g.Expect(opts.CertRotationScale).To(Equal(24 * time.Hour))
 		g.Expect(opts.ImagePullPolicy).To(Equal("IfNotPresent"))
 		g.Expect(opts.EnableConversionWebhook).To(BeTrue())
+		g.Expect(opts.EnableDefaultingWebhook).To(BeTrue())
 		g.Expect(opts.EnableDedicatedRequestServingIsolation).To(BeTrue())
 		g.Expect(opts.EnableEtcdRecovery).To(BeTrue())
 		g.Expect(opts.MetricsSet).To(Equal(metrics.DefaultMetricsSet))
@@ -2701,11 +2709,11 @@ func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
 			expectCAPICRDConversion: true,
 		},
 		{
-			name: "When all enable flags are false and DisableCAPIConversionWebhook is default (false), it should add webhook resources and CRD conversion",
+			name: "When conversion and validating webhooks are disabled and DisableCAPIConversionWebhook is default (false), it should add webhook resources and CRD conversion",
 			opts: Options{
 				PrivatePlatform:           string(hyperv1.NonePlatform),
 				EnableConversionWebhook:   false,
-				EnableDefaultingWebhook:   false,
+				EnableDefaultingWebhook:   true,
 				EnableValidatingWebhook:   false,
 				EnableAuditLogPersistence: false,
 			},

@@ -12,7 +12,7 @@ echo "Installing hypershift"
   --oidc-storage-provider-s3-credentials "${AWSCREDS}" \
   --oidc-storage-provider-s3-region "${REGION}" \
   --oidc-storage-provider-s3-bucket-name "${BUCKET_NAME}" \
-  --enable-defaulting-webhook=false \
+  --enable-defaulting-webhook=true \
   --enable-conversion-webhook=false \
   --enable-validating-webhook=false \
   --development=true
