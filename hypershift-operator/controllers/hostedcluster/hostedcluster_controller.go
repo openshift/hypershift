@@ -164,11 +164,6 @@ const (
 	referencedResourceAnnotationPrefix    = "referenced-resource.hypershift.openshift.io/"
 )
 
-var (
-	// NoopReconcile is just a default mutation function that does nothing.
-	NoopReconcile controllerutil.MutateFn = func() error { return nil }
-)
-
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
 	client.Client
@@ -3409,10 +3404,21 @@ func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Co
 	return nil
 }
 
+// errTrustedCABundleRefresh classifies a failure to write the trusted CA bundle after the existing ConfigMap was read
+// successfully. It is used only for that case: creation, read and source file errors are not classified this way. The
+// outcome of the failed write is not asserted, because errors such as timeouts can leave it unknown.
+var errTrustedCABundleRefresh = errors.New("failed to refresh existing trusted CA bundle ConfigMap")
+
 // reconcileOpenShiftTrustedCAs checks for the existence of /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem, if it exists,
-// creates a new ConfigMap to be mounted in the CPO deployment utilizing the file
+// creates or updates a ConfigMap with the file's current contents to be mounted by control plane components such as the
+// CPO deployment. A missing, empty, or whitespace-only file leaves the ConfigMap untouched.
+//
+// The file is read on every reconcile, but nothing here watches its sources. When the operator is deployed by
+// `hypershift install`, the operator's init container (runInit) builds the file in an emptyDir from the OpenShift trusted
+// CA bundle and the image registry additional trusted CAs. Changes to those sources therefore only reach this ConfigMap
+// after the init container runs again, for example when a new operator pod starts.
 func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
-	trustedCABundle := new(bytes.Buffer)
+	const caBundleKey = "ca-bundle.crt"
 	var trustCABundleFile []byte
 
 	_, err := os.Stat(r.OpenShiftTrustedCAFilePath)
@@ -3430,15 +3436,36 @@ func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Conte
 		return err
 	}
 
-	if _, err = trustedCABundle.Write(trustCABundleFile); err != nil {
-		return fmt.Errorf("unable to write trust bundle to buffer: %w", err)
+	// An empty or whitespace-only bundle is never propagated: it would replace a populated bundle in every hosted control
+	// plane namespace and roll the control plane components that mount it. Treat it like a missing file.
+	if len(bytes.TrimSpace(trustCABundleFile)) == 0 {
+		return nil
 	}
 
-	// Next, save the contents to a new ConfigMap in the hosted control plane's namespace
+	// Next, save the contents to a ConfigMap in the hosted control plane's namespace. The bundle must be set
+	// in the mutate function: CreateOrUpdate reads the existing object into the ConfigMap before mutating it,
+	// so data assigned beforehand would be overwritten and an existing ConfigMap would never be refreshed.
+	caBundle := string(trustCABundleFile)
 	openShiftTrustedCABundleConfigMapForCPO := manifests.OpenShiftTrustedCABundleForNamespace(hostedControlPlane.Namespace)
-	openShiftTrustedCABundleConfigMapForCPO.Data["ca-bundle.crt"] = trustedCABundle.String()
-	if _, err = controllerutil.CreateOrUpdate(ctx, r.Client, openShiftTrustedCABundleConfigMapForCPO, NoopReconcile); err != nil {
-		return fmt.Errorf("failed to create openshift-config-managed-trusted-ca-bundle for CPO deployment %T: %w", trustedCABundle.String(), err)
+	// existing records whether CreateOrUpdate read a stored ConfigMap before calling the mutate function: a stored
+	// object has a resourceVersion, while a ConfigMap about to be created does not.
+	existing := false
+	if _, err = controllerutil.CreateOrUpdate(ctx, r.Client, openShiftTrustedCABundleConfigMapForCPO, func() error {
+		existing = openShiftTrustedCABundleConfigMapForCPO.ResourceVersion != ""
+		if openShiftTrustedCABundleConfigMapForCPO.Data == nil {
+			openShiftTrustedCABundleConfigMapForCPO.Data = map[string]string{}
+		}
+		openShiftTrustedCABundleConfigMapForCPO.Data[caBundleKey] = caBundle
+		// Data and BinaryData keys must not overlap, so drop only a stale binary copy of the managed key.
+		delete(openShiftTrustedCABundleConfigMapForCPO.BinaryData, caBundleKey)
+		return nil
+	}); err != nil {
+		err = fmt.Errorf("failed to reconcile ConfigMap %s/%s: %w",
+			openShiftTrustedCABundleConfigMapForCPO.Namespace, openShiftTrustedCABundleConfigMapForCPO.Name, err)
+		if existing {
+			return fmt.Errorf("%w: %w", errTrustedCABundleRefresh, err)
+		}
+		return err
 	}
 
 	return nil
