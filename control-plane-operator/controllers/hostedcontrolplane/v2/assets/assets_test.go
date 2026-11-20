@@ -1,7 +1,12 @@
 package assets
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -534,5 +539,74 @@ func TestLoadManifestTemplated(t *testing.T) {
 			obj, gvk, err := LoadManifestTemplated(tc.componentName, tc.fileName, tc.templateData)
 			tc.validate(g, obj, gvk, err)
 		})
+	}
+}
+
+// gmpManifestPattern matches a manifest that declares a Google Managed
+// Prometheus resource: a PodMonitoring kind or a monitoring.googleapis.com
+// apiVersion. It runs on raw bytes because the embedded assets contain Go
+// template markers that are not valid YAML until rendered.
+var gmpManifestPattern = regexp.MustCompile(
+	`(?m)^\s*(kind:\s*(Cluster)?PodMonitoring\b|apiVersion:\s*monitoring\.googleapis\.com/)`)
+
+// TestGMPAssetsAreNotEmbedded guards the staging contract for the GMP
+// PodMonitoring tree. The manifests live in v2/gmpassets, beside this package,
+// and are intentionally outside the embedded FS: anything embedded here is
+// reconciled by the component framework, and the GMP runtime reconciliation is a
+// separate, gated follow-up.
+//
+// Two checks cover the ways the tree could be activated by accident:
+//   - no embedded file declares a GMP resource, so a copy is caught whatever its
+//     name or component directory;
+//   - no file staged in v2/gmpassets exists at the same relative path in the
+//     embedded FS, so the failure names the copied file.
+//
+// The follow-up that activates GMP monitoring is expected to replace this test.
+func TestGMPAssetsAreNotEmbedded(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	var embedded []string
+	g.Expect(fs.WalkDir(manifestsAssets, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			embedded = append(embedded, path)
+		}
+		return nil
+	})).To(Succeed())
+
+	// The walk has to see the embedded tree; an empty result would make the
+	// assertions below vacuous.
+	g.Expect(embedded).ToNot(BeEmpty())
+
+	for _, path := range embedded {
+		g.Expect(strings.Split(path, "/")).ToNot(ContainElement("gmpassets"),
+			"%s is in the embedded asset tree; the component framework would reconcile it unconditionally", path)
+
+		raw, err := manifestsAssets.ReadFile(path)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(gmpManifestPattern.Match(raw)).To(BeFalse(),
+			"%s declares a GMP resource in the embedded asset tree; the component framework would reconcile it unconditionally", path)
+	}
+
+	stagedRoot := os.DirFS(filepath.Join("..", "gmpassets"))
+	var staged []string
+	g.Expect(fs.WalkDir(stagedRoot, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) == ".yaml" {
+			staged = append(staged, path)
+		}
+		return nil
+	})).To(Succeed())
+	g.Expect(staged).ToNot(BeEmpty())
+
+	for _, path := range staged {
+		_, err := fs.Stat(manifestsAssets, path)
+		g.Expect(err).To(MatchError(fs.ErrNotExist),
+			"staged GMP manifest %s was copied into the embedded asset tree; the component framework would reconcile it unconditionally", path)
 	}
 }
