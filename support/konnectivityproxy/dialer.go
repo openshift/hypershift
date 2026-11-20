@@ -225,7 +225,7 @@ type konnectivityProxy struct {
 	tlsConfig     *tls.Config
 
 	httpDialerOnce sync.Once
-	httpDialer     proxy.Dialer
+	httpDialer     proxy.ContextDialer
 
 	excludeCloudHosts sets.Set[string]
 }
@@ -280,7 +280,7 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 	// return a dial direct function which respects any proxy environment settings
 	if p.IsCloudAPI(requestHost) {
 		p.log.Info("Host name is cloud API, dialing through mgmt cluster proxy if present")
-		return p.dialDirectWithProxy(network, requestAddress)
+		return p.dialDirectWithProxy(ctx, network, requestAddress)
 	}
 
 	// return a dial direct function ignoring any proxy environment settings
@@ -417,7 +417,7 @@ func (p *konnectivityProxy) dialDirectWithoutProxy(ctx context.Context, network,
 }
 
 // dialDirectWithProxy directly connect to the target, respecting any local proxy settings from the environment
-func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn, error) {
+func (p *konnectivityProxy) dialDirectWithProxy(ctx context.Context, network, addr string) (net.Conn, error) {
 	p.httpDialerOnce.Do(func() {
 		if proxyURLStr := os.Getenv("HTTPS_PROXY"); proxyURLStr != "" {
 			proxyURL, err := url.Parse(proxyURLStr)
@@ -431,7 +431,7 @@ func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn,
 			p.httpDialer = proxy.Direct
 		}
 	})
-	return p.httpDialer.Dial(network, addr)
+	return p.httpDialer.DialContext(ctx, network, addr)
 }
 
 // konnectivityHealth tracks the health of the konnectivity tunnel based on DNS resolution success/failure.
