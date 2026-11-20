@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 328477e97aba1a41e5e6b1eb716e775cb9607d89389833ec47a5b7c876052c0d
+    hypershift.openshift.io/desired-state-hash: cbf3bc6147ea658e78c940e5068ab8bad1cf7b350557833d108b8f4418224b79
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator
@@ -67,6 +67,13 @@ spec:
       automountServiceAccountToken: false
       containers:
       - args:
+        - "3"
+        - cluster-version-operator
+        - start
+        - --help
+        - "1"
+        - --tls-min-version=VersionTLS13
+        - cluster-version-operator
         - start
         - --release-image
         - $(RELEASE_IMAGE)
@@ -78,9 +85,48 @@ spec:
         - --serving-key-file=/etc/kubernetes/certs/server/tls.key
         - --hypershift=true
         - --v=4
-        - --tls-min-version=VersionTLS13
         command:
-        - cluster-version-operator
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          help_count="$1"
+          shift
+          help_command=("${@:1:help_count}")
+          shift "$help_count"
+          tls_count="$1"
+          shift
+          tls_args=("${@:1:tls_count}")
+          shift "$tls_count"
+
+          help_exit=0
+          help_output=$(timeout --signal=KILL 30s "${help_command[@]}" 2>&1) || help_exit=$?
+          if [[ $help_exit -eq 137 ]]; then
+            echo "TLS capability detection failed: help probe timed out or was killed for ${help_command[0]}" >&2
+            exit 1
+          fi
+          declare -A supported_flags=()
+          while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*(-[[:alnum:]],?[[:space:]]+)?--?([[:alnum:]][[:alnum:]-]*)([[:space:]=]|$) ]]; then
+              supported_flags["${BASH_REMATCH[2]}"]=1
+            fi
+          done <<< "$help_output"
+          if [[ ${#supported_flags[@]} -eq 0 ]]; then
+            echo "TLS capability detection failed: no flag declarations in help for ${help_command[0]}" >&2
+            exit 1
+          fi
+          selected=()
+          for arg in "${tls_args[@]}"; do
+            flag="${arg%%=*}"
+            flag="${flag#--}"
+            if [[ -n "${supported_flags[$flag]:-}" ]]; then
+              selected+=("$arg")
+            else
+              echo "Omitting unsupported TLS flag --$flag for ${help_command[0]}" >&2
+            fi
+          done
+          exec "$@" "${selected[@]}"
+        - tls-capability-check
         env:
         - name: PAYLOAD_OVERRIDE
           value: /var/payload
