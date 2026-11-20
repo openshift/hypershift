@@ -38,6 +38,25 @@ const (
 	defaultEtcdClientTimeout = 5 * time.Second
 	defaultDialTimeout       = 3 * time.Second
 	healthyClusterWait       = 5 * time.Minute
+
+	// EtcdFailingRestartThreshold is the minimum cumulative container restart
+	// count for an etcd container in a Waiting state to be classified as
+	// failing. It is shared by the hostedcluster controller (recovery trigger,
+	// findFailingEtcdPod) and the recovery job (member selection,
+	// classifyEtcdPods) so the two can never disagree. Note that RestartCount
+	// is lifetime-cumulative per container instance, so a member with
+	// historical restarts can cross the threshold from a single transient
+	// restart - a known limitation of the signal.
+	EtcdFailingRestartThreshold int32 = 5
+
+	// EtcdUnreadyDwellThreshold is how long an etcd pod may remain unready
+	// (Ready=False) before it is classified as failing regardless of restart
+	// count.
+	//
+	// Container-creation failures may never advance RestartCount, so a member
+	// stuck in such a state would otherwise stay unavailable indefinitely.
+	// The threshold is well above normal bootstrap time.
+	EtcdUnreadyDwellThreshold = 15 * time.Minute
 )
 
 type options struct {
@@ -604,11 +623,35 @@ func classifyEtcdPods(ctx context.Context, pods []corev1.Pod) (failingPods []cor
 			continue
 		}
 
+		// Sustained unreadiness classifies the pod as failing regardless of
+		// restart count.
+		//
+		// Container-creation failures may never advance RestartCount, so the
+		// restart check below would never fire for them.
+		//
+		// Mirrors the controller's findFailingEtcdPod so the job cannot
+		// disagree with the trigger that launched it.
+		unreadyBeyondDwell := false
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == corev1.PodReady &&
+				cond.Status == corev1.ConditionFalse &&
+				time.Since(cond.LastTransitionTime.Time) > EtcdUnreadyDwellThreshold {
+				unreadyBeyondDwell = true
+				break
+			}
+		}
+		if unreadyBeyondDwell {
+			log.Info("pod has been unready beyond dwell threshold",
+				"pod", crclient.ObjectKeyFromObject(&pod).String())
+			failingPods = append(failingPods, pod)
+			continue
+		}
+
 		for _, containerStatus := range pod.Status.ContainerStatuses {
 			if containerStatus.Name != "etcd" {
 				continue
 			}
-			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 {
+			if containerStatus.State.Waiting != nil && containerStatus.RestartCount >= EtcdFailingRestartThreshold {
 				log.Info("pod is unhealthy", "pod", crclient.ObjectKeyFromObject(&pod).String())
 				failingPods = append(failingPods, pod)
 			} else {
