@@ -379,11 +379,12 @@ func TestCleanupReportedVersionConfigMap(t *testing.T) {
 			deployment.Status.Replicas = 3
 			deployment.Status.UpdatedReplicas = 3
 			deployment.Status.AvailableReplicas = 3
+			deployment.Status.ReadyReplicas = 3
 		}
 		return deployment
 	}
 
-	rollingDeployment := func(replicas, total, updated, available int32) *appsv1.Deployment {
+	rollingDeployment := func(replicas, total, updated, available, ready, unavailable int32) *appsv1.Deployment {
 		deployment := manifests.KASDeployment(hcp.Namespace)
 		deployment.Generation = 2
 		deployment.Spec.Replicas = ptr.To(replicas)
@@ -391,6 +392,8 @@ func TestCleanupReportedVersionConfigMap(t *testing.T) {
 		deployment.Status.Replicas = total
 		deployment.Status.UpdatedReplicas = updated
 		deployment.Status.AvailableReplicas = available
+		deployment.Status.ReadyReplicas = ready
+		deployment.Status.UnavailableReplicas = unavailable
 		return deployment
 	}
 
@@ -438,19 +441,28 @@ func TestCleanupReportedVersionConfigMap(t *testing.T) {
 			deployment *appsv1.Deployment
 		}{
 			{
-				// Single replica: no strategy is set, so Kubernetes' default
-				// 25% maxSurge rounds up to one surge pod.
+				// Single replica: DeploymentConfig only sets a strategy when
+				// Replicas is greater than one, so this falls back to
+				// Kubernetes' default 25% maxSurge, which rounds up to one.
 				name:       "single replica with an unready surge pod",
-				deployment: rollingDeployment(1, 2, 1, 1),
+				deployment: rollingDeployment(1, 2, 1, 1, 1, 1),
 			},
 			{
 				// Two replica request serving topology: maxSurge is one.
 				name:       "two replicas with an unready surge pod",
-				deployment: rollingDeployment(2, 3, 2, 2),
+				deployment: rollingDeployment(2, 3, 2, 2, 2, 1),
 			},
 			{
 				name:       "updated pods are not available yet",
-				deployment: rollingDeployment(3, 3, 3, 2),
+				deployment: rollingDeployment(3, 3, 3, 2, 2, 1),
+			},
+			{
+				// The old pod is already gone, so every count has reached the
+				// desired replica count, but the old ReplicaSet is still scaled
+				// up and about to recreate a pod that mounts the ConfigMap.
+				// unavailableReplicas is the only field that still reflects it.
+				name:       "single replica whose old pod was evicted mid-rollout",
+				deployment: rollingDeployment(1, 1, 1, 1, 1, 1),
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
