@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
@@ -16,7 +17,57 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
 )
+
+func TestDestroyPlatformSpecifics(t *testing.T) {
+	tests := []struct {
+		name     string
+		infraErr error
+	}{
+		{
+			name:     "When infrastructure deletion fails, it should run the post-delete action after the attempt",
+			infraErr: errors.New("infra failure"),
+		},
+		{
+			name: "When infrastructure deletion succeeds, it should run the post-delete action after completion",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			infraFinished := false
+			postDeleteCalled := false
+			postDeleteObservedInfraFinished := false
+			err := destroyPlatformSpecifics(t.Context(), &core.DestroyOptions{
+				InfraID: "infra-id",
+				Name:    "cluster",
+				Log:     logr.Discard(),
+				AWSPlatform: core.AWSPlatformDestroyOptions{
+					Region:      "us-east-1",
+					PreserveIAM: true,
+					PostDeleteAction: func() {
+						postDeleteCalled = true
+						postDeleteObservedInfraFinished = infraFinished
+					},
+				},
+			}, nil, func(context.Context, *awsinfra.DestroyInfraOptions) error {
+				infraFinished = true
+				return test.infraErr
+			})
+
+			if test.infraErr != nil {
+				g.Expect(err).To(MatchError(ContainSubstring("failed to destroy infrastructure")))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			g.Expect(postDeleteCalled).To(BeTrue())
+			g.Expect(postDeleteObservedInfraFinished).To(BeTrue())
+		})
+	}
+}
 
 func TestValidateCredentialInfoWithoutClient(t *testing.T) {
 	tests := map[string]struct {
