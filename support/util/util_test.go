@@ -142,6 +142,21 @@ func TestConvertOpenShiftImageRegistryOverridesToCommandLineFlag(t *testing.T) {
 			},
 			expectedFlag: "registry1=mirror1.1,registry1=mirror1.2,registry1=mirror1.3,registry2=mirror2.1,registry2=mirror2.2,registry3=mirror3.1",
 		},
+		{
+			name: "When mirrors are in non-alphabetical order, it should sort them deterministically",
+			registryOverrides: map[string][]string{
+				"cp.icr.io/cp": {
+					"mirror-c.example.com",
+					"mirror-a.example.com",
+					"mirror-b.example.com",
+				},
+				"icr.io/cpopen": {
+					"mirror-z.example.com",
+					"mirror-x.example.com",
+				},
+			},
+			expectedFlag: "cp.icr.io/cp=mirror-a.example.com,cp.icr.io/cp=mirror-b.example.com,cp.icr.io/cp=mirror-c.example.com,icr.io/cpopen=mirror-x.example.com,icr.io/cpopen=mirror-z.example.com",
+		},
 	}
 
 	t.Parallel()
