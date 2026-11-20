@@ -111,6 +111,7 @@ services:
         name: test-cluster
         uid: ""
     spec:
+      ipFamilyPolicy: PreferDualStack
       ports:
       - port: 8091
         protocol: TCP

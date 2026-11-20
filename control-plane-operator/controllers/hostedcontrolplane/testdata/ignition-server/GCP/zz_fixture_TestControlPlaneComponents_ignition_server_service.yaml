@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 83063b564b736b33996969b7408d55839d6978eb9e995f9a5100dd5b3a55bdb9
+    hypershift.openshift.io/desired-state-hash: ca37a6ed3e2297d89f23d293a12e08be557a4267882fa99d4328ccb0fb05b649
   labels:
     app: ignition-server
   name: ignition-server
@@ -16,6 +16,7 @@ metadata:
     uid: ""
   resourceVersion: "1"
 spec:
+  ipFamilyPolicy: PreferDualStack
   ports:
   - name: https
     port: 443
