@@ -188,6 +188,12 @@ var (
 		// TODO: Remove when cluster-csi-snapshot-controller-operator stops shipping
 		// its ibm-cloud-managed deployment.
 		"0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml",
+		// The in-guest kube-storage-version-migrator-operator is replaced by a hosted component
+		// on non-IBM/PowerVS platforms. Omit the deployment to avoid a CVO delete/recreate fight
+		// (OCPBUGS-130965) and the ClusterOperator since no in-guest operator updates its status.
+		// IBM Cloud and PowerVS are excluded below.
+		"0000_50_cluster-kube-storage-version-migrator-operator_07_deployment-ibm-cloud-managed.yaml",
+		"0000_50_cluster-kube-storage-version-migrator-operator_09_clusteroperator.yaml",
 		// Omitted this file in order to allow the HCCO to create the resource. This allows us to reconcile and sync
 		// the HCP.Configuration.operatorhub with OperatorHub object in the HostedCluster. This will only occur once.
 		// From that point the HCCO will use the OperatorHub object in the HostedCluster as a source of truth.
@@ -220,7 +226,10 @@ done`, payloadDir, featureSet))
 
 	for _, manifest := range manifestsToOmit {
 		if platformType == hyperv1.IBMCloudPlatform || platformType == hyperv1.PowerVSPlatform {
-			if manifest == "0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml" || manifest == "0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml" {
+			if manifest == "0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml" ||
+				manifest == "0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml" ||
+				manifest == "0000_50_cluster-kube-storage-version-migrator-operator_07_deployment-ibm-cloud-managed.yaml" ||
+				manifest == "0000_50_cluster-kube-storage-version-migrator-operator_09_clusteroperator.yaml" {
 				continue
 			}
 		}
