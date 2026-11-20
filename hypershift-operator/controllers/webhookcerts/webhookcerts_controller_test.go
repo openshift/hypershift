@@ -49,6 +49,14 @@ func caRequest() ctrl.Request {
 }
 
 func TestReconcile(t *testing.T) {
+	reconcile := func(ctx context.Context, c client.Client) error {
+		_, err := newReconciler(c).Reconcile(ctx, caRequest())
+		return err
+	}
+	testWebhookRotation(t, reconcile)
+	testUnusableWebhookCA(t, reconcile)
+	testWebhookCAInitialization(t, reconcile)
+	testWebhookCAInitializationConflict(t, reconcile, true)
 	t.Run("When no secrets exist it should create the CA and serving cert secrets", func(t *testing.T) {
 		g := NewWithT(t)
 
@@ -220,6 +228,60 @@ func TestReconcile(t *testing.T) {
 		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: webhookConfigName}, updatedVWC)).To(Succeed())
 		g.Expect(updatedVWC.Webhooks[0].ClientConfig.CABundle).ToNot(Equal([]byte("old")))
 		g.Expect(updatedVWC.Webhooks[0].ClientConfig.CABundle).ToNot(BeEmpty())
+	})
+
+	t.Run("When the CA changes it should repair the leaf and converge all bundles without further changes", func(t *testing.T) {
+		g := NewWithT(t)
+		original, replacement := generatedPair(t), generatedPair(t)
+		oldBundle := original.ca.Data[certs.CASignerCertMapKey]
+		crd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "machines.cluster.x-k8s.io"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{Conversion: &apiextensionsv1.CustomResourceConversion{
+				Strategy: apiextensionsv1.WebhookConverter,
+				Webhook: &apiextensionsv1.WebhookConversion{ClientConfig: &apiextensionsv1.WebhookClientConfig{
+					Service: &apiextensionsv1.ServiceReference{Name: "operator", Namespace: "hypershift"}, CABundle: oldBundle,
+				}},
+			}},
+		}
+		mutating := &admissionregistrationv1.MutatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{Name: webhookConfigName},
+			Webhooks: []admissionregistrationv1.MutatingWebhook{{
+				Name: "defaulting.hypershift.openshift.io", ClientConfig: admissionregistrationv1.WebhookClientConfig{CABundle: oldBundle},
+				SideEffects: sideEffectNone(), AdmissionReviewVersions: []string{"v1"},
+			}},
+		}
+		validating := &admissionregistrationv1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{Name: webhookConfigName},
+			Webhooks: []admissionregistrationv1.ValidatingWebhook{{
+				Name: "validating.hypershift.openshift.io", ClientConfig: admissionregistrationv1.WebhookClientConfig{CABundle: oldBundle},
+				SideEffects: sideEffectNone(), AdmissionReviewVersions: []string{"v1"},
+			}},
+		}
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(replacement.ca, original.serving, crd, mutating, validating).Build()
+		_, err := newReconciler(cl).Reconcile(t.Context(), caRequest())
+		g.Expect(err).ToNot(HaveOccurred())
+		pair, err := readWebhookCertificatePair(t.Context(), cl, "hypershift")
+		g.Expect(err).ToNot(HaveOccurred())
+		assertWebhookPair(t, pair)
+		for _, obj := range []client.Object{crd, mutating, validating} {
+			g.Expect(cl.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)).To(Succeed())
+		}
+		bundle := replacement.ca.Data[certs.CASignerCertMapKey]
+		g.Expect(crd.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(bundle))
+		g.Expect(mutating.Webhooks[0].ClientConfig.CABundle).To(Equal(bundle))
+		g.Expect(validating.Webhooks[0].ClientConfig.CABundle).To(Equal(bundle))
+		beforeCRD, beforeMutating, beforeValidating := crd.DeepCopy(), mutating.DeepCopy(), validating.DeepCopy()
+		_, err = newReconciler(cl).Reconcile(t.Context(), caRequest())
+		g.Expect(err).ToNot(HaveOccurred())
+		for _, obj := range []client.Object{crd, mutating, validating} {
+			g.Expect(cl.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)).To(Succeed())
+		}
+		g.Expect(crd).To(Equal(beforeCRD))
+		g.Expect(mutating).To(Equal(beforeMutating))
+		g.Expect(validating).To(Equal(beforeValidating))
+		after, err := readWebhookCertificatePair(t.Context(), cl, "hypershift")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(after).To(Equal(pair))
 	})
 
 	t.Run("When webhook configurations do not exist it should not error", func(t *testing.T) {
@@ -412,6 +474,14 @@ func TestGenerateInitialWebhookCerts(t *testing.T) {
 }
 
 func TestEnsureWebhookCerts(t *testing.T) {
+	reconcile := func(ctx context.Context, c client.Client) error {
+		return EnsureWebhookCerts(ctx, c, "hypershift", "operator")
+	}
+	testWebhookRotation(t, reconcile)
+	testUnusableWebhookCA(t, reconcile)
+	testWebhookCAInitialization(t, reconcile)
+	testWebhookCAInitializationConflict(t, reconcile, false)
+	testWebhookBootstrap(t)
 	t.Run("When no secrets exist it should create secrets", func(t *testing.T) {
 		g := NewWithT(t)
 
@@ -481,7 +551,7 @@ func TestEnsureWebhookCerts(t *testing.T) {
 		g.Expect(updatedCASecret.Data[certs.CASignerKeyMapKey]).ToNot(BeEmpty())
 	})
 
-	t.Run("When CA exists but serving cert is missing it should regenerate both secrets", func(t *testing.T) {
+	t.Run("When CA exists but serving cert is missing it should reuse the CA and create the leaf", func(t *testing.T) {
 		g := NewWithT(t)
 
 		caSecret, _, _, err := GenerateInitialWebhookCerts("hypershift", "operator")
