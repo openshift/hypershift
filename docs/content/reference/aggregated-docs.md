@@ -14944,8 +14944,10 @@ HyperShift uses GitHub Actions for lightweight CI checks that run on every pull 
 
 All GHA workflows follow a **caller + reusable** pattern:
 
-- **Caller workflow** (e.g., `lint.yaml`) — defines triggers (`pull_request`, branch filters) and delegates to a reusable workflow pinned at `@main`.
+- **Caller workflow** (e.g., `lint.yaml`) — defines triggers (`pull_request`, branch filters) and delegates to a reusable workflow.
 - **Reusable workflow** (e.g., `lint-reusable.yaml`) — contains the actual job steps. Triggered via `workflow_call` and optionally on `push` to `main` for post-merge runs.
+
+Callers normally reference the reusable workflow as `owner/repo/.github/workflows/<name>-reusable.yaml@main`. `test.yaml` is the documented exception: it references `./.github/workflows/test-reusable.yaml` so a pull request runs the reusable workflow from its own commit, which is the only way to rehearse a change to it before merging. Note that the unit-test shards still only run when the pull request changes files outside `docs/` and `.github/`, so a pull request that touches only the reusable workflow exercises the workflow structure and the no-tests coverage path, not the Go tests themselves. Changes under `contrib/` do run the shards, because `contrib/` holds executable code that the `other` shard tests.
 
 ```mermaid
 flowchart LR
@@ -14963,13 +14965,14 @@ This pattern provides:
 
 - ✅ **Consistency** — all PR and push workflows share the same job definitions.
 - 🔧 **Maintainability** — job logic is defined once in the reusable workflow and updated in a single place.
-- 🔒 **Security** — callers pin reusable workflows to `@main`, reducing the risk of PRs altering reusable job logic. Caller workflows are protected by branch protection rules and CODEOWNERS.
+- 📊 **Coverage reporting** — the unit-test reusable publishes one coverage profile per shard and uploads a single merged report per commit once every shard has succeeded, so Codecov computes its statuses on the complete test run instead of on a partial one.
+- 🔒 **Security** — callers reference reusable workflows from `@main`, reducing the risk of a pull request altering reusable job logic. Caller workflows are protected by branch protection rules and CODEOWNERS. `test.yaml` is the documented exception: pull requests from forks never receive repository secrets, but same-repository pull requests do receive them through `secrets: inherit`, so for those the reusable now resolves from the pull request commit. That is why the exception is scoped to `test.yaml` — whose jobs request only `contents: read` — instead of being applied across the workflow set.
 
 ## 📋 Workflows
 
 The PR validation workflows run on self-hosted ARC runners. Most target `main` and `release-4.22`; only the OCP and vanilla Kubernetes envtest workflows also target `release-5.0`.
 
-Pull request callers resolve their reusable workflows from `main`, while post-merge runs use the reusable workflow stored on the pushed branch. Keep branch-local matrices synchronized with `main`; `release-5.0` envtests must include Kubernetes 1.36 for consistent pull request and post-merge coverage.
+Pull request callers resolve their reusable workflows from `main`, while post-merge runs use the reusable workflow stored on the pushed branch. `test.yaml` is the exception: it references the reusable workflow locally, so a pull request runs the version from its own commit and a change to `test-reusable.yaml` can be rehearsed before merging. Keep branch-local matrices synchronized with `main`; `release-5.0` envtests must include Kubernetes 1.36 for consistent pull request and post-merge coverage.
 
 ### 🧹 Code Quality
 
@@ -14985,7 +14988,7 @@ Pull request callers resolve their reusable workflows from `main`, while post-me
 
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
-| `test.yaml` | `test-reusable.yaml` | Unit tests with race detection and Codecov upload |
+| `test.yaml` | `test-reusable.yaml` (local reference) | Unit tests with race detection and Codecov upload |
 | `envtest-ocp.yaml` | `envtest-ocp-reusable.yaml` | CRD validation tests against OpenShift k8s versions |
 | `envtest-kube.yaml` | `envtest-kube-reusable.yaml` | CRD validation tests against vanilla k8s versions |
 
