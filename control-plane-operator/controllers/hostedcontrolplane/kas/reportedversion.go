@@ -342,17 +342,27 @@ func kasMountsReportedVersionConfigMap(deployment *appsv1.Deployment) bool {
 	return !kasRolloutComplete(deployment)
 }
 
-// kasRolloutComplete reports whether the deployment's rollout has finished:
-// the deployment status reflects the current generation and every replica
-// runs the current template, so no ReplicaSet with an older template can
-// create pods anymore.
+// kasRolloutComplete reports whether the deployment's rollout has finished and
+// no ReplicaSet with an older template can create pods anymore.
+//
+// Every count must equal the desired replica count, not merely reach it.
+// updatedReplicas counts pods on the current template including unready ones,
+// so during a surge rollout it can equal the desired count while an old
+// ReplicaSet is still scaled up and able to recreate a pod that mounts the
+// ConfigMap. The kube-apiserver deployment does surge: DeploymentConfig sets no
+// strategy for a single replica, so Kubernetes' default 25% maxSurge rounds up
+// to one, and the two replica request serving topology sets maxSurge to one
+// explicitly. Requiring replicas and availableReplicas to match as well means
+// the old ReplicaSets have scaled to zero and the new pods are serving.
 func kasRolloutComplete(deployment *appsv1.Deployment) bool {
 	replicas := int32(1)
 	if deployment.Spec.Replicas != nil {
 		replicas = *deployment.Spec.Replicas
 	}
 	return deployment.Status.ObservedGeneration >= deployment.Generation &&
-		deployment.Status.UpdatedReplicas >= replicas
+		deployment.Status.Replicas == replicas &&
+		deployment.Status.UpdatedReplicas == replicas &&
+		deployment.Status.AvailableReplicas == replicas
 }
 
 // applyReportedVersionConfig mounts the kas-reported-version ConfigMap into
