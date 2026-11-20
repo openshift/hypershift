@@ -318,7 +318,7 @@ func CleanupReportedVersionConfigMap(ctx context.Context, c client.Client, hcp *
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get kube-apiserver deployment: %w", err)
 		}
-	} else if kasMountsReportedVersionConfigMap(deployment) {
+	} else if kasMountsReportedVersionConfigMap(ctx, deployment) {
 		return nil
 	}
 
@@ -333,13 +333,13 @@ func CleanupReportedVersionConfigMap(ctx context.Context, c client.Client, hcp *
 // current deployment template mounts it, or the rollout away from a template
 // that mounts it has not completed yet and the old ReplicaSet can still
 // recreate pods.
-func kasMountsReportedVersionConfigMap(deployment *appsv1.Deployment) bool {
+func kasMountsReportedVersionConfigMap(ctx context.Context, deployment *appsv1.Deployment) bool {
 	for _, volume := range deployment.Spec.Template.Spec.Volumes {
 		if volume.Name == reportedVersionVolumeName {
 			return true
 		}
 	}
-	return !kasRolloutComplete(deployment)
+	return !kasRolloutComplete(ctx, deployment)
 }
 
 // kasRolloutComplete reports whether the deployment's rollout has finished and
@@ -349,20 +349,24 @@ func kasMountsReportedVersionConfigMap(deployment *appsv1.Deployment) bool {
 // updatedReplicas counts pods on the current template including unready ones,
 // so during a surge rollout it can equal the desired count while an old
 // ReplicaSet is still scaled up and able to recreate a pod that mounts the
-// ConfigMap. The kube-apiserver deployment does surge: DeploymentConfig sets no
-// strategy for a single replica, so Kubernetes' default 25% maxSurge rounds up
-// to one, and the two replica request serving topology sets maxSurge to one
-// explicitly. Requiring replicas and availableReplicas to match as well means
-// the old ReplicaSets have scaled to zero and the new pods are serving.
-func kasRolloutComplete(deployment *appsv1.Deployment) bool {
-	replicas := int32(1)
-	if deployment.Spec.Replicas != nil {
-		replicas = *deployment.Spec.Replicas
-	}
-	return deployment.Status.ObservedGeneration >= deployment.Generation &&
-		deployment.Status.Replicas == replicas &&
-		deployment.Status.UpdatedReplicas == replicas &&
-		deployment.Status.AvailableReplicas == replicas
+// ConfigMap. The kube-apiserver deployment does surge: DeploymentConfig only
+// sets a rollout strategy when Replicas is greater than one, so a single
+// replica falls back to Kubernetes' default 25% maxSurge, which rounds up to
+// one, and the two replica request serving topology sets maxSurge to one
+// explicitly.
+//
+// util.IsDeploymentReady is the exact check. Beyond matching replicas,
+// updatedReplicas and availableReplicas it also requires readyReplicas to
+// match and unavailableReplicas to be zero. That last field is what closes
+// the remaining window: unavailableReplicas is derived from the sum of the
+// ReplicaSets' desired replicas minus the available ones, so it stays
+// positive while an old ReplicaSet is still scaled up even after its pod has
+// gone away. Without it, a single replica rollout whose old pod was evicted
+// reports replicas, updatedReplicas and availableReplicas all at one while
+// the old ReplicaSet is still about to recreate a pod that mounts the
+// ConfigMap non-optionally.
+func kasRolloutComplete(ctx context.Context, deployment *appsv1.Deployment) bool {
+	return util.IsDeploymentReady(ctx, deployment)
 }
 
 // applyReportedVersionConfig mounts the kas-reported-version ConfigMap into
