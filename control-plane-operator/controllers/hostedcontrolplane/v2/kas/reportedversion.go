@@ -175,7 +175,7 @@ func userPayloadKASVersionInfo(cpContext component.WorkloadContext) (*version.In
 
 	// Prefer the kubernetes version pinned on the image itself; fall back to
 	// the payload's component versions.
-	if v, ok := kubernetesVersionFromBuildVersionsLabel(util.ImageLabels(metadata)[buildVersionsLabel]); ok {
+	if v, ok := kubernetesVersionFromBuildVersionsLabel(kasBuildLabels(metadata)[buildVersionsLabel]); ok {
 		kubeVersion = v
 	}
 
@@ -195,6 +195,30 @@ func kubernetesVersionFromBuildVersionsLabel(label string) (string, bool) {
 	return "", false
 }
 
+// kasBuildLabels returns the build labels recorded in the given kube-apiserver
+// image metadata. Depending on how the image was built its labels live on
+// Config or on ContainerConfig, so Config.Labels is used only when it carries
+// at least one label and ContainerConfig.Labels is the fallback. Reading
+// Config.Labels unconditionally, as support/util.ImageLabels does, makes
+// labels that only live on ContainerConfig read as absent, which fails the
+// mask closed on a kube-apiserver image that records them there.
+//
+// The fallback is deliberately scoped to this lookup rather than applied to
+// support/util.ImageLabels: that helper is shared with control plane operator
+// capability detection in the HostedCluster, NodePool and sizing controllers,
+// where widening the lookup would flip capability labels from absent to
+// present for the same images and change rendered settings, including rolling
+// NodePools once after a HyperShift operator upgrade.
+func kasBuildLabels(metadata *dockerv1client.DockerImageConfig) map[string]string {
+	if metadata == nil {
+		return nil
+	}
+	if metadata.Config != nil && len(metadata.Config.Labels) > 0 {
+		return metadata.Config.Labels
+	}
+	return metadata.ContainerConfig.Labels
+}
+
 // kasVersionInfo builds the version.Info served by the masked /version
 // endpoint from the Kubernetes version of the user payload and the build
 // labels of its kube-apiserver image. It fails closed: incomplete input is an
@@ -205,7 +229,7 @@ func kasVersionInfo(kubeVersion string, metadata *dockerv1client.DockerImageConf
 		return nil, fmt.Errorf("invalid kubernetes version %q: %w", kubeVersion, err)
 	}
 
-	labels := util.ImageLabels(metadata)
+	labels := kasBuildLabels(metadata)
 	gitCommit := labels[buildCommitIDLabel]
 	if gitCommit == "" {
 		return nil, fmt.Errorf("kube-apiserver image is missing the %s build label", buildCommitIDLabel)
