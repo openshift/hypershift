@@ -11,5 +11,6 @@ const (
 	InitialRollingOutDurationMetricName = "hypershift_nodepools_initial_rolling_out_duration_seconds"
 	SizeMetricName                      = "hypershift_nodepools_size"
 	AvailableReplicasMetricName         = "hypershift_nodepools_available_replicas"
+	VCpusCountByNodePoolMetricName      = "hypershift_nodepool_vcpus"
 	DeletingDurationMetricName          = "hypershift_nodepools_deleting_duration_seconds"
 )

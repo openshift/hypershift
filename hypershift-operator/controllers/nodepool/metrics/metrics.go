@@ -51,6 +51,12 @@ const (
 
 	availableReplicasMetricHelp = "Number of available replicas associated with a given NodePool"
 
+	vCpusCountByNodePoolMetricHelp = "Number of vCPUs for a given NodePool, derived from instance type vCPU count multiplied by available replicas. " +
+		"-1 if this number cannot be computed."
+
+	nodePoolWorkloadTypeLabel = "node.openshift.io/workload-type"
+	workloadTypeMetricLabel   = "workload_type"
+
 	deletingDurationMetricHelp = "Time in seconds it is taking to delete the NodePool since the beginning of the delete. " +
 		"Undefined if the node pool is not deleting or no longer exists."
 )
@@ -111,7 +117,12 @@ var (
 	availableReplicasMetricDesc = prometheus.NewDesc(
 		npmetrics.AvailableReplicasMetricName,
 		availableReplicasMetricHelp,
-		nodePoolLabels, nil)
+		append(nodePoolLabels, workloadTypeMetricLabel), nil)
+
+	vCpusCountByNodePoolMetricDesc = prometheus.NewDesc(
+		npmetrics.VCpusCountByNodePoolMetricName,
+		vCpusCountByNodePoolMetricHelp,
+		append(nodePoolLabels, workloadTypeMetricLabel), nil)
 
 	deletingDurationMetricDesc = prometheus.NewDesc(
 		npmetrics.DeletingDurationMetricName,
@@ -121,6 +132,7 @@ var (
 
 type nodePoolsMetricsCollector struct {
 	client.Client
+	ctx       context.Context
 	ec2Client ec2.DescribeInstanceTypesAPIClient
 	clock     clock.Clock
 	mu        sync.Mutex
@@ -138,9 +150,10 @@ type nodePoolsMetricsCollector struct {
 	lastCollectTime time.Time
 }
 
-func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2.DescribeInstanceTypesAPIClient, clock clock.Clock) prometheus.Collector { //nolint:unparam // parameter kept for testability
+func createNodePoolsMetricsCollector(ctx context.Context, client client.Client, ec2Client ec2.DescribeInstanceTypesAPIClient, clock clock.Clock) prometheus.Collector { //nolint:unparam // parameter kept for testability
 	return &nodePoolsMetricsCollector{
 		Client:                      client,
+		ctx:                         ctx,
 		ec2Client:                   ec2Client,
 		clock:                       clock,
 		cacheReadTimeout:            5 * time.Second,
@@ -155,8 +168,8 @@ func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2.Describ
 	}
 }
 
-func CreateAndRegisterNodePoolsMetricsCollector(client client.Client, ec2Client awsapi.EC2API) prometheus.Collector {
-	collector := createNodePoolsMetricsCollector(client, ec2Client, clock.RealClock{})
+func CreateAndRegisterNodePoolsMetricsCollector(ctx context.Context, client client.Client, ec2Client awsapi.EC2API) prometheus.Collector {
+	collector := createNodePoolsMetricsCollector(ctx, client, ec2Client, clock.RealClock{})
 
 	metrics.Registry.MustRegister(collector)
 
@@ -320,12 +333,25 @@ func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(ctx context.Cont
 	return extractCPUFromInstanceTypeNameViaConfigMap(timeoutCtx, ec2InstanceType, c.Client)
 }
 
+func calculateVCpus(replicas, vCpusPerNode int32, lookupErr error) int32 {
+	if replicas <= 0 {
+		return 0
+	}
+	if lookupErr != nil {
+		return -1
+	}
+	return replicas * vCpusPerNode
+}
+
 func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.ctx.Err() != nil {
+		return
+	}
 	currentCollectTime := c.clock.Now()
 
-	cacheCtx, cancelCacheReads := context.WithTimeout(context.Background(), c.cacheReadTimeout)
+	cacheCtx, cancelCacheReads := context.WithTimeout(c.ctx, c.cacheReadTimeout)
 	hclusterPathToData := c.collectHostedClusterData(cacheCtx)
 	machineSetPathToReplicasCount := c.collectMachineSetReplicas(cacheCtx)
 	machineDeploymentPathToReplicasCount := c.collectMachineDeploymentReplicas(cacheCtx)
@@ -361,15 +387,38 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 		c.aggregateFailureConditions(nodePool, platform, platformToFailureConditionToNodePoolsCount)
 
-		if hcData := hclusterPathToData[nodePool.Namespace+"/"+nodePool.Spec.ClusterName]; hcData != nil {
+		var nodePoolVCpus int32
+		hcData := hclusterPathToData[nodePool.Namespace+"/"+nodePool.Spec.ClusterName]
+		if hcData != nil {
 			hclusterId = hcData.id
 			hcData.nodePoolsCount += 1
-			c.aggregateVCpus(context.Background(), nodePool, hcData)
+			var nodeVCpus int32
+			var lookupErr error
+			if nodePool.Status.Replicas > 0 {
+				nodeVCpus, lookupErr = c.retrieveVCpusDetailsPerNode(c.ctx, nodePool)
+			}
+			nodePoolVCpus = calculateVCpus(nodePool.Status.Replicas, nodeVCpus, lookupErr)
+			if hcData.vCpusCountErr == nil {
+				if lookupErr != nil {
+					hcData.vCpusCount = -1
+					hcData.vCpusCountErr = lookupErr
+				} else {
+					hcData.vCpusCount += nodePoolVCpus
+				}
+			}
 		}
 
 		c.observeTransitionDurations(nodePool, currentCollectTime)
 
 		nodePoolLabelValues := []string{nodePool.Namespace, nodePool.Name, hclusterId, nodePool.Spec.ClusterName, string(nodePool.Spec.Platform.Type)}
+		if platform == hyperv1.AWSPlatform && hclusterId != "" {
+			ch <- prometheus.MustNewConstMetric(
+				vCpusCountByNodePoolMetricDesc,
+				prometheus.GaugeValue,
+				float64(nodePoolVCpus),
+				append(nodePoolLabelValues, nodePool.Spec.NodeLabels[nodePoolWorkloadTypeLabel])...,
+			)
+		}
 		c.collectPerNodePoolMetrics(ch, nodePool, nodePoolLabelValues, machineSetPathToReplicasCount, machineDeploymentPathToReplicasCount)
 	}
 
@@ -452,18 +501,6 @@ func (c *nodePoolsMetricsCollector) aggregateFailureConditions(nodePool *hyperv1
 	}
 }
 
-func (c *nodePoolsMetricsCollector) aggregateVCpus(ctx context.Context, nodePool *hyperv1.NodePool, hcData *hclusterData) {
-	if hcData.vCpusCount >= 0 && nodePool.Status.Replicas > 0 {
-		nodeVCpus, err := c.retrieveVCpusDetailsPerNode(ctx, nodePool)
-		if err != nil {
-			hcData.vCpusCount = -1
-			hcData.vCpusCountErr = err
-		} else {
-			hcData.vCpusCount += nodeVCpus * nodePool.Status.Replicas
-		}
-	}
-}
-
 func (c *nodePoolsMetricsCollector) observeTransitionDurations(nodePool *hyperv1.NodePool, currentCollectTime time.Time) {
 	for i := range nodePool.Status.Conditions {
 		condition := &nodePool.Status.Conditions[i]
@@ -511,7 +548,7 @@ func (c *nodePoolsMetricsCollector) collectPerNodePoolMetrics(ch chan<- promethe
 		availableReplicasMetricDesc,
 		prometheus.GaugeValue,
 		float64(nodePool.Status.Replicas),
-		labelValues...,
+		append(labelValues, nodePool.Spec.NodeLabels[nodePoolWorkloadTypeLabel])...,
 	)
 
 	if !nodePool.DeletionTimestamp.IsZero() {
