@@ -49,6 +49,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/omnihypershift"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
@@ -3287,6 +3288,10 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 		}
 	}
 
+	// An explicit CPO image annotation overrides from-main image resolution (see
+	// GetControlPlaneOperatorImage), so do not put the CPO into Omni HyperShift mode when it is running an
+	// annotated image it was not selected for.
+	_, cpoImageOverridden := hcluster.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]
 	// Reconcile ControlPlaneOperator deployment and resources.
 	cpo := cpov2.NewComponent(&cpov2.ControlPlaneOperatorOptions{
 		HostedCluster:               hcluster,
@@ -3298,6 +3303,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 		OpenShiftRegistryOverrides:  imageregistry.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
 		DefaultIngressDomain:        defaultIngressDomain,
 		FeatureSet:                  r.FeatureSet,
+		OmniHypershift:              !cpoImageOverridden && omnihypershift.ShouldUse(releaseVersion),
 	})
 
 	if err := cpo.Reconcile(cpContext); err != nil {

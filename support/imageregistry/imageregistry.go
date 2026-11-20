@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/hypershift-operator/omnihypershift"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"github.com/blang/semver"
@@ -33,11 +34,13 @@ func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
 //
 //  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
 //     HostedCluster resource itself
-//  2. The hypershift image specified in the release payload indicated by the
+//  2. The Omni HyperShift image, when Omni HyperShift is enabled (ENABLE_OMNI_HYPERSHIFT)
+//     and the release's MAJOR.MINOR is in OMNI_HYPERSHIFT_VERSIONS
+//  3. A static CPO override for the exact release version, when overrides are
+//     enabled (ENABLE_CPO_OVERRIDES)
+//  4. The hypershift image specified in the release payload indicated by the
 //     HostedCluster's release field
-//  3. The hypershift-operator's own image for release versions 4.9 and 4.10
-//  4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
-//     version 4.8
+//  5. The hypershift-operator's own image for release versions >= 4.9
 //
 // If no image can be found according to these rules, an error is returned.
 func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
@@ -52,6 +55,13 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	if err != nil {
 		return "", err
 	}
+
+	// Omni HyperShift takes precedence over the static CPO overrides: when enabled for
+	// this release's MAJOR.MINOR, drive the CPO from the HyperShift Operator's main build.
+	if omniImage := omnihypershift.CPOImage(version, hypershiftOperatorImage); omniImage != "" {
+		return omniImage, nil
+	}
+
 	if controlplaneoperatoroverrides.IsOverridesEnabled() {
 		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String())
 		if overrideImage != "" {

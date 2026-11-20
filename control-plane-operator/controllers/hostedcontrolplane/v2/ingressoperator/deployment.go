@@ -4,6 +4,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/omnihypershift"
 	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -18,6 +19,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router"),
 		})
+		// Render for main: the multi-HAProxy scheme (HAPROXY_32_IMAGE env + the --haproxy-image /
+		// --default-haproxy-version / --deprecated-haproxy-version command flags). Omni HyperShift strips
+		// these back to the single-image shape on pre-4.23 operands (see omniHypershiftTransforms).
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "HAPROXY_32_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router-haproxy32"),
 		})
@@ -55,4 +59,29 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	})
 
 	return nil
+}
+
+// omniHypershiftTransforms lists the drift adjustments a main-built CPO applies to the ingress-operator
+// Deployment when it drives an older control plane. See support/omnihypershift.
+func omniHypershiftTransforms() []omnihypershift.Transform[*appsv1.Deployment] {
+	if !config.IsOmniHypershiftEnabled() {
+		return nil
+	}
+	return []omnihypershift.Transform[*appsv1.Deployment]{
+		{
+			// The multi-HAProxy scheme (HAPROXY_32_IMAGE env + the --haproxy-image /
+			// --default-haproxy-version / --deprecated-haproxy-version command flags plus the
+			// haproxy-router-haproxy32 image) arrived at 4.23. A pre-4.23 ingress-operator rejects
+			// those flags and its payload lacks the haproxy32 image (which would flip
+			// ValidReleaseInfo), so fall back to the single-image shape.
+			Reason: "pre-4.23 ingress-operator rejects the multi-HAProxy env vars",
+			When:   omnihypershift.Below(config.Version423),
+			Do:     omnihypershift.StripEnv(ComponentName, "HAPROXY_32_IMAGE", "DEFAULT_HAPROXY_VERSION", "DEPRECATED_HAPROXY_VERSION"),
+		},
+		{
+			Reason: "pre-4.23 ingress-operator rejects the multi-HAProxy command flags",
+			When:   omnihypershift.Below(config.Version423),
+			Do:     omnihypershift.StripCommandFlags(ComponentName, "--haproxy-image", "--default-haproxy-version", "--deprecated-haproxy-version"),
+		},
+	}
 }

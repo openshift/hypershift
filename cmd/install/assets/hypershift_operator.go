@@ -15,6 +15,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/hypershift-operator/omnihypershift"
 	capicrdmigrator "github.com/openshift/hypershift/support/capi-crdmigrator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
@@ -570,6 +571,9 @@ type HyperShiftOperatorDeployment struct {
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
 	EnableCPOOverrides                      bool
+	OmniHypershift                          bool
+	OmniHypershiftVersions                  string
+	OmniHypershiftImage                     string
 	EnableKarpenterOperator                 bool
 	AdditionalOperatorEnvVars               map[string]string
 	AROHCPKeyVaultUsersClientID             string
@@ -896,6 +900,15 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 	}
 	if o.EnableCPOOverrides {
 		envVars = append(envVars, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"})
+	}
+	if o.OmniHypershift {
+		envVars = append(envVars, corev1.EnvVar{Name: omnihypershift.EnableEnvVar, Value: "1"})
+		if len(o.OmniHypershiftVersions) > 0 {
+			envVars = append(envVars, corev1.EnvVar{Name: omnihypershift.VersionsEnvVar, Value: o.OmniHypershiftVersions})
+		}
+		if len(o.OmniHypershiftImage) > 0 {
+			envVars = append(envVars, corev1.EnvVar{Name: omnihypershift.ImageEnvVar, Value: o.OmniHypershiftImage})
+		}
 	}
 	if o.EnableKarpenterOperator {
 		envVars = append(envVars, corev1.EnvVar{Name: karpenterutil.EnableStandaloneKarpenterOperatorEnvVar, Value: "1"})
