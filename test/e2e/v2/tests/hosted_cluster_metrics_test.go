@@ -68,6 +68,7 @@ func RegisterHostedClusterMetricsTests(getTestCtx internal.TestContextGetter) {
 	EnsureMetricsForwarderWorkingTest(getTestCtx)
 	EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx)
 	EnsureKubeSchedulerMetricsEndpointTest(getTestCtx)
+	EnsureCAPIManagerMetricsEndpointTest(getTestCtx)
 	ValidateCPOMetricsTest(getTestCtx)
 }
 
@@ -220,6 +221,23 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 				g.Expect(output).NotTo(ContainSubstring(`"result":[]`),
 					"should have apiserver_request_total metrics from kube-apiserver")
 			}, 5*time.Minute, 15*time.Second).Should(Succeed())
+
+			// The metrics-proxy scrapes the cluster-api PodMonitor over HTTPS through the CAPI manager's
+			// kube-rbac-proxy sidecar with the metrics-client certificate. These series prove that the
+			// CAPI manager TLS metrics endpoint serves metrics end to end.
+			if _, disabled := hostedCluster.Annotations[hyperv1.DisableMachineManagement]; !disabled {
+				By("Querying for CAPI manager metrics scraped via the forwarder")
+				Eventually(func(g Gomega) {
+					output, err := v2util.RunCommandInPod(tc.Context, hcClientset, hcRestConfig,
+						monitoringNamespace, promPodName, "prometheus",
+						"curl", "-gs", `http://localhost:9090/api/v1/query?query=controller_runtime_reconcile_total{job="cluster-api"}`)
+					g.Expect(err).NotTo(HaveOccurred(), "should be able to query Prometheus for controller_runtime_reconcile_total")
+					g.Expect(output).To(ContainSubstring(`"resultType":"vector"`),
+						"Prometheus query should return vector results")
+					g.Expect(output).NotTo(ContainSubstring(`"result":[]`),
+						"should have controller_runtime_reconcile_total metrics from the CAPI manager")
+				}).WithContext(tc.Context).WithTimeout(5 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
+			}
 		})
 	})
 }
@@ -380,6 +398,44 @@ func EnsureKubeSchedulerMetricsEndpointTest(getTestCtx internal.TestContextGette
 						"metrics response should contain Prometheus format data")
 				}, 3*time.Minute, 10*time.Second).Should(Succeed())
 			}
+		})
+	})
+}
+
+// EnsureCAPIManagerMetricsEndpointTest verifies that the CAPI manager serves its metrics over TLS
+// through its kube-rbac-proxy sidecar, scraped with the metrics-client certificate the same way
+// the cluster-api PodMonitor scrapes it.
+func EnsureCAPIManagerMetricsEndpointTest(getTestCtx internal.TestContextGetter) {
+	When("machine management is enabled", func() {
+		It("should serve CAPI manager metrics over TLS", Label(internal.InformingLabel), func() {
+			tc := getTestCtx()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if _, disabled := hostedCluster.Annotations[hyperv1.DisableMachineManagement]; disabled {
+				Skip("machine management is disabled on the hosted cluster")
+			}
+
+			By("Validating the cluster-api PodMonitor scrapes over HTTPS with the metrics-client certificate")
+			podMonitor := &monitoringv1.PodMonitor{}
+			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+				Name:      "cluster-api",
+				Namespace: tc.ControlPlaneNamespace,
+			}, podMonitor)).To(Succeed(), "cluster-api PodMonitor should exist")
+			Expect(podMonitor.Spec.PodMetricsEndpoints).To(HaveLen(1))
+			endpoint := podMonitor.Spec.PodMetricsEndpoints[0]
+			Expect(endpoint.Scheme).To(HaveValue(Equal(monitoringv1.Scheme("https"))))
+			Expect(endpoint.TLSConfig).NotTo(BeNil(), "cluster-api PodMonitor should have a TLS config")
+			Expect(endpoint.TLSConfig.Cert.Secret).NotTo(BeNil(), "cluster-api PodMonitor should present a client certificate")
+			Expect(endpoint.TLSConfig.Cert.Secret.Name).To(Equal("metrics-client"))
+			Expect(endpoint.TLSConfig.ServerName).NotTo(BeNil(), "cluster-api PodMonitor should verify the server name")
+
+			By("Verifying the HTTPS metrics endpoint returns CAPI manager metrics")
+			// 8443 is the kube-rbac-proxy "metrics" port that the PodMonitor scrapes.
+			output, err := fetchMetricsViaPortForward(tc.Context, tc.MgmtClient,
+				tc.ControlPlaneNamespace, "cluster-api", 8443, "/metrics", *endpoint.TLSConfig.ServerName)
+			Expect(err).NotTo(HaveOccurred(), "should be able to fetch CAPI manager metrics")
+			Expect(output).To(ContainSubstring("controller_runtime_reconcile_total"),
+				"metrics response should contain controller-runtime metrics from the CAPI manager")
 		})
 	})
 }

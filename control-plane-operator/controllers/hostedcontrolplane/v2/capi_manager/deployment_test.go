@@ -14,23 +14,48 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
+
+// countArg returns how many times arg appears in args.
+func countArg(args []string, arg string) int {
+	count := 0
+	for _, a := range args {
+		if a == arg {
+			count++
+		}
+	}
+	return count
+}
 
 func TestAdaptDeployment(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name             string
-		imageOverride    string
-		version          string
-		hcpAnnotations   map[string]string
-		tlsProfile       *configv1.TLSSecurityProfile
-		expectedArgs     []string
-		unexpectedArgs   []string
-		expectedImage    string
-		expectedAnnotKey string
+		name              string
+		imageOverride     string
+		version           string
+		hcpAnnotations    map[string]string
+		tlsProfile        *configv1.TLSSecurityProfile
+		expectedArgs      []string
+		unexpectedArgs    []string
+		expectedProxyArgs []string
+		expectedImage     string
+		expectedAnnotKey  string
 	}{
+		{
+			name:    "When version is 4.14.0, it should serve metrics through the TLS sidecar without the feature gate or skip CRD migration flags",
+			version: "4.14.0",
+			unexpectedArgs: []string{
+				"--feature-gates=MachineSetPreflightChecks=false",
+				"--skip-crd-migration-phases=StorageVersionMigration",
+				"--skip-crd-migration-phases=CleanupManagedFields",
+			},
+			expectedImage: "cluster-capi-controllers",
+		},
 		{
 			name:    "When version is 4.18.0, it should not add feature gate or skip CRD migration flags",
 			version: "4.18.0",
@@ -87,12 +112,21 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedAnnotKey: k8sutil.HostedClusterAnnotation,
 		},
 		{
-			name:           "When version is 4.22.0, it should not add TLS args",
-			version:        "4.22.0",
-			tlsProfile:     &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
-			expectedArgs:   []string{"--feature-gates=MachineSetPreflightChecks=false"},
-			unexpectedArgs: []string{"--tls-min-version=VersionTLS12"},
-			expectedImage:  "cluster-capi-controllers",
+			name:              "When version is 4.22.0, it should not add TLS args to the manager but should add them to the metrics sidecar",
+			version:           "4.22.0",
+			tlsProfile:        &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+			expectedArgs:      []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			unexpectedArgs:    []string{"--tls-min-version=VersionTLS12"},
+			expectedProxyArgs: []string{"--tls-min-version=VersionTLS12"},
+			expectedImage:     "cluster-capi-controllers",
+		},
+		{
+			name:              "When the TLS profile is Modern, it should configure the metrics sidecar for TLS 1.3",
+			version:           "5.0.0",
+			tlsProfile:        &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType, Modern: &configv1.ModernTLSProfile{}},
+			expectedArgs:      []string{"--tls-min-version=VersionTLS13"},
+			expectedProxyArgs: []string{"--tls-min-version=VersionTLS13"},
+			expectedImage:     "cluster-capi-controllers",
 		},
 		{
 			name:          "When version is 4.23.0, it should add TLS args",
@@ -165,6 +199,80 @@ func TestAdaptDeployment(t *testing.T) {
 
 			// Check image
 			g.Expect(managerContainer.Image).To(Equal(tc.expectedImage))
+
+			// The manager serves its diagnostics over plain HTTP on the loopback interface only, so
+			// they are not reachable from outside the pod.
+			g.Expect(countArg(managerContainer.Args, "--diagnostics-address=127.0.0.1:8080")).To(Equal(1))
+			g.Expect(countArg(managerContainer.Args, "--insecure-diagnostics")).To(Equal(1))
+			g.Expect(managerContainer.Args).ToNot(ContainElement("--diagnostics-address=:8080"))
+			g.Expect(managerContainer.Ports).To(BeEmpty())
+
+			// The kube-rbac-proxy sidecar is the only metrics endpoint: it serves TLS with the
+			// HyperShift-issued serving certificate, requires the metrics-client certificate and
+			// only proxies /metrics to the loopback diagnostics endpoint.
+			proxyContainer := podspec.FindContainer("kube-rbac-proxy", deployment.Spec.Template.Spec.Containers)
+			g.Expect(proxyContainer).ToNot(BeNil())
+			g.Expect(proxyContainer.Image).To(Equal("kube-rbac-proxy"))
+			g.Expect(proxyContainer.Args).To(ContainElements(
+				"--secure-listen-address=:8443",
+				"--upstream=http://127.0.0.1:8080/",
+				"--tls-cert-file=/etc/tls/private/tls.crt",
+				"--tls-private-key-file=/etc/tls/private/tls.key",
+				"--client-ca-file=/etc/tls/client/ca.crt",
+				"--config-file=/etc/kube-rbac-proxy/config.yaml",
+				"--allow-paths=/metrics",
+			))
+			g.Expect(proxyContainer.Args).To(ContainElement(HavePrefix("--tls-min-version=")))
+			g.Expect(proxyContainer.Args).ToNot(ContainElement(HavePrefix("--ignore-paths")))
+			for _, expectedArg := range tc.expectedProxyArgs {
+				g.Expect(countArg(proxyContainer.Args, expectedArg)).To(Equal(1))
+			}
+			g.Expect(proxyContainer.Ports).To(ConsistOf(corev1.ContainerPort{
+				Name:          "metrics",
+				ContainerPort: 8443,
+				Protocol:      corev1.ProtocolTCP,
+			}))
+			g.Expect(proxyContainer.VolumeMounts).To(ConsistOf(
+				corev1.VolumeMount{Name: "metrics-tls", MountPath: "/etc/tls/private", ReadOnly: true},
+				corev1.VolumeMount{Name: "metrics-client-ca", MountPath: "/etc/tls/client", ReadOnly: true},
+				corev1.VolumeMount{Name: "kube-rbac-proxy-config", MountPath: "/etc/kube-rbac-proxy", ReadOnly: true},
+			))
+
+			// A missing metrics certificate must never keep the manager container from starting, and
+			// only the CA is projected from the metrics-client secret, not its private key.
+			volumes := map[string]corev1.Volume{}
+			for _, v := range deployment.Spec.Template.Spec.Volumes {
+				volumes[v.Name] = v
+			}
+			g.Expect(volumes["metrics-tls"].Secret).ToNot(BeNil())
+			g.Expect(volumes["metrics-tls"].Secret.SecretName).To(Equal("cluster-api-metrics-tls"))
+			g.Expect(volumes["metrics-tls"].Secret.Optional).To(Equal(ptr.To(true)))
+			g.Expect(volumes["metrics-client-ca"].Secret).ToNot(BeNil())
+			g.Expect(volumes["metrics-client-ca"].Secret.SecretName).To(Equal("metrics-client"))
+			g.Expect(volumes["metrics-client-ca"].Secret.Items).To(ConsistOf(corev1.KeyToPath{Key: "ca.crt", Path: "ca.crt"}))
+			g.Expect(volumes["metrics-client-ca"].Secret.Optional).To(Equal(ptr.To(true)))
+			g.Expect(volumes["kube-rbac-proxy-config"].ConfigMap).ToNot(BeNil())
+			g.Expect(volumes["kube-rbac-proxy-config"].ConfigMap.Name).To(Equal("cluster-api-kube-rbac-proxy"))
+
+			// The health probe server and the webhook server are unchanged.
+			g.Expect(managerContainer.Args).ToNot(ContainElement(HavePrefix("--health-addr")))
+			g.Expect(managerContainer.Args).ToNot(ContainElement(HavePrefix("--webhook-port")))
+			g.Expect(managerContainer.Args).ToNot(ContainElement(HavePrefix("--metrics-bind-addr")))
+			g.Expect(managerContainer.LivenessProbe).ToNot(BeNil())
+			g.Expect(managerContainer.LivenessProbe.HTTPGet).ToNot(BeNil())
+			g.Expect(managerContainer.LivenessProbe.HTTPGet.Path).To(Equal("/healthz"))
+			g.Expect(managerContainer.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromInt32(9440)))
+			g.Expect(managerContainer.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+			g.Expect(managerContainer.ReadinessProbe).ToNot(BeNil())
+			g.Expect(managerContainer.ReadinessProbe.HTTPGet).ToNot(BeNil())
+			g.Expect(managerContainer.ReadinessProbe.HTTPGet.Path).To(Equal("/readyz"))
+			g.Expect(managerContainer.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromInt32(9440)))
+			g.Expect(managerContainer.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+			g.Expect(managerContainer.VolumeMounts).To(ContainElement(corev1.VolumeMount{
+				Name:      "capi-webhooks-tls",
+				MountPath: "/tmp/k8s-webhook-server/serving-certs",
+				ReadOnly:  true,
+			}))
 
 			// Check annotations
 			if tc.expectedAnnotKey != "" {

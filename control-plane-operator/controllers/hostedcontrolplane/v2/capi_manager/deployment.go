@@ -48,6 +48,12 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 		}
 	})
 
+	// The kube-rbac-proxy sidecar is the only TLS endpoint for the CAPI manager metrics, so it always
+	// follows the hosted control plane TLS security profile.
+	podspec.UpdateContainer("kube-rbac-proxy", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.Args = append(c.Args, tlsArgs...)
+	})
+
 	if deployment.Annotations == nil {
 		deployment.Annotations = make(map[string]string)
 	}

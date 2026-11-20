@@ -19,6 +19,15 @@ status:
     status: "False"
     type: RolloutComplete
   resources:
+  - group: ""
+    kind: ConfigMap
+    name: cluster-api-kube-rbac-proxy
+  - group: ""
+    kind: Secret
+    name: cluster-api-metrics-tls
+  - group: monitoring.coreos.com
+    kind: PodMonitor
+    name: cluster-api
   - group: rbac.authorization.k8s.io
     kind: Role
     name: cluster-api
