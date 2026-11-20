@@ -2,8 +2,6 @@
 
 package v1alpha1
 
-type BackupExpansion interface{}
-
 type ClusterMonitoringExpansion interface{}
 
 type ControllerManagerExpansion interface{}

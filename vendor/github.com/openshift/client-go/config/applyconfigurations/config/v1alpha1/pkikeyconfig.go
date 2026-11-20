@@ -6,11 +6,11 @@ import (
 	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 )
 
-// KeyConfigApplyConfiguration represents a declarative configuration of the KeyConfig type for use
+// PKIKeyConfigApplyConfiguration represents a declarative configuration of the PKIKeyConfig type for use
 // with apply.
 //
-// KeyConfig specifies cryptographic parameters for key generation.
-type KeyConfigApplyConfiguration struct {
+// PKIKeyConfig specifies cryptographic parameters for key generation.
+type PKIKeyConfigApplyConfiguration struct {
 	// algorithm specifies the key generation algorithm.
 	// Valid values are "RSA" and "ECDSA".
 	//
@@ -19,25 +19,25 @@ type KeyConfigApplyConfiguration struct {
 	//
 	// When set to ECDSA, the ecdsa field must be specified and the generated key
 	// will be an ECDSA key using the configured elliptic curve.
-	Algorithm *configv1alpha1.KeyAlgorithm `json:"algorithm,omitempty"`
+	Algorithm *configv1alpha1.PKIKeyAlgorithm `json:"algorithm,omitempty"`
 	// rsa specifies RSA key parameters.
 	// Required when algorithm is RSA, and forbidden otherwise.
-	RSA *RSAKeyConfigApplyConfiguration `json:"rsa,omitempty"`
+	RSA *PKIRSAKeyConfigApplyConfiguration `json:"rsa,omitempty"`
 	// ecdsa specifies ECDSA key parameters.
 	// Required when algorithm is ECDSA, and forbidden otherwise.
-	ECDSA *ECDSAKeyConfigApplyConfiguration `json:"ecdsa,omitempty"`
+	ECDSA *PKIECDSAKeyConfigApplyConfiguration `json:"ecdsa,omitempty"`
 }
 
-// KeyConfigApplyConfiguration constructs a declarative configuration of the KeyConfig type for use with
+// PKIKeyConfigApplyConfiguration constructs a declarative configuration of the PKIKeyConfig type for use with
 // apply.
-func KeyConfig() *KeyConfigApplyConfiguration {
-	return &KeyConfigApplyConfiguration{}
+func PKIKeyConfig() *PKIKeyConfigApplyConfiguration {
+	return &PKIKeyConfigApplyConfiguration{}
 }
 
 // WithAlgorithm sets the Algorithm field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Algorithm field is set to the value of the last call.
-func (b *KeyConfigApplyConfiguration) WithAlgorithm(value configv1alpha1.KeyAlgorithm) *KeyConfigApplyConfiguration {
+func (b *PKIKeyConfigApplyConfiguration) WithAlgorithm(value configv1alpha1.PKIKeyAlgorithm) *PKIKeyConfigApplyConfiguration {
 	b.Algorithm = &value
 	return b
 }
@@ -45,7 +45,7 @@ func (b *KeyConfigApplyConfiguration) WithAlgorithm(value configv1alpha1.KeyAlgo
 // WithRSA sets the RSA field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the RSA field is set to the value of the last call.
-func (b *KeyConfigApplyConfiguration) WithRSA(value *RSAKeyConfigApplyConfiguration) *KeyConfigApplyConfiguration {
+func (b *PKIKeyConfigApplyConfiguration) WithRSA(value *PKIRSAKeyConfigApplyConfiguration) *PKIKeyConfigApplyConfiguration {
 	b.RSA = value
 	return b
 }
@@ -53,7 +53,7 @@ func (b *KeyConfigApplyConfiguration) WithRSA(value *RSAKeyConfigApplyConfigurat
 // WithECDSA sets the ECDSA field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ECDSA field is set to the value of the last call.
-func (b *KeyConfigApplyConfiguration) WithECDSA(value *ECDSAKeyConfigApplyConfiguration) *KeyConfigApplyConfiguration {
+func (b *PKIKeyConfigApplyConfiguration) WithECDSA(value *PKIECDSAKeyConfigApplyConfiguration) *PKIKeyConfigApplyConfiguration {
 	b.ECDSA = value
 	return b
 }

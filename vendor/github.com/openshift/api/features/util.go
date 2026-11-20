@@ -214,8 +214,9 @@ func (b *featureGateBuilder) register() (configv1.FeatureGateName, error) {
 
 	case !strings.HasPrefix(b.enhancementPRURL, "https://github.com/openshift/enhancements/pull/") &&
 		!strings.HasPrefix(b.enhancementPRURL, "https://github.com/kubernetes/enhancements/issues/") &&
-		!strings.HasPrefix(b.enhancementPRURL, "https://github.com/ovn-kubernetes/ovn-kubernetes/pull/"):
-		return "", fmt.Errorf("FeatureGate/%s enhancementPR format is incorrect; must be like https://github.com/openshift/enhancements/pull/#### or https://github.com/kubernetes/enhancements/issues/#### or https://github.com/ovn-kubernetes/ovn-kubernetes/pull/####", b.name)
+		!strings.HasPrefix(b.enhancementPRURL, "https://github.com/ovn-kubernetes/ovn-kubernetes/pull/") &&
+		!strings.HasPrefix(b.enhancementPRURL, "https://github.com/metal3-io/metal3-docs/pull/"):
+		return "", fmt.Errorf("FeatureGate/%s enhancementPR format is incorrect; must be like https://github.com/openshift/enhancements/pull/#### or https://github.com/kubernetes/enhancements/issues/#### or https://github.com/ovn-kubernetes/ovn-kubernetes/pull/#### or https://github.com/metal3-io/metal3-docs/pull/####", b.name)
 
 	case enhancementPRErr != nil:
 		return "", fmt.Errorf("FeatureGate/%s is enhancementPR is invalid: %w", b.name, enhancementPRErr)

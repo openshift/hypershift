@@ -461,8 +461,8 @@ type MachineManagerMachineSetsAPIGroupType string
 const (
 	// MachineAPI represents the OpenShift Machine API group, which manages machine resources such as MachineSets and ControlPlaneMachineSets.
 	MachineAPI MachineManagerMachineSetsAPIGroupType = "machine.openshift.io"
-	// ClusterAPI represents the Cluster API group, which manages machine resources such as MachineSets and MachineDeployments.
-	ClusterAPI MachineManagerMachineSetsAPIGroupType = "cluster.x-k8s.io"
+	// ClusterAPIGroup represents the Cluster API group, which manages machine resources such as MachineSets and MachineDeployments.
+	ClusterAPIGroup MachineManagerMachineSetsAPIGroupType = "cluster.x-k8s.io"
 )
 
 type NodeDisruptionPolicyStatus struct {
