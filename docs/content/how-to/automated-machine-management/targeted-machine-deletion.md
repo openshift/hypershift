@@ -50,6 +50,7 @@ For the upstream description, see the `cluster.x-k8s.io/delete-machine` entry in
   the `UPI` provider type, have no Machines, so this procedure does not apply to them.
 - The NodePool is not paused with `spec.pausedUntil`. While the NodePool is paused, the NodePool controller ignores
   changes to it, including a new replica count.
+- The `jq` command-line JSON processor, which the annotation and Machine count checks on this page use.
 
 Run all commands on this page against the management cluster unless a step says otherwise.
 
@@ -149,17 +150,27 @@ replaced. If it does not recover, fix that Machine or its Node first. Then repea
 
 ### 3. Annotate the Machines
 
-Before you annotate, list the Machines that already have the `cluster.x-k8s.io/delete-machine` annotation, for example
-from an earlier operation:
+Before you annotate, check which Machines of the NodePool already have the `cluster.x-k8s.io/delete-machine`
+annotation, for example from an earlier operation. The following inventory command prints each Machine of the NodePool
+and whether the annotation key is `present` or `absent`. The output must list every Machine of the NodePool. If it
+prints nothing, check the `HC_NAMESPACE`, `NODEPOOL_NAME`, and `HCP_NAMESPACE` variables:
 
 ```bash
-oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" \
-  -o custom-columns='NAME:.metadata.name,NODEPOOL:.metadata.annotations.hypershift\.openshift\.io/nodePool,DELETE-MACHINE:.metadata.annotations.cluster\.x-k8s\.io/delete-machine'
+oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" -o json \
+  | jq -r --arg nodepool "${HC_NAMESPACE}/${NODEPOOL_NAME}" '
+      .items[]
+      | select(.metadata.annotations["hypershift.openshift.io/nodePool"] == $nodepool)
+      | [.metadata.name,
+         (if (.metadata.annotations | has("cluster.x-k8s.io/delete-machine")) then "present" else "absent" end)]
+      | @tsv'
 ```
 
-For the Machines of your NodePool, `<none>` in the `DELETE-MACHINE` column means that the annotation is absent. Any
-other value, including an empty cell or `no`, means that the annotation is present and the Machine is prioritized for
-deletion. If a Machine that you will keep has the annotation, find out why before you continue. Remove the annotation,
+The command checks whether the key exists instead of reading its value, because Cluster API prioritizes a Machine
+whenever the key is present, whatever its value, including an empty value or `no`. Do not use a `custom-columns`
+listing for this check: it prints `<none>` both when the annotation is absent and when its value is the literal string
+`<none>`.
+
+If a Machine that you will keep shows `present`, find out why before you continue. Remove the annotation,
 as shown in [Cleanup](#cleanup), only if it is left over from an operation that is no longer in progress. If you cannot
 determine why it was set, stop: removing it could interfere with another operation, and keeping it could cause that
 Machine to be deleted instead of a Machine that you want to remove.
@@ -171,9 +182,9 @@ oc annotate machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" <machine_name> \
   cluster.x-k8s.io/delete-machine=yes
 ```
 
-Before you scale down, run the listing command again. For the Machines of your NodePool, the `DELETE-MACHINE` column
-must show a value other than `<none>` for exactly the Machines that you will remove. Also repeat the Machine and Node
-health checks in [step 2](#2-identify-the-machine-to-delete).
+Before you scale down, run the inventory command again. It must show `present` for exactly the Machines that you will
+remove and `absent` for every other Machine of the NodePool. Also repeat the Machine and Node health checks in
+[step 2](#2-identify-the-machine-to-delete).
 
 !!! important
 
@@ -182,6 +193,27 @@ health checks in [step 2](#2-identify-the-machine-to-delete).
     that does not cancel deletions that have already started.
 
 ### 4. Scale down the NodePool
+
+Immediately before you scale down, confirm that the NodePool is not already adding or removing Machines. When its
+desired replicas drop, the MachineSet controller selects for deletion as many Machines as exceed the desired replicas,
+and Machines that are already being deleted count toward that number. If the actual Machines do not match the desired
+replicas, the scale-down might not remove exactly the Machines that you annotated.
+
+Run the NodePool and MachineSet commands from [step 1](#1-confirm-that-the-nodepool-is-stable) again, and count the
+Machines of the NodePool:
+
+```bash
+oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" -o json \
+  | jq -r --arg nodepool "${HC_NAMESPACE}/${NODEPOOL_NAME}" '
+      [.items[] | select(.metadata.annotations["hypershift.openshift.io/nodePool"] == $nodepool)]
+      | "machines=\(length) deleting=\(map(select(.metadata.deletionTimestamp != null)) | length)"'
+```
+
+Continue only if the step 1 checks still pass (no `Updating` condition is `True`, and exactly one MachineSet for your
+NodePool has a non-zero `REPLICAS` value), `deleting` is `0`, and `machines` equals both the NodePool's `spec.replicas`
+and that MachineSet's `REPLICAS` value. If any check fails, the counts differ, or a Machine is being deleted, stop.
+Wait until the NodePool and its MachineSet finish reconciling, and then repeat the checks from step 1 through step 3
+before you scale down. Annotations that you already set stay in place.
 
 Lower `spec.replicas` on the NodePool by the number of Machines of your NodePool that have the annotation:
 
@@ -228,13 +260,8 @@ An annotated Machine that is not deleted keeps its annotation and is preferred f
 scales down. This happens if you annotated more Machines than you removed, or if you annotated a Machine and did not
 scale down.
 
-List the Machines that still have the annotation. Machines without it show `<none>`. An empty cell or any other value
-means that the annotation is present:
-
-```bash
-oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" \
-  -o custom-columns='NAME:.metadata.name,DELETE-MACHINE:.metadata.annotations.cluster\.x-k8s\.io/delete-machine'
-```
+To find the Machines of the NodePool that still have the annotation, run the inventory command from
+[step 3](#3-annotate-the-machines). Machines that show `present` still have it.
 
 Remove the annotation from any Machine that you want to keep, if you set the annotation yourself or have confirmed that
 it is left over from an operation that is no longer in progress:
