@@ -131,7 +131,7 @@ The `HCPEtcdBackup` CR represents a one-shot backup request for etcd. Key charac
 - **Storage backends**: S3 (AWS) or Azure Blob, configured as a discriminated union.
 - **Encryption**: Optional KMS key ARN (AWS) or Key Vault URL (Azure). Immutable once set.
 - **Status**: Tracks completion via `BackupCompleted` condition with reasons: `BackupInProgress`, `BackupSucceeded`, `BackupFailed`, `BackupRejected`, `EtcdUnhealthy`.
-- **Snapshot URL**: On success, `Status.SnapshotURL` contains the URL where the snapshot was uploaded.
+- **Snapshot URL**: On success, `Status.SnapshotURL` contains the default shard's snapshot URL (backward compat). `Status.ShardSnapshots` contains per-shard snapshot URLs when etcd sharding is enabled.
 
 ### Credential Handling
 
@@ -146,7 +146,7 @@ During **restore**, no credential copying is needed. The plugin reads the `etcd-
 | `HCPEtcdBackup` | `BackupCompleted` | Tracks backup lifecycle (InProgress, Succeeded, Failed, Rejected, EtcdUnhealthy) |
 | `HostedControlPlane` | `EtcdSnapshotRestored` | Set to True after etcd is restored from snapshot |
 | `HostedControlPlane` | `EtcdBackupSucceeded` | Bubbled from HCPEtcdBackup, indicates most recent backup result |
-| `HostedCluster` | `Status.LastSuccessfulEtcdBackupURL` | Persists the last snapshot URL. Set by the HO controller after successful backup. Read by the OADP plugin to inject as annotation during backup. Survives HCPEtcdBackup CR deletion via retention |
+| `HostedCluster` | `Status.LastSuccessfulEtcdBackupURL` | Persists the last default shard snapshot URL. Set by the HO controller after successful backup. Read by the OADP plugin to inject as annotation during backup. Survives HCPEtcdBackup CR deletion via retention |
 | `HostedCluster` | Annotation `etcd-snapshot-url` | Injected by OADP plugin during backup (from Status field). Read by OADP plugin during restore to set RestoreSnapshotURL |
 | `HostedCluster` | Annotation `restored-from-backup` | Set during restore, removed once `HostedClusterRestoredFromBackup` condition becomes True |
 

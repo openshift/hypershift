@@ -2,6 +2,7 @@ package etcd
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -13,16 +14,11 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
-
-// TODO(etcd-sharding): Backup support for shards is not yet implemented.
-// The enhancement states PVC-backed shards should be included in backup,
-// but the current backup controller (HCPEtcdBackup) does not reference
-// shard StatefulSets. Resources routed to shards will NOT be backed up.
-// This must be addressed before promoting EtcdSharding beyond TechPreview.
 
 type etcdShard struct {
 	shard                    hyperv1.ManagedEtcdShardSpec
@@ -138,11 +134,12 @@ func adaptStatefulSetForShard(cpContext component.WorkloadContext, sts *appsv1.S
 		name := fmt.Sprintf("%s-%d", shardName, i)
 		members = append(members, fmt.Sprintf("%s=https://%s.%s.%s.svc:2380", name, name, discoveryService, hcp.Namespace))
 	}
+	initialCluster := strings.Join(members, ",")
 
 	podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "ETCD_INITIAL_CLUSTER",
-			Value: strings.Join(members, ","),
+			Value: initialCluster,
 		})
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "ETCD_INITIAL_ADVERTISE_PEER_URLS",
@@ -254,6 +251,23 @@ fi
 		defragContainer.Args = append(defragContainer.Args, "--leader-election-id", fmt.Sprintf("etcd-defrag-%s-leader-elect", shard.Name))
 		sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, defragContainer)
 		sts.Spec.Template.Spec.ServiceAccountName = manifests.EtcdDefragControllerServiceAccount("").Name
+	}
+
+	// Inject restore init container for PV-backed shards with a restore URL,
+	// following the same pattern as the default etcd StatefulSet in adaptStatefulSet.
+	// The EmptyDir guard is defense-in-depth: CEL validation rejects restoreSnapshotURL
+	// on EmptyDir shards, but a manual patch or upgrade could bypass admission.
+	snapshotRestored := meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
+	if shard.RestoreSnapshotURL != "" && !snapshotRestored && shard.Storage.Type != hyperv1.EmptyDirEtcdShardStorage {
+		etcdInit := buildEtcdInitContainer(shard.RestoreSnapshotURL, hcp.Namespace, initialCluster, discoveryService)
+		insertIdx := len(sts.Spec.Template.Spec.InitContainers)
+		for i, c := range sts.Spec.Template.Spec.InitContainers {
+			if c.Name == "reset-member" {
+				insertIdx = i
+				break
+			}
+		}
+		sts.Spec.Template.Spec.InitContainers = slices.Insert(sts.Spec.Template.Spec.InitContainers, insertIdx, etcdInit)
 	}
 
 	adaptShardStorage(sts, shard, hcp)
