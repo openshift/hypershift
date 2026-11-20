@@ -2662,6 +2662,9 @@ func (r *reconciler) reconcileRestoredCluster(ctx context.Context, hcp *hyperv1.
 	)
 
 	log := ctrl.LoggerFrom(ctx)
+	if err := dr.RecoverNodeStatus(ctx, r.uncachedClient, r.CreateOrUpdate); err != nil {
+		return false, err
+	}
 	log.Info("Ensuring monitoring stack is properly working after hosted cluster restoration")
 	if finished, err = dr.RecoverMonitoringStack(ctx, hcp, r.uncachedClient); err != nil {
 		return false, utilerrors.NewAggregate(append(errs, err))
