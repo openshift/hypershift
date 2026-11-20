@@ -5,7 +5,7 @@ This guide explains how to create Workload Identity Federation (WIF) resources f
 ## Prerequisites
 
 - The `hypershift` CLI built from the repository
-- `gcloud` CLI authenticated with IAM permissions in the hosted cluster GCP project
+- [Application Default Credentials (ADC)](https://docs.cloud.google.com/docs/authentication/application-default-credentials) configured with IAM permissions in the hosted cluster GCP project
 - An RSA keypair for OIDC service account token signing
 
 ## Generate RSA Keypair

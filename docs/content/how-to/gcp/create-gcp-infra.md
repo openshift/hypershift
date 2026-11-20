@@ -5,7 +5,8 @@ This guide explains how to create network infrastructure for GCP hosted clusters
 ## Prerequisites
 
 - The `hypershift` CLI built from the repository
-- `gcloud` CLI authenticated with permissions in the hosted cluster GCP project
+- The `gcloud` CLI installed and authenticated with permissions to enable APIs in the hosted cluster GCP project
+- [Application Default Credentials (ADC)](https://docs.cloud.google.com/docs/authentication/application-default-credentials) configured with permissions in the hosted cluster GCP project
 - A GCP project for the hosted cluster with required APIs enabled:
 
 ```bash
@@ -43,7 +44,7 @@ hypershift create infra gcp \
 
 !!! warning "Infra ID constraints"
 
-    The `--infra-id` value must not start with `gcp-` (reserved by GCP for Workload Identity Pool IDs). Use the same `--infra-id` value across all `hypershift create` commands (`infra`, `iam`, `cluster`).
+    `hypershift create iam gcp` rejects `gcp` and IDs starting with `gcp-`, which would produce reserved Workload Identity pool and provider IDs. Infrastructure and cluster provisioning IDs may differ from the IAM provisioning ID.
 
 ### Flags
 
@@ -134,7 +135,12 @@ message.
 
 ## Destroy Infrastructure
 
-To clean up infrastructure resources:
+`hypershift destroy cluster gcp` cleans up associated CLI-created networking and
+IAM by default. Use `--preserve-infra` to retain both.
+
+To clean up standalone infrastructure, use its original provisioning ID. Cleanup
+validates the VPC and its resource references and skips networking when the VPC
+is already absent:
 
 !!! warning "Delete the hosted cluster first"
 
@@ -154,7 +160,7 @@ To clean up infrastructure resources:
 
 ```bash
 hypershift destroy infra gcp \
-  --infra-id=<infra-id> \
+  --infra-id=<network-infra-id> \
   --project-id=<hosted-cluster-project-id> \
   --region=<region>
 ```
