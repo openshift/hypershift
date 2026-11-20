@@ -468,11 +468,48 @@ func TestCheckDependencies(t *testing.T) {
 			// capi-provider mounts the service-network-admin-kubeconfig secret the
 			// kube-apiserver component applies, so unlike the other components that
 			// predate the kube-apiserver (cluster-api, router, ...) it must wait for
-			// its rollout.
-			testName:        "Should include kube-apiserver as dependency for the capi-provider component",
+			// its rollout on releases guaranteed to run a v2 CPO (4.20+).
+			testName:        "When capi-provider uses release 4.20 or later, it should depend on kube-apiserver",
 			mockComponents:  []hyperv1.ControlPlaneComponent{},
 			expectedMissing: []string{kubeAPIServerComponentName},
 			setup: func(cpContext *ControlPlaneContext) *controlPlaneWorkload[*appsv1.Deployment] {
+				cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion("4.20.0"))
+				return createMockWorkload("capi-provider", nil)
+			},
+		},
+		{
+			// Releases before 4.20 may run a v1 CPO, which never publishes a
+			// kube-apiserver ControlPlaneComponent; waiting for one would block
+			// capi-provider forever (OCPBUGS-143987).
+			testName:        "When capi-provider uses a release before 4.20, it should not depend on kube-apiserver",
+			mockComponents:  []hyperv1.ControlPlaneComponent{},
+			expectedMissing: []string{},
+			setup: func(cpContext *ControlPlaneContext) *controlPlaneWorkload[*appsv1.Deployment] {
+				cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion("4.19.0"))
+				return createMockWorkload("capi-provider", nil)
+			},
+		},
+		{
+			// 4.20 pre-release payloads (ec, rc, nightly) already ship a v2-only
+			// CPO, so the pre-release must not drag them below the 4.20.0
+			// threshold and strip the dependency.
+			testName:        "When capi-provider uses a 4.20 pre-release, it should depend on kube-apiserver",
+			mockComponents:  []hyperv1.ControlPlaneComponent{},
+			expectedMissing: []string{kubeAPIServerComponentName},
+			setup: func(cpContext *ControlPlaneContext) *controlPlaneWorkload[*appsv1.Deployment] {
+				cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion("4.20.0-0.nightly-2025-01-01-000000"))
+				return createMockWorkload("capi-provider", nil)
+			},
+		},
+		{
+			// An unparsable version can't prove the CPO is v2-only. Skipping the
+			// dependency risks a transient FailedMount; keeping it would block the
+			// component forever, so the skip is the recoverable choice.
+			testName:        "When capi-provider has an unparsable release version, it should not depend on kube-apiserver",
+			mockComponents:  []hyperv1.ControlPlaneComponent{},
+			expectedMissing: []string{},
+			setup: func(cpContext *ControlPlaneContext) *controlPlaneWorkload[*appsv1.Deployment] {
+				cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion("not-a-version"))
 				return createMockWorkload("capi-provider", nil)
 			},
 		},
