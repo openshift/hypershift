@@ -3,6 +3,8 @@ package nodepool
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
@@ -18,6 +20,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
@@ -2470,6 +2473,217 @@ func TestSetAWSResourceTagConflictCondition(t *testing.T) {
 			g.Expect(cond.Reason).To(Equal(tt.expectedReason))
 			g.Expect(cond.ObservedGeneration).To(Equal(int64(1)))
 			g.Expect(cond.Message).To(ContainSubstring(tt.expectedMsgContains))
+		})
+	}
+}
+
+func TestCAPI_ReconcileAWSMachines(t *testing.T) {
+	const (
+		controlPlaneNamespace = "clusters-example"
+		capiClusterName       = "example-4k8wz"
+	)
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-us-east-1a",
+			Namespace: "clusters",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					ResourceTags: []hyperv1.AWSNodePoolResourceTag{{Key: "team", Value: "payments"}},
+				},
+			},
+		},
+	}
+	hostedCluster := &hyperv1.HostedCluster{
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					ResourceTags: []hyperv1.AWSClusterResourceTag{{Key: "env", Value: "prod"}},
+				},
+			},
+		},
+	}
+	desiredTags := capiaws.Tags{
+		"env":  "prod",
+		"team": "payments",
+		"kubernetes.io/cluster/" + capiClusterName: infraLifecycleOwned,
+	}
+	instanceSeq := 0
+	newAWSMachine := func(name, namespace, machineDeployment string, tags capiaws.Tags) *capiaws.AWSMachine {
+		instanceSeq++
+		return &capiaws.AWSMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+				Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: machineDeployment},
+			},
+			Spec: capiaws.AWSMachineSpec{
+				InstanceType:   "m5.xlarge",
+				ProviderID:     ptr.To(fmt.Sprintf("aws:///us-east-1a/i-0abc1234def%06d", instanceSeq)),
+				AdditionalTags: tags,
+			},
+		}
+	}
+	outdatedTags := func() capiaws.Tags {
+		return capiaws.Tags{"env": "dev", "stale-tag": "remove-me"}
+	}
+	listErr := errors.New("injected list failure")
+	errA := apierrors.NewInternalError(errors.New("injected failure for aws-a"))
+	errD := apierrors.NewServiceUnavailable("injected failure for aws-d")
+
+	testCases := []struct {
+		name    string
+		objects []*capiaws.AWSMachine
+		// victim names the AWSMachine deleted after it is listed.
+		victim      string
+		patchErrors map[string]error
+		listErr     error
+
+		expectErrIs          []error
+		expectErrContains    []string
+		expectErrNotContains []string
+		expectPatchCalls     []string
+		expectDesiredTags    []string
+		expectUntouched      []string
+		expectDeleted        []string
+	}{
+		{
+			name: "When AWSMachines of the NodePool have outdated tags, it should patch only those AWSMachines with the desired tags",
+			objects: []*capiaws.AWSMachine{
+				newAWSMachine("aws-a", controlPlaneNamespace, nodePool.Name, outdatedTags()),
+				newAWSMachine("aws-untagged", controlPlaneNamespace, nodePool.Name, nil),
+				newAWSMachine("aws-uptodate", controlPlaneNamespace, nodePool.Name, maps.Clone(desiredTags)),
+				newAWSMachine("aws-other-md", controlPlaneNamespace, "other-nodepool", outdatedTags()),
+				newAWSMachine("aws-other-ns", "clusters-other", nodePool.Name, outdatedTags()),
+			},
+			expectPatchCalls:  []string{"aws-a", "aws-untagged"},
+			expectDesiredTags: []string{"aws-a", "aws-untagged", "aws-uptodate"},
+			expectUntouched:   []string{"aws-uptodate", "aws-other-md", "aws-other-ns"},
+		},
+		{
+			name: "When the NodePool has no AWSMachines, it should return nil without writing any AWSMachine",
+			objects: []*capiaws.AWSMachine{
+				newAWSMachine("aws-other-md", controlPlaneNamespace, "other-nodepool", outdatedTags()),
+				newAWSMachine("aws-other-ns", "clusters-other", nodePool.Name, outdatedTags()),
+			},
+			expectUntouched: []string{"aws-other-md", "aws-other-ns"},
+		},
+		{
+			name: "When an AWSMachine is deleted after it is listed, it should skip it without creating it and still patch later AWSMachines",
+			objects: []*capiaws.AWSMachine{
+				newAWSMachine("aws-a", controlPlaneNamespace, nodePool.Name, outdatedTags()),
+				newAWSMachine("aws-b", controlPlaneNamespace, nodePool.Name, outdatedTags()),
+			},
+			victim:            "aws-a",
+			expectPatchCalls:  []string{"aws-a", "aws-b"},
+			expectDesiredTags: []string{"aws-b"},
+			expectDeleted:     []string{"aws-a"},
+		},
+		{
+			name: "When patching AWSMachines fails with non-NotFound errors, it should aggregate every failure and continue with remaining AWSMachines",
+			objects: []*capiaws.AWSMachine{
+				newAWSMachine("aws-a", controlPlaneNamespace, nodePool.Name, outdatedTags()),
+				newAWSMachine("aws-b", controlPlaneNamespace, nodePool.Name, outdatedTags()),
+				newAWSMachine("aws-c", controlPlaneNamespace, nodePool.Name, outdatedTags()),
+				newAWSMachine("aws-d", controlPlaneNamespace, nodePool.Name, outdatedTags()),
+			},
+			victim:               "aws-b",
+			patchErrors:          map[string]error{"aws-a": errA, "aws-d": errD},
+			expectErrIs:          []error{errA, errD},
+			expectErrContains:    []string{"failed to reconcile AWSMachine aws-a", "failed to reconcile AWSMachine aws-d"},
+			expectErrNotContains: []string{"aws-b"},
+			expectPatchCalls:     []string{"aws-a", "aws-b", "aws-c", "aws-d"},
+			expectDesiredTags:    []string{"aws-c"},
+			expectDeleted:        []string{"aws-b"},
+		},
+		{
+			name: "When listing AWSMachines fails, it should return the list error without writing any AWSMachine",
+			objects: []*capiaws.AWSMachine{
+				newAWSMachine("aws-a", controlPlaneNamespace, nodePool.Name, outdatedTags()),
+			},
+			listErr:           listErr,
+			expectErrIs:       []error{listErr},
+			expectErrContains: []string{"failed to list AWSMachines for NodePool " + nodePool.Name},
+			expectUntouched:   []string{"aws-a"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			objects := make([]client.Object, 0, len(tc.objects))
+			var victim client.Object
+			for _, m := range tc.objects {
+				objects = append(objects, m)
+				if m.Name == tc.victim {
+					victim = m
+				}
+			}
+			rc := newPropagationRaceClient(t, objects, victim, tc.patchErrors, tc.listErr)
+
+			before := map[string]*capiaws.AWSMachine{}
+			for _, m := range tc.objects {
+				got := &capiaws.AWSMachine{}
+				g.Expect(rc.Get(t.Context(), client.ObjectKeyFromObject(m), got)).To(Succeed())
+				before[m.Name] = got
+			}
+
+			c := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						Client:                rc,
+						nodePool:              nodePool,
+						hostedCluster:         hostedCluster,
+						controlplaneNamespace: controlPlaneNamespace,
+					},
+				},
+				capiClusterName: capiClusterName,
+			}
+			err := c.reconcileAWSMachines(t.Context())
+
+			if len(tc.expectErrIs) == 0 {
+				g.Expect(err).ToNot(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+				for _, want := range tc.expectErrIs {
+					g.Expect(errors.Is(err, want)).To(BeTrue(), "error must retain %v, got %v", want, err)
+				}
+			}
+			for _, s := range tc.expectErrContains {
+				g.Expect(err.Error()).To(ContainSubstring(s))
+			}
+			for _, s := range tc.expectErrNotContains {
+				g.Expect(err.Error()).ToNot(ContainSubstring(s))
+			}
+
+			g.Expect(rc.creates).To(BeEmpty(), "an AWSMachine deleted after List must never be created")
+			g.Expect(rc.updates).To(BeEmpty(), "AWSMachines must only be patched")
+			g.Expect(rc.patches).To(ConsistOf(tc.expectPatchCalls))
+
+			for _, name := range tc.expectDeleted {
+				err := rc.Get(t.Context(), client.ObjectKeyFromObject(before[name]), &capiaws.AWSMachine{})
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "AWSMachine %s must stay deleted, got %v", name, err)
+			}
+			for _, name := range tc.expectDesiredTags {
+				got := &capiaws.AWSMachine{}
+				g.Expect(rc.Get(t.Context(), client.ObjectKeyFromObject(before[name]), got)).To(Succeed())
+				g.Expect(got.Spec.AdditionalTags).To(Equal(desiredTags), "AWSMachine %s tags", name)
+				// Only the tags may change; every other spec field must be preserved.
+				wantSpec := before[name].Spec.DeepCopy()
+				wantSpec.AdditionalTags = desiredTags
+				g.Expect(got.Spec).To(Equal(*wantSpec))
+				g.Expect(got.Labels).To(Equal(before[name].Labels))
+			}
+			for _, name := range tc.expectUntouched {
+				got := &capiaws.AWSMachine{}
+				g.Expect(rc.Get(t.Context(), client.ObjectKeyFromObject(before[name]), got)).To(Succeed())
+				g.Expect(got.ResourceVersion).To(Equal(before[name].ResourceVersion), "AWSMachine %s must not be written", name)
+				g.Expect(got.Spec).To(Equal(before[name].Spec))
+			}
 		})
 	}
 }
