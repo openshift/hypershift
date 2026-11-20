@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -185,29 +187,73 @@ func TestIsLegacyGCPLoadBalancerService(t *testing.T) {
 }
 
 func TestReconcileGCPLoadBalancerServiceAnnotationsErrors(t *testing.T) {
-	t.Run("does not modify a Service with a malformed native annotation", func(t *testing.T) {
-		g := NewWithT(t)
-		legacyClass := legacyRegionalExternalLoadBalancerClass
-		service := &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test", Annotations: map[string]string{gcputil.LBResourceLabelsAnnotation: "not-a-label"}},
-			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &legacyClass},
-		}
-		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
-		r := &reconciler{client: guestClient}
+	for _, tt := range []struct {
+		name       string
+		annotation string
+	}{
+		{name: "When the native annotation is malformed, it should skip it and reconcile other Services", annotation: "not-a-label"},
+		{name: "When the native annotation contains an invalid key, it should skip it and reconcile other Services", annotation: "INVALID=value"},
+		{name: "When the native annotation contains duplicate keys, it should skip it and reconcile other Services", annotation: "team=payments,team=other"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			state := klog.CaptureState()
+			t.Cleanup(state.Restore)
+			var warnings bytes.Buffer
+			klog.LogToStderr(false)
+			klog.SetOutput(&warnings)
+			service := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "a-invalid", Namespace: "test", Annotations: map[string]string{
+					gcputil.LBResourceLabelsAnnotation:        tt.annotation,
+					gcputil.ManagedLBResourceLabelsAnnotation: "env",
+					"unrelated": "preserved",
+				}},
+				Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			}
+			valid := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "z-valid", Namespace: "test"},
+				Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			}
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service, valid).Build()
+			r := &reconciler{client: guestClient}
+			g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), hcpWithGCPLabels("env", "prod"))).To(BeEmpty())
+			actual := &corev1.Service{}
+			g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), actual)).To(Succeed())
+			g.Expect(actual).To(Equal(service))
+			klog.Flush()
+			g.Expect(warnings.String()).To(ContainSubstring("Skipping GCP resource label reconciliation for Service test/a-invalid"))
+			_, _, validationErr := gcputil.ParseLBResourceLabelsAnnotation(service.Annotations)
+			g.Expect(validationErr).To(HaveOccurred())
+			g.Expect(warnings.String()).To(ContainSubstring(validationErr.Error()))
+			g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(valid), actual)).To(Succeed())
+			g.Expect(actual.Annotations).To(Equal(map[string]string{
+				gcputil.LBResourceLabelsAnnotation:        "env=prod",
+				gcputil.ManagedLBResourceLabelsAnnotation: "env",
+			}))
+		})
+	}
 
-		g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), hcpWithGCPLabels("env", "prod"))).To(HaveLen(1))
-		actual := &corev1.Service{}
-		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), actual)).To(Succeed())
-		g.Expect(actual.Annotations).To(Equal(service.Annotations))
+	t.Run("When managed annotation metadata is invalid, it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test", Annotations: map[string]string{
+				gcputil.ManagedLBResourceLabelsAnnotation: "INVALID",
+			}},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		}
+		r := &reconciler{client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()}
+		errs := r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), hcpWithGCPLabels("env", "prod"))
+		g.Expect(errs).To(HaveLen(1))
+		g.Expect(errs[0].Error()).To(ContainSubstring(gcputil.ManagedLBResourceLabelsAnnotation))
 	})
 
-	t.Run("returns a list failure", func(t *testing.T) {
+	t.Run("When listing Services fails, it should return the failure", func(t *testing.T) {
 		g := NewWithT(t)
 		r := &reconciler{client: &failingServiceClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(), listErr: errors.New("list failed")}}
 		g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), hcpWithGCPLabels("env", "prod"))).To(HaveLen(1))
 	})
 
-	t.Run("returns a patch failure", func(t *testing.T) {
+	t.Run("When patching a Service fails, it should return the failure", func(t *testing.T) {
 		g := NewWithT(t)
 		legacyClass := legacyRegionalExternalLoadBalancerClass
 		service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &legacyClass}}

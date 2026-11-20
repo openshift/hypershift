@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/support/gcputil"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -37,6 +38,14 @@ func (r *reconciler) reconcileGCPLoadBalancerServiceAnnotations(ctx context.Cont
 	for i := range services.Items {
 		service := &services.Items[i]
 		if !isLegacyGCPLoadBalancerService(service) {
+			continue
+		}
+
+		// Native annotations are user-owned. Invalid input cannot be repaired
+		// safely and must not block the aggregate HCCO reconciliation. Check
+		// this separately so other reconciliation failures remain actionable.
+		if _, _, err := gcputil.ParseLBResourceLabelsAnnotation(service.Annotations); err != nil {
+			klog.Warningf("Skipping GCP resource label reconciliation for Service %s/%s: %v", service.Namespace, service.Name, err)
 			continue
 		}
 
