@@ -65,6 +65,7 @@ func expectMetricHasLabel(g Gomega, families map[string]*dto.MetricFamily, metri
 
 func RegisterHostedClusterMetricsTests(getTestCtx internal.TestContextGetter) {
 	ValidateMetricsTest(getTestCtx)
+	ValidateInstallationMetricsTest(getTestCtx)
 	EnsureMetricsForwarderWorkingTest(getTestCtx)
 	EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx)
 	EnsureKubeSchedulerMetricsEndpointTest(getTestCtx)
@@ -137,6 +138,53 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 					g.Expect(family.Metric).NotTo(BeEmpty(),
 						"metric %s should have at least one time series",
 						hcmetrics.HostedClusterManagedAzureInfoMetricName)
+				}
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+		})
+	})
+}
+
+func ValidateInstallationMetricsTest(getTestCtx internal.TestContextGetter) {
+	When("HyperShift operator is running", Label(internal.InformingLabel), func() {
+		It("should expose installation diagnostics metrics at the metrics endpoint", func() {
+			tc := getTestCtx()
+			tc.SkipIfPlatform(hyperv1.NonePlatform)
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(tc.MgmtRESTConfig).NotTo(BeNil(), "management REST config should be set on test context")
+
+			clientset, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
+			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
+
+			hoNamespace := "hypershift"
+			hcName := hostedCluster.Name
+
+			Eventually(func(g Gomega) {
+				currentPods := &corev1.PodList{}
+				g.Expect(tc.MgmtClient.List(tc.Context, currentPods,
+					crclient.InNamespace(hoNamespace),
+					crclient.MatchingLabels{"app": "operator"},
+				)).To(Succeed(), "should be able to list pods in the hypershift namespace")
+				g.Expect(currentPods.Items).NotTo(BeEmpty(), "hypershift-operator pod should exist")
+
+				var runningPodName string
+				for _, p := range currentPods.Items {
+					if p.Status.Phase == corev1.PodRunning {
+						runningPodName = p.Name
+						break
+					}
+				}
+				g.Expect(runningPodName).NotTo(BeEmpty(), "a running hypershift-operator pod should exist")
+
+				metrics, err := v2util.GetMetricsFromPod(tc.Context, clientset, tc.MgmtRESTConfig, hoNamespace, runningPodName, "operator", 9000)
+				g.Expect(err).NotTo(HaveOccurred(), "should be able to fetch metrics from hypershift-operator pod")
+
+				for _, metricName := range []string{
+					hcmetrics.InstallationStageMetricName,
+					hcmetrics.InstallationFailureReasonMetricName,
+				} {
+					expectMetricHasLabel(g, metrics, metricName, "name", hcName)
 				}
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
