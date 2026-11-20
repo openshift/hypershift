@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	karpenteroperatoroverrides "github.com/openshift/hypershift/hypershift-operator/karpenteroperator-overrides"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/images"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
@@ -19,7 +20,8 @@ import (
 )
 
 type fakeReleaseImageProvider struct {
-	images map[string]string
+	images          map[string]string
+	requestedImages []string
 }
 
 func TestAdaptStandaloneDeploymentEndpoint(t *testing.T) {
@@ -60,6 +62,7 @@ func TestAdaptStandaloneDeploymentEndpoint(t *testing.T) {
 }
 
 func (f *fakeReleaseImageProvider) GetImage(name string) string {
+	f.requestedImages = append(f.requestedImages, name)
 	return f.images[name]
 }
 
@@ -468,6 +471,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 		rhobsEnabled   bool
 		hcpAnnotations map[string]string
 		images         map[string]string
+		overrideImage  string
 		validateFunc   func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext)
 	}{
 		{
@@ -607,10 +611,11 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			},
 		},
 		{
-			name:         "When HCP has KarpenterOperatorImage annotation, it should override the image",
-			platformType: hyperv1.AWSPlatform,
-			awsRegion:    "us-west-2",
-			infraID:      "test-infra-override",
+			name:          "When an image annotation and environment override are set, it should use the annotation",
+			overrideImage: "quay.io/openshift/karpenter-operator:ci-main",
+			platformType:  hyperv1.AWSPlatform,
+			awsRegion:     "us-west-2",
+			infraID:       "test-infra-override",
 			hcpAnnotations: map[string]string{
 				hyperkarpenterv1.KarpenterOperatorImage: "quay.io/custom/karpenter-operator:test",
 			},
@@ -630,13 +635,15 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
 				g.Expect(container).ToNot(BeNil())
 				g.Expect(container.Image).To(Equal("quay.io/custom/karpenter-operator:test"))
+				g.Expect(cpContext.ReleaseImageProvider.(*fakeReleaseImageProvider).requestedImages).ToNot(ContainElement(karpenterutil.KarpenterOperatorImageName))
 			},
 		},
 		{
-			name:         "When HCP has no KarpenterOperatorImage annotation, it should use the default image",
-			platformType: hyperv1.AWSPlatform,
-			awsRegion:    "us-west-2",
-			infraID:      "test-infra-default",
+			name:          "When the environment override is set without an image annotation, it should use the environment image",
+			overrideImage: "quay.io/openshift/karpenter-operator:ci-main",
+			platformType:  hyperv1.AWSPlatform,
+			awsRegion:     "us-west-2",
+			infraID:       "test-infra-default",
 			images: map[string]string{
 				karpenterutil.KarpenterOperatorImageName:    "quay.io/openshift/karpenter-operator:latest",
 				karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
@@ -652,14 +659,15 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 
 				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
 				g.Expect(container).ToNot(BeNil())
-				g.Expect(container.Image).To(Equal("quay.io/openshift/karpenter-operator:latest"))
+				g.Expect(container.Image).To(Equal("quay.io/openshift/karpenter-operator:ci-main"))
 			},
 		},
 		{
-			name:         "When HCP has empty KarpenterOperatorImage annotation, it should use the default image",
-			platformType: hyperv1.AWSPlatform,
-			awsRegion:    "us-west-2",
-			infraID:      "test-infra-empty-override",
+			name:          "When the environment override is set with an empty image annotation, it should use the environment image",
+			overrideImage: "registry.stage.redhat.io/openshift5/karpenter-operator-rhel9@sha256:a8756f77024e616ee670a993f5b2dee227e0ded6dc7f8a725c9cf62c8180eec5",
+			platformType:  hyperv1.AWSPlatform,
+			awsRegion:     "us-west-2",
+			infraID:       "test-infra-empty-override",
 			hcpAnnotations: map[string]string{
 				hyperkarpenterv1.KarpenterOperatorImage: "",
 			},
@@ -678,7 +686,69 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 
 				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
 				g.Expect(container).ToNot(BeNil())
-				g.Expect(container.Image).To(Equal("quay.io/openshift/karpenter-operator:latest"))
+				g.Expect(container.Image).To(Equal("registry.stage.redhat.io/openshift5/karpenter-operator-rhel9@sha256:a8756f77024e616ee670a993f5b2dee227e0ded6dc7f8a725c9cf62c8180eec5"))
+			},
+		},
+		// Pin or payload selection, annotation bypass, then invalid environment overrides.
+		{
+			name:         "When no annotation or environment override is set, it should use this build's pin or the payload",
+			platformType: hyperv1.AWSPlatform,
+			awsRegion:    "us-west-2",
+			images: map[string]string{
+				karpenterutil.KarpenterOperatorImageName: "quay.io/openshift/karpenter-operator:latest",
+			},
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				pin, err := karpenteroperatoroverrides.Image()
+				g.Expect(err).ToNot(HaveOccurred())
+				expectedImage := pin
+				if expectedImage == "" {
+					expectedImage = cpContext.ReleaseImageProvider.ComponentImages()[karpenterutil.KarpenterOperatorImageName]
+				}
+
+				deployment, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(opts.adaptStandaloneDeployment(cpContext, deployment)).To(Succeed())
+				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Image).To(Equal(expectedImage))
+				provider := cpContext.ReleaseImageProvider.(*fakeReleaseImageProvider)
+				if pin != "" {
+					g.Expect(provider.requestedImages).ToNot(ContainElement(karpenterutil.KarpenterOperatorImageName))
+				} else {
+					g.Expect(provider.requestedImages).To(ContainElement(karpenterutil.KarpenterOperatorImageName))
+				}
+			},
+		},
+		{
+			name:          "When an image annotation is set with an invalid environment override, it should use the annotation without validating the override",
+			platformType:  hyperv1.AWSPlatform,
+			awsRegion:     "us-west-2",
+			overrideImage: "not a pullspec",
+			hcpAnnotations: map[string]string{
+				hyperkarpenterv1.KarpenterOperatorImage: "quay.io/custom/karpenter-operator:test",
+			},
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deployment, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(opts.adaptStandaloneDeployment(cpContext, deployment)).To(Succeed())
+				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Image).To(Equal("quay.io/custom/karpenter-operator:test"))
+				g.Expect(cpContext.ReleaseImageProvider.(*fakeReleaseImageProvider).requestedImages).ToNot(ContainElement(karpenterutil.KarpenterOperatorImageName))
+			},
+		},
+		{
+			name:          "When the environment override is invalid without an annotation, it should return an image parsing error",
+			platformType:  hyperv1.AWSPlatform,
+			awsRegion:     "us-west-2",
+			overrideImage: "not a pullspec",
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deployment, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(opts.adaptStandaloneDeployment(cpContext, deployment)).To(MatchError(ContainSubstring("parse " + karpenteroperatoroverrides.ImageOverrideEnvVar)))
 			},
 		},
 	}
@@ -686,6 +756,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+			t.Setenv(karpenteroperatoroverrides.ImageOverrideEnvVar, tc.overrideImage)
 
 			if tc.rhobsEnabled {
 				t.Setenv(rhobsmonitoring.EnvironmentVariable, "1")
