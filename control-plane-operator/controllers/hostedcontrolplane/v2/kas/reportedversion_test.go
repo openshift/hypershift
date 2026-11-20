@@ -74,6 +74,19 @@ func kasImageMetadata(labels map[string]string, created metav1.Time) *dockerv1cl
 	}
 }
 
+// kasImageMetadataOnContainerConfig returns image metadata whose labels live
+// only on ContainerConfig, as some images built outside the standard OpenShift
+// build pipeline record them.
+func kasImageMetadataOnContainerConfig(labels map[string]string, created metav1.Time) *dockerv1client.DockerImageConfig {
+	return &dockerv1client.DockerImageConfig{
+		Created:         created.Time,
+		OS:              "linux",
+		Architecture:    "amd64",
+		Config:          &docker10.DockerConfig{},
+		ContainerConfig: docker10.DockerConfig{Labels: labels},
+	}
+}
+
 func newReportedVersionTestContext(t *testing.T, hcp *hyperv1.HostedControlPlane, configs map[string]*dockerv1client.DockerImageConfig) controlplanecomponent.WorkloadContext {
 	return newReportedVersionTestContextWithObjects(t, hcp, configs)
 }
@@ -158,6 +171,80 @@ func TestKasVersionInfo(t *testing.T) {
 		_, err := kasVersionInfo("1.34.2", kasImageMetadata(map[string]string{}, created))
 		require.Error(t, err)
 	})
+
+	t.Run("When the build labels only live on ContainerConfig, it should build the version info", func(t *testing.T) {
+		metadata := kasImageMetadataOnContainerConfig(map[string]string{
+			buildCommitIDLabel:   "9a1f2c3d4e5b6a7f8c9d0e1f2a3b4c5d6e7f8a9b",
+			buildCommitDateLabel: "2026-08-12T10:14:33Z",
+			buildGoVersionLabel:  "go1.23.4",
+		}, created)
+
+		info, err := kasVersionInfo("1.34.2", metadata)
+		require.NoError(t, err)
+		require.Equal(t, "9a1f2c3d4e5b6a7f8c9d0e1f2a3b4c5d6e7f8a9b", info.GitCommit)
+		require.Equal(t, "2026-08-12T10:14:33Z", info.BuildDate)
+		require.Equal(t, "go1.23.4", info.GoVersion)
+	})
+}
+
+func TestKasBuildLabels(t *testing.T) {
+	testCases := []struct {
+		name     string
+		metadata *dockerv1client.DockerImageConfig
+		expected map[string]string
+	}{
+		{
+			name: "When Config carries labels, it should return the Config labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				Config:          &docker10.DockerConfig{Labels: map[string]string{"from": "config"}},
+				ContainerConfig: docker10.DockerConfig{Labels: map[string]string{"from": "container-config"}},
+			},
+			expected: map[string]string{"from": "config"},
+		},
+		{
+			name: "When Config is nil, it should fall back to the ContainerConfig labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				ContainerConfig: docker10.DockerConfig{Labels: map[string]string{"from": "container-config"}},
+			},
+			expected: map[string]string{"from": "container-config"},
+		},
+		{
+			// Some kube-apiserver images carry their build labels only on
+			// ContainerConfig while still having a Config without labels.
+			// Returning Config.Labels unconditionally would drop them and fail
+			// the version mask closed.
+			name: "When Config has no labels, it should fall back to the ContainerConfig labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				Config:          &docker10.DockerConfig{},
+				ContainerConfig: docker10.DockerConfig{Labels: map[string]string{"from": "container-config"}},
+			},
+			expected: map[string]string{"from": "container-config"},
+		},
+		{
+			name: "When Config has an empty labels map, it should fall back to the ContainerConfig labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				Config:          &docker10.DockerConfig{Labels: map[string]string{}},
+				ContainerConfig: docker10.DockerConfig{Labels: map[string]string{"from": "container-config"}},
+			},
+			expected: map[string]string{"from": "container-config"},
+		},
+		{
+			name:     "When neither Config nor ContainerConfig carry labels, it should return nil",
+			metadata: &dockerv1client.DockerImageConfig{},
+			expected: nil,
+		},
+		{
+			name:     "When there is no metadata, it should return nil",
+			metadata: nil,
+			expected: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, kasBuildLabels(tc.metadata))
+		})
+	}
 }
 
 func TestKasReportedVersionInfo(t *testing.T) {
@@ -206,6 +293,17 @@ func TestKasReportedVersionInfo(t *testing.T) {
 		_, enabled, err := kasReportedVersionInfo(cpContext)
 		require.NoError(t, err)
 		require.False(t, enabled)
+	})
+
+	t.Run("When the user payload image records its build labels on ContainerConfig, it should report the user payload version", func(t *testing.T) {
+		cpContext := newReportedVersionTestContext(t, newSkewedHCP(), map[string]*dockerv1client.DockerImageConfig{
+			"user-registry/hyperkube:latest": kasImageMetadataOnContainerConfig(userLabels, created),
+		})
+		info, enabled, err := kasReportedVersionInfo(cpContext)
+		require.NoError(t, err)
+		require.True(t, enabled)
+		require.Equal(t, "v1.30.1", info.GitVersion)
+		require.Equal(t, "9a1f2c3d4e5b6a7f8c9d0e1f2a3b4c5d6e7f8a9b", info.GitCommit)
 	})
 
 	t.Run("When the user payload image metadata is missing, it should fail closed", func(t *testing.T) {
