@@ -64,21 +64,19 @@ func NewJWTMinter(key *ecdsa.PrivateKey) *jwtMinter {
 	}
 }
 
-// Mint returns an ES256-signed JWT carrying the issuer, audience, the owner it is scoped to
-// (subject + payloadNamespace/payloadName claims), and iat/nbf/exp. It deliberately does NOT carry
-// the rollout generation: the serving selector is an unsigned request input (see
-// rolloutGenerationHeader).
+// Mint returns an ES256-signed JWT carrying the issuer, audience, the owner it is scoped to (the
+// subject, a HashOwner of the owner so the control-plane namespace is never disclosed to the data
+// plane), and iat/nbf/exp. It deliberately does NOT carry the rollout generation: the serving selector
+// is an unsigned request input (see rolloutGenerationHeader).
 func (m *jwtMinter) Mint(owner payloadstore.OwnerRef, ttl time.Duration) (string, error) {
 	now := m.now()
 	claims := jwt.MapClaims{
-		"iss":                              m.issuer,
-		"aud":                              m.audience,
-		"sub":                              owner.Namespace + "/" + owner.Name,
-		payloadstore.ClaimPayloadNamespace: owner.Namespace,
-		payloadstore.ClaimPayloadName:      owner.Name,
-		"iat":                              now.Unix(),
-		"nbf":                              now.Add(-m.clockSkew).Unix(),
-		"exp":                              now.Add(ttl).Unix(),
+		"iss": m.issuer,
+		"aud": m.audience,
+		"sub": payloadstore.HashOwner(owner),
+		"iat": now.Unix(),
+		"nbf": now.Add(-m.clockSkew).Unix(),
+		"exp": now.Add(ttl).Unix(),
 	}
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodES256, claims).SignedString(m.key)
 	if err != nil {

@@ -25,16 +25,35 @@ const fieldManager = "ignition-payload-server"
 // field-scoped Server-Side Apply under its own field manager, so it never clobbers the generator-owned
 // status.current/previous/PayloadGenerated.
 //
-// The gate object is read from the uncached apiReader so a payload served via the handler's read-through
-// is matched against the true current generation, not a lagging cached one. The apply is pinned to that
-// read's resourceVersion and retried on conflict: if the CR changed since the read we re-read and
-// re-evaluate the gate — skipping when the generation has advanced (a stale-generation serve must not
-// mark a generation whose nodes have not booted and reached ignition yet) and re-applying when it was an
-// unrelated same-generation refresh (e.g. a configHash update), so a legitimate write is not dropped.
+// It first consults the cache: once the condition is observed True for the generation being served,
+// every subsequent node serve is satisfied from the informer cache, so a large rollout (hundreds of
+// nodes fetching at once) does not issue an uncached read per node. Only while that is not yet observed
+// does it fall through to the authoritative path.
+//
+// That path reads the gate object from the uncached apiReader so a payload served via the handler's
+// read-through is matched against the true current generation, not a lagging cached one. The apply is
+// pinned to that read's resourceVersion and retried on conflict: if the CR changed since the read we
+// re-read and re-evaluate the gate — skipping when the generation has advanced (a stale-generation serve
+// must not mark a generation whose nodes have not booted and reached ignition yet) and re-applying when
+// it was an unrelated same-generation refresh (e.g. a configHash update), so a legitimate write is not
+// dropped.
 func SetIgnitionReached(ctx context.Context, c client.Client, apiReader client.Reader, owner payloadstore.OwnerRef, rolloutGeneration int64) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	key := client.ObjectKey{Namespace: owner.Namespace, Name: owner.Name}
+
+	// Fast path: if the cache already shows the condition True for this generation, there is nothing to
+	// do. This keeps the uncached read (and the write) off the hot path once a rollout's first node has
+	// reported in — important when hundreds of nodes fetch at once. The generation check means a stale
+	// cached True from a prior generation does not short-circuit a serve for the new one.
+	cached := &hyperv1.IgnitionPayload{}
+	if err := c.Get(ctx, key, cached); err == nil &&
+		cached.Status.Current.RolloutGeneration == rolloutGeneration &&
+		apimeta.IsStatusConditionTrue(cached.Status.Conditions, hyperv1.IgnitionPayloadIgnitionReachedCondition) {
+		return nil
+	}
+
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cr := &hyperv1.IgnitionPayload{}
-		if err := apiReader.Get(ctx, client.ObjectKey{Namespace: owner.Namespace, Name: owner.Name}, cr); err != nil {
+		if err := apiReader.Get(ctx, key, cr); err != nil {
 			return client.IgnoreNotFound(err)
 		}
 

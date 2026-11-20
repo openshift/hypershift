@@ -76,13 +76,15 @@ func (s *Server) HandleIgnition(w http.ResponseWriter, r *http.Request) {
 
 	// Authenticate the token and confirm its name-scope authorizes the requested path. The owner
 	// namespace is always this server's namespace.
-	scoped, err := s.Verifier.Verify(token)
+	subject, err := s.Verifier.Verify(token)
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+	// The token carries only a hash of the owner it is scoped to (no cleartext control-plane
+	// namespace); authorize by hashing the owner expected for this path and comparing.
 	owner := payloadstore.OwnerRef{Namespace: s.Namespace, Name: name}
-	if scoped != owner {
+	if subject != payloadstore.HashOwner(owner) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}

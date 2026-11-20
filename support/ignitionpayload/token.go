@@ -2,6 +2,8 @@ package ignitionpayload
 
 import (
 	"crypto/ecdsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
@@ -26,15 +28,20 @@ const (
 	// resolve to a live store entry, so an unsigned selector introduces no escalation.
 	RolloutGenerationHeader = "rollout-generation"
 
-	// ClaimPayloadNamespace and ClaimPayloadName are the custom JWT claims carrying the owner the
-	// token is scoped to (the IgnitionPayload CR it may fetch).
-	ClaimPayloadNamespace = "payloadNamespace"
-	ClaimPayloadName      = "payloadName"
-
 	// DefaultTokenClockSkew is the leeway applied to the time claims so a first-booting node whose
 	// clock is wrong before NTP is not rejected.
 	DefaultTokenClockSkew = 10 * time.Minute
 )
+
+// HashOwner returns the opaque subject a token carries for owner: a hash of "namespace/name". The
+// token carries this hash rather than the namespace and name in cleartext, so the control-plane
+// namespace (internal information that the data plane has no need for) is never disclosed to a node.
+// The serving tier matches a presented token by hashing the owner it expects for the requested path
+// and comparing against the token's subject.
+func HashOwner(owner OwnerRef) string {
+	sum := sha256.Sum256([]byte(owner.Namespace + "/" + owner.Name))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
 
 // ErrTokenInvalid is returned by TokenVerifier.Verify for any token that fails signature, issuer,
 // audience, time, or scope validation. The serving tier maps it to HTTP 401.
@@ -60,17 +67,16 @@ func NewTokenVerifier(pub *ecdsa.PublicKey) *TokenVerifier {
 	}
 }
 
-// Verify validates the token's signature, issuer, audience, and time claims and returns the OwnerRef
-// it is scoped to. It deliberately does NOT check the rollout generation: the serving selector is an
-// unsigned request input (the rollout-generation header), and the token's name-scope — not the
-// generation — is the authorization boundary (see RolloutGenerationHeader). The caller must still
-// confirm the returned owner authorizes the requested path.
-func (v *TokenVerifier) Verify(tokenString string) (OwnerRef, error) {
+// Verify validates the token's signature, issuer, audience, and time claims and returns its opaque
+// subject — a HashOwner of the owner the token is scoped to. It deliberately does NOT check the
+// rollout generation: the serving selector is an unsigned request input (the rollout-generation
+// header), and the token's name-scope — not the generation — is the authorization boundary (see
+// RolloutGenerationHeader). The caller must still confirm the returned subject matches HashOwner of
+// the owner authorized for the requested path. WithValidMethods already restricts the accepted signing
+// method to ES256, so the key function does not re-check it.
+func (v *TokenVerifier) Verify(tokenString string) (string, error) {
 	claims := jwt.MapClaims{}
-	_, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodECDSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method %q", t.Header["alg"])
-		}
+	_, err := jwt.ParseWithClaims(tokenString, claims, func(*jwt.Token) (any, error) {
 		return v.key, nil
 	},
 		jwt.WithValidMethods([]string{"ES256"}),
@@ -80,15 +86,14 @@ func (v *TokenVerifier) Verify(tokenString string) (OwnerRef, error) {
 		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
-		return OwnerRef{}, fmt.Errorf("%w: %w", ErrTokenInvalid, err)
+		return "", fmt.Errorf("%w: %w", ErrTokenInvalid, err)
 	}
 
-	namespace, _ := claims[ClaimPayloadNamespace].(string)
-	name, _ := claims[ClaimPayloadName].(string)
-	if namespace == "" || name == "" {
-		return OwnerRef{}, fmt.Errorf("%w: token is missing its owner scope", ErrTokenInvalid)
+	subject, _ := claims["sub"].(string)
+	if subject == "" {
+		return "", fmt.Errorf("%w: token is missing its subject", ErrTokenInvalid)
 	}
-	return OwnerRef{Namespace: namespace, Name: name}, nil
+	return subject, nil
 }
 
 // LoadECDSAPublicKey parses a PEM-encoded ECDSA public key (the token-verification key the serving

@@ -23,14 +23,12 @@ func signToken(t *testing.T, key *ecdsa.PrivateKey, claims jwt.MapClaims) string
 
 func validClaims(now time.Time) jwt.MapClaims {
 	return jwt.MapClaims{
-		"iss":                 TokenIssuer,
-		"aud":                 TokenAudience,
-		"sub":                 "hcp/np-1",
-		ClaimPayloadNamespace: "hcp",
-		ClaimPayloadName:      "np-1",
-		"iat":                 now.Unix(),
-		"nbf":                 now.Add(-DefaultTokenClockSkew).Unix(),
-		"exp":                 now.Add(time.Hour).Unix(),
+		"iss": TokenIssuer,
+		"aud": TokenAudience,
+		"sub": HashOwner(OwnerRef{Namespace: "hcp", Name: "np-1"}),
+		"iat": now.Unix(),
+		"nbf": now.Add(-DefaultTokenClockSkew).Unix(),
+		"exp": now.Add(time.Hour).Unix(),
 	}
 }
 
@@ -40,11 +38,11 @@ func TestTokenVerifier_Verify(t *testing.T) {
 	v := NewTokenVerifier(&key.PublicKey)
 	now := time.Now()
 
-	t.Run("a valid token resolves to its scoped owner", func(t *testing.T) {
+	t.Run("a valid token resolves to its subject hash", func(t *testing.T) {
 		g := NewWithT(t)
-		owner, err := v.Verify(signToken(t, key, validClaims(now)))
+		subject, err := v.Verify(signToken(t, key, validClaims(now)))
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(owner).To(Equal(OwnerRef{Namespace: "hcp", Name: "np-1"}))
+		g.Expect(subject).To(Equal(HashOwner(OwnerRef{Namespace: "hcp", Name: "np-1"})))
 	})
 
 	t.Run("a token signed by a different key is rejected", func(t *testing.T) {
@@ -79,10 +77,10 @@ func TestTokenVerifier_Verify(t *testing.T) {
 		g.Expect(err).To(MatchError(ErrTokenInvalid))
 	})
 
-	t.Run("a token missing its owner scope is rejected", func(t *testing.T) {
+	t.Run("a token missing its subject is rejected", func(t *testing.T) {
 		g := NewWithT(t)
 		c := validClaims(now)
-		delete(c, ClaimPayloadName)
+		delete(c, "sub")
 		_, err := v.Verify(signToken(t, key, c))
 		g.Expect(err).To(MatchError(ErrTokenInvalid))
 	})

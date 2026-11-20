@@ -36,9 +36,10 @@ func TestNewJWTMinter(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(parsed.Valid).To(BeTrue())
 
-		// The token is scoped to the owner but carries NO rollout generation (selector is unsigned).
-		g.Expect(claims["payloadNamespace"]).To(Equal("hcp"))
-		g.Expect(claims["payloadName"]).To(Equal("np-1"))
+		// The token is scoped to the owner via an opaque subject hash (no cleartext namespace/name) and
+		// carries NO rollout generation (selector is unsigned).
+		g.Expect(claims["sub"]).To(Equal(payloadstore.HashOwner(owner)))
+		g.Expect(claims).ToNot(HaveKey("payloadNamespace"))
 		g.Expect(claims).ToNot(HaveKey("rolloutGeneration"))
 	})
 
@@ -72,7 +73,7 @@ func TestNewJWTMinter(t *testing.T) {
 
 		got, err := payloadstore.NewTokenVerifier(&key.PublicKey).Verify(tok)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(got).To(Equal(owner))
+		g.Expect(got).To(Equal(payloadstore.HashOwner(owner)))
 	})
 }
 

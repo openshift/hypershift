@@ -49,14 +49,12 @@ func mintToken(t *testing.T, key *ecdsa.PrivateKey, owner payloadstore.OwnerRef)
 	t.Helper()
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"iss":                              payloadstore.TokenIssuer,
-		"aud":                              payloadstore.TokenAudience,
-		"sub":                              owner.Namespace + "/" + owner.Name,
-		payloadstore.ClaimPayloadNamespace: owner.Namespace,
-		payloadstore.ClaimPayloadName:      owner.Name,
-		"iat":                              now.Unix(),
-		"nbf":                              now.Add(-time.Minute).Unix(),
-		"exp":                              now.Add(time.Hour).Unix(),
+		"iss": payloadstore.TokenIssuer,
+		"aud": payloadstore.TokenAudience,
+		"sub": payloadstore.HashOwner(owner),
+		"iat": now.Unix(),
+		"nbf": now.Add(-time.Minute).Unix(),
+		"exp": now.Add(time.Hour).Unix(),
 	}
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodES256, claims).SignedString(key)
 	NewWithT(t).Expect(err).ToNot(HaveOccurred())
