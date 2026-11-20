@@ -6,12 +6,15 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/upsert"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -114,6 +117,133 @@ func TestReconcileSecretEncryption(t *testing.T) {
 	}
 	if fnCallsCount > 0 {
 		t.Fatalf("create or update func should not be called")
+	}
+}
+
+func TestCAPIProviderPolicyRules(t *testing.T) {
+	t.Run("When building the platform policy it should include the expected rules", func(t *testing.T) {
+		kubevirt := New(nil)
+
+		expectedRules := []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"services"},
+				Verbs:     []string{rbacv1.VerbAll},
+			},
+			{
+				APIGroups: []string{"kubevirt.io"},
+				Resources: []string{"virtualmachineinstances", "virtualmachines"},
+				Verbs:     []string{rbacv1.VerbAll},
+			},
+			{
+				APIGroups: []string{"kubevirt.io"},
+				Resources: []string{"virtualmachineinstancemigrations"},
+				Verbs:     []string{"create"},
+			},
+			{
+				APIGroups: []string{"cdi.kubevirt.io"},
+				Resources: []string{"datavolumes"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+		}
+
+		rules := kubevirt.CAPIProviderPolicyRules()
+		if !equality.Semantic.DeepEqual(expectedRules, rules) {
+			t.Error(cmp.Diff(expectedRules, rules))
+		}
+	})
+
+	t.Run("When upgrading an existing Role it should add VMIM creation", testCAPIProviderPolicyRulesUpdateExistingRole)
+}
+
+func testCAPIProviderPolicyRulesUpdateExistingRole(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := rbacv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add RBAC scheme: %v", err)
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	role := func(rules []rbacv1.PolicyRule) *rbacv1.Role {
+		return &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "capi-provider",
+				Namespace: "test-namespace",
+			},
+			Rules: rules,
+		}
+	}
+
+	oldRules := []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"events", "secrets", "configmaps"},
+			Verbs:     []string{rbacv1.VerbAll},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"services"},
+			Verbs:     []string{rbacv1.VerbAll},
+		},
+		{
+			APIGroups: []string{"kubevirt.io"},
+			Resources: []string{"virtualmachineinstances", "virtualmachines"},
+			Verbs:     []string{rbacv1.VerbAll},
+		},
+		{
+			APIGroups: []string{"cdi.kubevirt.io"},
+			Resources: []string{"datavolumes"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+	}
+
+	provider := upsert.NewApplyProvider(false)
+	if result, err := provider.ApplyManifest(t.Context(), fakeClient, role(oldRules)); err != nil {
+		t.Fatalf("failed to create pre-upgrade Role: %v", err)
+	} else if result != controllerutil.OperationResultCreated {
+		t.Fatalf("expected pre-upgrade Role creation, got %s", result)
+	}
+
+	oldRole := &rbacv1.Role{}
+	if err := fakeClient.Get(t.Context(), client.ObjectKeyFromObject(role(nil)), oldRole); err != nil {
+		t.Fatalf("failed to get pre-upgrade Role: %v", err)
+	}
+	oldHash := oldRole.Annotations[upsert.DesiredStateHashAnnotation]
+	if oldHash == "" {
+		t.Fatal("pre-upgrade Role does not have a desired-state hash")
+	}
+
+	newRules := append([]rbacv1.PolicyRule{oldRules[0]}, New(nil).CAPIProviderPolicyRules()...)
+	result, err := provider.ApplyManifest(t.Context(), fakeClient, role(newRules))
+	if err != nil {
+		t.Fatalf("failed to update Role: %v", err)
+	}
+	if result != controllerutil.OperationResultUpdated {
+		t.Fatalf("expected Role update, got %s", result)
+	}
+
+	updatedRole := &rbacv1.Role{}
+	if err := fakeClient.Get(t.Context(), client.ObjectKeyFromObject(role(nil)), updatedRole); err != nil {
+		t.Fatalf("failed to get updated Role: %v", err)
+	}
+	newHash := updatedRole.Annotations[upsert.DesiredStateHashAnnotation]
+	if newHash == "" {
+		t.Fatal("updated Role does not have a desired-state hash")
+	}
+	if newHash == oldHash {
+		t.Fatalf("expected desired-state hash to change during upgrade: old=%s new=%s", oldHash, newHash)
+	}
+
+	hasVMIMRule := false
+	for _, rule := range updatedRole.Rules {
+		if equality.Semantic.DeepEqual(rule.APIGroups, []string{"kubevirt.io"}) &&
+			equality.Semantic.DeepEqual(rule.Resources, []string{"virtualmachineinstancemigrations"}) &&
+			equality.Semantic.DeepEqual(rule.Verbs, []string{"create"}) {
+			hasVMIMRule = true
+			break
+		}
+	}
+	if !hasVMIMRule {
+		t.Fatalf("updated Role does not grant VMIM creation: %#v", updatedRole.Rules)
 	}
 }
 

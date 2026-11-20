@@ -834,6 +834,16 @@ func TestHyperShiftOperatorClusterRole_WebhookRBAC(t *testing.T) {
 			ResourceNames: []string{hyperv1.GroupVersion.Group},
 		})))
 	})
+
+	t.Run("When building the ClusterRole it should permit delegating VMIM creation", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		g.Expect(clusterRole.Rules).To(ContainElement(Equal(rbacv1.PolicyRule{
+			APIGroups: []string{"kubevirt.io"},
+			Resources: []string{"virtualmachineinstancemigrations"},
+			Verbs:     []string{"create"},
+		})))
+	})
 }
 
 func TestHyperShiftOperatorPodDisruptionBudget_Build(t *testing.T) {

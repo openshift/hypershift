@@ -1491,6 +1491,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"virtualmachineinstances", "virtualmachines", "virtualmachines/finalizers"},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
+			{ // This allows hypershift operator to grant VMIM creation to the capi-provider.
+				APIGroups: []string{"kubevirt.io"},
+				Resources: []string{"virtualmachineinstancemigrations"},
+				Verbs:     []string{"create"},
+			},
 			{
 				APIGroups: []string{cdicore.GroupName},
 				Resources: []string{"datavolumes"},
