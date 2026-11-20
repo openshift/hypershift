@@ -59,6 +59,19 @@ func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string 
 		}
 	case *hyperv1.NodePool:
 		hostedClusterName = fmt.Sprintf("%s/%s", obj.Namespace, obj.Spec.ClusterName)
+	case *hyperv1.ControlPlaneComponent:
+		if obj.GetAnnotations() != nil {
+			hostedClusterName = obj.GetAnnotations()[k8sutil.HostedClusterAnnotation]
+		}
+		if hostedClusterName == "" {
+			hcpList := &hyperv1.HostedControlPlaneList{}
+			if err := r.List(context.Background(), hcpList, client.InNamespace(obj.GetNamespace())); err != nil {
+				return ""
+			}
+			if len(hcpList.Items) == 1 {
+				hostedClusterName = hcpList.Items[0].Annotations[k8sutil.HostedClusterAnnotation]
+			}
+		}
 	default:
 		if obj.GetAnnotations() != nil {
 			nodePoolName = obj.GetAnnotations()["hypershift.openshift.io/nodePool"]
