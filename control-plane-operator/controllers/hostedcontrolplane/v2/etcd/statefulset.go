@@ -62,7 +62,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	}
 	cipherSuites := config.SupportedEtcdCipherSuites(cpContext, ciphers)
 
-	replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
+	replicas := Replicas(hcp)
 	var members []string
 	for i := range replicas {
 		name := fmt.Sprintf("etcd-%d", i)
