@@ -1663,3 +1663,27 @@ func mhcRemediationAllowedChangedPredicate() predicate.Funcs {
 		},
 	}
 }
+
+// machineBootstrapDataSecretNameChangedPredicate returns a predicate that
+// filters Machine events to only pass through create and delete events plus
+// updates that change the bootstrap data Secret reference. Machines created by
+// the cluster autoscaler outside of any rollout must have their bootstrap data
+// Secret references re-evaluated promptly (kept alive or repaired) by the
+// NodePool controller. Machine status churn (conditions, nodeRef, providerID)
+// dominates Machine updates in large pools and is irrelevant to secret
+// maintenance, so those updates are dropped to bound reconcile load.
+func machineBootstrapDataSecretNameChangedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldMachine, ok := e.ObjectOld.(*capiv1.Machine)
+			if !ok {
+				return true
+			}
+			newMachine, ok := e.ObjectNew.(*capiv1.Machine)
+			if !ok {
+				return true
+			}
+			return ptr.Deref(oldMachine.Spec.Bootstrap.DataSecretName, "") != ptr.Deref(newMachine.Spec.Bootstrap.DataSecretName, "")
+		},
+	}
+}

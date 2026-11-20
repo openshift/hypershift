@@ -151,6 +151,14 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		// Machines can be created at any time by the cluster autoscaler,
+		// outside of any rollout: their bootstrap data Secret references must
+		// be re-evaluated (kept alive or repaired) promptly, otherwise the
+		// provider machine never starts provisioning. Machine status churn
+		// (conditions, nodeRef, providerID) dominates Machine updates in large
+		// pools and is irrelevant to secret maintenance, so only creation,
+		// deletion and bootstrap data Secret reference changes are reconciled.
+		Watches(&capiv1.Machine{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(predicate.And(machineBootstrapDataSecretNameChangedPredicate(), reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))).
 		Watches(&capiv1.MachineHealthCheck{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(predicate.And(mhcRemediationAllowedChangedPredicate(), reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
