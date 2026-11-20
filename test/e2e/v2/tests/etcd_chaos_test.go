@@ -133,10 +133,7 @@ func EtcdKillRandomMembersTest(getTestCtx internal.TestContextGetter) {
 		// Create marker data that should survive the chaos
 		markerCM := createMarkerConfigMap(ctx, hcClient)
 		DeferCleanup(func() {
-			err := hcClient.Delete(ctx, markerCM)
-			if err != nil && !apierrors.IsNotFound(err) {
-				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete marker ConfigMap %s", markerCM.Name)
-			}
+			deleteMarkerConfigMap(ctx, hcClient, markerCM)
 		})
 
 		etcdSts, etcdPods := getEtcdStsAndPods(ctx, testCtx.MgmtClient, cpNamespace)
@@ -183,10 +180,7 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 		// Create marker data that should survive the chaos
 		markerCM := createMarkerConfigMap(ctx, hcClient)
 		DeferCleanup(func() {
-			err := hcClient.Delete(ctx, markerCM)
-			if err != nil && !apierrors.IsNotFound(err) {
-				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete marker ConfigMap %s", markerCM.Name)
-			}
+			deleteMarkerConfigMap(ctx, hcClient, markerCM)
 		})
 
 		etcdSts, etcdPods := getEtcdStsAndPods(ctx, testCtx.MgmtClient, cpNamespace)
@@ -430,6 +424,26 @@ func createMarkerConfigMap(ctx context.Context, client crclient.Client) *corev1.
 	)
 	GinkgoWriter.Printf("Created marker ConfigMap %s/%s\n", cm.Namespace, cm.Name)
 	return cm
+}
+
+// deleteMarkerConfigMap deletes the marker ConfigMap, retrying transient
+// failures. The guest API can be briefly unavailable right after etcd chaos
+// while quorum re-forms, and the deletion runs in DeferCleanup immediately
+// after the chaos assertions.
+func deleteMarkerConfigMap(ctx context.Context, client crclient.Client, markerCM *corev1.ConfigMap) {
+	GinkgoHelper()
+
+	// Deliberately plain gomega Eventually rather than the legacy
+	// e2eutil.EventuallyObject: the e2eutilallowlist linter forbids new
+	// references to legacy utilities from test/e2e/v2.
+	Eventually(func() error {
+		err := client.Delete(ctx, markerCM)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+		return nil
+	}).WithTimeout(5*time.Minute).WithPolling(3*time.Second).Should(Succeed(), "cleanup: failed to delete marker ConfigMap %s", markerCM.Name)
+	GinkgoWriter.Printf("Deleted marker ConfigMap %s/%s\n", markerCM.Namespace, markerCM.Name)
 }
 
 // verifyMarkerSurvived verifies that the marker ConfigMap still has its original data

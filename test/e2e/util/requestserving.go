@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/clientcmd"
@@ -21,6 +23,25 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// createNodePoolWithRetry creates the given NodePool, retrying transient
+// server-side failures. Under CI load, creates regularly fail once with a
+// webhook or API server timeout (e.g. "TLS handshake timeout" calling the
+// hypershift-operator admission webhook) and succeed on the next attempt.
+func createNodePoolWithRetry(ctx context.Context, t *testing.T, c client.Client, np *hyperv1.NodePool, description string) {
+	g := NewWithT(t)
+	g.Eventually(func() error {
+		err := c.Create(ctx, np)
+		if err == nil || apierrors.IsAlreadyExists(err) {
+			return nil
+		}
+		if apierrors.IsInternalError(err) || apierrors.IsServerTimeout(err) || apierrors.IsTimeout(err) || apierrors.IsServiceUnavailable(err) {
+			t.Logf("Transient error creating %s %s/%s, retrying: %v", description, np.Namespace, np.Name, err)
+			return err
+		}
+		return StopTrying(fmt.Sprintf("non-transient error creating %s %s/%s", description, np.Namespace, np.Name)).Wrap(err)
+	}, 5*time.Minute, 10*time.Second).Should(Succeed(), fmt.Sprintf("failed to create %s", description))
+}
 
 func SetupReqServingClusterNodePools(ctx context.Context, t *testing.T, kubeconfigPath, mgmtHCNamespace, mgmtHCName string) []*hyperv1.NodePool {
 	g := NewWithT(t)
@@ -100,16 +121,14 @@ func SetupReqServingClusterNodePools(ctx context.Context, t *testing.T, kubeconf
 	var result []*hyperv1.NodePool
 	for _, np := range []*hyperv1.NodePool{reqServingNodePoolA, reqServingNodePoolB} {
 		prepareNodePool(np)
-		err := mgmtParentClient.Create(ctx, np)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to create request serving management nodepool")
+		createNodePoolWithRetry(ctx, t, mgmtParentClient, np, "request serving management nodepool")
 		t.Logf("Created request serving nodepool %s/%s", np.Namespace, np.Name)
 		result = append(result, np)
 	}
 
 	for _, np := range []*hyperv1.NodePool{nonReqServingNodePoolA, nonReqServingNodePoolB, nonReqServingNodePoolC} {
 		prepareNonReqServingNodePool(np)
-		err := mgmtParentClient.Create(ctx, np)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to create non request serving management nodepool")
+		createNodePoolWithRetry(ctx, t, mgmtParentClient, np, "non request serving management nodepool")
 		t.Logf("Created non request serving nodepool %s/%s", np.Namespace, np.Name)
 		result = append(result, np)
 	}
