@@ -3,6 +3,7 @@ package ignitionpayloadserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -10,8 +11,11 @@ import (
 	"strings"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	payloadstore "github.com/openshift/hypershift/support/ignitionpayload"
 	supportutil "github.com/openshift/hypershift/support/util"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -100,10 +104,23 @@ func (s *Server) HandleIgnition(w http.ResponseWriter, r *http.Request) {
 	payload, err := s.lookup(r.Context(), owner, rolloutGeneration)
 	switch {
 	case errors.Is(err, payloadstore.ErrNotFound):
-		// 511 so ignition backs off and retries while the payload propagates (or until the
-		// consumer re-points at a live generation).
+		// A requested generation below the owner's retained floor has been retired and (generations
+		// only increment) will never be served again, so return 410 to make ignition give up rather
+		// than retry forever — ignition retries only on >=500, treating anything below 500 as terminal.
+		// Any other miss stays 511 (retry): the generator stores a payload before its generation is
+		// ever advertised, so this should not happen, and a node must never fail its boot on a miss we
+		// cannot prove is permanent.
 		// https://coreos.github.io/ignition/operator-notes/#http-backoff-and-retry
-		http.Error(w, "Payload not found", http.StatusNetworkAuthenticationRequired)
+		floor, current, ok := s.retainedGenerationBounds(r.Context(), owner)
+		if ok && rolloutGeneration < floor {
+			http.Error(w, fmt.Sprintf("ignition payload generation %d has been retired; current generation is %d", rolloutGeneration, current), http.StatusGone)
+			return
+		}
+		if ok {
+			http.Error(w, fmt.Sprintf("ignition payload generation %d not found; current generation is %d", rolloutGeneration, current), http.StatusNetworkAuthenticationRequired)
+		} else {
+			http.Error(w, fmt.Sprintf("ignition payload generation %d not found; no generation currently available", rolloutGeneration), http.StatusNetworkAuthenticationRequired)
+		}
 		return
 	case err != nil:
 		log.Printf("failed to read payload: %s", err)
@@ -146,6 +163,31 @@ func (s *Server) lookup(ctx context.Context, owner payloadstore.OwnerRef, rollou
 		payload, _, err = payloadstore.ReadPayload(ctx, s.Uncached, s.Namespace, owner, rolloutGeneration)
 	}
 	return payload, err
+}
+
+// retainedGenerationBounds returns the owner's lowest retained ("floor") and current rollout
+// generations from the IgnitionPayload status, read authoritatively (uncached) so cache lag cannot
+// misclassify a live generation as retired. The status — not the store backend — is the source of truth
+// for which generations are live: the generator retains current + previous, so previous (when present)
+// is the floor, else current. ok is false when the CR is unreadable or nothing has been generated yet,
+// in which case the caller treats a miss as non-permanent (511) rather than failing a boot.
+func (s *Server) retainedGenerationBounds(ctx context.Context, owner payloadstore.OwnerRef) (floor, current int64, ok bool) {
+	cr := &hyperv1.IgnitionPayload{}
+	if err := s.Uncached.Get(ctx, client.ObjectKey{Namespace: owner.Namespace, Name: owner.Name}, cr); err != nil {
+		if !apierrors.IsNotFound(err) {
+			log.Printf("failed to read IgnitionPayload %s/%s: %s", owner.Namespace, owner.Name, err)
+		}
+		return 0, 0, false
+	}
+	current = cr.Status.Current.RolloutGeneration
+	if current == 0 {
+		return 0, 0, false
+	}
+	floor = current
+	if cr.Status.Previous.RolloutGeneration > 0 {
+		floor = cr.Status.Previous.RolloutGeneration
+	}
+	return floor, current, true
 }
 
 // bearerToken returns the signed JWT from the Authorization header. The token is used as presented

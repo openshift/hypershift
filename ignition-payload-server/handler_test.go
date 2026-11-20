@@ -13,8 +13,11 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
 	payloadstore "github.com/openshift/hypershift/support/ignitionpayload"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -123,6 +126,40 @@ func TestServe(t *testing.T) {
 	// both miss → 511 so ignition retries.
 	s3 := &Server{Namespace: testNS, Verifier: verifier, Cached: empty, Uncached: empty}
 	g.Expect(doGet(s3.HandleIgnition, "/ignition/"+testName, tok, "2").Code).To(Equal(http.StatusNetworkAuthenticationRequired))
+}
+
+// TestServeMissClassification: a miss for a generation below the retained floor is permanently retired
+// and returns 410 (ignition gives up), while a miss for a generation at/above the floor stays 511
+// (ignition retries).
+func TestServeMissClassification(t *testing.T) {
+	g := NewWithT(t)
+	key := testKey(t)
+	owner := payloadstore.OwnerRef{Namespace: testNS, Name: testName}
+	tok := mintToken(t, key, owner)
+
+	// The IgnitionPayload status is the source of truth for the live range: current 3, previous 2 →
+	// floor 2. No payload Secret is seeded, so every lookup misses and exercises the classification.
+	cr := &hyperv1.IgnitionPayload{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNS, Name: testName},
+		Status: hyperv1.IgnitionPayloadStatus{
+			Current:  hyperv1.PayloadReference{RolloutGeneration: 3},
+			Previous: hyperv1.PayloadReference{RolloutGeneration: 2},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cr).Build()
+	s := &Server{Namespace: testNS, Verifier: payloadstore.NewTokenVerifier(&key.PublicKey), Cached: c, Uncached: c}
+
+	// below the floor → retired → 410 (ignition gives up); the message names requested and current.
+	retired := doGet(s.HandleIgnition, "/ignition/"+testName, tok, "1")
+	g.Expect(retired.Code).To(Equal(http.StatusGone))
+	g.Expect(retired.Body.String()).To(ContainSubstring("generation 1 has been retired"))
+	g.Expect(retired.Body.String()).To(ContainSubstring("current generation is 3"))
+
+	// at/above the floor but not stored → 511 (ignition retries).
+	notFound := doGet(s.HandleIgnition, "/ignition/"+testName, tok, "5")
+	g.Expect(notFound.Code).To(Equal(http.StatusNetworkAuthenticationRequired))
+	g.Expect(notFound.Body.String()).To(ContainSubstring("generation 5 not found"))
+	g.Expect(notFound.Body.String()).To(ContainSubstring("current generation is 3"))
 }
 
 func TestAuthorization(t *testing.T) {
