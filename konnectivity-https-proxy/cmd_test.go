@@ -48,8 +48,16 @@ func TestShouldDialDirectFunc(t *testing.T) {
 		connectDirectlyToCloudAPIs bool
 		requestURL                 *url.URL
 		proxyNotConfigured         bool
+		rejectHostedLookup         bool
 		expectedDialDirectly       bool
 	}{
+		{
+			name:                       "When a cloud API uses management egress, it should not consult hosted proxy policy",
+			connectDirectlyToCloudAPIs: true,
+			requestURL:                 u("cloudapi.com"),
+			rejectHostedLookup:         true,
+			expectedDialDirectly:       true,
+		},
 		{
 			name:                       "cloud API",
 			connectDirectlyToCloudAPIs: true,
@@ -101,6 +109,9 @@ func TestShouldDialDirectFunc(t *testing.T) {
 			}
 			proxyConfigFunc := userProxyConfig.ProxyFunc()
 			userProxyFunc := func(u *url.URL) (*url.URL, error) {
+				if tc.rejectHostedLookup {
+					return nil, errors.New("hosted proxy policy must not select cloud management egress")
+				}
 				if tc.proxyNotConfigured {
 					return nil, nil
 				}

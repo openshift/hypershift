@@ -21,6 +21,7 @@ import (
 
 	"github.com/armon/go-socks5"
 	"github.com/go-logr/logr"
+	"golang.org/x/net/http/httpproxy"
 	"golang.org/x/net/proxy"
 )
 
@@ -226,6 +227,7 @@ type konnectivityProxy struct {
 
 	httpDialerOnce sync.Once
 	httpDialer     proxy.Dialer
+	httpProxyFunc  func(*url.URL) (*url.URL, error)
 
 	excludeCloudHosts sets.Set[string]
 }
@@ -419,10 +421,15 @@ func (p *konnectivityProxy) dialDirectWithoutProxy(ctx context.Context, network,
 // dialDirectWithProxy directly connect to the target, respecting any local proxy settings from the environment
 func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn, error) {
 	p.httpDialerOnce.Do(func() {
-		if proxyURLStr := os.Getenv("HTTPS_PROXY"); proxyURLStr != "" {
+		proxyURLStr := os.Getenv("HTTPS_PROXY")
+		p.httpProxyFunc = (&httpproxy.Config{
+			HTTPSProxy: proxyURLStr,
+			NoProxy:    os.Getenv("NO_PROXY"),
+		}).ProxyFunc()
+		if proxyURLStr != "" {
 			proxyURL, err := url.Parse(proxyURLStr)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to parse HTTPS_PROXY(%s): %v", proxyURLStr, err)
+				fmt.Fprintln(os.Stderr, "Failed to parse HTTPS_PROXY")
 			} else {
 				p.httpDialer = newHTTPDialer(proxyURL)
 			}
@@ -431,6 +438,13 @@ func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn,
 			p.httpDialer = proxy.Direct
 		}
 	})
+	proxyURL, err := p.httpProxyFunc(&url.URL{Scheme: "https", Host: addr})
+	if err != nil {
+		return nil, fmt.Errorf("failed to select management proxy")
+	}
+	if proxyURL == nil {
+		return proxy.Direct.Dial(network, addr)
+	}
 	return p.httpDialer.Dial(network, addr)
 }
 
