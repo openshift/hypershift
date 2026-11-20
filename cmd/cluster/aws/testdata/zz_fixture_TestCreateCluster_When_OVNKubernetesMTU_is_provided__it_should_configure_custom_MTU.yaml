@@ -44,6 +44,7 @@ spec:
     managementType: Managed
   fips: false
   infraID: fakeInfraID
+  infrastructureAvailabilityPolicy: SingleReplica
   issuerURL: fakeIssuerURL
   networking:
     clusterNetwork:
