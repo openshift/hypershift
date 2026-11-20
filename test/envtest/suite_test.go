@@ -43,6 +43,7 @@ func TestAPIs(t *testing.T) {
 	var err error
 	suites, err = LoadTestSuiteSpecs(assetsDir, karpenterAssetsDir)
 	g.Expect(err).ToNot(HaveOccurred())
+	suites = append(suites, agentProviderTestSuites(testDir)...)
 
 	RunSpecs(t, "HyperShift API Integration Suite")
 }
