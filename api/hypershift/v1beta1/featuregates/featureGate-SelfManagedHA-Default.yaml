@@ -47,6 +47,9 @@
                     },
                     {
                         "name": "IgnitionPayloadSystem"
+                    },
+                    {
+                        "name": "HostedClusterAutoscalerConfiguration"
                     }
                 ],
                 "enabled": [
