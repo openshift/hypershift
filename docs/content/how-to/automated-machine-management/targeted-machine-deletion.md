@@ -128,21 +128,52 @@ oc --kubeconfig <hosted_cluster_kubeconfig> get nodes \
   -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,MEMORY_PRESSURE:.status.conditions[?(@.type=="MemoryPressure")].status,DISK_PRESSURE:.status.conditions[?(@.type=="DiskPressure")].status,PID_PRESSURE:.status.conditions[?(@.type=="PIDPressure")].status'
 ```
 
+If the Cluster API version that manages your hosted cluster might be earlier than v1.9.0 (see
+[Limitations](#limitations)), or you are not sure, also check the Machines that you will keep on the management cluster.
+In those versions, Cluster API also treats a Machine as unhealthy if its `failureReason` or `failureMessage` is set, and
+versions earlier than v1.7.4 also treat a `NodeHealthy` condition with the status `Unknown` as unhealthy. The following
+command reads the `v1beta1` API version, which reports these fields. It can print a warning such as
+`cluster.x-k8s.io/v1beta1 Machine is deprecated; use cluster.x-k8s.io/v1beta2 Machine`, which you can ignore:
+
+```bash
+oc get machines.v1beta1.cluster.x-k8s.io -n "${HCP_NAMESPACE}" \
+  -o custom-columns='NAME:.metadata.name,NODEPOOL:.metadata.annotations.hypershift\.openshift\.io/nodePool,NODE:.status.nodeRef.name,FAILURE_REASON:.status.failureReason,FAILURE_MESSAGE:.status.failureMessage,NODE_HEALTHY:.status.conditions[?(@.type=="NodeHealthy")].status,HEALTH_CHECK:.status.conditions[?(@.type=="HealthCheckSucceeded")].status,DELETING:.metadata.deletionTimestamp'
+```
+
+For each Machine of the NodePool that you will keep: `NODE` must have a value; `FAILURE_REASON`, `FAILURE_MESSAGE`, and
+`DELETING` must be `<none>`; `NODE_HEALTHY` must be `True`; and `HEALTH_CHECK` must not be `False`.
+
+If any Machine that you will keep fails these checks, do not continue. If it is being deleted, wait until it is gone.
+If it is unhealthy, wait until it recovers or, if `spec.management.autoRepair` is enabled on the NodePool, until it is
+replaced. If it does not recover, fix that Machine or its Node first. Then repeat the checks in this step.
+
 ### 3. Annotate the Machines
 
-Annotate each Machine that you want to remove. Annotate exactly as many Machines as you will remove from the NodePool:
+Before you annotate, list the Machines that already have the `cluster.x-k8s.io/delete-machine` annotation, for example
+from an earlier operation:
+
+```bash
+oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" \
+  -o custom-columns='NAME:.metadata.name,NODEPOOL:.metadata.annotations.hypershift\.openshift\.io/nodePool,DELETE-MACHINE:.metadata.annotations.cluster\.x-k8s\.io/delete-machine'
+```
+
+For the Machines of your NodePool, `<none>` in the `DELETE-MACHINE` column means that the annotation is absent. Any
+other value, including an empty cell or `no`, means that the annotation is present and the Machine is prioritized for
+deletion. If a Machine that you will keep has the annotation, find out why before you continue. Remove the annotation,
+as shown in [Cleanup](#cleanup), only if it is left over from an operation that is no longer in progress. If you cannot
+determine why it was set, stop: removing it could interfere with another operation, and keeping it could cause that
+Machine to be deleted instead of a Machine that you want to remove.
+
+Then annotate each Machine that you want to remove and that does not already have the annotation:
 
 ```bash
 oc annotate machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" <machine_name> \
   cluster.x-k8s.io/delete-machine=yes
 ```
 
-Confirm that the annotation is present before you scale down. The following command prints `yes`:
-
-```bash
-oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" <machine_name> \
-  -o jsonpath='{.metadata.annotations.cluster\.x-k8s\.io/delete-machine}{"\n"}'
-```
+Before you scale down, run the listing command again. For the Machines of your NodePool, the `DELETE-MACHINE` column
+must show a value other than `<none>` for exactly the Machines that you will remove. Also repeat the Machine and Node
+health checks in [step 2](#2-identify-the-machine-to-delete).
 
 !!! important
 
@@ -152,7 +183,7 @@ oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" <machine_name> \
 
 ### 4. Scale down the NodePool
 
-Lower `spec.replicas` on the NodePool by the number of Machines that you annotated:
+Lower `spec.replicas` on the NodePool by the number of Machines of your NodePool that have the annotation:
 
 ```bash
 oc scale nodepool/"${NODEPOOL_NAME}" -n "${HC_NAMESPACE}" --replicas=<new_replica_count>
@@ -197,14 +228,16 @@ An annotated Machine that is not deleted keeps its annotation and is preferred f
 scales down. This happens if you annotated more Machines than you removed, or if you annotated a Machine and did not
 scale down.
 
-List the Machines that still have the annotation. Machines without it show `<none>`:
+List the Machines that still have the annotation. Machines without it show `<none>`. An empty cell or any other value
+means that the annotation is present:
 
 ```bash
 oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" \
   -o custom-columns='NAME:.metadata.name,DELETE-MACHINE:.metadata.annotations.cluster\.x-k8s\.io/delete-machine'
 ```
 
-Remove the annotation from any Machine that you want to keep:
+Remove the annotation from any Machine that you want to keep, if you set the annotation yourself or have confirmed that
+it is left over from an operation that is no longer in progress:
 
 ```bash
 oc annotate machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" <machine_name> \
