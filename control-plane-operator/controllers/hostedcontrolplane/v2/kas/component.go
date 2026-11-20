@@ -72,6 +72,15 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptKubeAPIServerConfig),
 		).
 		WithManifestAdapter(
+			"kas-reported-version.yaml",
+			// ReconcileExisting so the adapter sees the current ConfigMap content
+			// when masking is disabled but the kube-apiserver deployment still
+			// mounts it (deferred cleanup; see reportedVersionEnabled).
+			component.ReconcileExisting(),
+			component.WithPredicate(reportedVersionEnabled),
+			component.WithAdaptFunction(adaptReportedVersionConfigMap),
+		).
+		WithManifestAdapter(
 			"audit-config.yaml",
 			component.WithAdaptFunction(AdaptAuditConfig),
 		).
