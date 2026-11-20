@@ -1473,6 +1473,17 @@ func TestEmbeddedBootstrapToken(t *testing.T) {
 		g.Expect(got).To(Equal(token), "the embedded token should be extracted and decoded")
 	})
 
+	t.Run("When the Authorization header lacks the Bearer prefix, it should error", func(t *testing.T) {
+		g := NewWithT(t)
+		// The ignition server rejects an Authorization value without the exact
+		// "Bearer " prefix with HTTP 401. Accepting the bare base64 token here
+		// would hide that from repair: the embedded token would look valid and
+		// the Secret would be left unservable.
+		config := fmt.Sprintf(`{"ignition":{"version":"3.2.0","config":{"merge":[{"httpHeaders":[{"name":"Authorization","value":"%s"}]}]}}}`, encoded)
+		_, err := embeddedBootstrapToken(userDataSecret(config))
+		g.Expect(err).To(HaveOccurred(), "an Authorization value without the Bearer prefix cannot be served")
+	})
+
 	t.Run("When the payload is not an ignition config, it should error", func(t *testing.T) {
 		g := NewWithT(t)
 		_, err := embeddedBootstrapToken(userDataSecret("not-an-ignition-config"))
@@ -2532,6 +2543,35 @@ func TestTokenRepairMissingReferencedSecrets(t *testing.T) {
 			To(Succeed(), "healthy referenced user data Secret should be kept")
 		g.Expect(string(kept.Data["value"])).To(ContainSubstring(staleBearer),
 			"user data Secret with a live paired token Secret must not be rewritten")
+	})
+
+	t.Run("When a referenced user data Secret's paired token Secret is marked to expire, it should clear the expiration annotation", func(t *testing.T) {
+		g := NewWithT(t)
+		// A token Secret can be marked to expire by an earlier pass while its
+		// pair is not yet referenced. Once a Machine references the user data
+		// Secret, the ignition server's token controller would delete the token
+		// Secret at the deadline and leave that Machine with "Token not found".
+		// The repair loop finds a healthy pair and must still clear the mark.
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "01d4c0de")
+		markedToken := pairedTokenSecret("01d4c0de", staleToken)
+		markedToken.Annotations = map[string]string{
+			hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(time.Hour).Format(time.RFC3339),
+		}
+		token, fakeClient := setup(t, staleUserDataName, staleUserDataSecret(nodePoolName, "01d4c0de"), markedToken)
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should keep a referenced pair usable")
+
+		keptToken := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(markedToken), keptToken)).
+			To(Succeed(), "paired token Secret should still exist")
+		g.Expect(keptToken.Annotations).ToNot(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation),
+			"a token Secret paired with a referenced user data Secret must not stay marked to expire")
+
+		kept := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, kept)).
+			To(Succeed(), "referenced user data Secret should still exist")
+		g.Expect(string(kept.Data["value"])).To(ContainSubstring(staleBearer),
+			"a healthy user data Secret must not be rewritten just to clear its paired token's expiration")
 	})
 
 	t.Run("When the paired token Secret exists but the ignition server rotated its token, it should be refreshed with the current token", func(t *testing.T) {

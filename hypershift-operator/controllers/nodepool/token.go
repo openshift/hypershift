@@ -339,6 +339,10 @@ func (t *Token) repairMissingReferencedSecrets(ctx context.Context, tokenBytes [
 		}}
 		err := t.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret)
 		repairReason := ""
+		// pairedTokenSecret is the token Secret paired with the referenced user
+		// data Secret by config generation, when it exists.
+		pairedTokenSecret := &corev1.Secret{}
+		hasPairedTokenSecret := false
 		switch {
 		case apierrors.IsNotFound(err):
 			// The referenced Secret is gone: the provider machine of any
@@ -356,7 +360,6 @@ func (t *Token) repairMissingReferencedSecrets(ctx context.Context, tokenBytes [
 			// deletes them once expired. When the embedded token is no longer
 			// served, Machines booting from this Secret keep receiving
 			// "Token not found" and never join the cluster.
-			pairedTokenSecret := &corev1.Secret{}
 			pairedErr := t.Get(ctx, client.ObjectKey{Namespace: t.controlplaneNamespace, Name: pairedTokenSecretName(referencedName)}, pairedTokenSecret)
 			switch {
 			case apierrors.IsNotFound(pairedErr):
@@ -364,6 +367,7 @@ func (t *Token) repairMissingReferencedSecrets(ctx context.Context, tokenBytes [
 			case pairedErr != nil:
 				return fmt.Errorf("failed to get paired token Secret for user data Secret %q: %w", referencedName, pairedErr)
 			default:
+				hasPairedTokenSecret = true
 				embedded, embedErr := embeddedBootstrapToken(userDataSecret)
 				switch {
 				case embedErr != nil:
@@ -378,6 +382,24 @@ func (t *Token) repairMissingReferencedSecrets(ctx context.Context, tokenBytes [
 			}
 		}
 		if repairReason == "" {
+			// A referenced pair that needs no repair must not stay marked as
+			// expired: the ignition server's token controller deletes a token
+			// Secret once its expiration timestamp passes, and a Machine that
+			// still requests that token then gets "Token not found" until the
+			// next reconcile repairs the user data Secret. cleanupOutdated
+			// only revisits the immediately outdated generation, so a token
+			// Secret marked by an earlier pass is never cleared there even
+			// though a Machine still references its pair.
+			if hasPairedTokenSecret {
+				cleared, err := clearExpirationTimestampOnToken(ctx, t.Client, pairedTokenSecret)
+				if err != nil && !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to clear expiration on token Secret %q: %w", pairedTokenSecret.Name, err)
+				}
+				if cleared {
+					log.Info("Cleared expiration on token Secret: user data Secret is still referenced as bootstrap data",
+						"secret", pairedTokenSecret.Name)
+				}
+			}
 			continue
 		}
 		// Refresh the Secret with the current token so Machines created from
@@ -1039,7 +1061,16 @@ func embeddedBootstrapToken(userDataSecret *corev1.Secret) (string, error) {
 			if header.Name != "Authorization" || header.Value == nil {
 				continue
 			}
-			token, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(*header.Value, "Bearer "))
+			// The ignition server rejects any Authorization value that does not
+			// start with the exact "Bearer " prefix (ignition-server/cmd/start.go).
+			// Requiring it here too means a header that decodes to a valid token
+			// but lacks the prefix is still reported as unservable and repaired,
+			// instead of being accepted and failing with HTTP 401 on boot.
+			encodedToken, found := strings.CutPrefix(*header.Value, "Bearer ")
+			if !found {
+				return "", fmt.Errorf("embedded Authorization header does not use the %q prefix", "Bearer ")
+			}
+			token, err := base64.StdEncoding.DecodeString(encodedToken)
 			if err != nil {
 				return "", fmt.Errorf("failed to decode embedded token: %w", err)
 			}
