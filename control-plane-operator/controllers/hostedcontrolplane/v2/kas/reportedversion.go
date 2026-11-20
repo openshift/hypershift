@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"runtime"
@@ -364,7 +365,7 @@ func kasMountsReportedVersionConfigMap(cpContext component.WorkloadContext) (boo
 			return true, nil
 		}
 	}
-	return !kasRolloutComplete(deployment), nil
+	return !kasRolloutComplete(cpContext, deployment), nil
 }
 
 // kasRolloutComplete reports whether the deployment's rollout has finished and
@@ -374,20 +375,22 @@ func kasMountsReportedVersionConfigMap(cpContext component.WorkloadContext) (boo
 // updatedReplicas counts pods on the current template including unready ones,
 // so during a surge rollout it can equal the desired count while an old
 // ReplicaSet is still scaled up and able to recreate a pod that mounts the
-// ConfigMap. The kube-apiserver deployment does surge: DeploymentConfig sets no
-// strategy for a single replica, so Kubernetes' default 25% maxSurge rounds up
-// to one, and the two replica request serving topology sets maxSurge to one
-// explicitly. Requiring replicas and availableReplicas to match as well means
-// the old ReplicaSets have scaled to zero and the new pods are serving.
-func kasRolloutComplete(deployment *appsv1.Deployment) bool {
-	replicas := int32(1)
-	if deployment.Spec.Replicas != nil {
-		replicas = *deployment.Spec.Replicas
-	}
-	return deployment.Status.ObservedGeneration >= deployment.Generation &&
-		deployment.Status.Replicas == replicas &&
-		deployment.Status.UpdatedReplicas == replicas &&
-		deployment.Status.AvailableReplicas == replicas
+// ConfigMap. The kube-apiserver deployment does surge: its manifest sets
+// maxSurge to 25%, which with one replica permits one extra pod, and the two
+// replica request serving topology sets maxSurge to one.
+//
+// podspec.IsDeploymentReady is the exact check. Beyond matching replicas,
+// updatedReplicas and availableReplicas it also requires readyReplicas to
+// match and unavailableReplicas to be zero. That last field is what closes
+// the remaining window: unavailableReplicas is derived from the sum of the
+// ReplicaSets' desired replicas minus the available ones, so it stays
+// positive while an old ReplicaSet is still scaled up even after its pod has
+// gone away. Without it, a single replica rollout whose old pod was evicted
+// reports replicas, updatedReplicas and availableReplicas all at one while
+// the old ReplicaSet is still about to recreate a pod that mounts the
+// ConfigMap non-optionally.
+func kasRolloutComplete(ctx context.Context, deployment *appsv1.Deployment) bool {
+	return podspec.IsDeploymentReady(ctx, deployment)
 }
 
 // adaptReportedVersionConfigMap fills the kas-reported-version ConfigMap with
