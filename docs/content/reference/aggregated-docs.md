@@ -7714,14 +7714,17 @@ actual Machines do not match the desired replicas, the scale-down might not remo
 annotated.
 
 Run the NodePool and MachineSet commands from step 1 again, and count the
-Machines of the NodePool:
+Machines of the NodePool. Replace `<active_machineset_name>` with the name of the MachineSet for your NodePool that has
+a non-zero `REPLICAS` value:
 
 ```bash
 oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" -o json \
-  | jq -r --arg nodepool "${HC_NAMESPACE}/${NODEPOOL_NAME}" '
+  | jq -r --arg nodepool "${HC_NAMESPACE}/${NODEPOOL_NAME}" --arg machineset "<active_machineset_name>" '
       (.items | map(select((.metadata.annotations // {}) | has("hypershift.openshift.io/nodePool") | not)) | length) as $unannotated
       | [.items[] | select((.metadata.annotations // {})["hypershift.openshift.io/nodePool"] == $nodepool)]
-      | "machines=\(length) deleting=\(map(select(.metadata.deletionTimestamp != null)) | length) unannotated=\($unannotated)"'
+      | (map(select(.metadata.deletionTimestamp != null)) | length) as $deleting
+      | (map(select(any(.metadata.ownerReferences[]?; .controller == true and .kind == "MachineSet" and .name == $machineset) | not)) | length) as $notowned
+      | "machines=\(length) deleting=\($deleting) not_owned=\($notowned) unannotated=\($unannotated)"'
 ```
 
 In the MachineSet listing, `ACTUAL` (`status.replicas`) is the number of Machines that the MachineSet controller counted
@@ -7729,10 +7732,15 @@ in the most recent reconciliation that updated the MachineSet status, including 
 the same set of Machines that the controller uses to decide how many Machines to delete. `OBSERVED`
 (`status.observedGeneration`) equal to `GENERATION` shows that the controller has processed the current MachineSet spec.
 The `machines` count comes from the `hypershift.openshift.io/nodePool` annotation, so if `machines` differs from
-`ACTUAL`, the MachineSet counts a Machine that lacks the annotation or does not count a Machine that has it. HyperShift
-creates the MachineSets in the hosted control plane namespace from NodePools, and their Machine templates carry this
-annotation, so every Machine in that namespace should have it. `unannotated` counts the Machines in the namespace that
-do not, which the other counts cannot attribute to a NodePool.
+`ACTUAL`, either the MachineSet status is not up to date yet, or the MachineSet counts a Machine that does not have your
+NodePool's annotation value or does not count a Machine that has it. HyperShift creates the MachineSets in the hosted
+control plane namespace from NodePools, directly for the `InPlace` upgrade type or through a MachineDeployment for the
+`Replace` upgrade type, and their Machine templates carry this annotation, so every Machine in that namespace should
+have it. `unannotated` counts the Machines in the namespace that do not, which the other counts cannot attribute to a
+NodePool. The MachineSet controller sets itself as the controlling owner of each Machine that it creates or adopts, and
+`not_owned` counts the Machines of your NodePool whose controlling owner is not the active MachineSet. When `not_owned`
+is `0` and `machines` equals `ACTUAL`, the Machines of your NodePool are exactly the Machines that the MachineSet
+counted in its most recent status update.
 
 Continue only if all of the following are true:
 
@@ -7742,6 +7750,7 @@ Continue only if all of the following are true:
 - For that MachineSet, `OBSERVED` equals `GENERATION`.
 - The NodePool's `spec.replicas`, that MachineSet's `REPLICAS` and `ACTUAL` values, and `machines` are all equal.
 - `deleting` is `0`.
+- `not_owned` is `0`.
 - `unannotated` is `0`.
 
 If any of these checks fails, stop. Do not scale down while a count differs, a Machine is being deleted, or you cannot
