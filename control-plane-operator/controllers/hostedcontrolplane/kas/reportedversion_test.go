@@ -376,8 +376,21 @@ func TestCleanupReportedVersionConfigMap(t *testing.T) {
 		}
 		if rolledOut {
 			deployment.Status.ObservedGeneration = 2
+			deployment.Status.Replicas = 3
 			deployment.Status.UpdatedReplicas = 3
+			deployment.Status.AvailableReplicas = 3
 		}
+		return deployment
+	}
+
+	rollingDeployment := func(replicas, total, updated, available int32) *appsv1.Deployment {
+		deployment := manifests.KASDeployment(hcp.Namespace)
+		deployment.Generation = 2
+		deployment.Spec.Replicas = ptr.To(replicas)
+		deployment.Status.ObservedGeneration = 2
+		deployment.Status.Replicas = total
+		deployment.Status.UpdatedReplicas = updated
+		deployment.Status.AvailableReplicas = available
 		return deployment
 	}
 
@@ -413,6 +426,39 @@ func TestCleanupReportedVersionConfigMap(t *testing.T) {
 		c := reportedVersionTestClient(t, hcp, reportedVersionConfigMap(), kasDeployment(false, true))
 		require.NoError(t, CleanupReportedVersionConfigMap(context.Background(), c, hcp))
 		require.False(t, configMapExists(t, c))
+	})
+
+	// Regression test: updatedReplicas counts unready pods, so during a surge
+	// rollout it reaches the desired count while the old ReplicaSet is still
+	// scaled up and can recreate a pod that mounts the ConfigMap. Deleting the
+	// ConfigMap here would leave that replacement pod unable to start.
+	t.Run("When the mount is gone but a surge pod is not available yet, it should keep the ConfigMap", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			deployment *appsv1.Deployment
+		}{
+			{
+				// Single replica: no strategy is set, so Kubernetes' default
+				// 25% maxSurge rounds up to one surge pod.
+				name:       "single replica with an unready surge pod",
+				deployment: rollingDeployment(1, 2, 1, 1),
+			},
+			{
+				// Two replica request serving topology: maxSurge is one.
+				name:       "two replicas with an unready surge pod",
+				deployment: rollingDeployment(2, 3, 2, 2),
+			},
+			{
+				name:       "updated pods are not available yet",
+				deployment: rollingDeployment(3, 3, 3, 2),
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				c := reportedVersionTestClient(t, hcp, reportedVersionConfigMap(), tc.deployment)
+				require.NoError(t, CleanupReportedVersionConfigMap(context.Background(), c, hcp))
+				require.True(t, configMapExists(t, c), "ConfigMap must be kept until the old ReplicaSets have scaled to zero")
+			})
+		}
 	})
 
 	t.Run("When there is no deployment, it should delete the ConfigMap", func(t *testing.T) {
