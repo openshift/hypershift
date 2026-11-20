@@ -32,7 +32,7 @@ spec:
   platform:
     type: Agent
   release:
-    image: registry.hypershiftbm.lab:5000/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
+    image: registry.<dns.base.domain.name>:5000/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
   replicas: 0
 status:
   replicas: 0
