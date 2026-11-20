@@ -306,9 +306,9 @@ func findFreeCIDR(searchSpace *net.IPNet, prefixLen int, occupied []*net.IPNet) 
 	startIP := ipToUint32(searchSpace.IP.To4())
 	_, endIP := networkRange(searchSpace)
 
-	for ip := startIP; ip+blockSize-1 <= endIP; ip += blockSize {
+	for address := uint64(startIP); address+uint64(blockSize)-1 <= uint64(endIP); address += uint64(blockSize) {
 		candidate := &net.IPNet{
-			IP:   uint32ToIP(ip),
+			IP:   uint32ToIP(uint32(address)),
 			Mask: net.CIDRMask(prefixLen, 32),
 		}
 		if !overlapsAny(candidate, occupied) {
@@ -316,6 +316,33 @@ func findFreeCIDR(searchSpace *net.IPNet, prefixLen int, occupied []*net.IPNet) 
 		}
 	}
 	return "", fmt.Errorf("no free /%d block found in %s", prefixLen, searchSpace)
+}
+
+// FindFreeSubnetCIDR selects a non-overlapping /28 from the VPC's associated
+// IPv4 CIDRs. It rejects malformed inputs and requires AWS-sized IPv4 VPC ranges.
+func FindFreeSubnetCIDR(vpcCIDRs, occupiedCIDRs []string) (string, error) {
+	occupied := make([]*net.IPNet, 0, len(occupiedCIDRs))
+	for _, cidr := range occupiedCIDRs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return "", fmt.Errorf("parse occupied subnet CIDR %q: %w", cidr, err)
+		}
+		occupied = append(occupied, network)
+	}
+	for _, cidr := range vpcCIDRs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return "", fmt.Errorf("parse VPC CIDR %q: %w", cidr, err)
+		}
+		prefix, bits := network.Mask.Size()
+		if bits != 32 || prefix < 16 || prefix > 28 {
+			return "", fmt.Errorf("subnet creation requires an IPv4 VPC CIDR between /16 and /28: %s", cidr)
+		}
+		if candidate, err := findFreeCIDR(network, 28, occupied); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("no free /28 subnet in the associated VPC IPv4 CIDRs")
 }
 
 func overlapsAny(candidate *net.IPNet, occupied []*net.IPNet) bool {
