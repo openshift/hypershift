@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 
@@ -71,6 +72,28 @@ func BaseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 			},
 		},
 	}
+}
+
+// CreateKarpenterNodeClass creates a custom NodeClass using the default class's spec.
+// An empty version follows the control plane. Only AWS is supported.
+// The caller must register cleanup for the returned class.
+func CreateKarpenterNodeClass(ctx context.Context, client crclient.Client, platform hyperv1.PlatformType, name, version string) (crclient.Object, error) {
+	if platform != hyperv1.AWSPlatform {
+		return nil, fmt.Errorf("karpenter NodeClass creation is not supported on platform %q", platform)
+	}
+	defaultClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+	if err := client.Get(ctx, crclient.ObjectKey{Name: "default"}, defaultClass); err != nil {
+		return nil, fmt.Errorf("get default OpenshiftEC2NodeClass: %w", err)
+	}
+	nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec:       *defaultClass.Spec.DeepCopy(),
+	}
+	nodeClass.Spec.Version = version
+	if err := client.Create(ctx, nodeClass); err != nil {
+		return nil, fmt.Errorf("create OpenshiftEC2NodeClass %s: %w", name, err)
+	}
+	return nodeClass, nil
 }
 
 // TestWorkload returns a sleep workload Deployment for Karpenter e2e tests.

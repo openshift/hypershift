@@ -222,7 +222,12 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 			},
 		)
 	}
+	// Recreate prevents rollout overlap with non-electing operator versions and
+	// with the adapter, which does not participate in leader election.
+	deployment.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		// Election also covers duplicate operator processes outside Deployment rollouts.
+		c.Args = append(c.Args, "--leader-elect=true")
 		c.Image = cpContext.ReleaseImageProvider.GetImage(karpenterutil.KarpenterOperatorImageName)
 		if override, exists := hcp.Annotations[hyperkarpenterv1.KarpenterOperatorImage]; exists && override != "" {
 			c.Image = override

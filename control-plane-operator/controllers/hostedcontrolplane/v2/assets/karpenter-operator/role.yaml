@@ -21,6 +21,8 @@ rules:
       - "update"
     resourceNames:
       - "karpenter-leader-election"
+      # The standalone operator uses a separate Lease from the Karpenter operand.
+      - "karpenter-operator.openshift.io"
   - apiGroups:
       - "apps"
     resources:

@@ -14,7 +14,9 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -124,6 +126,8 @@ func TestAdaptDeployment(t *testing.T) {
 				g.Expect(container).ToNot(BeNil(), "container %s should exist", ComponentName)
 				g.Expect(container.Image).To(Equal("quay.io/hypershift/operator:latest"))
 				g.Expect(podspec.FindContainer("karpenter-adapter", deploymentObj.Spec.Template.Spec.Containers)).To(BeNil())
+				g.Expect(container.Args).NotTo(ContainElement("--leader-elect=true"))
+				g.Expect(deploymentObj.Spec.Strategy).To(Equal(appsv1.DeploymentStrategy{}))
 
 				// Verify AWS environment variables
 				g.Expect(container.Env).To(ContainElements(
@@ -484,6 +488,11 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
 				g.Expect(err).ToNot(HaveOccurred())
 
+				deploymentObj.Spec.Strategy = appsv1.DeploymentStrategy{
+					Type:          appsv1.RollingUpdateDeploymentStrategyType,
+					RollingUpdate: &appsv1.RollingUpdateDeployment{},
+				}
+
 				err = opts.adaptStandaloneDeployment(cpContext, deploymentObj)
 				g.Expect(err).ToNot(HaveOccurred())
 
@@ -502,7 +511,17 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 					corev1.EnvVar{Name: TokenMinterImageEnvVar, Value: "quay.io/openshift/token-minter:latest"},
 				))
 
-				g.Expect(container.Args).To(ContainElement(ContainSubstring("--target-kubeconfig=")))
+				g.Expect(container.Args).To(ContainElements(ContainSubstring("--target-kubeconfig="), "--leader-elect=true"))
+				g.Expect(deploymentObj.Spec.Strategy).To(Equal(appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}))
+
+				roleObj, _, err := assets.LoadManifest(ComponentName, "role.yaml")
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(roleObj.(*rbacv1.Role).Rules).To(ContainElement(rbacv1.PolicyRule{
+					APIGroups:     []string{"coordination.k8s.io"},
+					Resources:     []string{"leases"},
+					Verbs:         []string{"patch", "update"},
+					ResourceNames: []string{"karpenter-leader-election", "karpenter-operator.openshift.io"},
+				}))
 
 				g.Expect(container.VolumeMounts).To(ContainElement(
 					corev1.VolumeMount{Name: "provider-creds", MountPath: "/etc/provider"},
@@ -532,6 +551,8 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 
 				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
 				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Args).To(ContainElement("--leader-elect=true"))
+				g.Expect(deploymentObj.Spec.Strategy).To(Equal(appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}))
 
 				g.Expect(container.Env).To(ContainElements(
 					corev1.EnvVar{Name: "CLUSTER_NAME", Value: "test-azure-456"},
