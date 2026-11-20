@@ -98,8 +98,9 @@ func TestAdaptDeployment(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name           string
-		hcpAnnotations map[string]string
+		name                  string
+		hcpAnnotations        map[string]string
+		interruptionQueueName string
 
 		expectedImage string
 	}{
@@ -114,11 +115,21 @@ func TestAdaptDeployment(t *testing.T) {
 			name:          "When no image override annotation is set, it should use the default image",
 			expectedImage: "aws-karpenter-provider-aws",
 		},
+		{
+			name:                  "When interruptionQueueName is set, it should set the INTERRUPTION_QUEUE env var to the queue name",
+			interruptionQueueName: "my-cluster-karpenter-interruption",
+			expectedImage:         "aws-karpenter-provider-aws",
+		},
+		{
+			name:          "When interruptionQueueName is not set, it should not set the INTERRUPTION_QUEUE env var",
+			expectedImage: "aws-karpenter-provider-aws",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			hcp.Annotations = tc.hcpAnnotations
+			hcp.Spec.AutoNode.Provisioner.Karpenter.AWS.InterruptionQueueName = tc.interruptionQueueName
 
 			cpContext := controlplanecomponent.WorkloadContext{
 				HCP: hcp,
@@ -158,6 +169,16 @@ func TestAdaptDeployment(t *testing.T) {
 					Value: hcp.Spec.InfraID,
 				},
 			))
+
+			// expect INTERRUPTION_QUEUE only when configured
+			if tc.interruptionQueueName != "" {
+				g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
+					Name:  "INTERRUPTION_QUEUE",
+					Value: tc.interruptionQueueName,
+				}))
+			} else {
+				g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).ToNot(ContainElement(HaveField("Name", "INTERRUPTION_QUEUE")))
+			}
 
 			// expect correct image
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(tc.expectedImage))

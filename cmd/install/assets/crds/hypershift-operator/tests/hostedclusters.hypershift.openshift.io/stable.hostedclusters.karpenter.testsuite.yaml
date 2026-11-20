@@ -260,6 +260,185 @@ tests:
             type: Route
             route: {}
 
+  # --- InterruptionQueueName validation ---
+  - name: When karpenter AWS interruptionQueueName is a valid queue name it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            name: Karpenter
+            karpenter:
+              platform: AWS
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+                interruptionQueueName: "my-cluster_karpenter-interruption"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When karpenter AWS interruptionQueueName is a valid FIFO queue name it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            name: Karpenter
+            karpenter:
+              platform: AWS
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+                interruptionQueueName: "my-cluster-karpenter-interruption.fifo"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When karpenter AWS interruptionQueueName is longer than 80 characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            name: Karpenter
+            karpenter:
+              platform: AWS
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+                interruptionQueueName: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Too long"
+
+  - name: When karpenter AWS interruptionQueueName contains invalid characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            name: Karpenter
+            karpenter:
+              platform: AWS
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+                interruptionQueueName: "my.queue"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "interruptionQueueName must consist of alphanumeric characters"
+
   # --- Azure KarpenterConfig union validation ---
   - name: When karpenter platform is Azure without azure config it should fail
     initial: |
@@ -389,3 +568,293 @@ tests:
             type: Route
             route: {}
     expectedError: "the client ID of a managed identity must be a valid UUID"
+
+  onUpdate:
+  - name: When karpenter AWS interruptionQueueName is added to an existing cluster it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            name: Karpenter
+            karpenter:
+              platform: AWS
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            name: Karpenter
+            karpenter:
+              platform: AWS
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+                interruptionQueueName: "my-cluster-karpenter-interruption"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            karpenter:
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+                interruptionQueueName: "my-cluster-karpenter-interruption"
+              platform: AWS
+            name: Karpenter
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+
+  - name: When karpenter AWS interruptionQueueName is removed from an existing cluster it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            name: Karpenter
+            karpenter:
+              platform: AWS
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+                interruptionQueueName: "my-cluster-karpenter-interruption"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            name: Karpenter
+            karpenter:
+              platform: AWS
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoNode:
+          provisionerConfig:
+            karpenter:
+              aws:
+                roleARN: "arn:aws:iam::123456789012:role/KarpenterNodeRole"
+              platform: AWS
+            name: Karpenter
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route

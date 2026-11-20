@@ -100,6 +100,23 @@ spec:
                               aws specifies the AWS-specific configuration for Karpenter.
                               Required when platform is "AWS", and forbidden otherwise.
                             properties:
+                              interruptionQueueName:
+                                description: |-
+                                  interruptionQueueName is the name of the SQS queue from which Karpenter reads
+                                  EC2 interruption events to drain and replace affected nodes ahead of time.
+                                  When omitted, interruption handling is disabled.
+                                  The queue must be in the cluster's AWS account and region and used only by this
+                                  cluster's Karpenter, which deletes every message it receives.
+                                  The roleARN role needs sqs:GetQueueUrl, sqs:ReceiveMessage and sqs:DeleteMessage
+                                  on the queue, plus kms:Decrypt on its key if the queue uses SSE-KMS.
+                                maxLength: 80
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: interruptionQueueName must consist of alphanumeric
+                                    characters, '-' or '_', with an optional '.fifo'
+                                    suffix
+                                  rule: self.matches('^[a-zA-Z0-9_-]+(\\.fifo)?$')
                               roleARN:
                                 description: "roleARN specifies the ARN of the IAM
                                   role that Karpenter assumes to provision\nand manage

@@ -1879,6 +1879,20 @@ type KarpenterAWSConfig struct {
 	// +kubebuilder:validation:XValidation:rule="self.matches('^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role/.+$')",message="roleARN must be a valid AWS IAM role ARN (e.g. arn:aws:iam::123456789012:role/MyRole)"
 	// +kubebuilder:validation:MaxLength=2048
 	RoleARN string `json:"roleARN,omitempty"`
+
+	// interruptionQueueName is the name of the SQS queue from which Karpenter reads
+	// EC2 interruption events to drain and replace affected nodes ahead of time.
+	// When omitted, interruption handling is disabled.
+	// The queue must be in the cluster's AWS account and region and used only by this
+	// cluster's Karpenter, which deletes every message it receives.
+	// The roleARN role needs sqs:GetQueueUrl, sqs:ReceiveMessage and sqs:DeleteMessage
+	// on the queue, plus kms:Decrypt on its key if the queue uses SSE-KMS.
+	//
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=80
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[a-zA-Z0-9_-]+(\\.fifo)?$')`,message="interruptionQueueName must consist of alphanumeric characters, '-' or '_', with an optional '.fifo' suffix"
+	InterruptionQueueName string `json:"interruptionQueueName,omitempty"`
 }
 
 // KarpenterAzureConfig specifies Azure-specific configuration for the Karpenter provisioner.
