@@ -7596,11 +7596,12 @@ oc get nodepool -n "${HC_NAMESPACE}" "${NODEPOOL_NAME}" \
 ```
 
 List the MachineSets in the hosted control plane namespace. Exactly one MachineSet for your NodePool should have a
-non-zero `REPLICAS` value. The `NODEPOOL` column shows `<hosted_cluster_namespace>/<nodepool_name>`.
+non-zero `REPLICAS` value. The `NODEPOOL` column shows `<hosted_cluster_namespace>/<nodepool_name>`. The `ACTUAL`,
+`GENERATION`, and `OBSERVED` columns are used by the check in step 4.
 
 ```bash
 oc get machinesets.cluster.x-k8s.io -n "${HCP_NAMESPACE}" \
-  -o custom-columns='NAME:.metadata.name,NODEPOOL:.spec.template.metadata.annotations.hypershift\.openshift\.io/nodePool,REPLICAS:.spec.replicas'
+  -o custom-columns='NAME:.metadata.name,NODEPOOL:.spec.template.metadata.annotations.hypershift\.openshift\.io/nodePool,REPLICAS:.spec.replicas,ACTUAL:.status.replicas,GENERATION:.metadata.generation,OBSERVED:.status.observedGeneration'
 ```
 
 Wait until any rollout has completed before you continue. While a NodePool with the `Replace` upgrade type is rolling
@@ -7670,9 +7671,10 @@ prints nothing, check the `HC_NAMESPACE`, `NODEPOOL_NAME`, and `HCP_NAMESPACE` v
 oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" -o json \
   | jq -r --arg nodepool "${HC_NAMESPACE}/${NODEPOOL_NAME}" '
       .items[]
-      | select(.metadata.annotations["hypershift.openshift.io/nodePool"] == $nodepool)
+      | (.metadata.annotations // {}) as $annotations
+      | select($annotations["hypershift.openshift.io/nodePool"] == $nodepool)
       | [.metadata.name,
-         (if (.metadata.annotations | has("cluster.x-k8s.io/delete-machine")) then "present" else "absent" end)]
+         (if ($annotations | has("cluster.x-k8s.io/delete-machine")) then "present" else "absent" end)]
       | @tsv'
 ```
 
@@ -7705,10 +7707,11 @@ step 2.
 
 ### 4. Scale down the NodePool
 
-Immediately before you scale down, confirm that the NodePool is not already adding or removing Machines. When its
-desired replicas drop, the MachineSet controller selects for deletion as many Machines as exceed the desired replicas,
-and Machines that are already being deleted count toward that number. If the actual Machines do not match the desired
-replicas, the scale-down might not remove exactly the Machines that you annotated.
+Immediately before you scale down, confirm that the NodePool is not already adding or removing Machines and that every
+Machine is accounted for. When its desired replicas drop, the MachineSet controller selects for deletion as many
+Machines as exceed the desired replicas, and Machines that are already being deleted count toward that number. If the
+actual Machines do not match the desired replicas, the scale-down might not remove exactly the Machines that you
+annotated.
 
 Run the NodePool and MachineSet commands from step 1 again, and count the
 Machines of the NodePool:
@@ -7716,15 +7719,35 @@ Machines of the NodePool:
 ```bash
 oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" -o json \
   | jq -r --arg nodepool "${HC_NAMESPACE}/${NODEPOOL_NAME}" '
-      [.items[] | select(.metadata.annotations["hypershift.openshift.io/nodePool"] == $nodepool)]
-      | "machines=\(length) deleting=\(map(select(.metadata.deletionTimestamp != null)) | length)"'
+      (.items | map(select((.metadata.annotations // {}) | has("hypershift.openshift.io/nodePool") | not)) | length) as $unannotated
+      | [.items[] | select((.metadata.annotations // {})["hypershift.openshift.io/nodePool"] == $nodepool)]
+      | "machines=\(length) deleting=\(map(select(.metadata.deletionTimestamp != null)) | length) unannotated=\($unannotated)"'
 ```
 
-Continue only if the step 1 checks still pass (no `Updating` condition is `True`, and exactly one MachineSet for your
-NodePool has a non-zero `REPLICAS` value), `deleting` is `0`, and `machines` equals both the NodePool's `spec.replicas`
-and that MachineSet's `REPLICAS` value. If any check fails, the counts differ, or a Machine is being deleted, stop.
-Wait until the NodePool and its MachineSet finish reconciling, and then repeat the checks from step 1 through step 3
-before you scale down. Annotations that you already set stay in place.
+In the MachineSet listing, `ACTUAL` (`status.replicas`) is the number of Machines that the MachineSet controller counted
+in the most recent reconciliation that updated the MachineSet status, including Machines that are being deleted. It is
+the same set of Machines that the controller uses to decide how many Machines to delete. `OBSERVED`
+(`status.observedGeneration`) equal to `GENERATION` shows that the controller has processed the current MachineSet spec.
+The `machines` count comes from the `hypershift.openshift.io/nodePool` annotation, so if `machines` differs from
+`ACTUAL`, the MachineSet counts a Machine that lacks the annotation or does not count a Machine that has it. HyperShift
+creates the MachineSets in the hosted control plane namespace from NodePools, and their Machine templates carry this
+annotation, so every Machine in that namespace should have it. `unannotated` counts the Machines in the namespace that
+do not, which the other counts cannot attribute to a NodePool.
+
+Continue only if all of the following are true:
+
+- The step 1 checks still pass: `autoScaling` is empty and no `Updating` condition is `True`.
+- Exactly one MachineSet for your NodePool has a non-zero `REPLICAS` value, and every other MachineSet for your
+  NodePool shows `0` in both `REPLICAS` and `ACTUAL`.
+- For that MachineSet, `OBSERVED` equals `GENERATION`.
+- The NodePool's `spec.replicas`, that MachineSet's `REPLICAS` and `ACTUAL` values, and `machines` are all equal.
+- `deleting` is `0`.
+- `unannotated` is `0`.
+
+If any of these checks fails, stop. Do not scale down while a count differs, a Machine is being deleted, or you cannot
+tell which MachineSet a Machine belongs to. Wait until the NodePool and its MachineSet finish reconciling, and then
+repeat the checks from step 1 through step 3 before you scale down. Annotations that you already set stay in place. If
+`unannotated` stays above `0`, find out where those Machines come from before you continue.
 
 Lower `spec.replicas` on the NodePool by the number of Machines of your NodePool that have the annotation:
 
