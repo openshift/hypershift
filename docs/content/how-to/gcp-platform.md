@@ -108,6 +108,11 @@ key is later removed from the HCP, HyperShift removes it from the Service
 annotation; it does not restore the Service's former value. Labels whose keys
 are not managed by HyperShift are preserved.
 
+If a Service's existing resource-label annotation is malformed or invalid,
+HyperShift leaves the Service unchanged, logs a warning identifying the Service
+and validation failure, and continues reconciling other Services. Failures to
+list or patch Services remain reconciliation errors.
+
 ### Resource Manager Tags
 
 Resource Manager tags are distinct from resource labels. Define the TagKeys and
