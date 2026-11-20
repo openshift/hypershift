@@ -3,6 +3,8 @@ package metricsproxy
 import (
 	"context"
 	"crypto/tls"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 // ComponentProvider provides component configurations for metrics scraping.
@@ -26,6 +28,10 @@ type ComponentConfig struct {
 	MetricsNamespace string
 	MetricsService   string
 	MetricsEndpoint  string
+
+	// sampleFilter holds the compiled metric relabel rules. A nil filter
+	// forwards every sample unchanged.
+	sampleFilter *sampleFilter
 }
 
 // TargetDiscoverer discovers scrape targets (pod endpoints) for a given service.
@@ -39,6 +45,19 @@ type ScrapeTarget struct {
 	PodIP   string
 	Port    int32
 }
+
+// MetricsFilterMode selects how the metrics-proxy filters the samples of a component.
+type MetricsFilterMode string
+
+const (
+	// MetricsFilterNone forwards every sample unchanged. It is used for the
+	// All metrics set and for PodMonitor-based components.
+	MetricsFilterNone MetricsFilterMode = "None"
+	// MetricsFilterRelabel applies the component's keep and drop
+	// MetricRelabelConfigs to every exposed sample. An empty rule list
+	// forwards no samples.
+	MetricsFilterRelabel MetricsFilterMode = "Relabel"
+)
 
 // FileConfig is the YAML structure shared between the CPO (writer) and the
 // metrics-proxy binary (reader) for the scrape-config ConfigMap.
@@ -77,4 +96,13 @@ type ComponentFileConfig struct {
 	MetricsNamespace string `json:"metricsNamespace,omitempty"`
 	MetricsService   string `json:"metricsService,omitempty"`
 	MetricsEndpoint  string `json:"metricsEndpoint,omitempty"`
+
+	// MetricsFilter selects how samples are filtered. An empty value is
+	// treated as MetricsFilterNone.
+	MetricsFilter MetricsFilterMode `json:"metricsFilter,omitempty"`
+	// MetricRelabelConfigs are the rules of the effective forwarding metrics
+	// set, evaluated in order against every exposed sample when MetricsFilter
+	// is MetricsFilterRelabel. Only the keep and drop actions are applied;
+	// other actions are ignored.
+	MetricRelabelConfigs []prometheusoperatorv1.RelabelConfig `json:"metricRelabelConfigs,omitempty"`
 }

@@ -90,6 +90,7 @@ import (
 	"github.com/docker/distribution"
 	"github.com/go-logr/zapr"
 	"github.com/opencontainers/go-digest"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	prometheustestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"go.uber.org/mock/gomock"
@@ -568,6 +569,91 @@ func TestReconcileCPOV2(t *testing.T) {
 		g.Expect(err).To(MatchError(ContainSubstring("failed to reconcile etcd: failed to get etcd client cert external-etcd-credentials")))
 		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 	})
+
+	sreMetricsConfigTests := []struct {
+		name                string
+		metricsSet          metrics.MetricsSet
+		forwardingSet       hyperv1.MetricsSet
+		malformedConfig     bool
+		getError            error
+		wantComponentsCalls int
+	}{
+		{
+			name:                "When only metrics forwarding uses the SRE set and its configuration is malformed, it should still reconcile the components and report the error",
+			metricsSet:          metrics.MetricsSetTelemetry,
+			forwardingSet:       hyperv1.MetricsSetSRE,
+			malformedConfig:     true,
+			wantComponentsCalls: 1,
+		},
+		{
+			name:                "When only metrics forwarding uses the SRE set and reading its configuration fails, it should still reconcile the components and report the error",
+			metricsSet:          metrics.MetricsSetTelemetry,
+			forwardingSet:       hyperv1.MetricsSetSRE,
+			getError:            fmt.Errorf("transient read failure"),
+			wantComponentsCalls: 1,
+		},
+		{
+			name:                "When the control plane collects the SRE set and its configuration is malformed, it should stop before reconciling the components",
+			metricsSet:          metrics.MetricsSetSRE,
+			malformedConfig:     true,
+			wantComponentsCalls: 0,
+		},
+	}
+	for _, tt := range sreMetricsConfigTests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := newEtcdTestHCP(hyperv1.Managed)
+			hcp.Annotations = map[string]string{
+				hyperv1.DisablePKIReconciliationAnnotation: "true",
+				hyperv1.DisableIgnitionServerAnnotation:    "true",
+			}
+			// External OIDC disables the OAuth server steps, which need a release image provider.
+			hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{Authentication: &configv1.AuthenticationSpec{Type: configv1.AuthenticationTypeOIDC}}
+			hcp.Spec.Monitoring.MetricsForwarding = hyperv1.MetricsForwardingSpec{Mode: hyperv1.MetricsForwardingModeForward, MetricsSet: tt.forwardingSet}
+
+			pullSecret := common.PullSecret(hcp.Namespace)
+			pullSecret.Data = map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)}
+			sreConfig := metrics.SREMetricsSetConfigurationConfigMap(hcp.Namespace)
+			sreConfig.Data = map[string]string{metrics.SREConfigurationConfigMapKey: "{}"}
+			if tt.malformedConfig {
+				sreConfig.Data[metrics.SREConfigurationConfigMapKey] = "kubeAPIServer: [unterminated"
+			}
+			sreConfigKey := client.ObjectKeyFromObject(sreConfig)
+			r := &HostedControlPlaneReconciler{
+				MetricsSet:                    tt.metricsSet,
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(pullSecret, sreConfig).WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if _, ok := obj.(*corev1.ConfigMap); ok && key == sreConfigKey && tt.getError != nil {
+							return tt.getError
+						}
+						return c.Get(ctx, key, obj, opts...)
+					},
+				}).Build(),
+			}
+			r.setup(upsert.New(false).CreateOrUpdate)
+			recorder := &recordingComponent{name: "recorder"}
+			r.components = []controlplanecomponent.ControlPlaneComponent{recorder}
+
+			err := r.reconcileCPOV2(t.Context(), hcp, infra.InfrastructureStatus{}, nil, nil)
+			g.Expect(err).To(MatchError(ContainSubstring("failed to reconcile metrics config")))
+			g.Expect(recorder.calls).To(Equal(tt.wantComponentsCalls))
+			g.Expect(r.SREConfigHash).To(BeEmpty())
+		})
+	}
+}
+
+// recordingComponent counts its reconciliations.
+type recordingComponent struct {
+	name  string
+	calls int
+}
+
+func (c *recordingComponent) Name() string { return c.name }
+
+func (c *recordingComponent) Reconcile(controlplanecomponent.ControlPlaneContext) error {
+	c.calls++
+	return nil
 }
 
 func newEtcdTestHCP(managementType hyperv1.EtcdManagementType) *hyperv1.HostedControlPlane {
@@ -7406,4 +7492,156 @@ func TestGetNamedCertificateCAs(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHostedControlPlaneReconciler_ReconcileSREMetricsConfig loads the
+// package-global SRE metrics set configuration and must not run in parallel.
+func TestHostedControlPlaneReconciler_ReconcileSREMetricsConfig(t *testing.T) {
+	namespace := "clusters-test"
+	// An empty configuration keeps the shared SRE metrics set configuration
+	// unchanged for other tests; a successful load is observed through the
+	// recorded configuration hash.
+	sreConfig := metrics.SREMetricsSetConfigurationConfigMap(namespace)
+	sreConfig.Data = map[string]string{metrics.SREConfigurationConfigMapKey: "{}"}
+
+	tests := []struct {
+		name          string
+		metricsSet    metrics.MetricsSet
+		forwardingSet hyperv1.MetricsSet
+		withConfigMap bool
+		wantLoaded    bool
+	}{
+		{
+			name:          "When the control plane collects the SRE set, it should load the SRE configuration",
+			metricsSet:    metrics.MetricsSetSRE,
+			withConfigMap: true,
+			wantLoaded:    true,
+		},
+		{
+			name:          "When only metrics forwarding uses the SRE set, it should load the SRE configuration",
+			metricsSet:    metrics.MetricsSetTelemetry,
+			forwardingSet: hyperv1.MetricsSetSRE,
+			withConfigMap: true,
+			wantLoaded:    true,
+		},
+		{
+			name:          "When the control plane collects the SRE set and forwards Telemetry, it should still load the SRE configuration",
+			metricsSet:    metrics.MetricsSetSRE,
+			forwardingSet: hyperv1.MetricsSetTelemetry,
+			withConfigMap: true,
+			wantLoaded:    true,
+		},
+		{
+			name:          "When neither collection nor forwarding sets SRE, it should not load the SRE configuration",
+			metricsSet:    metrics.MetricsSetTelemetry,
+			withConfigMap: true,
+			wantLoaded:    false,
+		},
+		{
+			name:          "When only forwarding uses the SRE set and the ConfigMap does not exist, it should succeed without loading",
+			metricsSet:    metrics.MetricsSetAll,
+			forwardingSet: hyperv1.MetricsSetSRE,
+			wantLoaded:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if tt.withConfigMap {
+				builder = builder.WithObjects(sreConfig.DeepCopy())
+			}
+			r := &HostedControlPlaneReconciler{Client: builder.Build(), MetricsSet: tt.metricsSet}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+				Spec: hyperv1.HostedControlPlaneSpec{Monitoring: hyperv1.MonitoringSpec{
+					MetricsForwarding: hyperv1.MetricsForwardingSpec{MetricsSet: tt.forwardingSet},
+				}},
+			}
+
+			g.Expect(r.reconcileSREMetricsConfig(t.Context(), hcp)).To(Succeed())
+			if tt.wantLoaded {
+				g.Expect(r.SREConfigHash).To(Equal(metrics.SREMetricsSetConfigHash(sreConfig)))
+			} else {
+				g.Expect(r.SREConfigHash).To(BeEmpty())
+			}
+		})
+	}
+	t.Run("When the SRE configuration is deleted, recreated, malformed or unreadable, it should forward only loaded rules", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		t.Cleanup(func() {
+			reset := metrics.SREMetricsSetConfigurationConfigMap(namespace)
+			reset.Data = map[string]string{metrics.SREConfigurationConfigMapKey: "{}"}
+			if err := metrics.LoadSREMetricsSetConfigurationFromConfigMap(reset); err != nil {
+				t.Errorf("failed to reset the SRE metrics set configuration: %v", err)
+			}
+		})
+
+		validRules := `kubeAPIServer:
+  - action: keep
+    sourceLabels: ["__name__"]
+    regex: "apiserver_request_total"
+`
+		wantRules := []prometheusoperatorv1.RelabelConfig{{
+			Action: "keep", Regex: "apiserver_request_total", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+		}}
+		loadedRules := func() []prometheusoperatorv1.RelabelConfig {
+			rules, _ := metrics.ServiceMonitorRelabelConfigs("kube-apiserver", metrics.MetricsSetSRE)
+			return rules
+		}
+		var getErr error
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if getErr != nil {
+					return getErr
+				}
+				return cl.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+		r := &HostedControlPlaneReconciler{Client: c, MetricsSet: metrics.MetricsSetTelemetry}
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+			Spec: hyperv1.HostedControlPlaneSpec{Monitoring: hyperv1.MonitoringSpec{
+				MetricsForwarding: hyperv1.MetricsForwardingSpec{MetricsSet: hyperv1.MetricsSetSRE},
+			}},
+		}
+		cm := metrics.SREMetricsSetConfigurationConfigMap(namespace)
+		cm.Data = map[string]string{metrics.SREConfigurationConfigMapKey: validRules}
+		g.Expect(c.Create(t.Context(), cm)).To(Succeed())
+
+		g.Expect(r.reconcileSREMetricsConfig(t.Context(), hcp)).To(Succeed())
+		g.Expect(loadedRules()).To(Equal(wantRules))
+		validHash := r.SREConfigHash
+		g.Expect(validHash).NotTo(BeEmpty())
+
+		// Deleting the ConfigMap must stop forwarding the previously loaded rules.
+		g.Expect(c.Delete(t.Context(), cm)).To(Succeed())
+		g.Expect(r.reconcileSREMetricsConfig(t.Context(), hcp)).To(Succeed())
+		g.Expect(loadedRules()).To(BeEmpty())
+		g.Expect(r.SREConfigHash).To(BeEmpty())
+
+		// Recreating it with the same content must load the rules again.
+		recreated := metrics.SREMetricsSetConfigurationConfigMap(namespace)
+		recreated.Data = map[string]string{metrics.SREConfigurationConfigMapKey: validRules}
+		g.Expect(c.Create(t.Context(), recreated)).To(Succeed())
+		g.Expect(r.reconcileSREMetricsConfig(t.Context(), hcp)).To(Succeed())
+		g.Expect(loadedRules()).To(Equal(wantRules))
+		g.Expect(r.SREConfigHash).To(Equal(validHash))
+
+		// A malformed update is reported and keeps the last loaded rules.
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(recreated), recreated)).To(Succeed())
+		recreated.Data[metrics.SREConfigurationConfigMapKey] = "kubeAPIServer: [unterminated"
+		g.Expect(c.Update(t.Context(), recreated)).To(Succeed())
+		g.Expect(r.reconcileSREMetricsConfig(t.Context(), hcp)).To(MatchError(ContainSubstring("failed to load SRE configuration")))
+		g.Expect(loadedRules()).To(Equal(wantRules))
+		g.Expect(r.SREConfigHash).To(Equal(validHash))
+
+		// A transient read error is reported and keeps the last loaded rules.
+		getErr = fmt.Errorf("transient read failure")
+		g.Expect(r.reconcileSREMetricsConfig(t.Context(), hcp)).To(MatchError(ContainSubstring("transient read failure")))
+		g.Expect(loadedRules()).To(Equal(wantRules))
+		g.Expect(r.SREConfigHash).To(Equal(validHash))
+	})
 }

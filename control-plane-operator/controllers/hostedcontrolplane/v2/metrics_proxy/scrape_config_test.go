@@ -2,6 +2,9 @@ package metricsproxy
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -9,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metricsproxybin "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/metrics"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -277,6 +281,79 @@ func TestAdaptScrapeConfig(t *testing.T) {
 		g.Expect(ok).To(BeTrue(), "node-tuning-operator not found in components")
 		g.Expect(nto.TLSServerName).To(Equal("node-tuning-operator." + namespace + ".svc"))
 	})
+
+	t.Run("When the forwarding metrics set defaults to All, it should forward every ServiceMonitor component without filtering", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		t.Parallel()
+		for _, comp := range cfg.Components {
+			g.Expect(comp.MetricsFilter).To(Equal(metricsproxybin.MetricsFilterNone), comp.Name)
+			g.Expect(comp.MetricRelabelConfigs).To(BeEmpty(), comp.Name)
+		}
+	})
+
+	forwardingTests := []struct {
+		name          string
+		contextSet    metrics.MetricsSet
+		forwardingSet hyperv1.MetricsSet
+		wantFilter    metricsproxybin.MetricsFilterMode
+		wantSet       metrics.MetricsSet
+	}{
+		{
+			name:       "When the control plane metrics set is Telemetry, it should serialize the Telemetry keep and drop rules",
+			contextSet: metrics.MetricsSetTelemetry,
+			wantFilter: metricsproxybin.MetricsFilterRelabel,
+			wantSet:    metrics.MetricsSetTelemetry,
+		},
+		{
+			name:          "When the forwarding metrics set overrides SRE collection with Telemetry, it should serialize the Telemetry rules",
+			contextSet:    metrics.MetricsSetSRE,
+			forwardingSet: hyperv1.MetricsSetTelemetry,
+			wantFilter:    metricsproxybin.MetricsFilterRelabel,
+			wantSet:       metrics.MetricsSetTelemetry,
+		},
+		{
+			name:          "When the forwarding metrics set overrides Telemetry collection with All, it should forward without filtering",
+			contextSet:    metrics.MetricsSetTelemetry,
+			forwardingSet: hyperv1.MetricsSetAll,
+			wantFilter:    metricsproxybin.MetricsFilterNone,
+		},
+	}
+	for _, tt := range forwardingTests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			t.Parallel()
+
+			hcp := cpContext.HCP.DeepCopy()
+			hcp.Spec.Monitoring.MetricsForwarding.MetricsSet = tt.forwardingSet
+			ctx := component.WorkloadContext{Context: context.Background(), Client: fakeClient, HCP: hcp, MetricsSet: tt.contextSet}
+
+			cm := &corev1.ConfigMap{}
+			g.Expect(adaptScrapeConfig(ctx, cm)).To(Succeed())
+			var got metricsproxybin.FileConfig
+			g.Expect(yaml.Unmarshal([]byte(cm.Data["config.yaml"]), &got)).To(Succeed())
+			g.Expect(got.Components).To(HaveLen(10))
+
+			for _, comp := range got.Components {
+				g.Expect(comp.MetricsFilter).To(Equal(tt.wantFilter), comp.Name)
+				if tt.wantFilter == metricsproxybin.MetricsFilterNone {
+					g.Expect(comp.MetricRelabelConfigs).To(BeEmpty(), comp.Name)
+					continue
+				}
+				want, known := metrics.ServiceMonitorRelabelConfigs(comp.Name, tt.wantSet)
+				g.Expect(known).To(BeTrue(), comp.Name)
+				g.Expect(comp.MetricRelabelConfigs).To(Equal(want), comp.Name)
+			}
+
+			if tt.wantSet == metrics.MetricsSetTelemetry {
+				kas, _ := findComponent(got.Components, "kube-apiserver")
+				g.Expect(kas.MetricRelabelConfigs).To(ConsistOf(HaveField("Action", "keep")))
+				orcm, _ := findComponent(got.Components, "openshift-route-controller-manager")
+				g.Expect(orcm.MetricRelabelConfigs).To(Equal([]prometheusoperatorv1.RelabelConfig{{
+					Action: "drop", Regex: "(.*)", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+				}}))
+			}
+		})
+	}
 }
 
 func TestAdaptScrapeConfigMissingService(t *testing.T) {
@@ -416,6 +493,24 @@ func TestAdaptScrapeConfigWithPodMonitors(t *testing.T) {
 		g.Expect(ciro.CertFile).To(BeEmpty())
 		g.Expect(ciro.KeyFile).To(BeEmpty())
 		g.Expect(ciro.TLSServerName).To(Equal("cluster-image-registry-operator." + namespace + ".svc"))
+	})
+
+	t.Run("When PodMonitor components are generated for any forwarding metrics set, it should forward them without filtering", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		t.Parallel()
+		for _, set := range []metrics.MetricsSet{metrics.MetricsSetAll, metrics.MetricsSetTelemetry, metrics.MetricsSetSRE} {
+			ctx := cpContext
+			ctx.MetricsSet = set
+			cm := &corev1.ConfigMap{}
+			g.Expect(adaptScrapeConfig(ctx, cm)).To(Succeed())
+			var got metricsproxybin.FileConfig
+			g.Expect(yaml.Unmarshal([]byte(cm.Data["config.yaml"]), &got)).To(Succeed())
+			g.Expect(got.Components).To(HaveLen(8))
+			for _, comp := range got.Components {
+				g.Expect(comp.MetricsFilter).To(Equal(metricsproxybin.MetricsFilterNone), "%s with %s", comp.Name, set)
+				g.Expect(comp.MetricRelabelConfigs).To(BeEmpty(), "%s with %s", comp.Name, set)
+			}
+		}
 	})
 
 	t.Run("When PodMonitor without TLS is generated, it should have no TLS fields", func(t *testing.T) {
@@ -1258,4 +1353,135 @@ func TestResolvePodPort(t *testing.T) {
 			}
 		})
 	}
+}
+
+// loadSREMetricsSetConfig loads the SRE metrics set configuration shared by the
+// package and restores an empty configuration when the test ends. Tests using
+// it must not run in parallel.
+func loadSREMetricsSetConfig(t *testing.T, config string) {
+	t.Helper()
+	cm := metrics.SREMetricsSetConfigurationConfigMap("clusters-test")
+	cm.Data = map[string]string{metrics.SREConfigurationConfigMapKey: config}
+	if err := metrics.LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+		t.Fatalf("failed to load SRE metrics set configuration: %v", err)
+	}
+	t.Cleanup(func() {
+		cm.Data[metrics.SREConfigurationConfigMapKey] = "{}"
+		if err := metrics.LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+			t.Errorf("failed to reset SRE metrics set configuration: %v", err)
+		}
+	})
+}
+
+const testSREMetricsSetConfig = `
+openshiftAPIServer:
+  - action: keep
+    sourceLabels: ["__name__"]
+    regex: "(apiserver_request_total|apiserver_request_duration_seconds_bucket)"
+  - action: keep
+    sourceLabels: ["__name__", "le"]
+    regex: "apiserver_request_total;|apiserver_request_duration_seconds_bucket;(0.1|1|\\+Inf)"
+kubeAPIServer:
+  - action: drop
+    sourceLabels: ["__name__"]
+    regex: "etcd_.*"
+`
+
+func TestServiceMonitorMetricsFilter(t *testing.T) {
+	loadSREMetricsSetConfig(t, testSREMetricsSetConfig)
+
+	tests := []struct {
+		name           string
+		serviceMonitor string
+		set            metrics.MetricsSet
+		wantFilter     metricsproxybin.MetricsFilterMode
+		wantRules      []prometheusoperatorv1.RelabelConfig
+	}{
+		{
+			name:           "When the set is All, it should forward every sample",
+			serviceMonitor: "kube-apiserver",
+			set:            metrics.MetricsSetAll,
+			wantFilter:     metricsproxybin.MetricsFilterNone,
+		},
+		{
+			name:           "When the set is Telemetry, it should return the built-in keep rule",
+			serviceMonitor: "kube-apiserver",
+			set:            metrics.MetricsSetTelemetry,
+			wantFilter:     metricsproxybin.MetricsFilterRelabel,
+			wantRules:      metrics.KASRelabelConfigs(metrics.MetricsSetTelemetry),
+		},
+		{
+			name:           "When the set is Telemetry for kube-scheduler, it should return the built-in drop-all rule",
+			serviceMonitor: "kube-scheduler",
+			set:            metrics.MetricsSetTelemetry,
+			wantFilter:     metricsproxybin.MetricsFilterRelabel,
+			wantRules: []prometheusoperatorv1.RelabelConfig{{
+				Action: "drop", Regex: ".*", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+			}},
+		},
+		{
+			name:           "When the set is SRE, it should return the rules from the sre-metric-set configuration",
+			serviceMonitor: "openshift-apiserver",
+			set:            metrics.MetricsSetSRE,
+			wantFilter:     metricsproxybin.MetricsFilterRelabel,
+			wantRules: []prometheusoperatorv1.RelabelConfig{
+				{Action: "keep", Regex: "(apiserver_request_total|apiserver_request_duration_seconds_bucket)", SourceLabels: []prometheusoperatorv1.LabelName{"__name__"}},
+				{Action: "keep", Regex: `apiserver_request_total;|apiserver_request_duration_seconds_bucket;(0.1|1|\+Inf)`, SourceLabels: []prometheusoperatorv1.LabelName{"__name__", "le"}},
+			},
+		},
+		{
+			name:           "When the set is SRE and the component has no rules, it should filter with an empty rule list",
+			serviceMonitor: "catalog-operator",
+			set:            metrics.MetricsSetSRE,
+			wantFilter:     metricsproxybin.MetricsFilterRelabel,
+		},
+		{
+			name:           "When the set is Telemetry and the ServiceMonitor is unknown, it should filter with an empty rule list",
+			serviceMonitor: "custom-exporter",
+			set:            metrics.MetricsSetTelemetry,
+			wantFilter:     metricsproxybin.MetricsFilterRelabel,
+		},
+		{
+			name:           "When the set is SRE and the ServiceMonitor is unknown, it should filter with an empty rule list",
+			serviceMonitor: "custom-exporter",
+			set:            metrics.MetricsSetSRE,
+			wantFilter:     metricsproxybin.MetricsFilterRelabel,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			filter, rules := serviceMonitorMetricsFilter(logr.Discard(), tt.serviceMonitor, tt.set)
+			g.Expect(filter).To(Equal(tt.wantFilter))
+			if len(tt.wantRules) == 0 {
+				g.Expect(rules).To(BeEmpty())
+				return
+			}
+			g.Expect(rules).To(Equal(tt.wantRules))
+		})
+	}
+
+	t.Run("When a ServiceMonitor asset is defined for a control plane component, it should be a known component", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		paths, err := filepath.Glob(filepath.Join("..", "assets", "*", "servicemonitor.yaml"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(paths).NotTo(BeEmpty())
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			g.Expect(err).NotTo(HaveOccurred())
+			// Templated manifests (etcd) render the ServiceMonitor name from
+			// the component name, which is the asset directory name.
+			name := filepath.Base(filepath.Dir(path))
+			if !strings.Contains(string(data), "{{") {
+				sm := &prometheusoperatorv1.ServiceMonitor{}
+				g.Expect(yaml.Unmarshal(data, sm)).To(Succeed(), path)
+				name = sm.Name
+			}
+			for _, set := range []metrics.MetricsSet{metrics.MetricsSetTelemetry, metrics.MetricsSetSRE} {
+				_, known := metrics.ServiceMonitorRelabelConfigs(name, set)
+				g.Expect(known).To(BeTrue(), "ServiceMonitor %s from %s has no forwarding rules for %s", name, path, set)
+			}
+		}
+	})
 }

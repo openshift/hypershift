@@ -140,6 +140,98 @@ components:
 			t.Error("expected false for nonexistent component")
 		}
 	})
+
+	t.Run("When components declare metrics filters, it should compile them per component", func(t *testing.T) {
+		t.Parallel()
+
+		filterYAML := `
+components:
+  - name: pod-monitor
+    metricsPort: 8080
+    metricsFilter: None
+  - name: legacy
+    metricsPort: 8080
+  - name: sre-without-rules
+    metricsPort: 8080
+    metricsFilter: Relabel
+  - name: openshift-apiserver
+    metricsPort: 8443
+    metricsFilter: Relabel
+    metricRelabelConfigs:
+      - action: keep
+        sourceLabels: ["__name__", "le"]
+        regex: "apiserver_request_duration_seconds_bucket;(0.1|\\+Inf)"
+      - action: drop
+        sourceLabels: ["code"]
+        separator: "/"
+        regex: "5.."
+  - name: unsupported-only
+    metricsPort: 8080
+    metricsFilter: Relabel
+    metricRelabelConfigs:
+      - action: labeldrop
+        regex: pod
+  - name: invalid-regex
+    metricsPort: 8080
+    metricsFilter: Relabel
+    metricRelabelConfigs:
+      - action: keep
+        sourceLabels: ["__name__"]
+        regex: "(unclosed"
+  - name: unknown-mode
+    metricsPort: 8080
+    metricsFilter: Everything
+`
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(filterYAML), 0644); err != nil {
+			t.Fatalf("failed to write test config: %v", err)
+		}
+		r := NewConfigFileReader(path, log)
+		if err := r.Load(); err != nil {
+			t.Fatalf("Load() returned error: %v", err)
+		}
+		checkCompiledSampleFilters(t, r)
+	})
+}
+
+// checkCompiledSampleFilters verifies the sample filters compiled for the
+// components of the metrics filter test configuration.
+func checkCompiledSampleFilters(t *testing.T, r *ConfigFileReader) {
+	t.Helper()
+	get := func(name string) ComponentConfig {
+		t.Helper()
+		c, ok := r.GetComponent(name)
+		if !ok {
+			t.Fatalf("component %s not found", name)
+		}
+		return c
+	}
+
+	for _, name := range []string{"pod-monitor", "legacy"} {
+		if f := get(name).sampleFilter; f != nil {
+			t.Errorf("When %s has no Relabel filter, it should forward everything, got filter %+v", name, f)
+		}
+	}
+	for _, name := range []string{"sre-without-rules", "invalid-regex", "unknown-mode"} {
+		if f := get(name).sampleFilter; f == nil || !f.forwardNothing {
+			t.Errorf("When %s cannot forward any sample, it should fail closed, got filter %+v", name, f)
+		}
+	}
+
+	oas := get("openshift-apiserver").sampleFilter
+	if oas == nil || oas.forwardNothing || len(oas.rules) != 2 {
+		t.Fatalf("When openshift-apiserver has keep and drop rules, it should compile both, got %+v", oas)
+	}
+	if !oas.rules[0].keep || oas.rules[0].separator != ";" || oas.rules[0].regex.String() != `^(?s:apiserver_request_duration_seconds_bucket;(0.1|\+Inf))$` {
+		t.Errorf("unexpected keep rule: %+v (regex %s)", oas.rules[0], oas.rules[0].regex)
+	}
+	if oas.rules[1].keep || oas.rules[1].separator != "/" || len(oas.rules[1].sourceLabels) != 1 || oas.rules[1].sourceLabels[0] != "code" {
+		t.Errorf("unexpected drop rule: %+v", oas.rules[1])
+	}
+
+	if f := get("unsupported-only").sampleFilter; f == nil || f.forwardNothing || len(f.rules) != 0 {
+		t.Errorf("When only unsupported actions are configured, it should ignore them and forward samples, got %+v", f)
+	}
 }
 
 func TestBuildTLSConfigFromFiles(t *testing.T) {

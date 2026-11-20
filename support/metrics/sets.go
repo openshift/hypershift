@@ -469,6 +469,56 @@ func RegistryOperatorRelabelConfigs(set MetricsSet) []prometheusoperatorv1.Relab
 	return nil
 }
 
+// ServiceMonitorRelabelConfigs returns a copy of the metric relabel configs that
+// apply to the first endpoint of the named control plane ServiceMonitor for the
+// given metrics set. The boolean result reports whether the ServiceMonitor is a
+// known control plane component; unknown names return nil and false. The
+// metrics-proxy uses these rules to forward only the samples of the effective
+// forwarding metrics set.
+func ServiceMonitorRelabelConfigs(serviceMonitorName string, set MetricsSet) ([]prometheusoperatorv1.RelabelConfig, bool) {
+	var relabelConfigs func(MetricsSet) []prometheusoperatorv1.RelabelConfig
+	switch serviceMonitorName {
+	case "catalog-operator":
+		relabelConfigs = CatalogOperatorRelabelConfigs
+	case "cluster-version-operator":
+		relabelConfigs = CVORelabelConfigs
+	case "etcd":
+		relabelConfigs = EtcdRelabelConfigs
+	case "kube-apiserver":
+		relabelConfigs = KASRelabelConfigs
+	case "kube-controller-manager":
+		relabelConfigs = KCMRelabelConfigs
+	case "kube-scheduler":
+		relabelConfigs = SchedulerRelabelConfigs
+	case "node-tuning-operator":
+		relabelConfigs = NTORelabelConfigs
+	case "olm-operator":
+		relabelConfigs = OLMRelabelConfigs
+	case "openshift-apiserver":
+		relabelConfigs = OpenShiftAPIServerRelabelConfigs
+	case "openshift-controller-manager":
+		relabelConfigs = OpenShiftControllerManagerRelabelConfigs
+	case "openshift-route-controller-manager":
+		relabelConfigs = OpenShiftRouteControllerManagerRelabelConfigs
+	default:
+		return nil, false
+	}
+
+	// Hold the lock that guards the SRE configuration while resolving and
+	// copying, so the result is consistent with concurrent configuration loads.
+	sreMetricsSetMutex.Lock()
+	defer sreMetricsSetMutex.Unlock()
+	configs := relabelConfigs(set)
+	if configs == nil {
+		return nil, true
+	}
+	copied := make([]prometheusoperatorv1.RelabelConfig, len(configs))
+	for i := range configs {
+		configs[i].DeepCopyInto(&copied[i])
+	}
+	return copied, true
+}
+
 // SREMetricsSetConfigHash calculates a hash of the SRE metrics set configuration
 // given a ConfigMap that contains it.
 func SREMetricsSetConfigHash(cm *corev1.ConfigMap) string {
@@ -477,6 +527,15 @@ func SREMetricsSetConfigHash(cm *corev1.ConfigMap) string {
 		return util.HashSimple(value)
 	}
 	return ""
+}
+
+// ResetSREMetricsSetConfiguration clears the loaded SRE metrics set
+// configuration, so the SRE set has no rules until a configuration is loaded
+// again. It is the state of a process that has not loaded any configuration.
+func ResetSREMetricsSetConfiguration() {
+	sreMetricsSetMutex.Lock()
+	defer sreMetricsSetMutex.Unlock()
+	sreMetricsSetConfig = MetricsSetConfig{}
 }
 
 // LoadSREMetricsSetConfigurationFromConfigMap parses the SRE metrics set configuration

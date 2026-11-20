@@ -60,6 +60,7 @@ func (r *ConfigFileReader) Load() error {
 			MetricsNamespace: comp.MetricsNamespace,
 			MetricsService:   comp.MetricsService,
 			MetricsEndpoint:  comp.MetricsEndpoint,
+			sampleFilter:     newSampleFilter(r.log, comp.Name, comp.MetricsFilter, comp.MetricRelabelConfigs),
 		}
 	}
 
