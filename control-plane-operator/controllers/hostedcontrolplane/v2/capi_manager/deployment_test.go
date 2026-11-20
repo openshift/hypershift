@@ -14,8 +14,21 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
+
+// countArg returns how many times arg appears in args.
+func countArg(args []string, arg string) int {
+	count := 0
+	for _, a := range args {
+		if a == arg {
+			count++
+		}
+	}
+	return count
+}
 
 func TestAdaptDeployment(t *testing.T) {
 	t.Parallel()
@@ -31,6 +44,16 @@ func TestAdaptDeployment(t *testing.T) {
 		expectedImage    string
 		expectedAnnotKey string
 	}{
+		{
+			name:    "When version is 4.14.0, it should serve metrics over HTTP without the feature gate or skip CRD migration flags",
+			version: "4.14.0",
+			unexpectedArgs: []string{
+				"--feature-gates=MachineSetPreflightChecks=false",
+				"--skip-crd-migration-phases=StorageVersionMigration",
+				"--skip-crd-migration-phases=CleanupManagedFields",
+			},
+			expectedImage: "cluster-capi-controllers",
+		},
 		{
 			name:    "When version is 4.18.0, it should not add feature gate or skip CRD migration flags",
 			version: "4.18.0",
@@ -165,6 +188,36 @@ func TestAdaptDeployment(t *testing.T) {
 
 			// Check image
 			g.Expect(managerContainer.Image).To(Equal(tc.expectedImage))
+
+			// Every version serves metrics over plain HTTP on the named metrics port, so the cluster-api
+			// PodMonitor can scrape it without TokenReview/SubjectAccessReview permissions.
+			g.Expect(countArg(managerContainer.Args, "--diagnostics-address=:8080")).To(Equal(1))
+			g.Expect(countArg(managerContainer.Args, "--insecure-diagnostics")).To(Equal(1))
+			g.Expect(managerContainer.Ports).To(ConsistOf(corev1.ContainerPort{
+				Name:          "metrics",
+				ContainerPort: 8080,
+				Protocol:      corev1.ProtocolTCP,
+			}))
+
+			// The health probe server and the webhook server are unchanged.
+			g.Expect(managerContainer.Args).ToNot(ContainElement(HavePrefix("--health-addr")))
+			g.Expect(managerContainer.Args).ToNot(ContainElement(HavePrefix("--webhook-port")))
+			g.Expect(managerContainer.Args).ToNot(ContainElement(HavePrefix("--metrics-bind-addr")))
+			g.Expect(managerContainer.LivenessProbe).ToNot(BeNil())
+			g.Expect(managerContainer.LivenessProbe.HTTPGet).ToNot(BeNil())
+			g.Expect(managerContainer.LivenessProbe.HTTPGet.Path).To(Equal("/healthz"))
+			g.Expect(managerContainer.LivenessProbe.HTTPGet.Port).To(Equal(intstr.FromInt32(9440)))
+			g.Expect(managerContainer.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+			g.Expect(managerContainer.ReadinessProbe).ToNot(BeNil())
+			g.Expect(managerContainer.ReadinessProbe.HTTPGet).ToNot(BeNil())
+			g.Expect(managerContainer.ReadinessProbe.HTTPGet.Path).To(Equal("/readyz"))
+			g.Expect(managerContainer.ReadinessProbe.HTTPGet.Port).To(Equal(intstr.FromInt32(9440)))
+			g.Expect(managerContainer.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+			g.Expect(managerContainer.VolumeMounts).To(ContainElement(corev1.VolumeMount{
+				Name:      "capi-webhooks-tls",
+				MountPath: "/tmp/k8s-webhook-server/serving-certs",
+				ReadOnly:  true,
+			}))
 
 			// Check annotations
 			if tc.expectedAnnotKey != "" {
