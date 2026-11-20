@@ -11,6 +11,9 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
 
+	configv1 "github.com/openshift/api/config/v1"
+
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -196,4 +199,205 @@ func TestAdaptDeploymentUpdatesContainer(t *testing.T) {
 			g.Expect(found).To(BeTrue(), "container %s should be preserved after adaptDeployment", name)
 		}
 	})
+}
+
+func buildHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1.HostedControlPlane {
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{},
+	}
+
+	if tlsProfile != nil {
+		hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+			APIServer: &configv1.APIServerSpec{
+				TLSSecurityProfile: tlsProfile,
+			},
+		}
+	}
+
+	return hcp
+}
+
+func buildDeployment(args []string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: ComponentName,
+							Args: append([]string{}, args...),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestAdaptDeploymentTLS(t *testing.T) {
+	t.Parallel()
+
+	baseArgs := []string{
+		"operator",
+		"--kubeconfig=/etc/kubernetes/kubeconfig",
+	}
+
+	customTLSProfile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: configv1.VersionTLS12,
+				Ciphers: []string{
+					"ECDHE-ECDSA-AES128-GCM-SHA256",
+					"ECDHE-RSA-AES128-GCM-SHA256",
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name           string
+		releaseVersion string
+		tlsProfile     *configv1.TLSSecurityProfile
+		expectedArgs   []string
+		expectError    bool
+		expectedError  string
+	}{
+		{
+			name:           "When TLS profile is nil it should append intermediate defaults for 4.23+",
+			releaseVersion: "4.23.0",
+			tlsProfile:     nil,
+			expectedArgs: append(baseArgs,
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+			),
+		},
+		{
+			name:           "When using Intermediate TLS profile it should append intermediate TLS args for 4.23+",
+			releaseVersion: "4.23.0",
+			tlsProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+			expectedArgs: append(baseArgs,
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+			),
+		},
+		{
+			name:           "When using Modern TLS profile it should append only min-version for 4.23+",
+			releaseVersion: "4.23.0",
+			tlsProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expectedArgs: append(baseArgs, "--tls-min-version=VersionTLS13"),
+		},
+		{
+			name:           "When using Custom TLS profile it should append custom TLS args for 4.23+",
+			releaseVersion: "4.23.0",
+			tlsProfile:     customTLSProfile,
+			expectedArgs: append(baseArgs,
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			),
+		},
+		{
+			name:           "When version is 4.22 it should NOT append TLS args even with TLS profile",
+			releaseVersion: "4.22.0",
+			tlsProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+			expectedArgs: baseArgs,
+		},
+		{
+			name:           "When version is 4.22 with invalid custom profile, it should NOT error",
+			releaseVersion: "4.22.0",
+			tlsProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				// Custom is nil — would error in config.TLSArgs, but should not be called for 4.22
+			},
+			expectedArgs: baseArgs,
+		},
+		{
+			name:           "When version is 4.21 it should NOT append TLS args",
+			releaseVersion: "4.21.0",
+			tlsProfile:     nil,
+			expectedArgs:   baseArgs,
+		},
+		{
+			name:           "When version is 5.0 it should append TLS args",
+			releaseVersion: "5.0.0",
+			tlsProfile:     nil,
+			expectedArgs: append(baseArgs,
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+			),
+		},
+		{
+			name:           "When version is 5.1 it should append TLS args",
+			releaseVersion: "5.1.0",
+			tlsProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expectedArgs: append(baseArgs, "--tls-min-version=VersionTLS13"),
+		},
+		{
+			name:           "When using Old TLS profile it should append old TLS args for 4.23+",
+			releaseVersion: "4.23.0",
+			tlsProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileOldType,
+			},
+			expectedArgs: append(baseArgs,
+				"--tls-min-version=VersionTLS10",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+			),
+		},
+		{
+			name:           "When TLS profile is invalid, it should fail to resolve TLS arguments",
+			releaseVersion: "4.23.0",
+			tlsProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				// Custom is nil — triggers error in config.TLSArgs
+			},
+			expectError:   true,
+			expectedError: "failed to resolve Cloud Credential Operator TLS arguments",
+		},
+		{
+			name:           "When release version is invalid, it should fail parsing the version",
+			releaseVersion: "invalid-version",
+			tlsProfile:     nil,
+			expectError:    true,
+			expectedError:  "parsing ReleaseVersion (invalid-version)",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := buildHostedControlPlane(tc.tlsProfile)
+			deployment := buildDeployment(baseArgs)
+
+			cpContext := component.WorkloadContext{
+				HCP:                  hcp,
+				ReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion(tc.releaseVersion)),
+			}
+			err := adaptDeployment(cpContext, deployment)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred(), "adaptDeployment should not return error for profile %q", tc.name)
+			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+			g.Expect(container).ToNot(BeNil(), "cloud-credential-operator container should exist")
+			g.Expect(container.Args).To(Equal(tc.expectedArgs))
+		})
+	}
 }
