@@ -127,6 +127,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"OSStreams":               true,
 				"DeterministicLBIP":       false,
 				"KubeletHAProxyRouting":   false,
+				"EtcdPerMemberEndpoints":  false,
 			},
 		},
 		{
@@ -141,6 +142,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"OSStreams":               true,
 				"DeterministicLBIP":       true,
 				"KubeletHAProxyRouting":   true,
+				"EtcdPerMemberEndpoints":  true,
 			},
 		},
 		{
@@ -155,6 +157,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"OSStreams":               false,
 				"DeterministicLBIP":       false,
 				"KubeletHAProxyRouting":   false,
+				"EtcdPerMemberEndpoints":  false,
 			},
 		},
 	}
@@ -211,6 +214,12 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 			assert.Equal(t, tc.expected["KubeletHAProxyRouting"], actualKubeletHAProxyRouting,
 				"KubeletHAProxyRouting should be %v for feature set %s",
 				tc.expected["KubeletHAProxyRouting"], tc.featureSet)
+
+			// Test EtcdPerMemberEndpoints
+			actualEtcdPerMemberEndpoints := featuregate.Gate().Enabled(featuregate.EtcdPerMemberEndpoints)
+			assert.Equal(t, tc.expected["EtcdPerMemberEndpoints"], actualEtcdPerMemberEndpoints,
+				"EtcdPerMemberEndpoints should be %v for feature set %s",
+				tc.expected["EtcdPerMemberEndpoints"], tc.featureSet)
 		})
 	}
 }
@@ -225,4 +234,5 @@ func TestFeatureGateConstants(t *testing.T) {
 	assert.Equal(t, "OSStreams", string(featuregate.OSStreams))
 	assert.Equal(t, "DeterministicLBIP", string(featuregate.DeterministicLBIP))
 	assert.Equal(t, "KubeletHAProxyRouting", string(featuregate.KubeletHAProxyRouting))
+	assert.Equal(t, "EtcdPerMemberEndpoints", string(featuregate.EtcdPerMemberEndpoints))
 }
