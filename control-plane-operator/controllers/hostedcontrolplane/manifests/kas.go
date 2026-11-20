@@ -125,6 +125,18 @@ func KASDeployment(controlPlaneNamespace string) *appsv1.Deployment {
 	}
 }
 
+// KASReportedVersionConfigMap carries the version.Info the kube-apiserver
+// serves on /version when the control plane runs a different release payload
+// than spec.release. It only exists while that masking is engaged.
+func KASReportedVersionConfigMap(controlPlaneNamespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kas-reported-version",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
 func KASAuditConfig(controlPlaneNamespace string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

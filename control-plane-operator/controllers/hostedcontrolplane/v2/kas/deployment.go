@@ -77,6 +77,13 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		applyKASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, hcp.Spec.AuditWebhook)
 	}
 
+	// When the control plane runs a different release payload than spec.release
+	// (spec.controlPlaneReleaseImage), mask the kube-apiserver /version endpoint
+	// so it keeps reporting the user payload's version.
+	if err := applyReportedVersionConfig(cpContext, &deployment.Spec.Template.Spec); err != nil {
+		return fmt.Errorf("failed to apply reported version config: %w", err)
+	}
+
 	if secretEncryption := hcp.Spec.SecretEncryption; secretEncryption != nil {
 		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
 		switch secretEncryption.Type {
