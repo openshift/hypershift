@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 2d905f13d75d245f3d41bb5a3b3b3f473381589a4b8ba60dfe93c50bf58d3271
+    hypershift.openshift.io/desired-state-hash: e32c47c58d92e0ea6b04b5ca6eb314c9c23b9094a66560e262b1f3fd7bb9b424
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -329,7 +329,7 @@ spec:
         - |
           #!/bin/bash
 
-          set -eu
+          set -euo pipefail
 
           # This script checks whether the data directory of this etcd member is empty.
           # If it is, and there is a functional etcd cluster, then it ensures that a member
@@ -343,24 +343,60 @@ spec:
           export ETCDCTL_KEY=/etc/etcd/tls/server/server.key
           export ETCDCTL_ENDPOINTS=https://etcd-client:2379
 
-          echo "new" > /etc/etcd/clusterstate/state
+          if [[ ! -f /etc/etcd/clusterstate/state ]]; then
+            echo "new" > /etc/etcd/clusterstate/state
+          fi
+
+          # Two files in the cluster-state emptyDir record progress across init-container
+          # retries. The emptyDir survives retries within a Pod but not Pod replacement.
+          # Persistent storage cannot preserve a marker through recovery, which deletes
+          # the Pod and PVC after data loss.
+          #
+          #   state   "new" or "existing". etcd starts with it as ETCD_INITIAL_CLUSTER_STATE.
+          #           Once a functional cluster has been observed it stays "existing", so a
+          #           retry never bootstraps a new cluster over an identity the cluster knows.
+          #   repair  Present from the moment a functional cluster is observed until this
+          #           member is confirmed registered. While it is present the member may have
+          #           been removed from the cluster and not yet added back, and etcd cannot
+          #           start under that identity.
 
           if [[ ! -f /var/lib/data/member/snap/db ]]; then
             echo "No existing etcd data found"
             echo "Checking if cluster is functional"
-            if etcdctl member list; then
+            # List the members once and make every decision from that result. A second
+            # list can fail after the cluster was observed, which would leave a retry
+            # unable to tell whether this member is still registered.
+            if MEMBERS=$(etcdctl member list -w simple 2>/dev/null); then
               echo "Cluster is functional"
-              MEMBER_ID=$(etcdctl member list -w simple | grep "${HOSTNAME}" | awk -F, '{ print $1 }')
+              # Once a functional cluster has been observed, never fall back to
+              # bootstrap mode. Interrupted membership repair must be retried
+              # rather than recreating the identity removed from quorum. Record
+              # the pending repair first, so an interruption between the two
+              # writes cannot leave "existing" without it.
+              touch /etc/etcd/clusterstate/repair
+              echo "existing" > /etc/etcd/clusterstate/state
+              PEER_URL=https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380
+              # Match the member name exactly against the third field of the
+              # comma-separated member list, so the lookup cannot match the
+              # hostname where it also appears in a peer or client URL.
+              MEMBER_ID=$(awk -F', ' -v name="${HOSTNAME}" '$3 == name { print $1 }' <<<"${MEMBERS}")
               if [[ -n "${MEMBER_ID}" ]]; then
-                echo "A member with this name (${HOSTNAME}) already exists, removing"
+                echo "A member with this name already exists, removing"
                 etcdctl member remove "${MEMBER_ID}"
                 echo "Adding new member"
-                etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380
-                echo "existing" > /etc/etcd/clusterstate/state
+                etcdctl member add ${HOSTNAME} --peer-urls "${PEER_URL}"
+              elif grep -qF "${PEER_URL}" <<<"${MEMBERS}"; then
+                echo "A member without a name already uses this peer URL, nothing to do"
               else
-                echo "A member does not exist with name (${HOSTNAME}), nothing to do"
+                echo "A member does not exist with this name, adding it"
+                etcdctl member add ${HOSTNAME} --peer-urls "${PEER_URL}"
               fi
+              rm -f /etc/etcd/clusterstate/repair
             else
+              if [[ -f /etc/etcd/clusterstate/repair ]]; then
+                echo "Cannot list members while this member's registration is unconfirmed, refusing to start etcd"
+                exit 1
+              fi
               echo "Cannot list members in cluster, so likely not up yet"
             fi
           else

@@ -1,12 +1,14 @@
 package etcd
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -350,7 +352,7 @@ func TestAdaptStatefulSetForShard(t *testing.T) {
 						},
 						InitContainers: []corev1.Container{
 							{Name: "ensure-dns", Args: []string{"-c", "placeholder"}},
-							{Name: "reset-member", Args: []string{"-c", "placeholder"}},
+							{Name: "reset-member", Args: []string{"-c", defaultResetMemberScript(t)}},
 						},
 						Volumes: []corev1.Volume{
 							{Name: "peer-tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "etcd-peer-tls"}}},
@@ -405,6 +407,17 @@ func TestAdaptStatefulSetForShard(t *testing.T) {
 		// Service name
 		g.Expect(sts.Spec.ServiceName).To(Equal("etcd-discovery-events"))
 
+		// The reset-member script talks to the shard's services, not the default etcd's.
+		for _, c := range sts.Spec.Template.Spec.InitContainers {
+			if c.Name == "reset-member" {
+				g.Expect(c.Args).To(HaveLen(2))
+				g.Expect(c.Args[1]).To(ContainSubstring("https://etcd-client-events:2379"))
+				g.Expect(c.Args[1]).To(ContainSubstring(".etcd-discovery-events."))
+				g.Expect(c.Args[1]).ToNot(ContainSubstring("https://etcd-client:2379"))
+				g.Expect(c.Args[1]).ToNot(ContainSubstring(".etcd-discovery."))
+			}
+		}
+
 		// TLS volumes
 		for _, v := range sts.Spec.Template.Spec.Volumes {
 			switch v.Name {
@@ -418,6 +431,77 @@ func TestAdaptStatefulSetForShard(t *testing.T) {
 			}
 		}
 	})
+}
+
+// defaultResetMemberScript returns the reset-member script of the default etcd StatefulSet
+// asset, which the sharded script is derived from.
+func defaultResetMemberScript(t *testing.T) string {
+	t.Helper()
+	g := NewWithT(t)
+
+	sts, err := assets.LoadStatefulSetManifestTemplated(ComponentName, etcdTemplateData(ComponentName))
+	g.Expect(err).ToNot(HaveOccurred(), "failed to load the etcd statefulset asset")
+
+	for _, container := range sts.Spec.Template.Spec.InitContainers {
+		if container.Name == "reset-member" {
+			g.Expect(container.Args).To(HaveLen(2), "unexpected reset-member arguments")
+			return container.Args[1]
+		}
+	}
+	t.Fatal("the etcd statefulset asset has no reset-member init container")
+	return ""
+}
+
+func TestShardResetMemberScript(t *testing.T) {
+	t.Parallel()
+
+	defaultScript := defaultResetMemberScript(t)
+
+	tests := []struct {
+		name          string
+		script        string
+		expectedError string
+	}{
+		{
+			name:   "When the default script names the etcd services, it should rename only the client endpoint and discovery host",
+			script: defaultScript,
+		},
+		{
+			name:          "When the default script no longer names the client endpoint, it should return an error",
+			script:        strings.ReplaceAll(defaultScript, defaultClientEndpoint, "https://etcd-client-renamed:2379"),
+			expectedError: defaultClientEndpoint,
+		},
+		{
+			name:          "When the default script no longer names the discovery host, it should return an error",
+			script:        strings.ReplaceAll(defaultScript, defaultDiscoveryHost, ".etcd-discovery-renamed."),
+			expectedError: defaultDiscoveryHost,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			script, err := shardResetMemberScript(test.script, "etcd-client-events", "etcd-discovery-events")
+			if test.expectedError != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(test.expectedError)))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(script).To(ContainSubstring("https://etcd-client-events:2379"))
+			g.Expect(script).To(ContainSubstring(".etcd-discovery-events."))
+			g.Expect(script).ToNot(ContainSubstring(defaultClientEndpoint))
+			g.Expect(script).ToNot(ContainSubstring(defaultDiscoveryHost))
+
+			// Undoing the renames must give back the default script exactly, so the two
+			// scripts differ only in the service names.
+			restored := strings.ReplaceAll(script, "https://etcd-client-events:2379", defaultClientEndpoint)
+			restored = strings.ReplaceAll(restored, ".etcd-discovery-events.", defaultDiscoveryHost)
+			g.Expect(restored).To(Equal(defaultScript), "the shard script differs from the default script beyond the service names")
+		})
+	}
 }
 
 func TestAdaptStatefulSetForShard_IPv6WithDefrag(t *testing.T) {
@@ -438,7 +522,7 @@ func TestAdaptStatefulSetForShard_IPv6WithDefrag(t *testing.T) {
 					},
 					InitContainers: []corev1.Container{
 						{Name: "ensure-dns", Args: []string{"-c", "placeholder"}},
-						{Name: "reset-member", Args: []string{"-c", "placeholder"}},
+						{Name: "reset-member", Args: []string{"-c", defaultResetMemberScript(t)}},
 					},
 					Volumes: []corev1.Volume{
 						{Name: "peer-tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "etcd-peer-tls"}}},

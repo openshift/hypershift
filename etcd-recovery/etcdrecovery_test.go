@@ -2,9 +2,11 @@ package etcdrecovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -45,6 +47,7 @@ func clientURL(name string) string {
 
 func startedMember(name string) *etcdserverpb.Member {
 	return &etcdserverpb.Member{
+		ID:         memberID(name),
 		Name:       name,
 		PeerURLs:   []string{peerURL(name)},
 		ClientURLs: []string{clientURL(name)},
@@ -55,7 +58,19 @@ func startedMember(name string) *etcdserverpb.Member {
 // but whose process has not started yet: no name and no client URLs.
 func unstartedMember(name string) *etcdserverpb.Member {
 	return &etcdserverpb.Member{
+		ID:       memberID(name),
 		PeerURLs: []string{peerURL(name)},
+	}
+}
+
+func memberID(name string) uint64 {
+	switch name {
+	case "etcd-0":
+		return 1
+	case "etcd-1":
+		return 2
+	default:
+		return 3
 	}
 }
 
@@ -123,15 +138,16 @@ func TestMemberName(t *testing.T) {
 
 func TestCheckEtcdStatus(t *testing.T) {
 	tests := []struct {
-		name                string
-		members             []*etcdserverpb.Member
-		healthyEndpoints    []string
-		objects             []crclient.Object
-		expectErr           bool
-		expectRecoverable   bool
-		expectFailingPod    *string
-		expectMissingMember *string
-		expectUnhealthy     bool
+		name                   string
+		members                []*etcdserverpb.Member
+		healthyEndpoints       []string
+		objects                []crclient.Object
+		expectErr              bool
+		expectRecoverable      bool
+		expectFailingPod       *string
+		expectMissingMember    *string
+		expectUnhealthy        bool
+		expectUnhealthyMembers bool
 	}{
 		{
 			name: "When a member has not started and its pod is crash looping, it should report a failing pod without erroring",
@@ -147,9 +163,10 @@ func TestCheckEtcdStatus(t *testing.T) {
 				etcdPod("etcd-1", false, 0),
 				etcdPod("etcd-2", false, 0),
 			},
-			expectRecoverable: true,
-			expectFailingPod:  ptr.To("etcd-0"),
-			expectUnhealthy:   true,
+			expectRecoverable:      true,
+			expectFailingPod:       ptr.To("etcd-0"),
+			expectUnhealthy:        true,
+			expectUnhealthyMembers: true,
 		},
 		{
 			name: "When a member has not started but no pod has restarted, it should not report the cluster as unhealthy",
@@ -165,8 +182,9 @@ func TestCheckEtcdStatus(t *testing.T) {
 				etcdPod("etcd-1", false, 0),
 				etcdPod("etcd-2", false, 0),
 			},
-			expectRecoverable: true,
-			expectUnhealthy:   false,
+			expectRecoverable:      true,
+			expectUnhealthy:        false,
+			expectUnhealthyMembers: true,
 		},
 		{
 			name: "When two of three members are unhealthy, it should report the cluster as not recoverable",
@@ -182,8 +200,9 @@ func TestCheckEtcdStatus(t *testing.T) {
 				etcdPod("etcd-1", true, 3),
 				etcdPod("etcd-2", false, 0),
 			},
-			expectRecoverable: false,
-			expectUnhealthy:   false,
+			expectRecoverable:      false,
+			expectUnhealthy:        false,
+			expectUnhealthyMembers: true,
 		},
 		{
 			name: "When a member reports more than one client URL, it should return an error",
@@ -214,9 +233,10 @@ func TestCheckEtcdStatus(t *testing.T) {
 				etcdPod("etcd-1", true, 3),
 				etcdPod("etcd-2", false, 0),
 			},
-			expectRecoverable: false,
-			expectFailingPod:  ptr.To("etcd-1"),
-			expectUnhealthy:   true,
+			expectRecoverable:      false,
+			expectFailingPod:       ptr.To("etcd-1"),
+			expectUnhealthy:        true,
+			expectUnhealthyMembers: true,
 		},
 	}
 
@@ -247,6 +267,7 @@ func TestCheckEtcdStatus(t *testing.T) {
 			g.Expect(status.failingPod).To(Equal(test.expectFailingPod))
 			g.Expect(status.missingMember).To(Equal(test.expectMissingMember))
 			g.Expect(status.isUnhealthy()).To(Equal(test.expectUnhealthy))
+			g.Expect(status.unhealthyMembers).To(Equal(test.expectUnhealthyMembers))
 		})
 	}
 }
@@ -312,6 +333,11 @@ func TestEtcdStatusString(t *testing.T) {
 			name:     "When node is unreachable, it should include node unreachable",
 			status:   etcdStatus{recoverable: true, failingPod: ptr.To("etcd-0"), nodeUnreachable: true},
 			expected: "failing pod: etcd-0,node unreachable",
+		},
+		{
+			name:     "When a member endpoint is unhealthy, it should include unhealthy member",
+			status:   etcdStatus{recoverable: true, unhealthyMembers: true},
+			expected: "unhealthy member",
 		},
 		{
 			name:     "When not recoverable, it should include NOT RECOVERABLE",
@@ -700,50 +726,50 @@ func TestMissingMember(t *testing.T) {
 
 func TestIsRecoverableMemberHealth(t *testing.T) {
 	tests := []struct {
-		memberHealth        map[string]bool
+		memberHealth        map[uint64]memberEndpointHealth
 		expectedRecoverable bool
 	}{
 		{
-			memberHealth: map[string]bool{
-				"etcd-0": true,
+			memberHealth: map[uint64]memberEndpointHealth{
+				1: {name: "etcd-0", healthy: true},
 			},
 			expectedRecoverable: false,
 		},
 		{
-			memberHealth: map[string]bool{
-				"etcd-0": true,
-				"etcd-1": true,
+			memberHealth: map[uint64]memberEndpointHealth{
+				1: {name: "etcd-0", healthy: true},
+				2: {name: "etcd-1", healthy: true},
 			},
 			expectedRecoverable: true,
 		},
 		{
-			memberHealth: map[string]bool{
-				"etcd-0": true,
-				"etcd-2": false,
+			memberHealth: map[uint64]memberEndpointHealth{
+				1: {name: "etcd-0", healthy: true},
+				3: {name: "etcd-2", healthy: false},
 			},
 			expectedRecoverable: false,
 		},
 		{
-			memberHealth: map[string]bool{
-				"etcd-0": false,
-				"etcd-1": true,
-				"etcd-2": true,
+			memberHealth: map[uint64]memberEndpointHealth{
+				1: {name: "etcd-0", healthy: false},
+				2: {name: "etcd-1", healthy: true},
+				3: {name: "etcd-2", healthy: true},
 			},
 			expectedRecoverable: true,
 		},
 		{
-			memberHealth: map[string]bool{
-				"etcd-0": false,
-				"etcd-1": false,
-				"etcd-2": true,
+			memberHealth: map[uint64]memberEndpointHealth{
+				1: {name: "etcd-0", healthy: false},
+				2: {name: "etcd-1", healthy: false},
+				3: {name: "etcd-2", healthy: true},
 			},
 			expectedRecoverable: false,
 		},
 		{
-			memberHealth: map[string]bool{
-				"etcd-0": true,
-				"etcd-1": true,
-				"etcd-2": true,
+			memberHealth: map[uint64]memberEndpointHealth{
+				1: {name: "etcd-0", healthy: true},
+				2: {name: "etcd-1", healthy: true},
+				3: {name: "etcd-2", healthy: true},
 			},
 			expectedRecoverable: true,
 		},
@@ -959,6 +985,247 @@ func TestEtcdStatusMemberToRecover(t *testing.T) {
 			g := NewGomegaWithT(t)
 			actual := test.status.memberToRecover()
 			g.Expect(actual).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestIsHealthyForWait(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   etcdStatus
+		expected bool
+	}{
+		{
+			name:     "When recovery targets are resolved and all members are healthy, it should be healthy",
+			status:   etcdStatus{recoverable: true},
+			expected: true,
+		},
+		{
+			name:     "When a member has no client URL, it should not be healthy",
+			status:   etcdStatus{recoverable: true, unhealthyMembers: true},
+			expected: false,
+		},
+		{
+			name:     "When a pod is still failing, it should not be healthy",
+			status:   etcdStatus{recoverable: true, failingPod: ptr.To("etcd-0")},
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(test.status.isHealthyForWait()).To(Equal(test.expected), "unexpected health for %q", test.name)
+		})
+	}
+}
+
+func TestShouldWaitWithoutRecovery(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   etcdStatus
+		expected bool
+	}{
+		{
+			name:     "When every member is healthy, it should return without waiting",
+			status:   etcdStatus{recoverable: true},
+			expected: false,
+		},
+		{
+			name:     "When only a member endpoint is unhealthy, it should wait without recovery",
+			status:   etcdStatus{recoverable: true, unhealthyMembers: true},
+			expected: true,
+		},
+		{
+			name:     "When a pod is failing, it should recover instead of only waiting",
+			status:   etcdStatus{recoverable: true, failingPod: ptr.To("etcd-0")},
+			expected: false,
+		},
+		{
+			name:     "When a member is missing, it should recover instead of only waiting",
+			status:   etcdStatus{recoverable: true, missingMember: ptr.To("etcd-0")},
+			expected: false,
+		},
+		{
+			name:     "When a failing pod also has an unhealthy endpoint, it should recover instead of only waiting",
+			status:   etcdStatus{recoverable: true, failingPod: ptr.To("etcd-0"), unhealthyMembers: true},
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(test.status.shouldWaitWithoutRecovery()).To(Equal(test.expected), "unexpected decision for %q", test.name)
+		})
+	}
+}
+
+func TestRecovery_Run(t *testing.T) {
+	healthy := etcdStatus{recoverable: true}
+	endpointUnhealthy := etcdStatus{recoverable: true, unhealthyMembers: true}
+	podFailing := etcdStatus{recoverable: true, failingPod: ptr.To("etcd-2"), unhealthyMembers: true}
+
+	// statusResult is one answer of the status check. The last one repeats once the
+	// sequence is exhausted, so a cluster that never recovers keeps reporting its last state.
+	type statusResult struct {
+		status etcdStatus
+		err    error
+	}
+
+	statusErr := errors.New("etcd is unreachable")
+	recoverErr := errors.New("failed to delete the etcd pod")
+
+	tests := []struct {
+		name         string
+		statuses     []statusResult
+		recoverErr   error
+		waitTimeout  time.Duration
+		pollInterval time.Duration
+
+		expectedErr          error
+		expectedErrContains  string
+		expectedStatusCalls  int
+		expectedRecoverCalls int
+	}{
+		{
+			// A poll interval longer than the wait timeout turns an accidental wait into an error.
+			name:                 "When every member is healthy, it should succeed without waiting or recovering",
+			statuses:             []statusResult{{status: healthy}},
+			pollInterval:         time.Hour,
+			waitTimeout:          100 * time.Millisecond,
+			expectedStatusCalls:  1,
+			expectedRecoverCalls: 0,
+		},
+		{
+			name: "When only an endpoint is unhealthy and becomes healthy, it should wait without recovering and then succeed",
+			statuses: []statusResult{
+				{status: endpointUnhealthy},
+				{status: endpointUnhealthy},
+				{status: endpointUnhealthy},
+				{status: healthy},
+			},
+			pollInterval:         time.Millisecond,
+			waitTimeout:          10 * time.Second,
+			expectedStatusCalls:  4,
+			expectedRecoverCalls: 0,
+		},
+		{
+			name:                 "When only an endpoint is unhealthy and never becomes healthy, it should return an error without recovering",
+			statuses:             []statusResult{{status: endpointUnhealthy}},
+			pollInterval:         time.Millisecond,
+			waitTimeout:          50 * time.Millisecond,
+			expectedErr:          context.DeadlineExceeded,
+			expectedRecoverCalls: 0,
+			// The number of polls before the timeout varies, so the status calls are not checked.
+			expectedStatusCalls: -1,
+		},
+		{
+			name: "When an endpoint is unhealthy and the status check then fails, it should return that error without recovering",
+			statuses: []statusResult{
+				{status: endpointUnhealthy},
+				{err: statusErr},
+			},
+			pollInterval:         time.Millisecond,
+			waitTimeout:          10 * time.Second,
+			expectedErr:          statusErr,
+			expectedStatusCalls:  2,
+			expectedRecoverCalls: 0,
+		},
+		{
+			name: "When a pod is failing, it should recover and then wait until every endpoint is healthy",
+			statuses: []statusResult{
+				{status: podFailing},
+				{status: endpointUnhealthy},
+				{status: endpointUnhealthy},
+				{status: healthy},
+			},
+			pollInterval:         time.Millisecond,
+			waitTimeout:          10 * time.Second,
+			expectedStatusCalls:  4,
+			expectedRecoverCalls: 1,
+		},
+		{
+			name: "When recovery runs but the cluster never becomes healthy, it should return an error",
+			statuses: []statusResult{
+				{status: podFailing},
+				{status: endpointUnhealthy},
+			},
+			pollInterval:         time.Millisecond,
+			waitTimeout:          50 * time.Millisecond,
+			expectedErr:          context.DeadlineExceeded,
+			expectedStatusCalls:  -1,
+			expectedRecoverCalls: 1,
+		},
+		{
+			name:                 "When recovering the member fails, it should return that error without waiting",
+			statuses:             []statusResult{{status: podFailing}},
+			recoverErr:           recoverErr,
+			pollInterval:         time.Hour,
+			waitTimeout:          100 * time.Millisecond,
+			expectedErr:          recoverErr,
+			expectedStatusCalls:  1,
+			expectedRecoverCalls: 1,
+		},
+		{
+			name:                 "When the cluster is not recoverable, it should return an error without recovering or waiting",
+			statuses:             []statusResult{{status: etcdStatus{recoverable: false, failingPod: ptr.To("etcd-2")}}},
+			pollInterval:         time.Hour,
+			waitTimeout:          100 * time.Millisecond,
+			expectedErrContains:  "does not have a recoverable status",
+			expectedStatusCalls:  1,
+			expectedRecoverCalls: 0,
+		},
+		{
+			name:                 "When the first status check fails, it should return that error without recovering",
+			statuses:             []statusResult{{err: statusErr}},
+			pollInterval:         time.Hour,
+			waitTimeout:          100 * time.Millisecond,
+			expectedErr:          statusErr,
+			expectedStatusCalls:  1,
+			expectedRecoverCalls: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			var statusCalls, recoverCalls int
+			r := recovery{
+				getStatus: func(_ context.Context, _ options) (*etcdStatus, error) {
+					result := test.statuses[min(statusCalls, len(test.statuses)-1)]
+					statusCalls++
+					if result.err != nil {
+						return nil, result.err
+					}
+					status := result.status
+					return &status, nil
+				},
+				// recoverMember is the only step that deletes the member's Pod and PVC, so
+				// counting its calls shows whether recovery would have deleted anything.
+				recoverMember: func(_ context.Context, _ options, _ etcdStatus) error {
+					recoverCalls++
+					return test.recoverErr
+				},
+				pollInterval: test.pollInterval,
+				waitTimeout:  test.waitTimeout,
+			}
+
+			err := r.run(context.Background(), options{namespace: testNamespace})
+
+			switch {
+			case test.expectedErr != nil:
+				g.Expect(err).To(MatchError(test.expectedErr))
+			case test.expectedErrContains != "":
+				g.Expect(err).To(MatchError(ContainSubstring(test.expectedErrContains)))
+			default:
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			if test.expectedStatusCalls >= 0 {
+				g.Expect(statusCalls).To(Equal(test.expectedStatusCalls), "status checks")
+			}
+			g.Expect(recoverCalls).To(Equal(test.expectedRecoverCalls), "recoverMember calls")
 		})
 	}
 }

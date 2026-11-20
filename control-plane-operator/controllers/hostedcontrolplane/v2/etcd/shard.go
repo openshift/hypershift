@@ -158,43 +158,24 @@ func adaptStatefulSetForShard(cpContext component.WorkloadContext, sts *appsv1.S
 		c.Args = []string{"-c", fmt.Sprintf("exec control-plane-operator resolve-dns ${HOSTNAME}.%s.${NAMESPACE}.svc", discoveryService)}
 	})
 
+	// The reset-member script is rendered from the default etcd asset so the default and
+	// sharded scripts are a single source of truth and cannot drift.
+	var resetMemberErr error
 	podspec.UpdateContainer("reset-member", sts.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
-		script := fmt.Sprintf(`#!/bin/bash
-
-set -eu
-
-export ETCDCTL_API=3
-export ETCDCTL_CACERT=/etc/etcd/tls/etcd-ca/ca.crt
-export ETCDCTL_CERT=/etc/etcd/tls/server/server.crt
-export ETCDCTL_KEY=/etc/etcd/tls/server/server.key
-export ETCDCTL_ENDPOINTS=https://%s:2379
-
-echo "new" > /etc/etcd/clusterstate/state
-
-if [[ ! -f /var/lib/data/member/snap/db ]]; then
-  echo "No existing etcd data found"
-  echo "Checking if cluster is functional"
-  if etcdctl member list; then
-    echo "Cluster is functional"
-    MEMBER_ID=$(etcdctl member list -w simple | grep "${HOSTNAME}" | awk -F, '{ print $1 }')
-    if [[ -n "${MEMBER_ID}" ]]; then
-      echo "A member with this name (${HOSTNAME}) already exists, removing"
-      etcdctl member remove "${MEMBER_ID}"
-      echo "Adding new member"
-      etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.%s.${NAMESPACE}.svc:2380
-      echo "existing" > /etc/etcd/clusterstate/state
-    else
-      echo "A member does not exist with name (${HOSTNAME}), nothing to do"
-    fi
-  else
-    echo "Cannot list members in cluster, so likely not up yet"
-  fi
-else
-  echo "Snapshot db exists, member has data"
-fi
-`, clientService, discoveryService)
+		if len(c.Args) != 2 {
+			resetMemberErr = fmt.Errorf("unexpected reset-member arguments %q", c.Args)
+			return
+		}
+		script, err := shardResetMemberScript(c.Args[1], clientService, discoveryService)
+		if err != nil {
+			resetMemberErr = err
+			return
+		}
 		c.Args = []string{"-c", script}
 	})
+	if resetMemberErr != nil {
+		return fmt.Errorf("failed to render the shard reset-member script: %w", resetMemberErr)
+	}
 
 	// Update volume secret/configmap names to use shard-specific TLS secrets
 	for i, v := range sts.Spec.Template.Spec.Volumes {
@@ -260,6 +241,27 @@ fi
 	adaptShardScheduling(sts, shard)
 
 	return nil
+}
+
+// The default etcd reset-member script names the etcd services in two places. A shard
+// renames only these; the rest of the script is shared.
+const (
+	defaultClientEndpoint = "https://etcd-client:2379"
+	defaultDiscoveryHost  = ".etcd-discovery."
+)
+
+// shardResetMemberScript derives a shard's reset-member script from the script of the
+// default etcd StatefulSet by renaming the client and discovery services. It fails when
+// the default script no longer names the services where this expects them, so a change
+// to the asset cannot silently render a shard script that points at the default etcd.
+func shardResetMemberScript(defaultScript, clientService, discoveryService string) (string, error) {
+	for _, token := range []string{defaultClientEndpoint, defaultDiscoveryHost} {
+		if !strings.Contains(defaultScript, token) {
+			return "", fmt.Errorf("the default reset-member script does not contain %q", token)
+		}
+	}
+	script := strings.ReplaceAll(defaultScript, defaultClientEndpoint, "https://"+clientService+":2379")
+	return strings.ReplaceAll(script, defaultDiscoveryHost, "."+discoveryService+"."), nil
 }
 
 func adaptShardStorage(sts *appsv1.StatefulSet, shard hyperv1.ManagedEtcdShardSpec, hcp *hyperv1.HostedControlPlane) {
