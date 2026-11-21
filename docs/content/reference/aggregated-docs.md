@@ -7587,6 +7587,11 @@ oc get nodepool -n "${HC_NAMESPACE}" "${NODEPOOL_NAME}" \
   -o jsonpath='replicas={.spec.replicas} autoScaling={.spec.autoScaling}{"\n"}'
 ```
 
+Note the `replicas` value. It is the NodePool's desired replica count, and it must not change until you scale down in
+step 4. The checks in step 3 and step 4 compare the NodePool's `spec.replicas` with this
+value. If another actor, such as another user or an automation tool, changes it during the procedure, stop and start
+again from step 1.
+
 Check that no rollout is in progress or has failed and that the NodePool conditions are current. The output must show
 the NodePool `generation` and the `UpdatingVersion`, `UpdatingConfig`, and `UpdatingPlatformMachineTemplate`
 conditions. None of these conditions can be `True`, and each condition's `observedGeneration` must equal `generation`.
@@ -7603,7 +7608,8 @@ oc get nodepool -n "${HC_NAMESPACE}" "${NODEPOOL_NAME}" \
 
 List the MachineSets in the hosted control plane namespace. Exactly one MachineSet for your NodePool should have a
 non-zero `REPLICAS` value. The `NODEPOOL` column shows `<hosted_cluster_namespace>/<nodepool_name>`. The `ACTUAL`,
-`GENERATION`, and `OBSERVED` columns are used by the check in step 4.
+`GENERATION`, and `OBSERVED` columns are used by the Machine count checks in step 3 and
+step 4.
 
 ```bash
 oc get machinesets.cluster.x-k8s.io -n "${HCP_NAMESPACE}" \
@@ -7695,30 +7701,13 @@ as shown in Cleanup, only if it is left over from an operation that is no longer
 determine why it was set, stop: removing it could interfere with another operation, and keeping it could cause that
 Machine to be deleted instead of a Machine that you want to remove.
 
-Then annotate each Machine that you want to remove and that does not already have the annotation:
-
-```bash
-oc annotate machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" <machine_name> \
-  cluster.x-k8s.io/delete-machine=yes
-```
-
-Before you scale down, run the inventory command again. It must show `present` for exactly the Machines that you will
-remove and `absent` for every other Machine of the NodePool. Also repeat the Machine and Node health checks in
-step 2.
-
-!!! important
-
-    Annotate the Machines before you lower the replica count. As soon as the MachineSet has more Machines than its
-    desired replicas, the MachineSet controller selects Machines and starts deleting them. Annotating a Machine after
-    that does not cancel deletions that have already started.
-
-### 4. Scale down the NodePool
-
-Immediately before you scale down, confirm that the NodePool is not already adding or removing Machines and that every
-Machine is accounted for. When its desired replicas drop, the MachineSet controller selects for deletion as many
-Machines as exceed the desired replicas, and Machines that are already being deleted count toward that number. If the
-actual Machines do not match the desired replicas, the scale-down might not remove exactly the Machines that you
-annotated.
+Immediately before you annotate any Machine, confirm that no scale-down is pending and that every Machine is accounted
+for. The MachineSet controller reconciles a MachineSet when one of its Machines changes, including when you add an
+annotation. Each time, it lists the Machines that match its selector, and if there are more of them than its desired
+replicas, it selects as many Machines as exceed the desired replicas and deletes them. Annotated Machines are selected
+first. If a scale-down is already pending when you annotate a Machine, for example because another actor lowered the
+replica count and the controller has not yet selected a Machine, the controller can select the Machine that you
+annotated for that scale-down. The checks in step 4 run after you annotate and cannot undo that selection.
 
 Run the NodePool and MachineSet commands from step 1 again, and count the
 Machines of the NodePool. Replace `<active_machineset_name>` with the name of the MachineSet for your NodePool that has
@@ -7768,7 +7757,8 @@ Because `ACTUAL` comes from the last status update, the command also checks the 
 counts the Machines in the namespace whose controlling owner is the active MachineSet, whatever their annotations, and
 `ownerless` counts the Machines that have no controlling owner. The MachineSet controller lists Machines by its label
 selector, ignores Machines that another owner controls, and adopts matching Machines that have no controlling owner,
-so a Machine that `ownerless` counts could be added to the MachineSet when you scale down.
+so a Machine that `ownerless` counts could be added to the MachineSet the next time that the controller reconciles it,
+for example after you annotate a Machine or scale down.
 
 The MachineSet controller identifies the Machines that it controls by the UID in their controlling owner reference, not
 by the MachineSet name, so `owned` and `not_owned` compare that UID with the active MachineSet's `metadata.uid`. A
@@ -7783,10 +7773,16 @@ selector. The controller lists Machines by the labels in the MachineSet's `spec.
 `spec.selector.matchExpressions` entry that uses the `In` operator with one value. The controller cannot list Machines
 for a selector with any other `matchExpressions` entry, so the command stops with an error for one, as it does when it
 cannot find the active MachineSet. When `unselected` and `ownerless` are `0`, the Machines that `owned` counts are
-exactly the Machines that the MachineSet controller counts and selects from when you scale down.
+exactly the Machines that the MachineSet controller counts and selects from when it reconciles the MachineSet, including
+after you annotate a Machine or scale down.
 
-Continue only if all of the following are true:
+None of these counts depend on the `cluster.x-k8s.io/delete-machine` annotation. `unannotated` counts the Machines
+that do not have the `hypershift.openshift.io/nodePool` annotation. The command prints the same counts before and after
+you annotate, and only the inventory command checks the `cluster.x-k8s.io/delete-machine` annotation.
 
+Annotate a Machine only if all of the following are true:
+
+- The NodePool's `spec.replicas` is still the value that you noted in step 1.
 - The step 1 checks still pass: `autoScaling` is empty, all three `Updating` conditions are present and not `True`,
   each condition's `observedGeneration` equals the NodePool `generation`, and neither `UpdatingVersion` nor
   `UpdatingConfig` has the reason `InplaceUpgradeFailed`.
@@ -7800,12 +7796,82 @@ Continue only if all of the following are true:
 - `unselected` is `0`.
 - `ownerless` is `0`.
 - `unannotated` is `0`.
+- The inventory command shows `absent` for every Machine of the NodePool that you will keep.
+
+You have not annotated any Machine yet, so do not expect `present` for the Machines that you will remove. One of them
+shows `present` only if the annotation is left over from an earlier operation, as described above, or you set it in an
+earlier attempt at this procedure.
+
+If any of these checks fails, or the count command prints an error instead of the counts, do not annotate any Machine.
+If the NodePool's `spec.replicas` is no longer the value that you noted in step 1, another actor changed the desired
+replica count. Find out why, and start again from step 1 after that change is complete. If another check fails, wait
+until the NodePool and its MachineSet finish reconciling, and then start again from step 1. If `unselected`,
+`ownerless`, or `unannotated` stays above `0`, or the command keeps reporting a stale owner reference, find out why
+before you continue.
+
+If all of these checks pass, annotate each Machine that you want to remove and that does not already have the
+annotation:
+
+```bash
+oc annotate machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" <machine_name> \
+  cluster.x-k8s.io/delete-machine=yes
+```
+
+Run the inventory command again. It must show `present` for exactly the Machines that you will remove and `absent` for
+every other Machine of the NodePool. Step 4 repeats this check, the Machine count checks, and the Machine and Node
+health checks in step 2 immediately before you scale down.
+
+!!! important
+
+    Annotate the Machines before you lower the replica count. As soon as the MachineSet has more Machines than its
+    desired replicas, the MachineSet controller selects Machines and starts deleting them. Annotating a Machine after
+    that does not cancel deletions that have already started.
+
+### 4. Scale down the NodePool
+
+Immediately before you scale down, confirm that the NodePool is not already adding or removing Machines, that every
+Machine is accounted for, and that exactly the Machines that you will remove have the annotation. When its desired
+replicas drop, the MachineSet controller selects for deletion as many Machines as exceed the desired replicas, and
+Machines that are already being deleted count toward that number. If the actual Machines do not match the desired
+replicas, the scale-down might not remove exactly the Machines that you annotated.
+
+Run the NodePool and MachineSet commands from step 1, and the count command
+and the inventory command from step 3, again. Replace `<active_machineset_name>` in the
+count command as in step 3. Also repeat the Machine and Node health checks in
+step 2.
+
+Continue only if all of the following are true:
+
+- The NodePool's `spec.replicas` is still the value that you noted in step 1.
+- The step 1 checks still pass: `autoScaling` is empty, all three `Updating` conditions are present and not `True`,
+  each condition's `observedGeneration` equals the NodePool `generation`, and neither `UpdatingVersion` nor
+  `UpdatingConfig` has the reason `InplaceUpgradeFailed`.
+- Exactly one MachineSet for your NodePool has a non-zero `REPLICAS` value, and every other MachineSet for your
+  NodePool shows `0` in both `REPLICAS` and `ACTUAL`.
+- For that MachineSet, `OBSERVED` equals `GENERATION`.
+- The NodePool's `spec.replicas`, that MachineSet's `REPLICAS` and `ACTUAL` values, `machines`, and `owned` are all
+  equal.
+- `deleting` is `0`.
+- `not_owned` is `0`.
+- `unselected` is `0`.
+- `ownerless` is `0`.
+- `unannotated` is `0`.
+- The inventory command shows `present` for exactly the Machines that you will remove and `absent` for every other
+  Machine of the NodePool.
+- Every Machine of the NodePool that you will keep still passes the Machine and Node health checks in step 2.
 
 If any of these checks fails, or the count command prints an error instead of the counts, stop. Do not scale down while
-a count differs, a Machine is being deleted, or you cannot tell which MachineSet a Machine belongs to. Wait until the
-NodePool and its MachineSet finish reconciling, and then repeat the checks from step 1 through step 3 before you scale
-down. Annotations that you already set stay in place. If `unselected`, `ownerless`, or `unannotated` stays above `0`,
-or the command keeps reporting a stale owner reference, find out why before you continue.
+a count differs, a Machine is being deleted, or you cannot tell which MachineSet a Machine belongs to. Annotations that
+you already set stay in place. If you do not continue the procedure, remove them as shown in Cleanup.
+
+- If the NodePool's `spec.replicas` is no longer the value that you noted in step 1, another actor changed the desired
+  replica count while your annotations were in place. If the count was lowered, the MachineSet controller might
+  already have selected an annotated Machine for deletion. Check the `DELETING` column as shown in
+  Verification. Find out why the count changed, and start again from step 1 after that change is
+  complete.
+- If another check fails, wait until the NodePool and its MachineSet finish reconciling, and then start again from
+  step 1. If `unselected`, `ownerless`, or `unannotated` stays above `0`, or the command keeps reporting a stale owner
+  reference, find out why before you continue.
 
 Lower `spec.replicas` on the NodePool by the number of Machines of your NodePool that have the annotation:
 
