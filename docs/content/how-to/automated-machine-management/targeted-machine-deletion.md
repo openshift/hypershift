@@ -188,7 +188,9 @@ listing for this check: it prints `<none>` both when the annotation is absent an
 If a Machine that you will keep shows `present`, find out why before you continue. Remove the annotation,
 as shown in [Cleanup](#cleanup), only if it is left over from an operation that is no longer in progress. If you cannot
 determine why it was set, stop: removing it could interfere with another operation, and keeping it could cause that
-Machine to be deleted instead of a Machine that you want to remove.
+Machine to be deleted instead of a Machine that you want to remove. After you remove a leftover annotation from a
+Machine that you will keep, run the inventory command again, and use its new output, not the earlier one, for the
+checks below that must pass before you annotate any Machine.
 
 Immediately before you annotate any Machine, confirm that no scale-down is pending and that every Machine is accounted
 for. The MachineSet controller reconciles a MachineSet when one of its Machines changes, including when you add an
