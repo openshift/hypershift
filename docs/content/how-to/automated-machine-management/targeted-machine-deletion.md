@@ -76,15 +76,17 @@ oc get nodepool -n "${HC_NAMESPACE}" "${NODEPOOL_NAME}" \
   -o jsonpath='replicas={.spec.replicas} autoScaling={.spec.autoScaling}{"\n"}'
 ```
 
-Check that no rollout is in progress and that the NodePool conditions are current. The output must show the NodePool
-`generation` and the `UpdatingVersion`, `UpdatingConfig`, and `UpdatingPlatformMachineTemplate` conditions. None of
-these conditions can be `True`, and each condition's `observedGeneration` must equal `generation`. A condition that is
-missing, or whose `observedGeneration` differs from `generation`, has not been updated for the current NodePool spec,
-so do not continue until it is:
+Check that no rollout is in progress or has failed and that the NodePool conditions are current. The output must show
+the NodePool `generation` and the `UpdatingVersion`, `UpdatingConfig`, and `UpdatingPlatformMachineTemplate`
+conditions. None of these conditions can be `True`, and each condition's `observedGeneration` must equal `generation`.
+A condition that is missing, or whose `observedGeneration` differs from `generation`, has not been updated for the
+current NodePool spec, so do not continue until it is. If `UpdatingVersion` or `UpdatingConfig` has the reason
+`InplaceUpgradeFailed`, an `InPlace` rollout failed on a Node and has not completed, even though the condition is
+`False` and current. Its `message` names the Node. Do not continue until the failed rollout is resolved:
 
 ```bash
 oc get nodepool -n "${HC_NAMESPACE}" "${NODEPOOL_NAME}" \
-  -o jsonpath='generation={.metadata.generation}{"\n"}{range .status.conditions[*]}{.type}={.status} observedGeneration={.observedGeneration}{"\n"}{end}' \
+  -o jsonpath='generation={.metadata.generation}{"\n"}{range .status.conditions[*]}{.type}={.status} reason={.reason} observedGeneration={.observedGeneration} message={.message}{"\n"}{end}' \
   | grep -E '^(generation|Updating)'
 ```
 
@@ -212,16 +214,25 @@ Machines of the NodePool. Replace `<active_machineset_name>` with the name of th
 a non-zero `REPLICAS` value:
 
 ```bash
-oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" -o json \
+oc get machinesets.cluster.x-k8s.io,machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" -o json \
   | jq -r --arg nodepool "${HC_NAMESPACE}/${NODEPOOL_NAME}" --arg machineset "<active_machineset_name>" '
       def controlled_by($name): any(.metadata.ownerReferences[]?; .controller == true and .kind == "MachineSet" and .name == $name);
-      (.items | map(select((.metadata.annotations // {}) | has("hypershift.openshift.io/nodePool") | not)) | length) as $unannotated
+      def selected($labels): (.metadata.labels // {}) as $l | all($labels | to_entries[]; $l[.key] == .value);
+      ([.items[] | select(.kind == "MachineSet" and .metadata.name == $machineset)]
+        | if length == 1 then .[0] else error("MachineSet \($machineset) not found") end
+        | reduce (.spec.selector.matchExpressions // [])[] as $e
+            ((.spec.selector.matchLabels // {}) + {"cluster.x-k8s.io/cluster-name": .spec.clusterName};
+             if $e.operator == "In" and ($e.values | length) == 1 then . + {($e.key): $e.values[0]}
+             else error("unsupported MachineSet selector expression for \($e.key)") end)) as $selector
+      | .items |= map(select(.kind == "Machine"))
+      | (.items | map(select((.metadata.annotations // {}) | has("hypershift.openshift.io/nodePool") | not)) | length) as $unannotated
       | (.items | map(select(controlled_by($machineset))) | length) as $owned
+      | (.items | map(select(controlled_by($machineset) and (selected($selector) | not))) | length) as $unselected
       | (.items | map(select(any(.metadata.ownerReferences[]?; .controller == true) | not)) | length) as $ownerless
       | [.items[] | select((.metadata.annotations // {})["hypershift.openshift.io/nodePool"] == $nodepool)]
       | (map(select(.metadata.deletionTimestamp != null)) | length) as $deleting
       | (map(select(controlled_by($machineset) | not)) | length) as $notowned
-      | "machines=\(length) deleting=\($deleting) not_owned=\($notowned) owned=\($owned) ownerless=\($ownerless) unannotated=\($unannotated)"'
+      | "machines=\(length) deleting=\($deleting) not_owned=\($notowned) owned=\($owned) unselected=\($unselected) ownerless=\($ownerless) unannotated=\($unannotated)"'
 ```
 
 In the MachineSet listing, `ACTUAL` (`status.replicas`) is the number of Machines that the MachineSet controller counted
@@ -245,10 +256,20 @@ counts the Machines in the namespace whose controlling owner is the active Machi
 selector, ignores Machines that another owner controls, and adopts matching Machines that have no controlling owner,
 so a Machine that `ownerless` counts could be added to the MachineSet when you scale down.
 
+The MachineSet controller also does not count or delete a Machine that it controls but that does not match its
+selector. `unselected` counts the Machines that `owned` counts and whose labels do not match the active MachineSet's
+selector. The controller lists Machines by the labels in the MachineSet's `spec.selector.matchLabels`, the
+`cluster.x-k8s.io/cluster-name` label with the MachineSet's `spec.clusterName` value, and each
+`spec.selector.matchExpressions` entry that uses the `In` operator with one value. The controller cannot list Machines
+for a selector with any other `matchExpressions` entry, so the command stops with an error for one, as it does when it
+cannot find the active MachineSet. When `unselected` and `ownerless` are `0`, the Machines that `owned` counts are
+exactly the Machines that the MachineSet controller counts and selects from when you scale down.
+
 Continue only if all of the following are true:
 
 - The step 1 checks still pass: `autoScaling` is empty, all three `Updating` conditions are present and not `True`,
-  and each condition's `observedGeneration` equals the NodePool `generation`.
+  each condition's `observedGeneration` equals the NodePool `generation`, and neither `UpdatingVersion` nor
+  `UpdatingConfig` has the reason `InplaceUpgradeFailed`.
 - Exactly one MachineSet for your NodePool has a non-zero `REPLICAS` value, and every other MachineSet for your
   NodePool shows `0` in both `REPLICAS` and `ACTUAL`.
 - For that MachineSet, `OBSERVED` equals `GENERATION`.
@@ -256,13 +277,15 @@ Continue only if all of the following are true:
   equal.
 - `deleting` is `0`.
 - `not_owned` is `0`.
+- `unselected` is `0`.
 - `ownerless` is `0`.
 - `unannotated` is `0`.
 
-If any of these checks fails, stop. Do not scale down while a count differs, a Machine is being deleted, or you cannot
-tell which MachineSet a Machine belongs to. Wait until the NodePool and its MachineSet finish reconciling, and then
-repeat the checks from step 1 through step 3 before you scale down. Annotations that you already set stay in place. If
-`ownerless` or `unannotated` stays above `0`, find out where those Machines come from before you continue.
+If any of these checks fails, or the count command prints an error instead of the counts, stop. Do not scale down while
+a count differs, a Machine is being deleted, or you cannot tell which MachineSet a Machine belongs to. Wait until the
+NodePool and its MachineSet finish reconciling, and then repeat the checks from step 1 through step 3 before you scale
+down. Annotations that you already set stay in place. If `unselected`, `ownerless`, or `unannotated` stays above `0`,
+find out why before you continue.
 
 Lower `spec.replicas` on the NodePool by the number of Machines of your NodePool that have the annotation:
 
