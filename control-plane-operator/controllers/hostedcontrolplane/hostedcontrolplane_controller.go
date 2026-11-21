@@ -92,6 +92,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
@@ -1032,9 +1033,13 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlaneVersionStatus(ctx co
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret for version reconciliation: %w", err)
 	}
+	pullSecretBytes, err := pullsecret.ForHostedControlPlane(ctx, r.Client, hostedControlPlane, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
 	// Resolve the release image to its digest so controlPlaneVersion records
 	// the immutable image reference, consistent with how CVO records images.
-	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
+	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to resolve control plane release image digest: %w", err)
 	}
@@ -1309,9 +1314,17 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return nil, err
 	}
+	// The control plane may run a release image held in a private registry that the
+	// cluster pull secret does not cover. Only the control plane release lookup gets
+	// the additional credential; the data plane release is resolved elsewhere with
+	// the unmodified pull secret.
+	pullSecretBytes, err := pullsecret.ForHostedControlPlane(ctx, r.Client, hcp, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return nil, err
+	}
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
-	return r.ReleaseProvider.Lookup(lookupCtx, imageregistry.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+	return r.ReleaseProvider.Lookup(lookupCtx, imageregistry.HCPControlPlaneReleaseImage(hcp), pullSecretBytes)
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
