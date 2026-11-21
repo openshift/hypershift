@@ -10,12 +10,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpenterv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
-	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/support/api"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -672,11 +669,6 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			if tc.standalone {
-				previousFeatureSet := featuregate.FeatureSet()
-				featuregate.ConfigureFeatureSet(string(configv1.TechPreviewNoUpgrade))
-				t.Cleanup(func() {
-					featuregate.ConfigureFeatureSet(string(previousFeatureSet))
-				})
 				t.Setenv(karpenterutil.EnableStandaloneKarpenterOperatorEnvVar, "1")
 			}
 
