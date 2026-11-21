@@ -337,6 +337,7 @@ type RequiredHSTSPolicy struct {
 	// foo.com only matches foo.com, so to cover foo.com and everything under it, you must specify *both*.
 	// +kubebuilder:validation:MinItems=1
 	// +required
+	// +listType=atomic
 	DomainPatterns []string `json:"domainPatterns"`
 
 	// maxAge is the delta time range in seconds during which hosts are regarded as HSTS hosts.

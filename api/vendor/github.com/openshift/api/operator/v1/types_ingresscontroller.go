@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -185,6 +186,22 @@ type IngressControllerSpec struct {
 	//
 	// +optional
 	NodePlacement *NodePlacement `json:"nodePlacement,omitempty"`
+
+	// resources optionally configures per-replica resources for the router and
+	// haproxy containers independently. At least one container must be configured.
+	// When omitted, the platform is left to choose reasonable defaults, which
+	// are subject to change over time. The current defaults are requests of 25m
+	// CPU and 64Mi memory for router, requests of 100m CPU and 256Mi memory for
+	// haproxy, and no limits for either container.
+	//
+	// The values set here are not validated against what the workload needs;
+	// setting them too low or too high can make the router unavailable, and Red
+	// Hat does not support issues caused by such values. See the request and
+	// limit fields for the specific risks of each. The cluster administrator is
+	// responsible for choosing appropriate values.
+	// +optional
+	// +openshift:enable:FeatureGate=IngressControllerResourceConfiguration
+	Resources IngressControllerResources `json:"resources,omitempty,omitzero"`
 
 	// tlsSecurityProfile specifies settings for TLS connections for ingresscontrollers.
 	//
@@ -414,6 +431,125 @@ type IngressControllerSpec struct {
 	// +optional
 	// +openshift:enable:FeatureGate=IngressControllerMultipleHAProxyVersions
 	HAProxyVersion HAProxyVersion `json:"haproxyVersion,omitempty"`
+}
+
+// IngressControllerResources configures per-replica resources for ingress containers.
+// +kubebuilder:validation:MinProperties=1
+type IngressControllerResources struct {
+	// router optionally configures resources for the controller that watches
+	// routes and generates HAProxy configuration. When specified, it must be a
+	// list of 1 to 8 resource overrides with unique names. Removing an entry
+	// restores the platform default for that resource. When omitted, the
+	// platform applies its default for the router container, as described on
+	// the spec.resources field.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=8
+	Router []IngressControllerContainerResource `json:"router,omitempty"`
+
+	// haproxy optionally configures resources for the proxy that handles ingress
+	// traffic. It runs as a restartable init sidecar in the router pod. When
+	// specified, it must be a list of 1 to 8 resource overrides with unique
+	// names. Removing an entry restores the platform default for that resource.
+	// When omitted, the platform applies its default for the haproxy container,
+	// as described on the spec.resources field.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=8
+	HAProxy []IngressControllerContainerResource `json:"haproxy,omitempty"`
+}
+
+// IngressControllerContainerResource defines an override for one resource.
+// +kubebuilder:validation:XValidation:rule="has(self.request) || has(self.limit)",message="at least one of request or limit must be set"
+// +kubebuilder:validation:XValidation:rule="!has(self.request) || !has(self.limit) || (type(self.request) == int ? quantity('0').add(self.request) : quantity(self.request)).compareTo((type(self.limit) == int ? quantity('0').add(self.limit) : quantity(self.limit))) <= 0",message="limit must be greater than or equal to request"
+// +kubebuilder:validation:XValidation:rule="!(self.name.contains('/') || self.name.startsWith('hugepages-')) || !has(self.request) || has(self.limit)",message="extended resources and hugepages requests require a limit"
+// +kubebuilder:validation:XValidation:rule="!(self.name.contains('/') || self.name.startsWith('hugepages-')) || !has(self.request) || !has(self.limit) || (type(self.request) == int ? quantity('0').add(self.request) : quantity(self.request)).compareTo((type(self.limit) == int ? quantity('0').add(self.limit) : quantity(self.limit))) == 0",message="extended resources and hugepages request must equal limit"
+// +kubebuilder:validation:XValidation:rule="!self.name.contains('/') || !has(self.limit) || !(type(self.limit) == int || isQuantity(self.limit)) || (type(self.limit) == int ? quantity('0').add(self.limit) : quantity(self.limit)).isInteger()",message="extended resource limit must be a whole number"
+// +kubebuilder:validation:XValidation:rule="!self.name.startsWith('hugepages-') || !has(self.limit) || !(type(self.limit) == int || isQuantity(self.limit)) || !isQuantity(self.name.substring(10)) || !quantity(self.name.substring(10)).isInteger() || !quantity(self.name.substring(10)).isGreaterThan(quantity('0')) || ((type(self.limit) == int ? quantity('0').add(self.limit) : quantity(self.limit)).isInteger() && (type(self.limit) == int ? quantity('0').add(self.limit) : quantity(self.limit)).asInteger() % quantity(self.name.substring(10)).asInteger() == 0)",message="hugepages limit must be a whole multiple of the page size"
+type IngressControllerContainerResource struct {
+	// name is required and identifies cpu, memory, ephemeral-storage, hugepages-<size>,
+	// or a domain-qualified extended resource such as example.com/device.
+	// It must be a Kubernetes qualified name of 1 to 253 characters: an optional
+	// lowercase DNS subdomain and slash followed by an alphanumeric name of at most
+	// 63 characters, with '-', '_' and '.' allowed internally. Extended resource
+	// domains must not be kubernetes.io or its subdomains, and names must not
+	// start with 'requests.'. Hugepage sizes must be valid quantities of 1 to 20
+	// characters representing a positive, whole number of bytes.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="!format.qualifiedName().validate(self).hasValue()",message="name must be a valid Kubernetes qualified name"
+	// +kubebuilder:validation:XValidation:rule="self in ['cpu', 'memory', 'ephemeral-storage'] || self.startsWith('hugepages-') || self.contains('/')",message="name must be cpu, memory, ephemeral-storage, hugepages-<size>, or an extended resource"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('/') || !(self.split('/')[0] == 'kubernetes.io' || self.split('/')[0].endsWith('.kubernetes.io'))",message="extended resource names must not use the reserved kubernetes.io domain"
+	// +kubebuilder:validation:XValidation:rule="!self.startsWith('requests.')",message="resource names must not start with 'requests.'"
+	// +kubebuilder:validation:XValidation:rule="!self.startsWith('hugepages-') || (self.substring(10).size() <= 20 && isQuantity(self.substring(10)) && quantity(self.substring(10)).isInteger() && quantity(self.substring(10)).isGreaterThan(quantity('0')))",message="hugepage size must be a positive whole-byte quantity of at most 20 characters"
+	Name string `json:"name,omitempty"`
+
+	// request optionally sets the minimum amount of this resource per replica.
+	//
+	// WARNING: the platform does not validate this value against what the
+	// container needs, and setting it too low or too high can break ingress. A
+	// request below what the container needs causes CPU throttling and makes the
+	// pod more likely to be evicted when its node runs short of memory; users
+	// see slow route updates, added latency, timeouts and 5xx responses. A
+	// request that the nodes cannot satisfy leaves ingress pods Pending, and a
+	// rolling update can then stall with fewer replicas than desired. A request
+	// is static: the platform never adjusts it as route count, configuration
+	// size or traffic grows. Issues caused by an inappropriate value are not
+	// supported, and the cluster administrator is responsible for choosing it;
+	// the platform default described on spec.resources is the supported
+	// configuration.
+	//
+	// It must be a valid, positive, non-zero quantity of 1 to 20 characters and
+	// must not exceed limit. Extended resources and hugepages require an equal
+	// limit; extended resource values must be whole numbers, and hugepage values
+	// must be whole multiples of the page size. When omitted with a limit, the
+	// operator uses that limit as the effective request, without defaulting this
+	// API field. When there is no entry for a resource, the platform default
+	// request applies.
+	// +optional
+	// +kubebuilder:validation:XIntOrString
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=20
+	// +kubebuilder:validation:XValidation:rule="type(self) == int ? self > 0 : isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))",message="request must be a positive, non-zero quantity"
+	Request *resource.Quantity `json:"request,omitempty"`
+
+	// limit optionally sets the maximum amount of this resource per replica.
+	//
+	// WARNING: setting a limit on a cluster component such as the router is
+	// discouraged, the platform does not validate it against what the container
+	// needs, and the cluster administrator accepts responsibility for any
+	// unavailability it causes; the platform default of no limit, described on
+	// spec.resources, is the supported configuration. A CPU limit that the
+	// container exceeds is enforced by throttling, which appears as latency
+	// spikes, timeouts and 5xx responses under bursty traffic. A memory limit
+	// below the working set of the container causes it to be OOMKilled and
+	// restarted, and while a container that serves traffic is restarting, the
+	// routes handled by that replica are unavailable; with a single replica that
+	// is an ingress outage. Because a limit-only entry also becomes the request,
+	// a limit that the nodes cannot satisfy leaves the pods Pending. The
+	// platform never re-evaluates the limit, so a value that works today can
+	// start causing these failures as route count, configuration size or traffic
+	// grows.
+	//
+	// It must be a valid, positive, non-zero quantity of 1 to 20 characters and
+	// must not be less than request. Extended resource values must be whole
+	// numbers; hugepage values must be whole multiples of the page size. For
+	// extended resources and hugepages, an explicit request must equal limit.
+	// When request is omitted, the operator uses limit as the effective request,
+	// without defaulting the API field. When limit is omitted, the platform
+	// default applies (currently no limit), unless a LimitRange in the router
+	// namespace applies one.
+	// +optional
+	// +kubebuilder:validation:XIntOrString
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=20
+	// +kubebuilder:validation:XValidation:rule="type(self) == int ? self > 0 : isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))",message="limit must be a positive, non-zero quantity"
+	Limit *resource.Quantity `json:"limit,omitempty"`
 }
 
 // httpCompressionPolicy turns on compression for the specified MIME types.
