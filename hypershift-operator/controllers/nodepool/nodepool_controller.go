@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -1303,6 +1304,13 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	pullSecretBytes, err := r.getPullSecretBytes(ctx, hostedCluster)
 	if err != nil {
 		return nil, err
+	}
+	// The CPO image is resolved out of the control plane release payload, which may
+	// live in a private registry the cluster pull secret does not cover. These bytes
+	// are only used for the CPO image lookups below, never for data plane content.
+	pullSecretBytes, err = pullsecret.ForHostedClusterControlPlaneNamespace(ctx, r.Client, hostedCluster, pullSecretBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
 	}
 	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {

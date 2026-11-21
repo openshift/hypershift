@@ -43,6 +43,7 @@ import (
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
@@ -10676,6 +10677,147 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
 		})
 	}
+}
+
+func TestReconcileControlPlaneReleasePullSecretSync(t *testing.T) {
+	t.Parallel()
+
+	const operatorNamespace = "hypershift"
+	additional := []byte(`{"auths":{"cve.example.com":{"auth":"dXNlcjpwYXNz"}}}`)
+
+	providerSecret := func(data map[string][]byte) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pullsecret.ControlPlaneReleaseSecretName,
+				Namespace: operatorNamespace,
+			},
+			Data: data,
+		}
+	}
+	staleCopy := func() *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pullsecret.ControlPlaneReleaseSecretName,
+				Namespace: "cp-ns",
+			},
+			Data: map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"old.example.com":{}}}`)},
+		}
+	}
+
+	tests := []struct {
+		name                string
+		controlPlaneRelease *hyperv1.Release
+		existingObjects     []crclient.Object
+		expectErr           bool
+		errContains         string
+		expectSynced        bool
+	}{
+		{
+			name:                "When the cluster pins a control plane release and the secret exists, it should sync a copy",
+			controlPlaneRelease: &hyperv1.Release{Image: "cve.example.com/ocp/release:4.18.1"},
+			existingObjects: []crclient.Object{
+				providerSecret(map[string][]byte{".dockerconfigjson": additional}),
+			},
+			expectSynced: true,
+		},
+		{
+			name:                "When the provider secret is absent, it should be a no-op",
+			controlPlaneRelease: &hyperv1.Release{Image: "quay.io/ocp/release:4.18.1"},
+		},
+		{
+			name:            "When the cluster pins no control plane release, it should not sync even if the secret exists",
+			existingObjects: []crclient.Object{providerSecret(map[string][]byte{".dockerconfigjson": additional})},
+		},
+		{
+			name:            "When the cluster stops pinning a control plane release, it should remove a stale copy",
+			existingObjects: []crclient.Object{providerSecret(map[string][]byte{".dockerconfigjson": additional}), staleCopy()},
+		},
+		{
+			name:                "When the provider secret lacks .dockerconfigjson, it should return an error",
+			controlPlaneRelease: &hyperv1.Release{Image: "cve.example.com/ocp/release:4.18.1"},
+			existingObjects:     []crclient.Object{providerSecret(map[string][]byte{})},
+			expectErr:           true,
+			errContains:         ".dockerconfigjson",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+					ControlPlaneRelease: tc.controlPlaneRelease,
+				},
+			}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...).Build()
+
+			r := &HostedClusterReconciler{Client: client, OperatorNamespace: operatorNamespace}
+
+			err := r.reconcileControlPlaneReleasePullSecretSync(t.Context(), hcluster, ctrl.CreateOrUpdate, "cp-ns")
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.errContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+				}
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			synced := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pullsecret.ControlPlaneReleaseSecretName,
+					Namespace: "cp-ns",
+				},
+			}
+			getErr := client.Get(t.Context(), crclient.ObjectKeyFromObject(synced), synced)
+			if !tc.expectSynced {
+				g.Expect(errors2.IsNotFound(getErr)).To(BeTrue(), "expected no synced copy in the control plane namespace")
+				return
+			}
+			g.Expect(getErr).To(Succeed())
+			g.Expect(synced.Data[".dockerconfigjson"]).To(Equal(additional))
+			g.Expect(synced.Type).To(Equal(corev1.SecretTypeDockerConfigJson))
+		})
+	}
+
+	// Data plane isolation guard: the credential must land in its own Secret and
+	// must never be merged into the control plane namespace pull-secret, which HCCO
+	// propagates into the guest cluster and onto nodes.
+	t.Run("It should not widen the control plane namespace pull-secret", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		clusterPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+			Spec: hyperv1.HostedClusterSpec{
+				PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+				ControlPlaneRelease: &hyperv1.Release{Image: "cve.example.com/ocp/release:4.18.1"},
+			},
+		}
+
+		client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			providerSecret(map[string][]byte{".dockerconfigjson": additional}),
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "cp-ns"},
+				Data:       map[string][]byte{".dockerconfigjson": clusterPullSecret},
+			},
+		).Build()
+
+		r := &HostedClusterReconciler{Client: client, OperatorNamespace: operatorNamespace}
+		g.Expect(r.reconcileControlPlaneReleasePullSecretSync(t.Context(), hcluster, ctrl.CreateOrUpdate, "cp-ns")).To(Succeed())
+
+		cpNamespacePullSecret := controlplaneoperator.PullSecret("cp-ns")
+		g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(cpNamespacePullSecret), cpNamespacePullSecret)).To(Succeed())
+		g.Expect(cpNamespacePullSecret.Data[".dockerconfigjson"]).To(Equal(clusterPullSecret))
+		g.Expect(string(cpNamespacePullSecret.Data[".dockerconfigjson"])).ToNot(ContainSubstring("cve.example.com"))
+	})
 }
 
 func TestHcUsesLBIPFields(t *testing.T) {
