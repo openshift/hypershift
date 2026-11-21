@@ -4,8 +4,9 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Removes the specified subnets from the set of configured subnets for the load
@@ -45,6 +46,21 @@ type DetachLoadBalancerFromSubnetsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DetachLoadBalancerFromSubnetsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DetachLoadBalancerFromSubnetsInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DetachLoadBalancerFromSubnetsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.DetachLoadBalancerFromSubnetsInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+	if v.Subnets != nil {
+		serializeSubnets(s, schemas.DetachLoadBalancerFromSubnetsInput_Subnets, v.Subnets)
+	}
+}
+
 // Contains the output of DetachLoadBalancerFromSubnets.
 type DetachLoadBalancerFromSubnetsOutput struct {
 
@@ -57,22 +73,34 @@ type DetachLoadBalancerFromSubnetsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DetachLoadBalancerFromSubnetsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DetachLoadBalancerFromSubnetsOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DetachLoadBalancerFromSubnetsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Subnets != nil {
+		serializeSubnets(s, schemas.DetachLoadBalancerFromSubnetsOutput_Subnets, v.Subnets)
+	}
+}
+func (v *DetachLoadBalancerFromSubnetsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DetachLoadBalancerFromSubnetsOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.DetachLoadBalancerFromSubnetsOutput_Subnets:
+			return deserializeSubnets(d, schemas.DetachLoadBalancerFromSubnetsOutput_Subnets, &v.Subnets)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDetachLoadBalancerFromSubnetsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDetachLoadBalancerFromSubnets{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DetachLoadBalancerFromSubnets, schemas.DetachLoadBalancerFromSubnetsInput, schemas.DetachLoadBalancerFromSubnetsOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDetachLoadBalancerFromSubnets{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DetachLoadBalancerFromSubnets, schemas.DetachLoadBalancerFromSubnetsInput, schemas.DetachLoadBalancerFromSubnetsOutput), output: &DetachLoadBalancerFromSubnetsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -82,19 +110,10 @@ func (c *Client) addOperationDetachLoadBalancerFromSubnetsMiddlewares(stack *mid
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDetachLoadBalancerFromSubnetsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DetachLoadBalancerFromSubnets"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

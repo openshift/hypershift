@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"time"
 )
 
@@ -47,6 +48,18 @@ type GetSAMLProviderInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetSAMLProviderInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetSAMLProviderRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetSAMLProviderInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.SAMLProviderArn != nil {
+		s.WriteString(schemas.GetSAMLProviderRequest_SAMLProviderArn, *v.SAMLProviderArn)
+	}
+}
+
 // Contains the response to a successful [GetSAMLProvider] request.
 //
 // [GetSAMLProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetSAMLProvider.html
@@ -83,22 +96,73 @@ type GetSAMLProviderOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetSAMLProviderOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetSAMLProviderResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetSAMLProviderOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AssertionEncryptionMode != "" {
+		s.WriteString(schemas.GetSAMLProviderResponse_AssertionEncryptionMode, string(v.AssertionEncryptionMode))
+	}
+	if v.CreateDate != nil {
+		s.WriteTime(schemas.GetSAMLProviderResponse_CreateDate, *v.CreateDate)
+	}
+	if v.PrivateKeyList != nil {
+		serializeprivateKeyList(s, schemas.GetSAMLProviderResponse_PrivateKeyList, v.PrivateKeyList)
+	}
+	if v.SAMLMetadataDocument != nil {
+		s.WriteString(schemas.GetSAMLProviderResponse_SAMLMetadataDocument, *v.SAMLMetadataDocument)
+	}
+	if v.SAMLProviderUUID != nil {
+		s.WriteString(schemas.GetSAMLProviderResponse_SAMLProviderUUID, *v.SAMLProviderUUID)
+	}
+	if v.Tags != nil {
+		serializetagListType(s, schemas.GetSAMLProviderResponse_Tags, v.Tags)
+	}
+	if v.ValidUntil != nil {
+		s.WriteTime(schemas.GetSAMLProviderResponse_ValidUntil, *v.ValidUntil)
+	}
+}
+func (v *GetSAMLProviderOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetSAMLProviderResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetSAMLProviderResponse_AssertionEncryptionMode:
+			var ev string
+			if err := d.ReadString(schemas.GetSAMLProviderResponse_AssertionEncryptionMode, &ev); err != nil {
+				return err
+			}
+			v.AssertionEncryptionMode = types.AssertionEncryptionModeType(ev)
+			return nil
+		case schemas.GetSAMLProviderResponse_CreateDate:
+			v.CreateDate = new(time.Time)
+			return d.ReadTime(schemas.GetSAMLProviderResponse_CreateDate, v.CreateDate)
+		case schemas.GetSAMLProviderResponse_PrivateKeyList:
+			return deserializeprivateKeyList(d, schemas.GetSAMLProviderResponse_PrivateKeyList, &v.PrivateKeyList)
+		case schemas.GetSAMLProviderResponse_SAMLMetadataDocument:
+			v.SAMLMetadataDocument = new(string)
+			return d.ReadString(schemas.GetSAMLProviderResponse_SAMLMetadataDocument, v.SAMLMetadataDocument)
+		case schemas.GetSAMLProviderResponse_SAMLProviderUUID:
+			v.SAMLProviderUUID = new(string)
+			return d.ReadString(schemas.GetSAMLProviderResponse_SAMLProviderUUID, v.SAMLProviderUUID)
+		case schemas.GetSAMLProviderResponse_Tags:
+			return deserializetagListType(d, schemas.GetSAMLProviderResponse_Tags, &v.Tags)
+		case schemas.GetSAMLProviderResponse_ValidUntil:
+			v.ValidUntil = new(time.Time)
+			return d.ReadTime(schemas.GetSAMLProviderResponse_ValidUntil, v.ValidUntil)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetSAMLProviderMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetSAMLProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetSAMLProvider, schemas.GetSAMLProviderRequest, schemas.GetSAMLProviderResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetSAMLProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetSAMLProvider, schemas.GetSAMLProviderRequest, schemas.GetSAMLProviderResponse), output: &GetSAMLProviderOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -108,19 +172,10 @@ func (c *Client) addOperationGetSAMLProviderMiddlewares(stack *middleware.Stack,
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetSAMLProviderValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetSAMLProvider"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -5,9 +5,10 @@ package elasticloadbalancingv2
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Describes the revocation files in use by the specified trust store or
@@ -47,6 +48,27 @@ type DescribeTrustStoreRevocationsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeTrustStoreRevocationsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeTrustStoreRevocationsInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeTrustStoreRevocationsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Marker != nil {
+		s.WriteString(schemas.DescribeTrustStoreRevocationsInput_Marker, *v.Marker)
+	}
+	if v.PageSize != nil {
+		s.WriteInt32(schemas.DescribeTrustStoreRevocationsInput_PageSize, *v.PageSize)
+	}
+	if v.RevocationIds != nil {
+		serializeRevocationIds(s, schemas.DescribeTrustStoreRevocationsInput_RevocationIds, v.RevocationIds)
+	}
+	if v.TrustStoreArn != nil {
+		s.WriteString(schemas.DescribeTrustStoreRevocationsInput_TrustStoreArn, *v.TrustStoreArn)
+	}
+}
+
 type DescribeTrustStoreRevocationsOutput struct {
 
 	// If there are additional results, this is the marker for the next set of
@@ -62,22 +84,40 @@ type DescribeTrustStoreRevocationsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeTrustStoreRevocationsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeTrustStoreRevocationsOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeTrustStoreRevocationsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.NextMarker != nil {
+		s.WriteString(schemas.DescribeTrustStoreRevocationsOutput_NextMarker, *v.NextMarker)
+	}
+	if v.TrustStoreRevocations != nil {
+		serializeDescribeTrustStoreRevocationResponse(s, schemas.DescribeTrustStoreRevocationsOutput_TrustStoreRevocations, v.TrustStoreRevocations)
+	}
+}
+func (v *DescribeTrustStoreRevocationsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DescribeTrustStoreRevocationsOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.DescribeTrustStoreRevocationsOutput_NextMarker:
+			v.NextMarker = new(string)
+			return d.ReadString(schemas.DescribeTrustStoreRevocationsOutput_NextMarker, v.NextMarker)
+		case schemas.DescribeTrustStoreRevocationsOutput_TrustStoreRevocations:
+			return deserializeDescribeTrustStoreRevocationResponse(d, schemas.DescribeTrustStoreRevocationsOutput_TrustStoreRevocations, &v.TrustStoreRevocations)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDescribeTrustStoreRevocationsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDescribeTrustStoreRevocations{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeTrustStoreRevocations, schemas.DescribeTrustStoreRevocationsInput, schemas.DescribeTrustStoreRevocationsOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDescribeTrustStoreRevocations{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeTrustStoreRevocations, schemas.DescribeTrustStoreRevocationsInput, schemas.DescribeTrustStoreRevocationsOutput), output: &DescribeTrustStoreRevocationsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -87,19 +127,10 @@ func (c *Client) addOperationDescribeTrustStoreRevocationsMiddlewares(stack *mid
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDescribeTrustStoreRevocationsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeTrustStoreRevocations"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -95,6 +95,7 @@ type IngressSpec struct {
 	//
 	// Note that if there are no RequiredHSTSPolicies, any HSTS Policy annotation on the route is valid.
 	// +optional
+	// +listType=atomic
 	RequiredHSTSPolicies []RequiredHSTSPolicy `json:"requiredHSTSPolicies,omitempty"`
 
 	// loadBalancer contains the load balancer details in general which are not only specific to the underlying infrastructure
@@ -315,12 +316,14 @@ type ComponentRouteStatus struct {
 	// consumingUsers is a slice of ServiceAccounts that need to have read permission on the servingCertKeyPairSecret secret.
 	// +kubebuilder:validation:MaxItems=5
 	// +optional
+	// +listType=atomic
 	ConsumingUsers []ConsumingUser `json:"consumingUsers,omitempty"`
 
 	// currentHostnames is the list of current names used by the route. Typically, this list should consist of a single
 	// hostname, but if multiple hostnames are supported by the route the operator may write multiple entries to this list.
 	// +kubebuilder:validation:MinItems=1
 	// +optional
+	// +listType=atomic
 	CurrentHostnames []Hostname `json:"currentHostnames,omitempty"`
 
 	// conditions are used to communicate the state of the componentRoutes entry.
@@ -343,6 +346,7 @@ type ComponentRouteStatus struct {
 	// relatedObjects is a list of resources which are useful when debugging or inspecting how spec.componentRoutes is applied.
 	// +kubebuilder:validation:MinItems=1
 	// +required
+	// +listType=atomic
 	RelatedObjects []ObjectReference `json:"relatedObjects"`
 }
 

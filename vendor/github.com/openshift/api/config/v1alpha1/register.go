@@ -34,8 +34,6 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&ClusterMonitoringList{},
 		&InsightsDataGather{},
 		&InsightsDataGatherList{},
-		&Backup{},
-		&BackupList{},
 		&PKI{},
 		&PKIList{},
 		&ControllerManager{},

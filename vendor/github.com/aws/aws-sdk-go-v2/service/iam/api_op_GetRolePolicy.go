@@ -4,8 +4,9 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Retrieves the specified inline policy document that is embedded with the
@@ -72,6 +73,21 @@ type GetRolePolicyInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetRolePolicyInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetRolePolicyRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetRolePolicyInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.PolicyName != nil {
+		s.WriteString(schemas.GetRolePolicyRequest_PolicyName, *v.PolicyName)
+	}
+	if v.RoleName != nil {
+		s.WriteString(schemas.GetRolePolicyRequest_RoleName, *v.RoleName)
+	}
+}
+
 // Contains the response to a successful [GetRolePolicy] request.
 //
 // [GetRolePolicy]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetRolePolicy.html
@@ -102,22 +118,47 @@ type GetRolePolicyOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetRolePolicyOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetRolePolicyResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetRolePolicyOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.PolicyDocument != nil {
+		s.WriteString(schemas.GetRolePolicyResponse_PolicyDocument, *v.PolicyDocument)
+	}
+	if v.PolicyName != nil {
+		s.WriteString(schemas.GetRolePolicyResponse_PolicyName, *v.PolicyName)
+	}
+	if v.RoleName != nil {
+		s.WriteString(schemas.GetRolePolicyResponse_RoleName, *v.RoleName)
+	}
+}
+func (v *GetRolePolicyOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetRolePolicyResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetRolePolicyResponse_PolicyDocument:
+			v.PolicyDocument = new(string)
+			return d.ReadString(schemas.GetRolePolicyResponse_PolicyDocument, v.PolicyDocument)
+		case schemas.GetRolePolicyResponse_PolicyName:
+			v.PolicyName = new(string)
+			return d.ReadString(schemas.GetRolePolicyResponse_PolicyName, v.PolicyName)
+		case schemas.GetRolePolicyResponse_RoleName:
+			v.RoleName = new(string)
+			return d.ReadString(schemas.GetRolePolicyResponse_RoleName, v.RoleName)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetRolePolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetRolePolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetRolePolicy, schemas.GetRolePolicyRequest, schemas.GetRolePolicyResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetRolePolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetRolePolicy, schemas.GetRolePolicyRequest, schemas.GetRolePolicyResponse), output: &GetRolePolicyOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -127,19 +168,10 @@ func (c *Client) addOperationGetRolePolicyMiddlewares(stack *middleware.Stack, o
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetRolePolicyValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetRolePolicy"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

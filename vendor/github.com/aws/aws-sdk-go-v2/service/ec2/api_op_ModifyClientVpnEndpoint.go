@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Modifies the specified Client VPN endpoint. Modifying the DNS server resets
@@ -68,6 +67,12 @@ type ModifyClientVpnEndpointInput struct {
 
 	// A brief description of the Client VPN endpoint.
 	Description *string
+
+	// The device posture options for the Client VPN endpoint. Specifying this
+	// parameter replaces the entire device posture configuration for the endpoint. To
+	// disable device posture and remove all device trust providers, specify false for
+	// Enabled .
+	DevicePostureOptions *types.DevicePostureOptions
 
 	// Indicates whether the client VPN session is disconnected after the maximum
 	// timeout specified in sessionTimeoutHours is reached. If true , users are
@@ -148,12 +153,6 @@ func (c *Client) addOperationModifyClientVpnEndpointMiddlewares(stack *middlewar
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -163,19 +162,10 @@ func (c *Client) addOperationModifyClientVpnEndpointMiddlewares(stack *middlewar
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpModifyClientVpnEndpointValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ModifyClientVpnEndpoint"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

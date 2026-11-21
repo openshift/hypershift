@@ -4,9 +4,10 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Adds the specified tags to the specified load balancer. Each load balancer can
@@ -49,6 +50,21 @@ type AddTagsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *AddTagsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.AddTagsInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *AddTagsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancerNames != nil {
+		serializeLoadBalancerNames(s, schemas.AddTagsInput_LoadBalancerNames, v.LoadBalancerNames)
+	}
+	if v.Tags != nil {
+		serializeTagList(s, schemas.AddTagsInput_Tags, v.Tags)
+	}
+}
+
 // Contains the output of AddTags.
 type AddTagsOutput struct {
 	// Metadata pertaining to the operation's result.
@@ -57,22 +73,29 @@ type AddTagsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *AddTagsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.AddTagsOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *AddTagsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *AddTagsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.AddTagsOutput, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationAddTagsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpAddTags{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.AddTags, schemas.AddTagsInput, schemas.AddTagsOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpAddTags{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.AddTags, schemas.AddTagsInput, schemas.AddTagsOutput), output: &AddTagsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -82,19 +105,10 @@ func (c *Client) addOperationAddTagsMiddlewares(stack *middleware.Stack, options
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpAddTagsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "AddTags"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

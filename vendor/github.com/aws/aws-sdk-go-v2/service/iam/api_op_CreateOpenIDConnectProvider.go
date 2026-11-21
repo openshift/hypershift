@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates an IAM entity to describe an identity provider (IdP) that supports [OpenID Connect (OIDC)].
@@ -135,6 +136,27 @@ type CreateOpenIDConnectProviderInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateOpenIDConnectProviderInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateOpenIDConnectProviderRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateOpenIDConnectProviderInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientIDList != nil {
+		serializeclientIDListType(s, schemas.CreateOpenIDConnectProviderRequest_ClientIDList, v.ClientIDList)
+	}
+	if v.Tags != nil {
+		serializetagListType(s, schemas.CreateOpenIDConnectProviderRequest_Tags, v.Tags)
+	}
+	if v.ThumbprintList != nil {
+		serializethumbprintListType(s, schemas.CreateOpenIDConnectProviderRequest_ThumbprintList, v.ThumbprintList)
+	}
+	if v.Url != nil {
+		s.WriteString(schemas.CreateOpenIDConnectProviderRequest_Url, *v.Url)
+	}
+}
+
 // Contains the response to a successful [CreateOpenIDConnectProvider] request.
 //
 // [CreateOpenIDConnectProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateOpenIDConnectProvider.html
@@ -159,22 +181,40 @@ type CreateOpenIDConnectProviderOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateOpenIDConnectProviderOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateOpenIDConnectProviderResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateOpenIDConnectProviderOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.OpenIDConnectProviderArn != nil {
+		s.WriteString(schemas.CreateOpenIDConnectProviderResponse_OpenIDConnectProviderArn, *v.OpenIDConnectProviderArn)
+	}
+	if v.Tags != nil {
+		serializetagListType(s, schemas.CreateOpenIDConnectProviderResponse_Tags, v.Tags)
+	}
+}
+func (v *CreateOpenIDConnectProviderOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreateOpenIDConnectProviderResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreateOpenIDConnectProviderResponse_OpenIDConnectProviderArn:
+			v.OpenIDConnectProviderArn = new(string)
+			return d.ReadString(schemas.CreateOpenIDConnectProviderResponse_OpenIDConnectProviderArn, v.OpenIDConnectProviderArn)
+		case schemas.CreateOpenIDConnectProviderResponse_Tags:
+			return deserializetagListType(d, schemas.CreateOpenIDConnectProviderResponse_Tags, &v.Tags)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreateOpenIDConnectProviderMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpCreateOpenIDConnectProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateOpenIDConnectProvider, schemas.CreateOpenIDConnectProviderRequest, schemas.CreateOpenIDConnectProviderResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpCreateOpenIDConnectProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateOpenIDConnectProvider, schemas.CreateOpenIDConnectProviderRequest, schemas.CreateOpenIDConnectProviderResponse), output: &CreateOpenIDConnectProviderOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -184,19 +224,10 @@ func (c *Client) addOperationCreateOpenIDConnectProviderMiddlewares(stack *middl
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateOpenIDConnectProviderValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateOpenIDConnectProvider"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

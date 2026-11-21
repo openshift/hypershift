@@ -23,7 +23,8 @@ func RegisterClientMetrics(r prometheus.Registerer) {
 			Help:    "Request latency in seconds. Broken down by verb, group, version, kind, and subresource.",
 			Buckets: prometheus.ExponentialBuckets(0.001, 1.5, 20),
 		},
-		[]string{"verb", "group", "version", "kind", "subresource"},
+		[]Label{{Name: "verb"}, {Name: "group"}, {Name: "version"}, {Name: "kind"}, {Name: "subresource"}},
+		GA,
 	)}
 	clientmetrics.RequestResult = &ResultAdapter{Metric: NewPrometheusCounter(
 		r,
@@ -31,7 +32,8 @@ func RegisterClientMetrics(r prometheus.Registerer) {
 			Name: "client_go_request_total",
 			Help: "Number of HTTP requests, partitioned by status code and method.",
 		},
-		[]string{"code", "method"},
+		[]Label{{Name: "code"}, {Name: "method"}},
+		GA,
 	)}
 }
 

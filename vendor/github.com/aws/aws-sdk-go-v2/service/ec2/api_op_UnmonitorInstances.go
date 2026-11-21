@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Disables detailed monitoring for a running instance. For more information, see [Monitoring your instances and volumes]
@@ -41,6 +40,12 @@ type UnmonitorInstancesInput struct {
 	// UnauthorizedOperation .
 	DryRun *bool
 
+	// The IDs of the metric categories to remove from the instances. If you specify
+	// metric categories, only those metric categories are removed and detailed
+	// monitoring remains enabled. If you don't specify metric categories, detailed
+	// monitoring and all metric categories are turned off.
+	MetricCategoryIds []string
+
 	noSmithyDocumentSerde
 }
 
@@ -65,12 +70,6 @@ func (c *Client) addOperationUnmonitorInstancesMiddlewares(stack *middleware.Sta
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -80,19 +79,10 @@ func (c *Client) addOperationUnmonitorInstancesMiddlewares(stack *middleware.Sta
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpUnmonitorInstancesValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "UnmonitorInstances"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Lists the centralized root access features enabled for your organization. For
@@ -32,6 +33,15 @@ type ListOrganizationsFeaturesInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListOrganizationsFeaturesInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListOrganizationsFeaturesRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListOrganizationsFeaturesInput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+
 type ListOrganizationsFeaturesOutput struct {
 
 	// Specifies the features that are currently available in your organization.
@@ -46,22 +56,40 @@ type ListOrganizationsFeaturesOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListOrganizationsFeaturesOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListOrganizationsFeaturesResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListOrganizationsFeaturesOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.EnabledFeatures != nil {
+		serializeFeaturesListType(s, schemas.ListOrganizationsFeaturesResponse_EnabledFeatures, v.EnabledFeatures)
+	}
+	if v.OrganizationId != nil {
+		s.WriteString(schemas.ListOrganizationsFeaturesResponse_OrganizationId, *v.OrganizationId)
+	}
+}
+func (v *ListOrganizationsFeaturesOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ListOrganizationsFeaturesResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ListOrganizationsFeaturesResponse_EnabledFeatures:
+			return deserializeFeaturesListType(d, schemas.ListOrganizationsFeaturesResponse_EnabledFeatures, &v.EnabledFeatures)
+		case schemas.ListOrganizationsFeaturesResponse_OrganizationId:
+			v.OrganizationId = new(string)
+			return d.ReadString(schemas.ListOrganizationsFeaturesResponse_OrganizationId, v.OrganizationId)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationListOrganizationsFeaturesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpListOrganizationsFeatures{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListOrganizationsFeatures, schemas.ListOrganizationsFeaturesRequest, schemas.ListOrganizationsFeaturesResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListOrganizationsFeatures{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListOrganizationsFeatures, schemas.ListOrganizationsFeaturesRequest, schemas.ListOrganizationsFeaturesResponse), output: &ListOrganizationsFeaturesOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -71,16 +99,7 @@ func (c *Client) addOperationListOrganizationsFeaturesMiddlewares(stack *middlew
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ListOrganizationsFeatures"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

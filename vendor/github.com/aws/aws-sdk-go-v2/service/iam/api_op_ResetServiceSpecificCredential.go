@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Resets the password for a service-specific credential. The new password is
@@ -54,6 +55,21 @@ type ResetServiceSpecificCredentialInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ResetServiceSpecificCredentialInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ResetServiceSpecificCredentialRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ResetServiceSpecificCredentialInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ServiceSpecificCredentialId != nil {
+		s.WriteString(schemas.ResetServiceSpecificCredentialRequest_ServiceSpecificCredentialId, *v.ServiceSpecificCredentialId)
+	}
+	if v.UserName != nil {
+		s.WriteString(schemas.ResetServiceSpecificCredentialRequest_UserName, *v.UserName)
+	}
+}
+
 type ResetServiceSpecificCredentialOutput struct {
 
 	// A structure with details about the updated service-specific credential,
@@ -69,22 +85,37 @@ type ResetServiceSpecificCredentialOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ResetServiceSpecificCredentialOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ResetServiceSpecificCredentialResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ResetServiceSpecificCredentialOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ServiceSpecificCredential != nil {
+		s.WriteStruct(schemas.ResetServiceSpecificCredentialResponse_ServiceSpecificCredential)
+		v.ServiceSpecificCredential.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *ResetServiceSpecificCredentialOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ResetServiceSpecificCredentialResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ResetServiceSpecificCredentialResponse_ServiceSpecificCredential:
+			v.ServiceSpecificCredential = &types.ServiceSpecificCredential{}
+			return v.ServiceSpecificCredential.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationResetServiceSpecificCredentialMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpResetServiceSpecificCredential{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ResetServiceSpecificCredential, schemas.ResetServiceSpecificCredentialRequest, schemas.ResetServiceSpecificCredentialResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpResetServiceSpecificCredential{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ResetServiceSpecificCredential, schemas.ResetServiceSpecificCredentialRequest, schemas.ResetServiceSpecificCredentialResponse), output: &ResetServiceSpecificCredentialOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -94,19 +125,10 @@ func (c *Client) addOperationResetServiceSpecificCredentialMiddlewares(stack *mi
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpResetServiceSpecificCredentialValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ResetServiceSpecificCredential"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

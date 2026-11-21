@@ -4,12 +4,19 @@ package ram
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/ram/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Retrieves the contents of a managed permission in JSON format.
+//
+// If the permission has template parameters, you can include the
+// permissionTemplateParameters parameter in your request. The operation then
+// renders the returned policy with the specified values in place of the template
+// parameter placeholders. If you omit permissionTemplateParameters , the operation
+// returns the raw policy template with @{parameterName} placeholders unchanged.
 func (c *Client) GetPermission(ctx context.Context, params *GetPermissionInput, optFns ...func(*Options)) (*GetPermissionOutput, error) {
 	if params == nil {
 		params = &GetPermissionInput{}
@@ -38,6 +45,19 @@ type GetPermissionInput struct {
 	// This member is required.
 	PermissionArn *string
 
+	// Specifies the template parameter values to use when rendering the permission's
+	// policy template. Each entry supplies a parameter name and its values. When you
+	// provide this parameter, the response contains the rendered policy with the
+	// specified values in place of the template parameter placeholders.
+	//
+	// For STRING type parameters, provide a single value. For STRING_LIST type
+	// parameters, provide one or more values.
+	//
+	// You can specify this parameter only for permissions that declare template
+	// parameters. You must provide values for all parameters declared in the
+	// permission template.
+	PermissionTemplateParameters []types.PermissionTemplateParameterInput
+
 	// Specifies the version number of the RAM permission to retrieve. If you don't
 	// specify this parameter, the operation retrieves the default version.
 	//
@@ -45,6 +65,24 @@ type GetPermissionInput struct {
 	PermissionVersion *int32
 
 	noSmithyDocumentSerde
+}
+
+func (v *GetPermissionInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetPermissionRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetPermissionInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.PermissionArn != nil {
+		s.WriteString(schemas.GetPermissionRequest_permissionArn, *v.PermissionArn)
+	}
+	if v.PermissionTemplateParameters != nil {
+		serializePermissionTemplateParameterInputList(s, schemas.GetPermissionRequest_permissionTemplateParameters, v.PermissionTemplateParameters)
+	}
+	if v.PermissionVersion != nil {
+		s.WriteInt32(schemas.GetPermissionRequest_permissionVersion, *v.PermissionVersion)
+	}
 }
 
 type GetPermissionOutput struct {
@@ -58,22 +96,37 @@ type GetPermissionOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetPermissionOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetPermissionResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetPermissionOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Permission != nil {
+		s.WriteStruct(schemas.GetPermissionResponse_permission)
+		v.Permission.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *GetPermissionOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetPermissionResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetPermissionResponse_permission:
+			v.Permission = &types.ResourceSharePermissionDetail{}
+			return v.Permission.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetPermissionMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpGetPermission{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetPermission, schemas.GetPermissionRequest, schemas.GetPermissionResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpGetPermission{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetPermission, schemas.GetPermissionRequest, schemas.GetPermissionResponse), output: &GetPermissionOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -83,19 +136,10 @@ func (c *Client) addOperationGetPermissionMiddlewares(stack *middleware.Stack, o
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetPermissionValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetPermission"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

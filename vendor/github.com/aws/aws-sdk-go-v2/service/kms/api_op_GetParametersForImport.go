@@ -4,9 +4,10 @@ package kms
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/kms/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"time"
 )
 
@@ -171,6 +172,24 @@ type GetParametersForImportInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetParametersForImportInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetParametersForImportRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetParametersForImportInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.KeyId != nil {
+		s.WriteString(schemas.GetParametersForImportRequest_KeyId, *v.KeyId)
+	}
+	if v.WrappingAlgorithm != "" {
+		s.WriteString(schemas.GetParametersForImportRequest_WrappingAlgorithm, string(v.WrappingAlgorithm))
+	}
+	if v.WrappingKeySpec != "" {
+		s.WriteString(schemas.GetParametersForImportRequest_WrappingKeySpec, string(v.WrappingKeySpec))
+	}
+}
+
 type GetParametersForImportOutput struct {
 
 	// The import token to send in a subsequent ImportKeyMaterial request.
@@ -196,22 +215,51 @@ type GetParametersForImportOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetParametersForImportOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetParametersForImportResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetParametersForImportOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ImportToken != nil {
+		s.WriteBlob(schemas.GetParametersForImportResponse_ImportToken, v.ImportToken)
+	}
+	if v.KeyId != nil {
+		s.WriteString(schemas.GetParametersForImportResponse_KeyId, *v.KeyId)
+	}
+	if v.ParametersValidTo != nil {
+		s.WriteTime(schemas.GetParametersForImportResponse_ParametersValidTo, *v.ParametersValidTo)
+	}
+	if v.PublicKey != nil {
+		s.WriteBlob(schemas.GetParametersForImportResponse_PublicKey, v.PublicKey)
+	}
+}
+func (v *GetParametersForImportOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetParametersForImportResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetParametersForImportResponse_ImportToken:
+			return d.ReadBlob(schemas.GetParametersForImportResponse_ImportToken, &v.ImportToken)
+		case schemas.GetParametersForImportResponse_KeyId:
+			v.KeyId = new(string)
+			return d.ReadString(schemas.GetParametersForImportResponse_KeyId, v.KeyId)
+		case schemas.GetParametersForImportResponse_ParametersValidTo:
+			v.ParametersValidTo = new(time.Time)
+			return d.ReadTime(schemas.GetParametersForImportResponse_ParametersValidTo, v.ParametersValidTo)
+		case schemas.GetParametersForImportResponse_PublicKey:
+			return d.ReadBlob(schemas.GetParametersForImportResponse_PublicKey, &v.PublicKey)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetParametersForImportMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson11_serializeOpGetParametersForImport{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetParametersForImport, schemas.GetParametersForImportRequest, schemas.GetParametersForImportResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpGetParametersForImport{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetParametersForImport, schemas.GetParametersForImportRequest, schemas.GetParametersForImportResponse), output: &GetParametersForImportOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -221,19 +269,10 @@ func (c *Client) addOperationGetParametersForImportMiddlewares(stack *middleware
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetParametersForImportValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetParametersForImport"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

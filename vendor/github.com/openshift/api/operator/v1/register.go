@@ -38,6 +38,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&DNSList{},
 		&CloudCredential{},
 		&CloudCredentialList{},
+		&ClusterAPI{},
+		&ClusterAPIList{},
 		&ClusterCSIDriver{},
 		&ClusterCSIDriverList{},
 		&Console{},

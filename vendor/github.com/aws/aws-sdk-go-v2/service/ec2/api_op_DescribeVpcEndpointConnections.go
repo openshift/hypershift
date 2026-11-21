@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Describes the VPC endpoint connections to your VPC endpoint services, including
@@ -40,6 +39,8 @@ type DescribeVpcEndpointConnectionsInput struct {
 	//   - ip-address-type - The IP address type ( ipv4 | ipv6 ).
 	//
 	//   - service-id - The ID of the service.
+	//
+	//   - transit-gateway-attachment-id - The ID of the transit gateway attachment.
 	//
 	//   - vpc-endpoint-owner - The ID of the Amazon Web Services account ID that owns
 	//   the endpoint.
@@ -90,12 +91,6 @@ func (c *Client) addOperationDescribeVpcEndpointConnectionsMiddlewares(stack *mi
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -105,16 +100,7 @@ func (c *Client) addOperationDescribeVpcEndpointConnectionsMiddlewares(stack *mi
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeVpcEndpointConnections"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

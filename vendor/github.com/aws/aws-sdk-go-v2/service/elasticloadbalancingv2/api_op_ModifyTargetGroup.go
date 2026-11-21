@@ -4,9 +4,10 @@ package elasticloadbalancingv2
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Modifies the health checks used when evaluating the health state of the targets
@@ -85,6 +86,47 @@ type ModifyTargetGroupInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ModifyTargetGroupInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ModifyTargetGroupInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ModifyTargetGroupInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.HealthCheckEnabled != nil {
+		s.WriteBool(schemas.ModifyTargetGroupInput_HealthCheckEnabled, *v.HealthCheckEnabled)
+	}
+	if v.HealthCheckIntervalSeconds != nil {
+		s.WriteInt32(schemas.ModifyTargetGroupInput_HealthCheckIntervalSeconds, *v.HealthCheckIntervalSeconds)
+	}
+	if v.HealthCheckPath != nil {
+		s.WriteString(schemas.ModifyTargetGroupInput_HealthCheckPath, *v.HealthCheckPath)
+	}
+	if v.HealthCheckPort != nil {
+		s.WriteString(schemas.ModifyTargetGroupInput_HealthCheckPort, *v.HealthCheckPort)
+	}
+	if v.HealthCheckProtocol != "" {
+		s.WriteString(schemas.ModifyTargetGroupInput_HealthCheckProtocol, string(v.HealthCheckProtocol))
+	}
+	if v.HealthCheckTimeoutSeconds != nil {
+		s.WriteInt32(schemas.ModifyTargetGroupInput_HealthCheckTimeoutSeconds, *v.HealthCheckTimeoutSeconds)
+	}
+	if v.HealthyThresholdCount != nil {
+		s.WriteInt32(schemas.ModifyTargetGroupInput_HealthyThresholdCount, *v.HealthyThresholdCount)
+	}
+	if v.Matcher != nil {
+		s.WriteStruct(schemas.ModifyTargetGroupInput_Matcher)
+		v.Matcher.SerializeMembers(s)
+		s.CloseStruct()
+	}
+	if v.TargetGroupArn != nil {
+		s.WriteString(schemas.ModifyTargetGroupInput_TargetGroupArn, *v.TargetGroupArn)
+	}
+	if v.UnhealthyThresholdCount != nil {
+		s.WriteInt32(schemas.ModifyTargetGroupInput_UnhealthyThresholdCount, *v.UnhealthyThresholdCount)
+	}
+}
+
 type ModifyTargetGroupOutput struct {
 
 	// Information about the modified target group.
@@ -96,22 +138,34 @@ type ModifyTargetGroupOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ModifyTargetGroupOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ModifyTargetGroupOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ModifyTargetGroupOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.TargetGroups != nil {
+		serializeTargetGroups(s, schemas.ModifyTargetGroupOutput_TargetGroups, v.TargetGroups)
+	}
+}
+func (v *ModifyTargetGroupOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ModifyTargetGroupOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ModifyTargetGroupOutput_TargetGroups:
+			return deserializeTargetGroups(d, schemas.ModifyTargetGroupOutput_TargetGroups, &v.TargetGroups)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationModifyTargetGroupMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpModifyTargetGroup{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ModifyTargetGroup, schemas.ModifyTargetGroupInput, schemas.ModifyTargetGroupOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpModifyTargetGroup{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ModifyTargetGroup, schemas.ModifyTargetGroupInput, schemas.ModifyTargetGroupOutput), output: &ModifyTargetGroupOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -121,19 +175,10 @@ func (c *Client) addOperationModifyTargetGroupMiddlewares(stack *middleware.Stac
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpModifyTargetGroupValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ModifyTargetGroup"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

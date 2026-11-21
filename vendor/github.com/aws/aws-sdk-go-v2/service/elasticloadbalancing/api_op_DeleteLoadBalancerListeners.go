@@ -4,8 +4,9 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Deletes the specified listeners from the specified load balancer.
@@ -40,6 +41,21 @@ type DeleteLoadBalancerListenersInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteLoadBalancerListenersInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeleteLoadBalancerListenerInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteLoadBalancerListenersInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.DeleteLoadBalancerListenerInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+	if v.LoadBalancerPorts != nil {
+		serializePorts(s, schemas.DeleteLoadBalancerListenerInput_LoadBalancerPorts, v.LoadBalancerPorts)
+	}
+}
+
 // Contains the output of DeleteLoadBalancerListeners.
 type DeleteLoadBalancerListenersOutput struct {
 	// Metadata pertaining to the operation's result.
@@ -48,22 +64,29 @@ type DeleteLoadBalancerListenersOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteLoadBalancerListenersOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeleteLoadBalancerListenerOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteLoadBalancerListenersOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *DeleteLoadBalancerListenersOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DeleteLoadBalancerListenerOutput, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDeleteLoadBalancerListenersMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeleteLoadBalancerListeners{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteLoadBalancerListeners, schemas.DeleteLoadBalancerListenerInput, schemas.DeleteLoadBalancerListenerOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeleteLoadBalancerListeners{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteLoadBalancerListeners, schemas.DeleteLoadBalancerListenerInput, schemas.DeleteLoadBalancerListenerOutput), output: &DeleteLoadBalancerListenersOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -73,19 +96,10 @@ func (c *Client) addOperationDeleteLoadBalancerListenersMiddlewares(stack *middl
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDeleteLoadBalancerListenersValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DeleteLoadBalancerListeners"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

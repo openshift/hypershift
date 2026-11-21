@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"time"
 )
 
@@ -81,6 +82,27 @@ type GetOrganizationsAccessReportInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetOrganizationsAccessReportInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetOrganizationsAccessReportRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetOrganizationsAccessReportInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.JobId != nil {
+		s.WriteString(schemas.GetOrganizationsAccessReportRequest_JobId, *v.JobId)
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.GetOrganizationsAccessReportRequest_Marker, *v.Marker)
+	}
+	if v.MaxItems != nil {
+		s.WriteInt32(schemas.GetOrganizationsAccessReportRequest_MaxItems, *v.MaxItems)
+	}
+	if v.SortKey != "" {
+		s.WriteString(schemas.GetOrganizationsAccessReportRequest_SortKey, string(v.SortKey))
+	}
+}
+
 type GetOrganizationsAccessReportOutput struct {
 
 	// The date and time, in [ISO 8601 date-time format], when the report job was created.
@@ -142,22 +164,87 @@ type GetOrganizationsAccessReportOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetOrganizationsAccessReportOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetOrganizationsAccessReportResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetOrganizationsAccessReportOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AccessDetails != nil {
+		serializeAccessDetails(s, schemas.GetOrganizationsAccessReportResponse_AccessDetails, v.AccessDetails)
+	}
+	if v.ErrorDetails != nil {
+		s.WriteStruct(schemas.GetOrganizationsAccessReportResponse_ErrorDetails)
+		v.ErrorDetails.SerializeMembers(s)
+		s.CloseStruct()
+	}
+	if v.IsTruncated != false {
+		s.WriteBool(schemas.GetOrganizationsAccessReportResponse_IsTruncated, v.IsTruncated)
+	}
+	if v.JobCompletionDate != nil {
+		s.WriteTime(schemas.GetOrganizationsAccessReportResponse_JobCompletionDate, *v.JobCompletionDate)
+	}
+	if v.JobCreationDate != nil {
+		s.WriteTime(schemas.GetOrganizationsAccessReportResponse_JobCreationDate, *v.JobCreationDate)
+	}
+	if v.JobStatus != "" {
+		s.WriteString(schemas.GetOrganizationsAccessReportResponse_JobStatus, string(v.JobStatus))
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.GetOrganizationsAccessReportResponse_Marker, *v.Marker)
+	}
+	if v.NumberOfServicesAccessible != nil {
+		s.WriteInt32(schemas.GetOrganizationsAccessReportResponse_NumberOfServicesAccessible, *v.NumberOfServicesAccessible)
+	}
+	if v.NumberOfServicesNotAccessed != nil {
+		s.WriteInt32(schemas.GetOrganizationsAccessReportResponse_NumberOfServicesNotAccessed, *v.NumberOfServicesNotAccessed)
+	}
+}
+func (v *GetOrganizationsAccessReportOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetOrganizationsAccessReportResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetOrganizationsAccessReportResponse_AccessDetails:
+			return deserializeAccessDetails(d, schemas.GetOrganizationsAccessReportResponse_AccessDetails, &v.AccessDetails)
+		case schemas.GetOrganizationsAccessReportResponse_ErrorDetails:
+			v.ErrorDetails = &types.ErrorDetails{}
+			return v.ErrorDetails.Deserialize(d)
+		case schemas.GetOrganizationsAccessReportResponse_IsTruncated:
+			return d.ReadBool(schemas.GetOrganizationsAccessReportResponse_IsTruncated, &v.IsTruncated)
+		case schemas.GetOrganizationsAccessReportResponse_JobCompletionDate:
+			v.JobCompletionDate = new(time.Time)
+			return d.ReadTime(schemas.GetOrganizationsAccessReportResponse_JobCompletionDate, v.JobCompletionDate)
+		case schemas.GetOrganizationsAccessReportResponse_JobCreationDate:
+			v.JobCreationDate = new(time.Time)
+			return d.ReadTime(schemas.GetOrganizationsAccessReportResponse_JobCreationDate, v.JobCreationDate)
+		case schemas.GetOrganizationsAccessReportResponse_JobStatus:
+			var ev string
+			if err := d.ReadString(schemas.GetOrganizationsAccessReportResponse_JobStatus, &ev); err != nil {
+				return err
+			}
+			v.JobStatus = types.JobStatusType(ev)
+			return nil
+		case schemas.GetOrganizationsAccessReportResponse_Marker:
+			v.Marker = new(string)
+			return d.ReadString(schemas.GetOrganizationsAccessReportResponse_Marker, v.Marker)
+		case schemas.GetOrganizationsAccessReportResponse_NumberOfServicesAccessible:
+			v.NumberOfServicesAccessible = new(int32)
+			return d.ReadInt32(schemas.GetOrganizationsAccessReportResponse_NumberOfServicesAccessible, v.NumberOfServicesAccessible)
+		case schemas.GetOrganizationsAccessReportResponse_NumberOfServicesNotAccessed:
+			v.NumberOfServicesNotAccessed = new(int32)
+			return d.ReadInt32(schemas.GetOrganizationsAccessReportResponse_NumberOfServicesNotAccessed, v.NumberOfServicesNotAccessed)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetOrganizationsAccessReportMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetOrganizationsAccessReport{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetOrganizationsAccessReport, schemas.GetOrganizationsAccessReportRequest, schemas.GetOrganizationsAccessReportResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetOrganizationsAccessReport{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetOrganizationsAccessReport, schemas.GetOrganizationsAccessReportRequest, schemas.GetOrganizationsAccessReportResponse), output: &GetOrganizationsAccessReportOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -167,19 +254,10 @@ func (c *Client) addOperationGetOrganizationsAccessReportMiddlewares(stack *midd
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetOrganizationsAccessReportValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetOrganizationsAccessReport"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

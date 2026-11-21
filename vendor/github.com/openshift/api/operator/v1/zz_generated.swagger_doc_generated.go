@@ -209,6 +209,101 @@ func (CloudCredentialStatus) SwaggerDoc() map[string]string {
 	return map_CloudCredentialStatus
 }
 
+var map_ClusterAPI = map[string]string{
+	"":         "ClusterAPI provides configuration for the capi-operator.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"spec":     "spec is the specification of the desired behavior of the capi-operator.",
+	"status":   "status defines the observed status of the capi-operator.",
+}
+
+func (ClusterAPI) SwaggerDoc() map[string]string {
+	return map_ClusterAPI
+}
+
+var map_ClusterAPIInstallerComponent = map[string]string{
+	"":       "ClusterAPIInstallerComponent defines a component which will be installed by this revision.",
+	"name":   "name is the human-readable name of the component. The value has no effect, and will not be set if the component does not define a name in its manifests. If set it must consist of alphanumeric characters, or '-', and may not exceed 255 characters.",
+	"source": "source is the required source of the component's manifests. It specifies the source type and its corresponding configuration.",
+}
+
+func (ClusterAPIInstallerComponent) SwaggerDoc() map[string]string {
+	return map_ClusterAPIInstallerComponent
+}
+
+var map_ClusterAPIInstallerComponentImage = map[string]string{
+	"":        "ClusterAPIInstallerComponentImage defines an image source for a component.",
+	"ref":     "ref is an image reference to the image containing the component manifests. The reference must be a valid image digest reference in the format host[:port][/namespace]/name@sha256:<digest>. The digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9. The length of the field must be between 1 to 447 characters.",
+	"profile": "profile is the name of a profile to use from the image.\n\nA profile name may be up to 255 characters long. It must consist of alphanumeric characters, '-', or '_'.",
+}
+
+func (ClusterAPIInstallerComponentImage) SwaggerDoc() map[string]string {
+	return map_ClusterAPIInstallerComponentImage
+}
+
+var map_ClusterAPIInstallerComponentSource = map[string]string{
+	"":      "ClusterAPIInstallerComponentSource defines the source of a component which will be installed by this revision.",
+	"type":  "type is the source type of the component. The only valid value is Image. When set to Image, the image field must be set and will define an image source for the component.",
+	"image": "image defines an image source for a component. The image must contain a /capi-operator-installer directory containing the component manifests.",
+}
+
+func (ClusterAPIInstallerComponentSource) SwaggerDoc() map[string]string {
+	return map_ClusterAPIInstallerComponentSource
+}
+
+var map_ClusterAPIInstallerRevision = map[string]string{
+	"name":                               "name is a human-readable unique identifier for a revision. Its format is not guaranteed to be stable. The only safe operation to perform on it is an equality check. Tools should not parse it. It currently has the form <release-version>-<content-hash>-<revision-number>, where <release-version> is the OpenShift release version installed by the revision, e.g. 4.22.20 or 4.20.0-0.nightly-2026-10-28-054721, <content-hash> is an opaque string derived from the revision's contentID which does not contain '-', and <revision-number> is an integer, e.g. 3. For example: 4.22.20-0123abcd-3. The name must be between 12 and 255 characters long.",
+	"revision":                           "revision is a monotonically increasing number that is assigned to a revision. It must be greater than or equal to 1, and less than 2^53.",
+	"contentID":                          "contentID uniquely identifies the content of this revision. It is exactly 64 lowercase hexadecimal characters ([0-9a-f]). It is an opaque string. The only valid operation on it is equality.",
+	"unmanagedCustomResourceDefinitions": "unmanagedCustomResourceDefinitions is a list of the names of CustomResourceDefinition (CRD) objects which are included in this revision, but which should not be installed or updated. If not set, all CRDs in the revision will be managed by the CAPI operator.",
+	"manifestSubstitutions":              "manifestSubstitutions is a list of envsubst style substitutions which will be applied to manifests in the revision during rendering. If defined it must not be empty, and may not contain more than 32 items. Each manifest substitution must have a unique key.",
+	"components":                         "components is a list of components which will be installed by this revision. Components will be installed in the order they are listed. If omitted no components will be installed.\n\nThe maximum number of components is 32.",
+}
+
+func (ClusterAPIInstallerRevision) SwaggerDoc() map[string]string {
+	return map_ClusterAPIInstallerRevision
+}
+
+var map_ClusterAPIInstallerRevisionManifestSubstitution = map[string]string{
+	"":      "ClusterAPIInstallerRevisionManifestSubstitution defines an envsubst style substitution which will be applied to manifests in a revision during rendering.",
+	"key":   "key is the name of the envsubst variable to substitute. It must be a valid envsubst variable name, consisting of letters, digits, and underscores, and must start with a letter or underscore. The key must not be empty, and must not exceed 255 characters.",
+	"value": "value is the value to substitute for the envsubst variable. It may be empty, in which case the variable will be substituted with an empty string. The value must not exceed 4096 characters.",
+}
+
+func (ClusterAPIInstallerRevisionManifestSubstitution) SwaggerDoc() map[string]string {
+	return map_ClusterAPIInstallerRevisionManifestSubstitution
+}
+
+var map_ClusterAPIList = map[string]string{
+	"":         "ClusterAPIList contains a list of ClusterAPI configurations\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"items":    "items contains the items",
+}
+
+func (ClusterAPIList) SwaggerDoc() map[string]string {
+	return map_ClusterAPIList
+}
+
+var map_ClusterAPISpec = map[string]string{
+	"":                                   "ClusterAPISpec defines the desired configuration of the capi-operator. The spec is required but we deliberately allow it to be empty.",
+	"unmanagedCustomResourceDefinitions": "unmanagedCustomResourceDefinitions is a list of CustomResourceDefinition (CRD) names that should not be managed by the capi-operator installer controller. This allows external actors to own specific CRDs while capi-operator manages others.\n\nEach CRD name must be a valid DNS-1123 subdomain consisting of lowercase alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character, with a maximum length of 253 characters. CRD names must contain at least two '.' characters. Example: \"clusters.cluster.x-k8s.io\"\n\nItems cannot be removed from this list once added.\n\nThe maximum number of unmanagedCustomResourceDefinitions is 128.",
+}
+
+func (ClusterAPISpec) SwaggerDoc() map[string]string {
+	return map_ClusterAPISpec
+}
+
+var map_ClusterAPIStatus = map[string]string{
+	"":                           "ClusterAPIStatus describes the current state of the capi-operator.",
+	"currentRevision":            "currentRevision is the name of the most recently fully applied revision. It is written by the installer controller. If it is absent, it indicates that no revision has been fully applied yet. If set, currentRevision must correspond to an entry in the revisions list.",
+	"desiredRevision":            "desiredRevision is the name of the desired revision. It is written by the revision controller. It must be set to the name of the entry in the revisions list with the highest revision number.",
+	"revisions":                  "revisions is a list of all currently active revisions. A revision is active until the installer controller updates currentRevision to a later revision. It is written by the revision controller.\n\nThe maximum number of revisions is 16. All revisions must have a unique name. All revisions must have a unique revision number. When adding a revision, the revision number must be greater than the highest revision number in the list. Revisions are immutable, although they can be deleted.",
+	"observedRevisionGeneration": "observedRevisionGeneration is the generation of the ClusterAPI object that was last observed by the revision controller. If specified it must be greater than or equal to 1, and less than 2^53. It may not decrease or be unset once set.",
+}
+
+func (ClusterAPIStatus) SwaggerDoc() map[string]string {
+	return map_ClusterAPIStatus
+}
+
 var map_Config = map[string]string{
 	"":         "Config specifies the behavior of the config operator which is responsible for creating the initial configuration of other components on the cluster.  The operator also handles installation, migration or synchronization of cloud configurations for AWS and Azure cloud based clusters\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
@@ -1145,6 +1240,17 @@ func (IngressControllerCaptureHTTPHeaders) SwaggerDoc() map[string]string {
 	return map_IngressControllerCaptureHTTPHeaders
 }
 
+var map_IngressControllerContainerResource = map[string]string{
+	"":        "IngressControllerContainerResource defines an override for one resource.",
+	"name":    "name is required and identifies cpu, memory, ephemeral-storage, hugepages-<size>, or a domain-qualified extended resource such as example.com/device. It must be a Kubernetes qualified name of 1 to 253 characters: an optional lowercase DNS subdomain and slash followed by an alphanumeric name of at most 63 characters, with '-', '_' and '.' allowed internally. Extended resource domains must not be kubernetes.io or its subdomains, and names must not start with 'requests.'. Hugepage sizes must be valid quantities of 1 to 20 characters representing a positive, whole number of bytes.",
+	"request": "request optionally sets the minimum amount of this resource per replica.\n\nWARNING: the platform does not validate this value against what the container needs, and setting it too low or too high can break ingress. A request below what the container needs causes CPU throttling and makes the pod more likely to be evicted when its node runs short of memory; users see slow route updates, added latency, timeouts and 5xx responses. A request that the nodes cannot satisfy leaves ingress pods Pending, and a rolling update can then stall with fewer replicas than desired. A request is static: the platform never adjusts it as route count, configuration size or traffic grows. Issues caused by an inappropriate value are not supported, and the cluster administrator is responsible for choosing it; the platform default described on spec.resources is the supported configuration.\n\nIt must be a valid, positive, non-zero quantity of 1 to 20 characters and must not exceed limit. Extended resources and hugepages require an equal limit; extended resource values must be whole numbers, and hugepage values must be whole multiples of the page size. When omitted with a limit, the operator uses that limit as the effective request, without defaulting this API field. When there is no entry for a resource, the platform default request applies.",
+	"limit":   "limit optionally sets the maximum amount of this resource per replica.\n\nWARNING: setting a limit on a cluster component such as the router is discouraged, the platform does not validate it against what the container needs, and the cluster administrator accepts responsibility for any unavailability it causes; the platform default of no limit, described on spec.resources, is the supported configuration. A CPU limit that the container exceeds is enforced by throttling, which appears as latency spikes, timeouts and 5xx responses under bursty traffic. A memory limit below the working set of the container causes it to be OOMKilled and restarted, and while a container that serves traffic is restarting, the routes handled by that replica are unavailable; with a single replica that is an ingress outage. Because a limit-only entry also becomes the request, a limit that the nodes cannot satisfy leaves the pods Pending. The platform never re-evaluates the limit, so a value that works today can start causing these failures as route count, configuration size or traffic grows.\n\nIt must be a valid, positive, non-zero quantity of 1 to 20 characters and must not be less than request. Extended resource values must be whole numbers; hugepage values must be whole multiples of the page size. For extended resources and hugepages, an explicit request must equal limit. When request is omitted, the operator uses limit as the effective request, without defaulting the API field. When limit is omitted, the platform default applies (currently no limit), unless a LimitRange in the router namespace applies one.",
+}
+
+func (IngressControllerContainerResource) SwaggerDoc() map[string]string {
+	return map_IngressControllerContainerResource
+}
+
 var map_IngressControllerHTTPHeader = map[string]string{
 	"":       "IngressControllerHTTPHeader specifies configuration for setting or deleting an HTTP header.",
 	"name":   "name specifies the name of a header on which to perform an action. Its value must be a valid HTTP header name as defined in RFC 2616 section 4.2. The name must consist only of alphanumeric and the following special characters, \"-!#$%&'*+.^_`\". The following header names are reserved and may not be modified via this API: Strict-Transport-Security, Proxy, Host, Cookie, Set-Cookie. It must be no more than 255 characters in length. Header name must be unique.",
@@ -1215,6 +1321,16 @@ func (IngressControllerLogging) SwaggerDoc() map[string]string {
 	return map_IngressControllerLogging
 }
 
+var map_IngressControllerResources = map[string]string{
+	"":        "IngressControllerResources configures per-replica resources for ingress containers.",
+	"router":  "router optionally configures resources for the controller that watches routes and generates HAProxy configuration. When specified, it must be a list of 1 to 8 resource overrides with unique names. Removing an entry restores the platform default for that resource. When omitted, the platform applies its default for the router container, as described on the spec.resources field.",
+	"haproxy": "haproxy optionally configures resources for the proxy that handles ingress traffic. It runs as a restartable init sidecar in the router pod. When specified, it must be a list of 1 to 8 resource overrides with unique names. Removing an entry restores the platform default for that resource. When omitted, the platform applies its default for the haproxy container, as described on the spec.resources field.",
+}
+
+func (IngressControllerResources) SwaggerDoc() map[string]string {
+	return map_IngressControllerResources
+}
+
 var map_IngressControllerSetHTTPHeader = map[string]string{
 	"":      "IngressControllerSetHTTPHeader defines the value which needs to be set on an HTTP header.",
 	"value": "value specifies a header value. Dynamic values can be added. The value will be interpreted as an HAProxy format string as defined in http://cbonte.github.io/haproxy-dconv/2.6/configuration.html#8.2.6  and may use HAProxy's %[] syntax and otherwise must be a valid HTTP header value as defined in https://datatracker.ietf.org/doc/html/rfc7230#section-3.2. The value of this field must be no more than 16384 characters in length. Note that the total size of all net added headers *after* interpolating dynamic values must not exceed the value of spec.tuningOptions.headerBufferMaxRewriteBytes on the IngressController. ",
@@ -1234,6 +1350,7 @@ var map_IngressControllerSpec = map[string]string{
 	"namespaceSelector":               "namespaceSelector is used to filter the set of namespaces serviced by the ingress controller. This is useful for implementing shards.\n\nIf unset, the default is no filtering.",
 	"routeSelector":                   "routeSelector is used to filter the set of Routes serviced by the ingress controller. This is useful for implementing shards.\n\nIf unset, the default is no filtering.",
 	"nodePlacement":                   "nodePlacement enables explicit control over the scheduling of the ingress controller.\n\nIf unset, defaults are used. See NodePlacement for more details.",
+	"resources":                       "resources optionally configures per-replica resources for the router and haproxy containers independently. At least one container must be configured. When omitted, the platform is left to choose reasonable defaults, which are subject to change over time. The current defaults are requests of 25m CPU and 64Mi memory for router, requests of 100m CPU and 256Mi memory for haproxy, and no limits for either container.\n\nThe values set here are not validated against what the workload needs; setting them too low or too high can make the router unavailable, and Red Hat does not support issues caused by such values. See the request and limit fields for the specific risks of each. The cluster administrator is responsible for choosing appropriate values.",
 	"tlsSecurityProfile":              "tlsSecurityProfile specifies settings for TLS connections for ingresscontrollers.\n\nIf unset, the default is based on the apiservers.config.openshift.io/cluster resource.\n\nNote that when using the Old, Intermediate, and Modern profile types, the effective profile configuration is subject to change between releases. For example, given a specification to use the Intermediate profile deployed on release X.Y.Z, an upgrade to release X.Y.Z+1 may cause a new profile configuration to be applied to the ingress controller, resulting in a rollout.",
 	"clientTLS":                       "clientTLS specifies settings for requesting and verifying client certificates, which can be used to enable mutual TLS for edge-terminated and reencrypt routes.",
 	"routeAdmission":                  "routeAdmission defines a policy for handling new route claims (for example, to allow or deny claims across namespaces).\n\nIf empty, defaults will be applied. See specific routeAdmission fields for details about their defaults.",
@@ -1414,8 +1531,8 @@ var map_HealthCheck = map[string]string{
 	"":            "healthCheck represents an Insights health check attributes.",
 	"description": "description provides basic description of the healtcheck.",
 	"totalRisk":   "totalRisk of the healthcheck. Indicator of the total risk posed by the detected issue; combination of impact and likelihood. The values can be from 1 to 4, and the higher the number, the more important the issue.",
-	"advisorURI":  "advisorURI provides the URL link to the Insights Advisor.",
-	"state":       "state determines what the current state of the health check is. Health check is enabled by default and can be disabled by the user in the Insights advisor user interface.",
+	"advisorURI":  "advisorURI provides the URL link to the Red Hat Lightspeed Advisor UI.",
+	"state":       "state determines what the current state of the health check is. Health check is enabled by default and can be disabled by the user in the Red Hat Lightspeed Advisor UI.",
 }
 
 func (HealthCheck) SwaggerDoc() map[string]string {
@@ -1473,9 +1590,9 @@ func (KMSEncryptionStatus) SwaggerDoc() map[string]string {
 var map_KMSPluginHealthReport = map[string]string{
 	"nodeName":        "nodeName is the name of the node this instance of the plugin runs on. The combination of nodeName and keyID makes this health report unique. The value must be a valid Kubernetes node name: a lowercase RFC 1123 subdomain consisting of lowercase alphanumeric characters, '-' or '.', starting and ending with an alphanumeric character, and be at most 253 characters in length.",
 	"keyID":           "keyID is the encryption-key-secret id (kms-{keyID}.sock), a unique identifier of the plugin on that node. This is not a cryptographic key used to encrypt/decrypt any resources. The value must be between 1 and 512 characters.",
-	"status":          "status contains a health indicator for the respective KMS plugin The field can have three states: healthy, unhealthy, error. With error and unhealthy containing additional information in Detail.",
+	"status":          "status contains a health indicator for the respective KMS plugin. status is required and must be one of Healthy, Unhealthy or Error. When set to Healthy, the plugin responded successfully to the KMS v2 Status call and remoteKeyID is set. When set to Unhealthy, the plugin responded but reported that it is not healthy. When set to Error, the Status call failed or returned no response, for example because the plugin was unreachable. Unhealthy and Error may include additional information in detail.",
 	"lastCheckedTime": "lastCheckedTime is a timestamp of when the probe was last checked.",
-	"remoteKeyID":     "remoteKeyID refers to the remote key identifier from KMS v2 StatusResponse.key_id. This is not a cryptographic key, but a unique representation of the KEK. The value must be between 1 and 1024 characters.",
+	"remoteKeyID":     "remoteKeyID refers to the remote key identifier from KMS v2 StatusResponse.key_id. This is not a cryptographic key, but a unique representation of the KEK. When omitted, no remote key identifier is available. This is expected when status is Unhealthy or Error, for example when the plugin reports that it is not healthy or could not be reached. When status is Healthy, remoteKeyID is required. When set, the value must be between 1 and 1024 characters.",
 	"detail":          "detail contains additional error/health information for the respective KMS plugin. When omitted, no additional error or health information is provided. When set, the value must be between 1 and 1024 characters.",
 }
 

@@ -31,6 +31,14 @@ func (curr *PerformanceProfile) ConvertTo(dstRaw conversion.Hub) error {
 		if curr.Spec.CPU.BalanceIsolated != nil {
 			dst.Spec.CPU.BalanceIsolated = ptr.To(*curr.Spec.CPU.BalanceIsolated)
 		}
+		if curr.Spec.CPU.Shared != nil {
+			shared := v1.CPUSet(*curr.Spec.CPU.Shared)
+			dst.Spec.CPU.Shared = &shared
+		}
+		if curr.Spec.CPU.OvsDpdk != nil {
+			ovsDpdk := v1.CPUSet(*curr.Spec.CPU.OvsDpdk)
+			dst.Spec.CPU.OvsDpdk = &ovsDpdk
+		}
 	}
 
 	if curr.Spec.HardwareTuning != nil {
@@ -95,6 +103,11 @@ func (curr *PerformanceProfile) ConvertTo(dstRaw conversion.Hub) error {
 		}
 	}
 
+	if curr.Spec.KernelPageSize != nil {
+		kernelPageSize := v1.KernelPageSize(*curr.Spec.KernelPageSize)
+		dst.Spec.KernelPageSize = &kernelPageSize
+	}
+
 	if curr.Spec.AdditionalKernelArgs != nil {
 		dst.Spec.AdditionalKernelArgs = make([]string, len(curr.Spec.AdditionalKernelArgs))
 		copy(dst.Spec.AdditionalKernelArgs, curr.Spec.AdditionalKernelArgs)
@@ -143,6 +156,13 @@ func (curr *PerformanceProfile) ConvertTo(dstRaw conversion.Hub) error {
 		dst.Spec.GloballyDisableIrqLoadBalancing = ptr.To(*curr.Spec.GloballyDisableIrqLoadBalancing)
 	}
 
+	if curr.Spec.WorkloadHints != nil {
+		dst.Spec.WorkloadHints = new(v1.WorkloadHints)
+		if curr.Spec.WorkloadHints.MixedCpus != nil {
+			dst.Spec.WorkloadHints.MixedCpus = ptr.To(*curr.Spec.WorkloadHints.MixedCpus)
+		}
+	}
+
 	// Status
 	if curr.Status.Conditions != nil {
 		dst.Status.Conditions = make([]conditionsv1.Condition, len(curr.Status.Conditions))
@@ -182,6 +202,14 @@ func (curr *PerformanceProfile) ConvertFrom(srcRaw conversion.Hub) error {
 		}
 		if src.Spec.CPU.BalanceIsolated != nil {
 			curr.Spec.CPU.BalanceIsolated = ptr.To(*src.Spec.CPU.BalanceIsolated)
+		}
+		if src.Spec.CPU.Shared != nil {
+			shared := CPUSet(*src.Spec.CPU.Shared)
+			curr.Spec.CPU.Shared = &shared
+		}
+		if src.Spec.CPU.OvsDpdk != nil {
+			ovsDpdk := CPUSet(*src.Spec.CPU.OvsDpdk)
+			curr.Spec.CPU.OvsDpdk = &ovsDpdk
 		}
 	}
 
@@ -235,6 +263,11 @@ func (curr *PerformanceProfile) ConvertFrom(srcRaw conversion.Hub) error {
 		}
 	}
 
+	if src.Spec.KernelPageSize != nil {
+		kernelPageSize := KernelPageSize(*src.Spec.KernelPageSize)
+		curr.Spec.KernelPageSize = &kernelPageSize
+	}
+
 	if src.Spec.AdditionalKernelArgs != nil {
 		curr.Spec.AdditionalKernelArgs = make([]string, len(src.Spec.AdditionalKernelArgs))
 		copy(curr.Spec.AdditionalKernelArgs, src.Spec.AdditionalKernelArgs)
@@ -283,6 +316,13 @@ func (curr *PerformanceProfile) ConvertFrom(srcRaw conversion.Hub) error {
 		curr.Spec.GloballyDisableIrqLoadBalancing = ptr.To(*src.Spec.GloballyDisableIrqLoadBalancing)
 	} else { // set to true by default
 		curr.Spec.GloballyDisableIrqLoadBalancing = ptr.To(true)
+	}
+
+	if src.Spec.WorkloadHints != nil {
+		curr.Spec.WorkloadHints = new(WorkloadHints)
+		if src.Spec.WorkloadHints.MixedCpus != nil {
+			curr.Spec.WorkloadHints.MixedCpus = ptr.To(*src.Spec.WorkloadHints.MixedCpus)
+		}
 	}
 
 	// Status

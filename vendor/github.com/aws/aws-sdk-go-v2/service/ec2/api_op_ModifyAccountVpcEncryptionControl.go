@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Modifies the account-level VPC Encryption Control configuration. This sets the
@@ -34,6 +33,10 @@ func (c *Client) ModifyAccountVpcEncryptionControl(ctx context.Context, params *
 
 type ModifyAccountVpcEncryptionControlInput struct {
 
+	// Specifies whether to exclude Amazon API Gateway V2 from account-level
+	// encryption enforcement.
+	ApiGatewayV2 types.VpcEncryptionControlExclusionStateInput
+
 	// Checks whether you have the required permissions for the action, without
 	// actually making the request, and provides an error response. If you have the
 	// required permissions, the error response is DryRunOperation . Otherwise, it is
@@ -47,6 +50,10 @@ type ModifyAccountVpcEncryptionControlInput struct {
 	// Specifies whether to exclude Elastic File System service from account-level
 	// encryption enforcement.
 	ElasticFileSystem types.VpcEncryptionControlExclusionStateInput
+
+	// Specifies whether to exclude Amazon Web Services Global Accelerator from
+	// account-level encryption enforcement.
+	GlobalAccelerator types.VpcEncryptionControlExclusionStateInput
 
 	// Specifies whether to exclude internet gateway resource from account-level
 	// encryption enforcement.
@@ -99,12 +106,6 @@ func (c *Client) addOperationModifyAccountVpcEncryptionControlMiddlewares(stack 
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -114,16 +115,7 @@ func (c *Client) addOperationModifyAccountVpcEncryptionControlMiddlewares(stack 
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ModifyAccountVpcEncryptionControl"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

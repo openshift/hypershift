@@ -4,8 +4,9 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Removes the specified client ID (also known as audience) from the list of
@@ -54,6 +55,21 @@ type RemoveClientIDFromOpenIDConnectProviderInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *RemoveClientIDFromOpenIDConnectProviderInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.RemoveClientIDFromOpenIDConnectProviderRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *RemoveClientIDFromOpenIDConnectProviderInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientID != nil {
+		s.WriteString(schemas.RemoveClientIDFromOpenIDConnectProviderRequest_ClientID, *v.ClientID)
+	}
+	if v.OpenIDConnectProviderArn != nil {
+		s.WriteString(schemas.RemoveClientIDFromOpenIDConnectProviderRequest_OpenIDConnectProviderArn, *v.OpenIDConnectProviderArn)
+	}
+}
+
 type RemoveClientIDFromOpenIDConnectProviderOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -61,22 +77,29 @@ type RemoveClientIDFromOpenIDConnectProviderOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *RemoveClientIDFromOpenIDConnectProviderOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(nil)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *RemoveClientIDFromOpenIDConnectProviderOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *RemoveClientIDFromOpenIDConnectProviderOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, nil, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationRemoveClientIDFromOpenIDConnectProviderMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpRemoveClientIDFromOpenIDConnectProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.RemoveClientIDFromOpenIDConnectProvider, schemas.RemoveClientIDFromOpenIDConnectProviderRequest, nil)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpRemoveClientIDFromOpenIDConnectProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.RemoveClientIDFromOpenIDConnectProvider, schemas.RemoveClientIDFromOpenIDConnectProviderRequest, nil), output: &RemoveClientIDFromOpenIDConnectProviderOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -86,19 +109,10 @@ func (c *Client) addOperationRemoveClientIDFromOpenIDConnectProviderMiddlewares(
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpRemoveClientIDFromOpenIDConnectProviderValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "RemoveClientIDFromOpenIDConnectProvider"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

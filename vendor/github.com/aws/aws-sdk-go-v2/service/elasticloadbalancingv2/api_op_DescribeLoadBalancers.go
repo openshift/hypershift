@@ -6,11 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	smithytime "github.com/aws/smithy-go/time"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	smithywaiter "github.com/aws/smithy-go/waiter"
 	"time"
 )
@@ -50,6 +50,27 @@ type DescribeLoadBalancersInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeLoadBalancersInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeLoadBalancersInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeLoadBalancersInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancerArns != nil {
+		serializeLoadBalancerArns(s, schemas.DescribeLoadBalancersInput_LoadBalancerArns, v.LoadBalancerArns)
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.DescribeLoadBalancersInput_Marker, *v.Marker)
+	}
+	if v.Names != nil {
+		serializeLoadBalancerNames(s, schemas.DescribeLoadBalancersInput_Names, v.Names)
+	}
+	if v.PageSize != nil {
+		s.WriteInt32(schemas.DescribeLoadBalancersInput_PageSize, *v.PageSize)
+	}
+}
+
 type DescribeLoadBalancersOutput struct {
 
 	// Information about the load balancers.
@@ -65,22 +86,40 @@ type DescribeLoadBalancersOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeLoadBalancersOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeLoadBalancersOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeLoadBalancersOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancers != nil {
+		serializeLoadBalancers(s, schemas.DescribeLoadBalancersOutput_LoadBalancers, v.LoadBalancers)
+	}
+	if v.NextMarker != nil {
+		s.WriteString(schemas.DescribeLoadBalancersOutput_NextMarker, *v.NextMarker)
+	}
+}
+func (v *DescribeLoadBalancersOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DescribeLoadBalancersOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.DescribeLoadBalancersOutput_LoadBalancers:
+			return deserializeLoadBalancers(d, schemas.DescribeLoadBalancersOutput_LoadBalancers, &v.LoadBalancers)
+		case schemas.DescribeLoadBalancersOutput_NextMarker:
+			v.NextMarker = new(string)
+			return d.ReadString(schemas.DescribeLoadBalancersOutput_NextMarker, v.NextMarker)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDescribeLoadBalancersMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDescribeLoadBalancers{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeLoadBalancers, schemas.DescribeLoadBalancersInput, schemas.DescribeLoadBalancersOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDescribeLoadBalancers{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeLoadBalancers, schemas.DescribeLoadBalancersInput, schemas.DescribeLoadBalancersOutput), output: &DescribeLoadBalancersOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -90,16 +129,7 @@ func (c *Client) addOperationDescribeLoadBalancersMiddlewares(stack *middleware.
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeLoadBalancers"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

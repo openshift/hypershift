@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Modifies the VPC peering connection options on one side of a VPC peering
@@ -23,6 +22,16 @@ import (
 // options and the Region for the accepter VPC to modify the accepter VPC peering
 // options. To verify which VPCs are the accepter and the requester for a VPC
 // peering connection, use the DescribeVpcPeeringConnectionscommand.
+//
+// Multipath resilience replicates the traffic of an inter-Region VPC peering
+// connection across multiple network paths. You can allow multipath resilience for
+// your side of the connection if both of its Regions are supported. It takes
+// effect only when both the requester and the accepter allow it. Additional
+// charges apply when multipath resilience is in effect. For more information, see [Amazon VPC pricing]
+// . To check whether multipath resilience is in effect, use DescribeVpcPeeringConnectionsand check
+// multipathResilienceStatus .
+//
+// [Amazon VPC pricing]: http://aws.amazon.com/vpc/pricing/
 func (c *Client) ModifyVpcPeeringConnectionOptions(ctx context.Context, params *ModifyVpcPeeringConnectionOptionsInput, optFns ...func(*Options)) (*ModifyVpcPeeringConnectionOptionsOutput, error) {
 	if params == nil {
 		params = &ModifyVpcPeeringConnectionOptionsInput{}
@@ -84,12 +93,6 @@ func (c *Client) addOperationModifyVpcPeeringConnectionOptionsMiddlewares(stack 
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -99,19 +102,10 @@ func (c *Client) addOperationModifyVpcPeeringConnectionOptionsMiddlewares(stack 
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpModifyVpcPeeringConnectionOptionsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ModifyVpcPeeringConnectionOptions"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

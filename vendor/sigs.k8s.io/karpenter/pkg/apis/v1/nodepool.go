@@ -85,20 +85,23 @@ type Disruption struct {
 	// ConsolidateAfter is the duration the controller will wait
 	// before attempting to terminate nodes that are underutilized.
 	// Refer to ConsolidationPolicy for how underutilization is considered.
-	// When replicas is set, ConsolidateAfter is simply ignored
+	// When replicas is set, ConsolidateAfter is simply ignored.
+	// +kubebuilder:default:="0s"
 	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+|Never)$`
 	// +kubebuilder:validation:Type="string"
 	// +kubebuilder:validation:Schemaless
-	// +required
-	ConsolidateAfter NillableDuration `json:"consolidateAfter"`
+	// +optional
+	ConsolidateAfter NillableDuration `json:"consolidateAfter,omitempty"`
 	//nolint:kubeapilinter
 	// ConsolidationPolicy describes which nodes Karpenter can disrupt through its consolidation
-	// algorithm. This policy defaults to "WhenEmptyOrUnderutilized" if not specified
-	// When replicas is set, ConsolidationPolicy is simply ignored
+	// algorithm.
+	// Valid values: "WhenEmpty", "WhenEmptyOrUnderutilized", "Balanced".
+	// When replicas is set, ConsolidationPolicy is simply ignored.
 	// +kubebuilder:default:="WhenEmptyOrUnderutilized"
-	// +kubebuilder:validation:Enum:={WhenEmpty,WhenEmptyOrUnderutilized}
+	// +kubebuilder:validation:Enum:=WhenEmpty;WhenEmptyOrUnderutilized;Balanced
 	// +optional
 	ConsolidationPolicy ConsolidationPolicy `json:"consolidationPolicy,omitempty"`
+	//nolint:kubeapilinter
 	// Budgets is a list of Budgets.
 	// If there are multiple active budgets, Karpenter uses
 	// the most restrictive value. If left undefined,
@@ -117,7 +120,7 @@ type Disruption struct {
 type Budget struct {
 	// reasons is a list of disruption methods that this budget applies to. If Reasons is not set, this budget applies to all methods.
 	// Otherwise, this will apply to each reason defined.
-	// allowed reasons are Underutilized, Empty, and Drifted.
+	// allowed reasons are Underutilized, Empty, Drifted, and Unhealthy.
 	// +kubebuilder:validation:MaxItems=50
 	// +optional
 	// +listType=set
@@ -159,16 +162,31 @@ type ConsolidationPolicy string
 const (
 	ConsolidationPolicyWhenEmpty                ConsolidationPolicy = "WhenEmpty"
 	ConsolidationPolicyWhenEmptyOrUnderutilized ConsolidationPolicy = "WhenEmptyOrUnderutilized"
+	ConsolidationPolicyBalanced                 ConsolidationPolicy = "Balanced"
 )
 
+// BalancedK is the scoring parameter for the Balanced policy. A move is
+// approved when score >= 1/k = 0.5. k=2 is the smallest value where
+// within-family replaces pass, with 4-step max churn. See
+// designs/balanced-consolidation.md "Why k=2".
+const BalancedK int32 = 2
+
+// IsBalanced returns true for the Balanced consolidation policy.
+func (p ConsolidationPolicy) IsBalanced() bool {
+	return p == ConsolidationPolicyBalanced
+}
+
 // DisruptionReason defines valid reasons for disruption budgets.
-// +kubebuilder:validation:Enum={Underutilized,Empty,Drifted}
+// +kubebuilder:validation:Enum={Underutilized,Empty,Drifted,Unhealthy}
 type DisruptionReason string
 
 const (
 	DisruptionReasonUnderutilized DisruptionReason = "Underutilized"
 	DisruptionReasonEmpty         DisruptionReason = "Empty"
 	DisruptionReasonDrifted       DisruptionReason = "Drifted"
+	// DisruptionReasonUnhealthy paces voluntary node repair through the shared disruption budget. Repair is ordered and
+	// pre-spins replacement capacity.
+	DisruptionReasonUnhealthy DisruptionReason = "Unhealthy"
 )
 
 type Limits v1.ResourceList
@@ -379,8 +397,7 @@ func (in *Budget) GetAllowedDisruptions(c clock.Clock, numNodes int) (int, error
 	// handles MaxUnavailable with PDBs. Take the case with 5% disruptions, but
 	// 10 nodes. Karpenter will opt to allow 1 node to be disrupted, rather than
 	// blocking all disruptions for this nodepool.
-	intStrVal := GetIntStrFromValue(in.Nodes)
-	res, err := intstr.GetScaledValueFromIntOrPercent(&intStrVal, numNodes, true)
+	res, err := intstr.GetScaledValueFromIntOrPercent(new(GetIntStrFromValue(in.Nodes)), numNodes, true)
 	if err != nil {
 		// Should never happen since this is validated when the nodepool is applied
 		// If this value is incorrectly formatted, fail closed, since we don't know what

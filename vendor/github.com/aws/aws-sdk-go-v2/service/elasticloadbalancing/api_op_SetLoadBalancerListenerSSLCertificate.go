@@ -4,8 +4,9 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Sets the certificate that terminates the specified listener's SSL connections.
@@ -52,6 +53,22 @@ type SetLoadBalancerListenerSSLCertificateInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *SetLoadBalancerListenerSSLCertificateInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.SetLoadBalancerListenerSSLCertificateInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *SetLoadBalancerListenerSSLCertificateInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.SetLoadBalancerListenerSSLCertificateInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+	s.WriteInt32(schemas.SetLoadBalancerListenerSSLCertificateInput_LoadBalancerPort, v.LoadBalancerPort)
+	if v.SSLCertificateId != nil {
+		s.WriteString(schemas.SetLoadBalancerListenerSSLCertificateInput_SSLCertificateId, *v.SSLCertificateId)
+	}
+}
+
 // Contains the output of SetLoadBalancerListenerSSLCertificate.
 type SetLoadBalancerListenerSSLCertificateOutput struct {
 	// Metadata pertaining to the operation's result.
@@ -60,22 +77,29 @@ type SetLoadBalancerListenerSSLCertificateOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *SetLoadBalancerListenerSSLCertificateOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.SetLoadBalancerListenerSSLCertificateOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *SetLoadBalancerListenerSSLCertificateOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *SetLoadBalancerListenerSSLCertificateOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.SetLoadBalancerListenerSSLCertificateOutput, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationSetLoadBalancerListenerSSLCertificateMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpSetLoadBalancerListenerSSLCertificate{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.SetLoadBalancerListenerSSLCertificate, schemas.SetLoadBalancerListenerSSLCertificateInput, schemas.SetLoadBalancerListenerSSLCertificateOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpSetLoadBalancerListenerSSLCertificate{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.SetLoadBalancerListenerSSLCertificate, schemas.SetLoadBalancerListenerSSLCertificateInput, schemas.SetLoadBalancerListenerSSLCertificateOutput), output: &SetLoadBalancerListenerSSLCertificateOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -85,19 +109,10 @@ func (c *Client) addOperationSetLoadBalancerListenerSSLCertificateMiddlewares(st
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpSetLoadBalancerListenerSSLCertificateValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "SetLoadBalancerListenerSSLCertificate"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

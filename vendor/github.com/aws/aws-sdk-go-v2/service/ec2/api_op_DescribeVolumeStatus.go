@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Describes the status of the specified volumes. Volume status provides the
@@ -81,6 +80,12 @@ type DescribeVolumeStatusInput struct {
 	//   - action.description - A description of the action.
 	//
 	//   - action.event-id - The event ID associated with the action.
+	//
+	//   - attachment-status.instance-id - The ID of the instance that the volume is
+	//   attached to.
+	//
+	//   - attachment-status.io-performance - The I/O performance status of the
+	//   volume's attachment to the instance.
 	//
 	//   - availability-zone - The Availability Zone of the instance.
 	//
@@ -156,12 +161,6 @@ func (c *Client) addOperationDescribeVolumeStatusMiddlewares(stack *middleware.S
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -171,16 +170,7 @@ func (c *Client) addOperationDescribeVolumeStatusMiddlewares(stack *middleware.S
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeVolumeStatus"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
