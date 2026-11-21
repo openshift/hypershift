@@ -19,7 +19,13 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		podspec.UpsertEnvVars(c, []corev1.EnvVar{
 			{Name: "RELEASE_VERSION", Value: version},
 			{Name: "OPERATOR_IMAGE_VERSION", Value: version},
-			{Name: "OPERATOR_IMAGE", Value: cpContext.ReleaseImageProvider.GetImage("cluster-image-registry-operator")},
+			// OPERATOR_IMAGE does not set this operator's own image, which comes from
+			// the control plane release via the deployment asset. The operator only
+			// reads it to stamp an image into resources it creates in the guest
+			// cluster: the node-ca DaemonSet and the Azure path fix Job, both in the
+			// guest's openshift-image-registry namespace. Those are data plane
+			// workloads, so this must come from the user release.
+			{Name: "OPERATOR_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("cluster-image-registry-operator")},
 			{Name: "IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("docker-registry")},
 			{Name: "IMAGE_PRUNER", Value: cpContext.UserReleaseImageProvider.GetImage("cli")},
 		})
