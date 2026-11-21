@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -86,6 +87,13 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 	if !ok {
 		return false, "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
+	// The CPO image is resolved out of the control plane release payload, which may
+	// live in a private registry the cluster pull secret does not cover.
+	pullSecretBytes, err = pullsecret.ForHostedClusterControlPlaneNamespace(ctx, r.Client, hcluster, pullSecretBytes)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
+
 	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)

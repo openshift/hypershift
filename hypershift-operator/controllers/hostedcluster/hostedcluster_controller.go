@@ -70,6 +70,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
@@ -1490,6 +1491,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return fmt.Errorf("failed to get pull secret: %w", err)
 		}
+		// Every consumer of pullSecretBytes below resolves an image from the control
+		// plane release payload, so the additional credential is merged once here.
+		// Data plane lookups in this reconcile read the pull secret separately and
+		// must not use these bytes.
+		pullSecretBytes, err = pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.OperatorNamespace, pullSecretBytes)
+		if err != nil {
+			return fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+		}
 		controlPlaneOperatorImage, err = imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
@@ -1528,6 +1537,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	report.execute("PullSecretSync", critical, func() error {
 		return r.reconcilePullSecretSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
+	})
+
+	report.execute("ControlPlaneReleasePullSecretSync", critical, func() error {
+		return r.reconcileControlPlaneReleasePullSecretSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
 	})
 
 	report.execute("SecretEncryptionSync", critical, func() error {
@@ -2114,6 +2127,66 @@ func (r *HostedClusterReconciler) reconcilePullSecretSync(
 		return err
 	}
 	return nil
+}
+
+// reconcileControlPlaneReleasePullSecretSync copies the provider-supplied control
+// plane release pull secret from the operator's namespace into the control plane
+// namespace, where the control plane operator and HCCO read it when resolving the
+// control plane release image.
+//
+// The Secret is optional and only applies to clusters pinning a distinct control
+// plane release. It is deliberately kept separate from the cluster pull-secret
+// Secret, which HCCO propagates into the guest cluster and onto nodes; merging these
+// credentials there would expose them to the data plane.
+//
+// When the Secret is absent, or the cluster no longer pins a control plane release,
+// any previously synced copy is removed so the credential does not linger.
+func (r *HostedClusterReconciler) reconcileControlPlaneReleasePullSecretSync(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
+	controlPlaneNamespace string,
+) error {
+	dst := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      pullsecret.ControlPlaneReleaseSecretName,
+		},
+	}
+	removeStaleCopy := func() error {
+		if err := r.Client.Delete(ctx, dst); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete stale control plane release pull secret: %w", err)
+		}
+		return nil
+	}
+
+	if hcluster.Spec.ControlPlaneRelease == nil {
+		return removeStaleCopy()
+	}
+
+	srcKey := client.ObjectKey{Namespace: r.OperatorNamespace, Name: pullsecret.ControlPlaneReleaseSecretName}
+	var src corev1.Secret
+	if err := r.Client.Get(ctx, srcKey, &src); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get control plane release pull secret %s: %w", srcKey, err)
+		}
+		// Not configured. A control plane release held in a public registry is a
+		// legitimate configuration, so this is not an error.
+		return removeStaleCopy()
+	}
+
+	srcData, ok := src.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return fmt.Errorf("control plane release pull secret %s must have a %s key", srcKey, corev1.DockerConfigJsonKey)
+	}
+
+	_, err := createOrUpdate(ctx, r.Client, dst, func() error {
+		dst.Type = corev1.SecretTypeDockerConfigJson
+		if dst.Data == nil {
+			dst.Data = map[string][]byte{}
+		}
+		dst.Data[corev1.DockerConfigJsonKey] = srcData
+		return nil
+	})
+	return err
 }
 
 // reconcileSecretEncryptionSync syncs secret encryption configuration from the
@@ -4610,6 +4683,12 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	if err != nil {
 		return err
 	}
+	// The only lookup below resolves Status.Version.Desired.Image, which
+	// computeClusterVersionStatus sets from the control plane release.
+	pullSecretBytes, err = pullsecret.ForHostedCluster(ctx, r.Client, hc, r.OperatorNamespace, pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
 
 	releaseInfo, err := r.lookupReleaseImage(ctx, hc, releaseProvider)
 	if err != nil {
@@ -5505,7 +5584,13 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 	if err != nil {
 		return nil, err
 	}
-	return releaseProvider.Lookup(ctx, imageregistry.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
+	// This resolves the control plane release, which may live in a private registry
+	// the cluster pull secret does not cover.
+	cpPullSecretBytes, err := pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.OperatorNamespace, pullSecretBytes)
+	if err != nil {
+		return nil, err
+	}
+	return releaseProvider.Lookup(ctx, imageregistry.HCControlPlaneReleaseImage(hcluster), cpPullSecretBytes)
 }
 
 func (r *HostedClusterReconciler) isAutoscalingNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {

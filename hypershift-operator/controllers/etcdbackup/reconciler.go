@@ -12,6 +12,7 @@ import (
 	supportconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -875,7 +876,12 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 		// Preserve error type (including IsNotFound) so caller can detect permanent failures
 		return fmt.Errorf("pull secret %q in namespace %q: %w", pullSecretName, backup.Namespace, err)
 	}
-	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+	// Both images below come out of the control plane release payload, which may
+	// live in a private registry the cluster pull secret does not cover.
+	pullSecretBytes, err := pullsecret.ForHostedControlPlane(ctx, r.Client, hcp, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
 
 	releaseImage := imageregistry.HCPControlPlaneReleaseImage(hcp)
 
