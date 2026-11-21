@@ -159,38 +159,48 @@ func volumeTypeToKarpenter(vt hyperkarpenterv1.VolumeType) *string {
 	return &v
 }
 
-func karpenterKubeletConfigurationFromNodeClassSpec(spec hyperkarpenterv1.OpenshiftEC2NodeClassSpec) *awskarpenterv1.KubeletConfiguration {
+func karpenterKubeletConfigurationFromNodeClassSpec(spec hyperkarpenterv1.OpenshiftEC2NodeClassSpec) awskarpenterv1.KubeletConfiguration {
 	if !spec.Kubelet.HasTypedFields() {
 		return nil
 	}
-	return &awskarpenterv1.KubeletConfiguration{
-		ImageGCHighThresholdPercent: spec.Kubelet.ImageGCHighThresholdPercent,
-		ImageGCLowThresholdPercent:  spec.Kubelet.ImageGCLowThresholdPercent,
-		MaxPods:                     ptrIfNonZero(spec.Kubelet.MaxPods),
-		CPUCFSQuota:                 spec.Kubelet.CPUCFSQuota,
-		EvictionHard:                evictionThresholdMapToStringMap(spec.Kubelet.EvictionHard),
-		EvictionSoft:                evictionThresholdMapToStringMap(spec.Kubelet.EvictionSoft),
-		EvictionSoftGracePeriod:     evictionSoftGracePeriodToDuration(spec.Kubelet.EvictionSoftGracePeriod),
-		EvictionMaxPodGracePeriod:   spec.Kubelet.EvictionMaxPodGracePeriod,
-		PodsPerCore:                 ptrIfNonZero(spec.Kubelet.PodsPerCore),
-		SystemReserved:              spec.Kubelet.SystemReserved,
-		KubeReserved:                spec.Kubelet.KubeReserved,
+	// Only forward the fields previously mapped to Karpenter. Overflow fields
+	// continue to be applied through ignition.
+	kubelet := spec.Kubelet
+	config := awskarpenterv1.KubeletConfiguration{}
+	if kubelet.ImageGCHighThresholdPercent != nil {
+		config["imageGCHighThresholdPercent"] = awskarpenterv1.JSONValue(kubelet.ImageGCHighThresholdPercent)
 	}
-}
-
-// evictionThresholdMapToStringMap converts our EvictionThreshold map to a plain string map.
-// EvictionThreshold is a type definition (not a type alias) because controller-gen's deepcopy
-// generator doesn't handle *types.Alias (https://github.com/kubernetes-sigs/controller-tools/issues/988),
-// so we can't use `type EvictionThreshold = string` which would make this copy unnecessary.
-func evictionThresholdMapToStringMap(m map[string]hyperkarpenterv1.EvictionThreshold) map[string]string {
-	if m == nil {
-		return nil
+	if kubelet.ImageGCLowThresholdPercent != nil {
+		config["imageGCLowThresholdPercent"] = awskarpenterv1.JSONValue(kubelet.ImageGCLowThresholdPercent)
 	}
-	result := make(map[string]string, len(m))
-	for k, v := range m {
-		result[k] = string(v)
+	if kubelet.MaxPods != 0 {
+		config["maxPods"] = awskarpenterv1.JSONValue(kubelet.MaxPods)
 	}
-	return result
+	if kubelet.CPUCFSQuota != nil {
+		config["cpuCFSQuota"] = awskarpenterv1.JSONValue(kubelet.CPUCFSQuota)
+	}
+	if len(kubelet.EvictionHard) > 0 {
+		config["evictionHard"] = awskarpenterv1.JSONValue(kubelet.EvictionHard)
+	}
+	if len(kubelet.EvictionSoft) > 0 {
+		config["evictionSoft"] = awskarpenterv1.JSONValue(kubelet.EvictionSoft)
+	}
+	if gracePeriods := evictionSoftGracePeriodToDuration(kubelet.EvictionSoftGracePeriod); len(gracePeriods) > 0 {
+		config["evictionSoftGracePeriod"] = awskarpenterv1.JSONValue(gracePeriods)
+	}
+	if kubelet.EvictionMaxPodGracePeriod != nil {
+		config["evictionMaxPodGracePeriod"] = awskarpenterv1.JSONValue(kubelet.EvictionMaxPodGracePeriod)
+	}
+	if kubelet.PodsPerCore != 0 {
+		config["podsPerCore"] = awskarpenterv1.JSONValue(kubelet.PodsPerCore)
+	}
+	if len(kubelet.SystemReserved) > 0 {
+		config["systemReserved"] = awskarpenterv1.JSONValue(kubelet.SystemReserved)
+	}
+	if len(kubelet.KubeReserved) > 0 {
+		config["kubeReserved"] = awskarpenterv1.JSONValue(kubelet.KubeReserved)
+	}
+	return config
 }
 
 func evictionSoftGracePeriodToDuration(m map[string]string) map[string]metav1.Duration {
@@ -213,13 +223,6 @@ func ptrIfNonEmpty(s string) *string {
 		return nil
 	}
 	return &s
-}
-
-func ptrIfNonZero(v int32) *int32 {
-	if v == 0 {
-		return nil
-	}
-	return ptr.To(v)
 }
 
 func karpenterCPUOptionsFromNodeClassSpec(spec hyperkarpenterv1.OpenshiftEC2NodeClassSpec) *awskarpenterv1.CPUOptions {

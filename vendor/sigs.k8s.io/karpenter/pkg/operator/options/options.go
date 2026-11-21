@@ -22,10 +22,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/awslabs/operatorpkg/docs"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	cliflag "k8s.io/component-base/cli/flag"
+	"sigs.k8s.io/yaml"
 
 	"sigs.k8s.io/karpenter/pkg/utils/env"
 )
@@ -56,11 +61,106 @@ type optionsKey struct{}
 type FeatureGates struct {
 	inputStr string
 
-	NodeRepair              bool
-	ReservedCapacity        bool
-	SpotToSpotConsolidation bool
-	NodeOverlay             bool
-	StaticCapacity          bool
+	NodeRepair                bool
+	ReservedCapacity          bool
+	SpotToSpotConsolidation   bool
+	NodeOverlay               bool
+	StaticCapacity            bool
+	CapacityBuffer            bool
+	TerminateFirstDrift       bool
+	TerminateFirstRepair      bool
+	PodDeletionCostManagement bool
+}
+
+// FeatureGate is the source-of-truth description of a feature gate. Declaring gates as FeatureGates keeps each gate's
+// name, default, and stage in one place, and lets a docs generator render a feature gate reference from them.
+type FeatureGate struct {
+	// Name is the gate's name in --feature-gates, e.g. "NodeRepair".
+	Name string
+	// Default is whether the gate is enabled when it isn't set.
+	Default bool
+	// Stage is the stability of the gated feature.
+	Stage docs.Stage
+	// Help is human-readable documentation for the gate: what enabling it does.
+	Help string
+}
+
+var (
+	NodeRepairFeatureGate = FeatureGate{
+		Name:    "NodeRepair",
+		Default: false,
+		Stage:   docs.Alpha,
+		Help: "Enables node repair. Karpenter replaces nodes with an unhealthy condition matching one of the cloud " +
+			"provider's repair policies, subject to disruption budgets.",
+	}
+	ReservedCapacityFeatureGate = FeatureGate{
+		Name:    "ReservedCapacity",
+		Default: true,
+		Stage:   docs.Beta,
+		Help: "Enables capacity reservations. Karpenter can launch nodes into reserved capacity, and prefers it " +
+			"over on-demand and spot capacity.",
+	}
+	SpotToSpotConsolidationFeatureGate = FeatureGate{
+		Name:    "SpotToSpotConsolidation",
+		Default: false,
+		Stage:   docs.Alpha,
+		Help:    "Enables spot-to-spot consolidation. Karpenter can replace spot nodes with cheaper spot nodes.",
+	}
+	NodeOverlayFeatureGate = FeatureGate{
+		Name:    "NodeOverlay",
+		Default: false,
+		Stage:   docs.Alpha,
+		Help: "Enables the NodeOverlay API. Karpenter applies NodeOverlay price and capacity adjustments to " +
+			"instance types when scheduling.",
+	}
+	StaticCapacityFeatureGate = FeatureGate{
+		Name:    "StaticCapacity",
+		Default: false,
+		Stage:   docs.Alpha,
+		Help: "Enables static NodePools. Karpenter keeps NodePools that set spec.replicas at that number of nodes, " +
+			"regardless of pod demand.",
+	}
+	CapacityBufferFeatureGate = FeatureGate{
+		Name:    "CapacityBuffer",
+		Default: false,
+		Stage:   docs.Alpha,
+		Help: "Enables the CapacityBuffer API (autoscaling.x-k8s.io). Karpenter provisions and keeps the spare " +
+			"capacity CapacityBuffers describe.",
+	}
+	TerminateFirstDriftFeatureGate = FeatureGate{
+		Name:    "TerminateFirstDrift",
+		Default: false,
+		Stage:   docs.Alpha,
+		Help: "Karpenter terminates a drifted node before its replacement is ready when it can't launch the " +
+			"replacement first, e.g. for a full capacity reservation or a static NodePool at its node limit.",
+	}
+	TerminateFirstRepairFeatureGate = FeatureGate{
+		Name:    "TerminateFirstRepair",
+		Default: false,
+		Stage:   docs.Alpha,
+		Help: "Karpenter terminates an unhealthy node before its replacement is ready when it can't launch the " +
+			"replacement first. Requires NodeRepair.",
+	}
+	PodDeletionCostManagementFeatureGate = FeatureGate{
+		Name:    "PodDeletionCostManagement",
+		Default: false,
+		Stage:   docs.Alpha,
+		Help: "Karpenter sets controller.kubernetes.io/pod-deletion-cost on pods so ReplicaSet scale-down prefers " +
+			"nodes it plans to consolidate, and stops reading that annotation as a disruption cost.",
+	}
+)
+
+// KarpenterFeatureGates are the feature gates Karpenter supports, in the order --feature-gates lists them.
+var KarpenterFeatureGates = []FeatureGate{
+	NodeRepairFeatureGate,
+	ReservedCapacityFeatureGate,
+	SpotToSpotConsolidationFeatureGate,
+	NodeOverlayFeatureGate,
+	StaticCapacityFeatureGate,
+	CapacityBufferFeatureGate,
+	TerminateFirstDriftFeatureGate,
+	TerminateFirstRepairFeatureGate,
+	PodDeletionCostManagementFeatureGate,
 }
 
 // Options contains all CLI flags / env vars for karpenter-core. It adheres to the options.Injectable interface.
@@ -88,7 +188,10 @@ type Options struct {
 	minValuesPolicyRaw               string
 	MinValuesPolicy                  MinValuesPolicy
 	IgnoreDRARequests                bool // NOTE: This flag will be removed once formal DRA support is GA in Karpenter.
+	LegacyNodeRepair                 bool // NOTE: This flag is planned for deprecation along with the legacy node repair controller.
 	FeatureGates                     FeatureGates
+	schedulerConfigRaw               string
+	SchedulerConfig                  *SchedulerConfiguration
 }
 
 type FlagSet struct {
@@ -130,7 +233,9 @@ func (o *Options) AddFlags(fs *FlagSet) {
 	fs.StringVar(&o.preferencePolicyRaw, "preference-policy", env.WithDefaultString("PREFERENCE_POLICY", string(PreferencePolicyRespect)), "How the Karpenter scheduler should treat preferences. Preferences include preferredDuringSchedulingIgnoreDuringExecution node and pod affinities/anti-affinities and ScheduleAnyways topologySpreadConstraints. Can be one of 'Ignore' and 'Respect'")
 	fs.StringVar(&o.minValuesPolicyRaw, "min-values-policy", env.WithDefaultString("MIN_VALUES_POLICY", string(MinValuesPolicyStrict)), "Min values policy for scheduling. Options include 'Strict' for existing behavior where min values are strictly enforced or 'BestEffort' where Karpenter relaxes min values when it isn't satisfied.")
 	fs.BoolVarWithEnv(&o.IgnoreDRARequests, "ignore-dra-requests", "IGNORE_DRA_REQUESTS", true, "When set, Karpenter will ignore pods' DRA requests during scheduling simulations. NOTE: This flag will be removed once formal DRA support is GA in Karpenter.")
-	fs.StringVar(&o.FeatureGates.inputStr, "feature-gates", env.WithDefaultString("FEATURE_GATES", "NodeRepair=false,ReservedCapacity=true,SpotToSpotConsolidation=false,NodeOverlay=false,StaticCapacity=false"), "Optional features can be enabled / disabled using feature gates. Current options are: NodeRepair, ReservedCapacity, SpotToSpotConsolidation, NodeOverlay, and StaticCapacity.")
+	fs.BoolVarWithEnv(&o.LegacyNodeRepair, "legacy-node-repair", "LEGACY_NODE_REPAIR", false, "When set with the NodeRepair feature gate, Karpenter runs the legacy node repair controller instead of node repair as a disruption method. The legacy controller only replaces nodes: it does not support terminate-first repair, reboot, repair policy priority or termination grace periods, or the karpenter.sh/do-not-repair annotation. NOTE: The legacy node repair controller is planned for deprecation. If you use it because the new one does not work for you, please open an issue with your use case or problem.")
+	fs.StringVar(&o.FeatureGates.inputStr, "feature-gates", env.WithDefaultString("FEATURE_GATES", featureGatesDefault()), featureGatesHelp())
+	fs.StringVar(&o.schedulerConfigRaw, "scheduler-config", env.WithDefaultString("SCHEDULER_CONFIG", ""), "A YAML/JSON document configuring the parts of the cluster's kube-scheduler behavior that Karpenter must mirror during scheduling simulation, currently only podTopologySpread.defaultConstraints. Empty means no scheduler-config overrides.")
 }
 
 func (o *Options) Parse(fs *FlagSet, args ...string) error {
@@ -157,6 +262,11 @@ func (o *Options) Parse(fs *FlagSet, args ...string) error {
 		return fmt.Errorf("parsing feature gates, %w", err)
 	}
 	o.FeatureGates = gates
+	schedulerConfig, err := ParseSchedulerConfiguration(o.schedulerConfigRaw)
+	if err != nil {
+		return fmt.Errorf("parsing scheduler config, %w", err)
+	}
+	o.SchedulerConfig = schedulerConfig
 	o.PreferencePolicy = PreferencePolicy(o.preferencePolicyRaw)
 	o.MinValuesPolicy = MinValuesPolicy(o.minValuesPolicyRaw)
 	return nil
@@ -168,11 +278,15 @@ func (o *Options) ToContext(ctx context.Context) context.Context {
 
 func DefaultFeatureGates() FeatureGates {
 	return FeatureGates{
-		NodeRepair:              false,
-		ReservedCapacity:        true,
-		SpotToSpotConsolidation: false,
-		NodeOverlay:             false,
-		StaticCapacity:          false,
+		NodeRepair:                NodeRepairFeatureGate.Default,
+		ReservedCapacity:          ReservedCapacityFeatureGate.Default,
+		SpotToSpotConsolidation:   SpotToSpotConsolidationFeatureGate.Default,
+		NodeOverlay:               NodeOverlayFeatureGate.Default,
+		StaticCapacity:            StaticCapacityFeatureGate.Default,
+		CapacityBuffer:            CapacityBufferFeatureGate.Default,
+		TerminateFirstDrift:       TerminateFirstDriftFeatureGate.Default,
+		TerminateFirstRepair:      TerminateFirstRepairFeatureGate.Default,
+		PodDeletionCostManagement: PodDeletionCostManagementFeatureGate.Default,
 	}
 }
 
@@ -185,23 +299,124 @@ func ParseFeatureGates(gateStr string) (FeatureGates, error) {
 	if err := cliflag.NewMapStringBool(&gateMap).Set(gateStr); err != nil {
 		return gates, err
 	}
-	if val, ok := gateMap["NodeRepair"]; ok {
+	if val, ok := gateMap[NodeRepairFeatureGate.Name]; ok {
 		gates.NodeRepair = val
 	}
-	if val, ok := gateMap["SpotToSpotConsolidation"]; ok {
+	if val, ok := gateMap[SpotToSpotConsolidationFeatureGate.Name]; ok {
 		gates.SpotToSpotConsolidation = val
 	}
-	if val, ok := gateMap["ReservedCapacity"]; ok {
+	if val, ok := gateMap[ReservedCapacityFeatureGate.Name]; ok {
 		gates.ReservedCapacity = val
 	}
-	if val, ok := gateMap["NodeOverlay"]; ok {
+	if val, ok := gateMap[NodeOverlayFeatureGate.Name]; ok {
 		gates.NodeOverlay = val
 	}
-	if val, ok := gateMap["StaticCapacity"]; ok {
+	if val, ok := gateMap[StaticCapacityFeatureGate.Name]; ok {
 		gates.StaticCapacity = val
+	}
+	if val, ok := gateMap[CapacityBufferFeatureGate.Name]; ok {
+		gates.CapacityBuffer = val
+	}
+	if val, ok := gateMap[TerminateFirstDriftFeatureGate.Name]; ok {
+		gates.TerminateFirstDrift = val
+	}
+	if val, ok := gateMap[TerminateFirstRepairFeatureGate.Name]; ok {
+		gates.TerminateFirstRepair = val
+	}
+	if val, ok := gateMap[PodDeletionCostManagementFeatureGate.Name]; ok {
+		gates.PodDeletionCostManagement = val
 	}
 
 	return gates, nil
+}
+
+// SchedulerConfiguration is a Karpenter-owned configuration type that mirrors the parts of the cluster's
+// kube-scheduler behavior that Karpenter must reflect during its scheduling simulation. It is supplied to the
+// controller via the --scheduler-config flag / SCHEDULER_CONFIG env var as a YAML/JSON document. It is intentionally
+// structured so future scheduler-mirroring settings can be added as additional fields without a new flag or env var.
+//
+// The type mirrors the shape of the relevant kube-scheduler fields so values are near-copy-paste, but it is not the
+// upstream KubeSchedulerConfiguration schema; Karpenter takes no dependency on that versioned API.
+type SchedulerConfiguration struct {
+	PodTopologySpread *PodTopologySpreadConfig `json:"podTopologySpread,omitempty"`
+}
+
+// PodTopologySpreadConfig mirrors the relevant fields of kube-scheduler's PodTopologySpread plugin args.
+type PodTopologySpreadConfig struct {
+	// DefaultConstraints mirrors kube-scheduler's PodTopologySpread plugin `defaultConstraints`. During scheduling
+	// simulation these are applied to any pod that declares no topologySpreadConstraints of its own.
+	//
+	// As upstream requires, a constraint here must not carry a labelSelector: kube-scheduler deduces the selector for
+	// each pod from the Services and the ReplicationController / ReplicaSet / StatefulSet that select it, and Karpenter
+	// deduces the same selector so that it counts the same pods.
+	DefaultConstraints []corev1.TopologySpreadConstraint `json:"defaultConstraints,omitempty"`
+}
+
+// ParseSchedulerConfiguration decodes and validates the raw --scheduler-config value. An empty value is valid and
+// returns a nil configuration, meaning "no overrides" (behavior is exactly today's). Unknown fields and malformed
+// documents produce an error so misconfiguration fails fast at operator startup rather than at scheduling time.
+func ParseSchedulerConfiguration(raw string) (*SchedulerConfiguration, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	config := &SchedulerConfiguration{}
+	if err := yaml.UnmarshalStrict([]byte(raw), config); err != nil {
+		return nil, fmt.Errorf("decoding scheduler config, %w", err)
+	}
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+// Validate mirrors kube-scheduler's ValidatePodTopologySpreadArgs so that a config accepted here is one kube-scheduler
+// would also accept, and vice versa.
+func (c *SchedulerConfiguration) Validate() error {
+	if c.PodTopologySpread == nil {
+		return nil
+	}
+	constraints := c.PodTopologySpread.DefaultConstraints
+	for i := range constraints {
+		if err := validateDefaultConstraint(constraints[i]); err != nil {
+			return fmt.Errorf("validating scheduler config, podTopologySpread.defaultConstraints[%d]%w", i, err)
+		}
+		// Mirrors upstream's validateConstraintNotRepeat.
+		for j := range constraints[:i] {
+			if constraints[i].TopologyKey == constraints[j].TopologyKey && constraints[i].WhenUnsatisfiable == constraints[j].WhenUnsatisfiable {
+				return fmt.Errorf("validating scheduler config, podTopologySpread.defaultConstraints[%d] is a duplicate of [%d], {%v, %v}",
+					i, j, constraints[i].TopologyKey, constraints[i].WhenUnsatisfiable)
+			}
+		}
+	}
+	return nil
+}
+
+// validateDefaultConstraint validates a single default constraint. The returned error is a fragment appended to the
+// field path of the constraint being validated, so it begins with the offending field rather than a capital letter.
+func validateDefaultConstraint(tsc corev1.TopologySpreadConstraint) error {
+	if tsc.MaxSkew <= 0 {
+		return fmt.Errorf(".maxSkew must be greater than 0")
+	}
+	if tsc.TopologyKey == "" {
+		return fmt.Errorf(".topologyKey must be set")
+	}
+	if errs := validation.IsQualifiedName(tsc.TopologyKey); len(errs) != 0 {
+		return fmt.Errorf(".topologyKey %q is not a valid label name, %s", tsc.TopologyKey, strings.Join(errs, ", "))
+	}
+	if tsc.WhenUnsatisfiable != corev1.DoNotSchedule && tsc.WhenUnsatisfiable != corev1.ScheduleAnyway {
+		return fmt.Errorf(".whenUnsatisfiable %q must be one of %q or %q", tsc.WhenUnsatisfiable, corev1.DoNotSchedule, corev1.ScheduleAnyway)
+	}
+	// Upstream forbids a selector here because it deduces one per pod, and so does Karpenter. Accepting one would
+	// silently diverge: a static selector matches an unrelated set of pods in every other workload.
+	if tsc.LabelSelector != nil {
+		return fmt.Errorf(".labelSelector must not be set, as selectors are deduced for each pod")
+	}
+	// matchLabelKeys is inert upstream: the plugin merges it into the selector and then overwrites that selector
+	// with the per-pod deduced one. Rejecting it avoids implying Karpenter honors a key kube-scheduler ignores.
+	if len(tsc.MatchLabelKeys) != 0 {
+		return fmt.Errorf(".matchLabelKeys must not be set, as it has no effect on default constraints")
+	}
+	return nil
 }
 
 func ToContext(ctx context.Context, opts *Options) context.Context {
@@ -215,4 +430,17 @@ func FromContext(ctx context.Context) *Options {
 		panic("options doesn't exist in context")
 	}
 	return retval.(*Options)
+}
+
+// featureGatesDefault is the default --feature-gates value, e.g. "NodeRepair=false,ReservedCapacity=true".
+func featureGatesDefault() string {
+	return strings.Join(lo.Map(KarpenterFeatureGates, func(g FeatureGate, _ int) string {
+		return fmt.Sprintf("%s=%t", g.Name, g.Default)
+	}), ",")
+}
+
+func featureGatesHelp() string {
+	names := lo.Map(KarpenterFeatureGates, func(g FeatureGate, _ int) string { return g.Name })
+	return fmt.Sprintf("Optional features can be enabled / disabled using feature gates. Current options are: %s, and %s.",
+		strings.Join(names[:len(names)-1], ", "), names[len(names)-1])
 }
