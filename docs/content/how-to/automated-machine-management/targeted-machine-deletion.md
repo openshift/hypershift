@@ -216,22 +216,25 @@ a non-zero `REPLICAS` value:
 ```bash
 oc get machinesets.cluster.x-k8s.io,machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" -o json \
   | jq -r --arg nodepool "${HC_NAMESPACE}/${NODEPOOL_NAME}" --arg machineset "<active_machineset_name>" '
-      def controlled_by($name): any(.metadata.ownerReferences[]?; .controller == true and .kind == "MachineSet" and .name == $name);
+      def controlled_by($uid): any(.metadata.ownerReferences[]?; .controller == true and .kind == "MachineSet" and .uid == $uid);
       def selected($labels): (.metadata.labels // {}) as $l | all($labels | to_entries[]; $l[.key] == .value);
       ([.items[] | select(.kind == "MachineSet" and .metadata.name == $machineset)]
-        | if length == 1 then .[0] else error("MachineSet \($machineset) not found") end
+        | if length == 1 then .[0] else error("MachineSet \($machineset) not found") end) as $active
+      | ($active
         | reduce (.spec.selector.matchExpressions // [])[] as $e
             ((.spec.selector.matchLabels // {}) + {"cluster.x-k8s.io/cluster-name": .spec.clusterName};
              if $e.operator == "In" and ($e.values | length) == 1 then . + {($e.key): $e.values[0]}
              else error("unsupported MachineSet selector expression for \($e.key)") end)) as $selector
       | .items |= map(select(.kind == "Machine"))
+      | [.items[] | select(any(.metadata.ownerReferences[]?; .controller == true and .kind == "MachineSet" and .name == $machineset and .uid != $active.metadata.uid)) | .metadata.name] as $stale
+      | if $stale != [] then error("stale owner reference to MachineSet \($machineset) on Machines: \($stale | join(", "))") else . end
       | (.items | map(select((.metadata.annotations // {}) | has("hypershift.openshift.io/nodePool") | not)) | length) as $unannotated
-      | (.items | map(select(controlled_by($machineset))) | length) as $owned
-      | (.items | map(select(controlled_by($machineset) and (selected($selector) | not))) | length) as $unselected
+      | (.items | map(select(controlled_by($active.metadata.uid))) | length) as $owned
+      | (.items | map(select(controlled_by($active.metadata.uid) and (selected($selector) | not))) | length) as $unselected
       | (.items | map(select(any(.metadata.ownerReferences[]?; .controller == true) | not)) | length) as $ownerless
       | [.items[] | select((.metadata.annotations // {})["hypershift.openshift.io/nodePool"] == $nodepool)]
       | (map(select(.metadata.deletionTimestamp != null)) | length) as $deleting
-      | (map(select(controlled_by($machineset) | not)) | length) as $notowned
+      | (map(select(controlled_by($active.metadata.uid) | not)) | length) as $notowned
       | "machines=\(length) deleting=\($deleting) not_owned=\($notowned) owned=\($owned) unselected=\($unselected) ownerless=\($ownerless) unannotated=\($unannotated)"'
 ```
 
@@ -255,6 +258,12 @@ counts the Machines in the namespace whose controlling owner is the active Machi
 `ownerless` counts the Machines that have no controlling owner. The MachineSet controller lists Machines by its label
 selector, ignores Machines that another owner controls, and adopts matching Machines that have no controlling owner,
 so a Machine that `ownerless` counts could be added to the MachineSet when you scale down.
+
+The MachineSet controller identifies the Machines that it controls by the UID in their controlling owner reference, not
+by the MachineSet name, so `owned` and `not_owned` compare that UID with the active MachineSet's `metadata.uid`. A
+controlling owner reference that has the active MachineSet's name and a different UID refers to a MachineSet that no
+longer exists, such as one that was deleted and recreated with the same name. The controller does not count, delete, or
+adopt a Machine with such a reference, and the command stops with an error that names each one.
 
 The MachineSet controller also does not count or delete a Machine that it controls but that does not match its
 selector. `unselected` counts the Machines that `owned` counts and whose labels do not match the active MachineSet's
@@ -285,7 +294,7 @@ If any of these checks fails, or the count command prints an error instead of th
 a count differs, a Machine is being deleted, or you cannot tell which MachineSet a Machine belongs to. Wait until the
 NodePool and its MachineSet finish reconciling, and then repeat the checks from step 1 through step 3 before you scale
 down. Annotations that you already set stay in place. If `unselected`, `ownerless`, or `unannotated` stays above `0`,
-find out why before you continue.
+or the command keeps reporting a stale owner reference, find out why before you continue.
 
 Lower `spec.replicas` on the NodePool by the number of Machines of your NodePool that have the annotation:
 
