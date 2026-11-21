@@ -7647,7 +7647,8 @@ oc --kubeconfig <hosted_cluster_kubeconfig> get nodes \
 
 If the Cluster API version that manages your hosted cluster might be earlier than v1.9.0 (see
 Limitations), or you are not sure, also check the Machines that you will keep on the management cluster.
-In those versions, Cluster API also treats a Machine as unhealthy if its `failureReason` or `failureMessage` is set, and
+In those versions, Cluster API also treats a Machine as unhealthy if its `failureReason` or `failureMessage` is set
+(the check remains through v1.10 and is removed in v1.11.0; from v1.9.0, annotated Machines outrank unhealthy ones), and
 versions earlier than v1.7.4 also treat a `NodeHealthy` condition with the status `Unknown` as unhealthy. The following
 command reads the `v1beta1` API version, which reports these fields. It can print a warning such as
 `cluster.x-k8s.io/v1beta1 Machine is deprecated; use cluster.x-k8s.io/v1beta2 Machine`, which you can ignore:
