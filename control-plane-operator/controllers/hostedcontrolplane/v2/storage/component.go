@@ -83,10 +83,16 @@ func NewComponent() component.ControlPlaneComponent {
 		// preserves ordering for all clusters, not only those with a KMS key set.
 		WithGatedPreconditions(enforceOrderingUntilCSOExists, hyperv1.ConfigOperatorReconciliationSucceeded).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
-			KubeconfigVolumeName: "guest-kubeconfig",
+			KubeconfigVolumeName: component.ServiceAccountKubeconfigVolumeName,
 			RequiredAPIs: []schema.GroupVersionKind{
 				{Group: "operator.openshift.io", Version: "v1", Kind: "Storage"},
 			},
+		}).
+		InjectServiceAccountKubeConfig(component.ServiceAccountKubeConfigOpts{
+			Name:          ComponentName,
+			Namespace:     "openshift-cluster-storage-operator",
+			MountPath:     "/etc/guest-kubeconfig",
+			ContainerName: ComponentName,
 		}).
 		WithCustomOperandsRolloutCheckFunc(checkOperandsRolloutStatus).
 		Build()
