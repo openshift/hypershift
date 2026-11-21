@@ -2,7 +2,7 @@ module github.com/openshift/hypershift/hack/capi-vendor/agent
 
 go 1.25.7
 
-require github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
+require github.com/openshift/cluster-api-provider-agent/api v0.0.0-20261113025330-b86a0627e637
 
 require (
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
