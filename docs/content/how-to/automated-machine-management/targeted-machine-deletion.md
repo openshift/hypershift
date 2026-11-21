@@ -76,12 +76,16 @@ oc get nodepool -n "${HC_NAMESPACE}" "${NODEPOOL_NAME}" \
   -o jsonpath='replicas={.spec.replicas} autoScaling={.spec.autoScaling}{"\n"}'
 ```
 
-Check that no rollout is in progress. The `UpdatingVersion`, `UpdatingConfig`, and `UpdatingPlatformMachineTemplate`
-conditions must not be `True`:
+Check that no rollout is in progress and that the NodePool conditions are current. The output must show the NodePool
+`generation` and the `UpdatingVersion`, `UpdatingConfig`, and `UpdatingPlatformMachineTemplate` conditions. None of
+these conditions can be `True`, and each condition's `observedGeneration` must equal `generation`. A condition that is
+missing, or whose `observedGeneration` differs from `generation`, has not been updated for the current NodePool spec,
+so do not continue until it is:
 
 ```bash
 oc get nodepool -n "${HC_NAMESPACE}" "${NODEPOOL_NAME}" \
-  -o jsonpath='{range .status.conditions[*]}{.type}={.status}{"\n"}{end}' | grep '^Updating'
+  -o jsonpath='generation={.metadata.generation}{"\n"}{range .status.conditions[*]}{.type}={.status} observedGeneration={.observedGeneration}{"\n"}{end}' \
+  | grep -E '^(generation|Updating)'
 ```
 
 List the MachineSets in the hosted control plane namespace. Exactly one MachineSet for your NodePool should have a
@@ -209,11 +213,14 @@ a non-zero `REPLICAS` value:
 ```bash
 oc get machines.cluster.x-k8s.io -n "${HCP_NAMESPACE}" -o json \
   | jq -r --arg nodepool "${HC_NAMESPACE}/${NODEPOOL_NAME}" --arg machineset "<active_machineset_name>" '
+      def controlled_by($name): any(.metadata.ownerReferences[]?; .controller == true and .kind == "MachineSet" and .name == $name);
       (.items | map(select((.metadata.annotations // {}) | has("hypershift.openshift.io/nodePool") | not)) | length) as $unannotated
+      | (.items | map(select(controlled_by($machineset))) | length) as $owned
+      | (.items | map(select(any(.metadata.ownerReferences[]?; .controller == true) | not)) | length) as $ownerless
       | [.items[] | select((.metadata.annotations // {})["hypershift.openshift.io/nodePool"] == $nodepool)]
       | (map(select(.metadata.deletionTimestamp != null)) | length) as $deleting
-      | (map(select(any(.metadata.ownerReferences[]?; .controller == true and .kind == "MachineSet" and .name == $machineset) | not)) | length) as $notowned
-      | "machines=\(length) deleting=\($deleting) not_owned=\($notowned) unannotated=\($unannotated)"'
+      | (map(select(controlled_by($machineset) | not)) | length) as $notowned
+      | "machines=\(length) deleting=\($deleting) not_owned=\($notowned) owned=\($owned) ownerless=\($ownerless) unannotated=\($unannotated)"'
 ```
 
 In the MachineSet listing, `ACTUAL` (`status.replicas`) is the number of Machines that the MachineSet controller counted
@@ -231,21 +238,30 @@ NodePool. The MachineSet controller sets itself as the controlling owner of each
 is `0` and `machines` equals `ACTUAL`, the Machines of your NodePool are exactly the Machines that the MachineSet
 counted in its most recent status update.
 
+Because `ACTUAL` comes from the last status update, the command also checks the current Machines directly. `owned`
+counts the Machines in the namespace whose controlling owner is the active MachineSet, whatever their annotations, and
+`ownerless` counts the Machines that have no controlling owner. The MachineSet controller lists Machines by its label
+selector, ignores Machines that another owner controls, and adopts matching Machines that have no controlling owner,
+so a Machine that `ownerless` counts could be added to the MachineSet when you scale down.
+
 Continue only if all of the following are true:
 
-- The step 1 checks still pass: `autoScaling` is empty and no `Updating` condition is `True`.
+- The step 1 checks still pass: `autoScaling` is empty, all three `Updating` conditions are present and not `True`,
+  and each condition's `observedGeneration` equals the NodePool `generation`.
 - Exactly one MachineSet for your NodePool has a non-zero `REPLICAS` value, and every other MachineSet for your
   NodePool shows `0` in both `REPLICAS` and `ACTUAL`.
 - For that MachineSet, `OBSERVED` equals `GENERATION`.
-- The NodePool's `spec.replicas`, that MachineSet's `REPLICAS` and `ACTUAL` values, and `machines` are all equal.
+- The NodePool's `spec.replicas`, that MachineSet's `REPLICAS` and `ACTUAL` values, `machines`, and `owned` are all
+  equal.
 - `deleting` is `0`.
 - `not_owned` is `0`.
+- `ownerless` is `0`.
 - `unannotated` is `0`.
 
 If any of these checks fails, stop. Do not scale down while a count differs, a Machine is being deleted, or you cannot
 tell which MachineSet a Machine belongs to. Wait until the NodePool and its MachineSet finish reconciling, and then
 repeat the checks from step 1 through step 3 before you scale down. Annotations that you already set stay in place. If
-`unannotated` stays above `0`, find out where those Machines come from before you continue.
+`ownerless` or `unannotated` stays above `0`, find out where those Machines come from before you continue.
 
 Lower `spec.replicas` on the NodePool by the number of Machines of your NodePool that have the annotation:
 
