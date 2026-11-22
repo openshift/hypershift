@@ -2851,6 +2851,13 @@ type HostedClusterStatus struct {
 	// secretEncryption tracks the state of secret encryption key rotation and re-encryption.
 	// +optional
 	SecretEncryption SecretEncryptionStatus `json:"secretEncryption,omitzero"`
+
+	// installation tracks the progress of initial cluster provisioning.
+	// When omitted, the HyperShift operator has not yet computed installation
+	// progress for this cluster (for example, while an older HyperShift operator
+	// that does not populate this field is still running).
+	// +optional
+	Installation InstallationStatus `json:"installation,omitzero"`
 }
 
 // AutoNodeStatus contains the observed state of the AutoNode provisioner.
