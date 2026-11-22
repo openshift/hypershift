@@ -79,6 +79,42 @@ func TestPredicatesForHostedClusterAnnotationScoping(t *testing.T) {
 			expected:      false,
 		},
 		{
+			name:          "When a ControlPlaneComponent without cluster annotation is in an HCP namespace with the operator scope, it should allow the event",
+			enabled:       "true",
+			operatorScope: "operator-a",
+			object: &hyperv1.ControlPlaneComponent{ObjectMeta: metav1.ObjectMeta{
+				Name:      "kube-apiserver",
+				Namespace: "clusters-example",
+			}},
+			readerObjects: []client.Object{
+				&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+					Name:        "example",
+					Namespace:   "clusters-example",
+					Annotations: map[string]string{k8sutil.HostedClusterAnnotation: "clusters/example"},
+				}},
+				testHostedCluster("operator-a"),
+			},
+			expected: true,
+		},
+		{
+			name:          "When a ControlPlaneComponent without cluster annotation is in an HCP namespace with another operator scope, it should reject the event",
+			enabled:       "true",
+			operatorScope: "operator-a",
+			object: &hyperv1.ControlPlaneComponent{ObjectMeta: metav1.ObjectMeta{
+				Name:      "kube-apiserver",
+				Namespace: "clusters-example",
+			}},
+			readerObjects: []client.Object{
+				&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+					Name:        "example",
+					Namespace:   "clusters-example",
+					Annotations: map[string]string{k8sutil.HostedClusterAnnotation: "clusters/example"},
+				}},
+				testHostedCluster("operator-b"),
+			},
+			expected: false,
+		},
+		{
 			name:          "When a resource has a HostedCluster annotation with the operator scope, it should allow the event",
 			enabled:       "true",
 			operatorScope: "operator-a",
