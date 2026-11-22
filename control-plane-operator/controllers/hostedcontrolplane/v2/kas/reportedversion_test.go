@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -283,13 +284,89 @@ func TestAdaptReportedVersionConfigMap(t *testing.T) {
 		hcp.Spec.ControlPlaneReleaseImage = nil
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{Name: ComponentName, Namespace: hcp.Namespace, Generation: 1},
-			Status:     appsv1.DeploymentStatus{ObservedGeneration: 1, UpdatedReplicas: 1},
+			Status: appsv1.DeploymentStatus{
+				ObservedGeneration: 1,
+				Replicas:           1,
+				UpdatedReplicas:    1,
+				AvailableReplicas:  1,
+			},
 		}
 		cpContext := newReportedVersionTestContextWithObjects(t, hcp, configs, deployment)
 		require.False(t, reportedVersionEnabled(cpContext))
 
 		// No deployment at all must also allow cleanup.
 		cpContext = newReportedVersionTestContext(t, hcp, configs)
+		require.False(t, reportedVersionEnabled(cpContext))
+	})
+
+	// Regression test: updatedReplicas counts unready pods, so during a surge
+	// rollout it reaches the desired count while the old ReplicaSet is still
+	// scaled up and can recreate a pod that mounts the ConfigMap. Deleting the
+	// ConfigMap here would leave that replacement pod unable to start.
+	t.Run("When masking is disabled and a surge pod is not available yet, it should keep the ConfigMap", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			replicas int32
+			status   appsv1.DeploymentStatus
+		}{
+			{
+				// Single replica: maxSurge is 25%, which permits one extra pod.
+				name:     "single replica with an unready surge pod",
+				replicas: 1,
+				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 2, UpdatedReplicas: 1, AvailableReplicas: 1, ReadyReplicas: 1, UnavailableReplicas: 1},
+			},
+			{
+				// Two replica request serving topology: maxSurge is one.
+				name:     "two replicas with an unready surge pod",
+				replicas: 2,
+				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 3, UpdatedReplicas: 2, AvailableReplicas: 2, ReadyReplicas: 2, UnavailableReplicas: 1},
+			},
+			{
+				name:     "updated pods are not available yet",
+				replicas: 3,
+				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 3, UpdatedReplicas: 3, AvailableReplicas: 2, ReadyReplicas: 2, UnavailableReplicas: 1},
+			},
+			{
+				// The old pod is already gone, so every count has reached the
+				// desired replica count, but the old ReplicaSet is still scaled
+				// up and about to recreate a pod that mounts the ConfigMap.
+				// unavailableReplicas is the only field that still reflects it.
+				name:     "single replica whose old pod was evicted mid-rollout",
+				replicas: 1,
+				status:   appsv1.DeploymentStatus{ObservedGeneration: 2, Replicas: 1, UpdatedReplicas: 1, AvailableReplicas: 1, ReadyReplicas: 1, UnavailableReplicas: 1},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				hcp := newSkewedHCP()
+				hcp.Spec.ControlPlaneReleaseImage = nil
+				deployment := &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{Name: ComponentName, Namespace: hcp.Namespace, Generation: 2},
+					Spec:       appsv1.DeploymentSpec{Replicas: ptr.To(tc.replicas)},
+					Status:     tc.status,
+				}
+				cpContext := newReportedVersionTestContextWithObjects(t, hcp, configs, deployment, existingReportedVersionConfigMap(hcp))
+				require.True(t, reportedVersionEnabled(cpContext), "predicate must keep the ConfigMap until the old ReplicaSets have scaled to zero")
+			})
+		}
+	})
+
+	// The counterpart of the surge cases: once the rollout has settled the
+	// ConfigMap must actually be cleaned up.
+	t.Run("When masking is disabled and the rollout has settled, it should allow cleanup", func(t *testing.T) {
+		hcp := newSkewedHCP()
+		hcp.Spec.ControlPlaneReleaseImage = nil
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: ComponentName, Namespace: hcp.Namespace, Generation: 2},
+			Spec:       appsv1.DeploymentSpec{Replicas: ptr.To[int32](3)},
+			Status: appsv1.DeploymentStatus{
+				ObservedGeneration: 2,
+				Replicas:           3,
+				UpdatedReplicas:    3,
+				AvailableReplicas:  3,
+				ReadyReplicas:      3,
+			},
+		}
+		cpContext := newReportedVersionTestContextWithObjects(t, hcp, configs, deployment, existingReportedVersionConfigMap(hcp))
 		require.False(t, reportedVersionEnabled(cpContext))
 	})
 
