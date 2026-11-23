@@ -924,6 +924,44 @@ func TestReconcileAuthProxyTrustedCA(t *testing.T) {
 			expectErrorIs:  ErrHostedClusterSpecOperatorConfigurationConfigMaps,
 		},
 		{
+			// The desired source is gone after a switch to it was staged:
+			// the withheld change must converge the destination back to the
+			// CA of the pair still propagated on the HostedControlPlane.
+			name:       "When the desired source is missing, it should restore the propagated pair's CA",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "ca-missing"},
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: controlPlaneNamespace},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						OperatorConfiguration: &hyperv1.OperatorConfiguration{
+							Authentication: hyperv1.AuthenticationOperatorSpec{
+								Proxy: operatorv1.AuthenticationProxyConfig{
+									TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "ca-active"},
+								},
+							},
+						},
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ca-active",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca-bundle.crt": validSourcePEM},
+				},
+			},
+			expectedSynced:   false,
+			expectSyncedDest: true,
+			expectedDestData: validSourcePEM,
+		},
+		{
 			name:       "When a second read of the source returns malformed data, it should copy the validated data",
 			featureSet: configv1.TechPreviewNoUpgrade,
 			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{

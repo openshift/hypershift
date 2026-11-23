@@ -2696,66 +2696,152 @@ func (r *HostedClusterReconciler) reconcileAuthProxyTrustedCA(
 	// propagated while the AuthenticationComponentProxyExternalOIDC feature
 	// gate is enabled on the HyperShift operator. Without the gate, the
 	// referenced CA must not be synchronized into the control plane namespace
-	// either.
+	// either. An existing copy stays: a disabled gate is not a user removing
+	// the reference, and re-enabling the gate must not need a resync.
 	if !featuregate.Gate().Enabled(featuregate.AuthenticationComponentProxyExternalOIDC) {
 		return true, nil
 	}
-	if hcluster.Spec.OperatorConfiguration == nil {
-		return true, nil
+
+	var ref string
+	if hcluster.Spec.OperatorConfiguration != nil {
+		ref = hcluster.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name
+	}
+	if ref == "" {
+		return true, r.removeUnreferencedAuthProxyTrustedCA(ctx, hcluster, controlPlaneNamespace)
 	}
 
 	// The auth proxy trusted CA is synchronized under a fixed
 	// destination name: the control plane component machinery excludes
 	// that name from the pod config hash, so a CA rotation hot-reloads
 	// in the webhook instead of rolling the pod.
-	var operatorConfigurationCARefs []string
-	if hcluster.Spec.OperatorConfiguration != nil {
-		if name := hcluster.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name; name != "" {
-			operatorConfigurationCARefs = []string{name}
-		}
-	}
-	for _, ref := range operatorConfigurationCARefs {
-		// The source is read exactly once and validated before the copy:
-		// the data written to the destination is the data that was
-		// validated, so a concurrent malformed update to the source can
-		// never replace a valid destination bundle.
-		sourceCM := &corev1.ConfigMap{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: ref}, sourceCM); err != nil {
-			if !apierrors.IsNotFound(err) {
-				// A transient read failure needs a retry: no watch event
-				// follows it, so only the returned error requeues this
-				// HostedCluster.
-				return false, errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
-			}
-			// The bundle is missing: withhold the change, keeping the
-			// previously synchronized copy, and let the ValidProxyConfiguration
-			// condition report the failure. The rest of the HostedCluster keeps
-			// reconciling. The creation of the source is matched by the
-			// spec field index, not by a retry.
-			ctrl.LoggerFrom(ctx).Info("withholding auth proxy trusted CA sync: source not found", "error", err)
-			return false, nil
-		}
-		// The annotation must land before the validation can exit: the
-		// referenced-resource mapper enqueues this HostedCluster only for
-		// annotated objects, so without it the correction of an invalid
-		// bundle would wait for an unrelated reconcile. The sync below
-		// annotates again; the call is idempotent.
-		if annErr := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); annErr != nil {
-			return false, errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, annErr)
-		}
-		if _, err := proxy.LoadCABundle(*sourceCM); err != nil {
-			// The bundle is unparsable: withhold the change, keeping the
-			// previously synchronized copy, and let the ValidProxyConfiguration
-			// condition report the failure. The rest of the HostedCluster keeps
-			// reconciling. An input change, not a retry, clears this path.
-			ctrl.LoggerFrom(ctx).Info("withholding auth proxy trusted CA sync: invalid bundle", "error", err)
-			return false, nil
-		}
-		if err := r.syncConfigMap(ctx, sourceCM, supportproxy.AuthProxyTrustedCAConfigMapName, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
+	//
+	// The source is read exactly once and validated before the copy:
+	// the data written to the destination is the data that was
+	// validated, so a concurrent malformed update to the source can
+	// never replace a valid destination bundle.
+	sourceCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: ref}, sourceCM); err != nil {
+		if !apierrors.IsNotFound(err) {
+			// A transient read failure needs a retry: no watch event
+			// follows it, so only the returned error requeues this
+			// HostedCluster.
 			return false, errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
 		}
+		// The bundle is missing: withhold the change, keeping the
+		// previously synchronized copy, and let the ValidProxyConfiguration
+		// condition report the failure. The rest of the HostedCluster keeps
+		// reconciling. The creation of the source is matched by the
+		// spec field index, not by a retry.
+		ctrl.LoggerFrom(ctx).Info("withholding auth proxy trusted CA sync: source not found", "error", err)
+		return false, r.restorePropagatedAuthProxyTrustedCA(ctx, hcluster, ref, createOrUpdate, controlPlaneNamespace)
+	}
+	// The annotation must land before the validation can exit: the
+	// referenced-resource mapper enqueues this HostedCluster only for
+	// annotated objects, so without it the correction of an invalid
+	// bundle would wait for an unrelated reconcile. The sync below
+	// annotates again; the call is idempotent.
+	if annErr := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); annErr != nil {
+		return false, errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, annErr)
+	}
+	if _, err := proxy.LoadCABundle(*sourceCM); err != nil {
+		// The bundle is unparsable: withhold the change, keeping the
+		// previously synchronized copy, and let the ValidProxyConfiguration
+		// condition report the failure. The rest of the HostedCluster keeps
+		// reconciling. An input change, not a retry, clears this path.
+		ctrl.LoggerFrom(ctx).Info("withholding auth proxy trusted CA sync: invalid bundle", "error", err)
+		return false, r.restorePropagatedAuthProxyTrustedCA(ctx, hcluster, ref, createOrUpdate, controlPlaneNamespace)
+	}
+	if err := r.syncConfigMap(ctx, sourceCM, supportproxy.AuthProxyTrustedCAConfigMapName, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
+		return false, errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
 	}
 	return true, nil
+}
+
+// removeUnreferencedAuthProxyTrustedCA deletes the fixed destination bundle
+// once nothing references it: neither the desired HostedCluster spec, which
+// the caller already checked, nor the authentication configuration currently
+// propagated on the HostedControlPlane.
+//
+// The propagated reference is the gating one. This runs before the
+// propagation, so on the reconcile that clears the reference the running
+// webhook still reads the destination through the previous configuration.
+// Deleting it there would drop the webhook to system trust before its proxy
+// changed. The removal waits for the next reconcile, which the propagation
+// itself triggers.
+func (r *HostedClusterReconciler) removeUnreferencedAuthProxyTrustedCA(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string,
+) error {
+	hcp := &hyperv1.HostedControlPlane{}
+	switch err := r.Get(ctx, client.ObjectKey{Namespace: controlPlaneNamespace, Name: hcluster.Name}, hcp); {
+	case err == nil:
+		if hcp.Spec.OperatorConfiguration != nil &&
+			hcp.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name != "" {
+			return nil
+		}
+	case apierrors.IsNotFound(err):
+		// Nothing is propagated, so nothing reads the destination.
+	default:
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+
+	destCM := &corev1.ConfigMap{}
+	destCM.Name = supportproxy.AuthProxyTrustedCAConfigMapName
+	destCM.Namespace = controlPlaneNamespace
+	if err := r.Delete(ctx, destCM); err != nil && !apierrors.IsNotFound(err) {
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	return nil
+}
+
+// restorePropagatedAuthProxyTrustedCA converges the fixed destination back
+// to the CA required by the authentication configuration currently
+// propagated on the HostedControlPlane. A withheld change must never leave
+// the destination holding a newer CA than the propagated pair it serves: the
+// webhook would trust only the new CA while still using the previous proxy.
+// The restore stays quiet when there is nothing to restore: no propagated
+// configuration, the propagated source equal to the withheld one, or a
+// propagated source that is itself missing or unparsable. Operational
+// failures are returned so the reconcile retries them.
+func (r *HostedClusterReconciler) restorePropagatedAuthProxyTrustedCA(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, withheldRef string,
+	createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string,
+) error {
+	hcp := &hyperv1.HostedControlPlane{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: controlPlaneNamespace, Name: hcluster.Name}, hcp); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Nothing is propagated yet, so no pair depends on the destination.
+			return nil
+		}
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	var propagatedRef string
+	if hcp.Spec.OperatorConfiguration != nil {
+		propagatedRef = hcp.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name
+	}
+	if propagatedRef == "" || propagatedRef == withheldRef {
+		// The propagated pair either uses system trust or the same source
+		// the spec wants: the withheld copy already serves it.
+		return nil
+	}
+	sourceCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: propagatedRef}, sourceCM); err != nil {
+		if apierrors.IsNotFound(err) {
+			// The propagated source is gone too: nothing to restore from.
+			ctrl.LoggerFrom(ctx).Info("cannot restore the propagated auth proxy trusted CA: source not found", "source", propagatedRef)
+			return nil
+		}
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	if _, err := proxy.LoadCABundle(*sourceCM); err != nil {
+		// An unparsable propagated source cannot restore anything: an input
+		// change, not a retry, clears this.
+		ctrl.LoggerFrom(ctx).Info("cannot restore the propagated auth proxy trusted CA: invalid bundle", "source", propagatedRef, "error", err)
+		return nil
+	}
+	if err := r.syncConfigMap(ctx, sourceCM, supportproxy.AuthProxyTrustedCAConfigMapName, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	return nil
 }
 
 func (r *HostedClusterReconciler) handleSecretFromRefs(

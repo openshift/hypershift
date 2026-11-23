@@ -352,10 +352,17 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			log.Error(nthErr, "failed to determine if AWS node termination handler is needed during pull secret recovery, defaulting to true")
 			isAWSNodeTerminationHandlerNeeded = true
 		}
+		// The auth proxy CA sync needs no pull secret, so it runs during
+		// recovery too: the propagation below must not reference a trusted
+		// CA path whose destination ConfigMap does not exist.
+		authProxyCASynced, caSyncErr := r.reconcileAuthProxyTrustedCA(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
+		if caSyncErr != nil {
+			log.Error(caSyncErr, "failed to synchronize the auth proxy trusted CA during pull secret recovery")
+		}
 		_, hcpErr := createOrUpdate(ctx, r.Client, hcp, func() error {
 			// Skip cert annotation resolution during pull secret recovery — it requires
 			// the pull secret to resolve the CPO image, which is unavailable here.
-			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, r.authProxyConfigValid(ctx, hcluster),
+			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, authProxyCASynced,
 				func() (map[string]string, error) { return nil, nil })
 		})
 		if hcpErr != nil {
@@ -1541,8 +1548,17 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to determine if AWS node termination handler is needed: %w", err)
 	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+	// Runs before the HCP reconciliation so the authentication propagation can
+	// require a successful CA synchronization, mirroring the primary flow. A
+	// failed synchronization withholds only the authentication change: the
+	// rest of this reconciliation continues, and the error joins the final
+	// result so the sync retries.
+	authProxyCASynced, caSyncErr := r.reconcileAuthProxyTrustedCA(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
+	if caSyncErr != nil {
+		log.Error(caSyncErr, "failed to synchronize the auth proxy trusted CA")
+	}
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, r.authProxyConfigValid(ctx, hcluster),
+		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, authProxyCASynced,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
@@ -1849,6 +1865,12 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		if result.RequeueAfter == 0 || autoNodeRequeue < result.RequeueAfter {
 			result.RequeueAfter = autoNodeRequeue
 		}
+	}
+	if caSyncErr != nil {
+		// controller-runtime drops RequeueAfter whenever the error is non-nil,
+		// so returning both loses the schedule silently. The rate limiter
+		// covers the retry this error needs.
+		return ctrl.Result{}, caSyncErr
 	}
 	return result, nil
 }
