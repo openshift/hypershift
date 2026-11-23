@@ -69,6 +69,7 @@ import (
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -684,17 +685,13 @@ func TestReconcileHostedControlPlaneAuthenticationOperatorConfiguration(t *testi
 	}
 }
 
-func TestReconcileGlobalConfigSync(t *testing.T) {
+func TestReconcileAuthProxyTrustedCA(t *testing.T) {
 	const (
 		testNamespace         = "test-ns"
 		controlPlaneNamespace = "test-hcp-ns"
-		hostedClusterName     = "test-cluster"
 		proxyCAConfigMapName  = "proxy-trusted-ca"
-		clusterProxyCAName    = "cluster-proxy-ca"
 	)
 
-	// generateCertPEM returns a parseable self-signed certificate so the auth
-	// proxy CA validation accepts the synchronized bundle.
 	generateCertPEM := func(t *testing.T) string {
 		t.Helper()
 		privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -723,7 +720,7 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 	newHostedCluster := func(operatorConfiguration *hyperv1.OperatorConfiguration) *hyperv1.HostedCluster {
 		return &hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      hostedClusterName,
+				Name:      "test-cluster",
 				Namespace: testNamespace,
 			},
 			Spec: hyperv1.HostedClusterSpec{
@@ -732,70 +729,61 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 		}
 	}
 
+	// validSourcePEM is generated once so the validated snapshot and the
+	// expected destination content are the same bytes.
+	validSourcePEM := generateCertPEM(t)
+	// rotatedSourcePEM stands for the bundle after a rotation, so the update
+	// path over an existing destination asserts on different bytes.
+	rotatedSourcePEM := generateCertPEM(t)
+
+	// staleDestination is a destination left by an earlier synchronization. It
+	// is the starting state of every row that exercises an update or a removal
+	// rather than a first write.
+	staleDestination := func() *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      proxy.AuthProxyTrustedCAConfigMapName,
+				Namespace: controlPlaneNamespace,
+			},
+			Data: map[string]string{"ca-bundle.crt": validSourcePEM},
+		}
+	}
+
 	testCases := []struct {
-		name                   string
-		featureSet             configv1.FeatureSet
-		hostedCluster          *hyperv1.HostedCluster
-		existingObjects        []crclient.Object
-		expectError            bool
-		expectedErrorSubstring string
-		expectErrorIs          error
-		verify                 func(g *WithT, client crclient.Client)
+		name            string
+		featureSet      configv1.FeatureSet
+		hostedCluster   *hyperv1.HostedCluster
+		existingObjects []crclient.Object
+		failSync        bool
+		// corruptSourceOnSecondRead simulates a malformed update to the source
+		// racing a second read: every Get of the source after the first
+		// returns unparsable data.
+		corruptSourceOnSecondRead bool
+		// failSourceRead makes every read of the source fail with a
+		// transient, non-NotFound API error.
+		failSourceRead   bool
+		expectedDestData string
+		// expectSourceAnnotated asserts the referenced-resource annotation
+		// landed on the source even when validation withheld the sync.
+		expectSourceAnnotated bool
+		expectedSynced        bool
+		expectError           bool
+		expectErrorIs         error
+		expectSyncedDest      bool
+		// skipIdempotency opts a row out of the second-run assertion. Only a
+		// fixture that deliberately changes behavior between reads may do so.
+		skipIdempotency bool
 	}{
 		{
-			name:          "When OperatorConfiguration is nil, it should not attempt any sync",
-			featureSet:    configv1.TechPreviewNoUpgrade,
-			hostedCluster: newHostedCluster(nil),
-		},
-		{
-			name:       "When the authentication operator spec is empty, it should succeed",
-			featureSet: configv1.TechPreviewNoUpgrade,
-			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
-				Authentication: hyperv1.AuthenticationOperatorSpec{},
-			}),
-		},
-		{
-			name:       "When the proxy trusted CA is set and the source configmap exists, it should sync it",
-			featureSet: configv1.TechPreviewNoUpgrade,
-			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
-				Authentication: hyperv1.AuthenticationOperatorSpec{
-					Proxy: operatorv1.AuthenticationProxyConfig{
-						TrustedCA: operatorv1.AuthenticationConfigMapReference{
-							Name: proxyCAConfigMapName,
-						},
-					},
-				},
-			}),
-			existingObjects: []crclient.Object{
-				&corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      proxyCAConfigMapName,
-						Namespace: testNamespace,
-					},
-					Data: map[string]string{
-						"ca-bundle.crt": generateCertPEM(t),
-					},
-				},
-			},
-			verify: func(g *WithT, client crclient.Client) {
-				destCM := &corev1.ConfigMap{}
-				err := client.Get(context.Background(), crclient.ObjectKey{
-					Name:      proxy.AuthProxyTrustedCAConfigMapName,
-					Namespace: controlPlaneNamespace,
-				}, destCM)
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(destCM.Data).To(HaveKey("ca-bundle.crt"))
-			},
-		},
-		{
-			name:       "When the feature gate is disabled, it should not sync the proxy trusted CA",
+			// The gate must be the only reason nothing synchronizes: the
+			// source is valid and referenced, so removing the gate check
+			// would fail this row.
+			name:       "When the feature gate is disabled, it should require no synchronization",
 			featureSet: configv1.Default,
 			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
 				Authentication: hyperv1.AuthenticationOperatorSpec{
 					Proxy: operatorv1.AuthenticationProxyConfig{
-						TrustedCA: operatorv1.AuthenticationConfigMapReference{
-							Name: proxyCAConfigMapName,
-						},
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: proxyCAConfigMapName},
 					},
 				},
 			}),
@@ -805,50 +793,36 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 						Name:      proxyCAConfigMapName,
 						Namespace: testNamespace,
 					},
-					Data: map[string]string{
-						"ca-bundle.crt": generateCertPEM(t),
-					},
+					Data: map[string]string{"ca-bundle.crt": validSourcePEM},
 				},
 			},
-			verify: func(g *WithT, client crclient.Client) {
-				destCM := &corev1.ConfigMap{}
-				err := client.Get(context.Background(), crclient.ObjectKey{
-					Name:      proxy.AuthProxyTrustedCAConfigMapName,
-					Namespace: controlPlaneNamespace,
-				}, destCM)
-				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
-			},
+			expectedSynced: true,
 		},
 		{
-			name:       "When the proxy trusted CA references a missing configmap, it should withhold the sync",
+			name:           "When no operator configuration is set, it should require no synchronization",
+			featureSet:     configv1.TechPreviewNoUpgrade,
+			hostedCluster:  newHostedCluster(nil),
+			expectedSynced: true,
+		},
+		{
+			name:       "When the override carries no trusted CA, it should require no synchronization",
 			featureSet: configv1.TechPreviewNoUpgrade,
 			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
 				Authentication: hyperv1.AuthenticationOperatorSpec{
 					Proxy: operatorv1.AuthenticationProxyConfig{
-						TrustedCA: operatorv1.AuthenticationConfigMapReference{
-							Name: proxyCAConfigMapName,
-						},
+						HTTPSProxy: "https://auth.example.com:8443",
 					},
 				},
 			}),
-			verify: func(g *WithT, client crclient.Client) {
-				destCM := &corev1.ConfigMap{}
-				err := client.Get(context.Background(), crclient.ObjectKey{
-					Name:      proxy.AuthProxyTrustedCAConfigMapName,
-					Namespace: controlPlaneNamespace,
-				}, destCM)
-				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
-			},
+			expectedSynced: true,
 		},
 		{
-			name:       "When the proxy trusted CA bundle is unparsable, it should withhold the sync",
+			name:       "When the source bundle is valid, it should synchronize to the fixed destination",
 			featureSet: configv1.TechPreviewNoUpgrade,
 			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
 				Authentication: hyperv1.AuthenticationOperatorSpec{
 					Proxy: operatorv1.AuthenticationProxyConfig{
-						TrustedCA: operatorv1.AuthenticationConfigMapReference{
-							Name: proxyCAConfigMapName,
-						},
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: proxyCAConfigMapName},
 					},
 				},
 			}),
@@ -858,68 +832,208 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 						Name:      proxyCAConfigMapName,
 						Namespace: testNamespace,
 					},
-					Data: map[string]string{
-						"ca-bundle.crt": "not a pem bundle",
-					},
+					Data: map[string]string{"ca-bundle.crt": generateCertPEM(t)},
 				},
 			},
+			expectedSynced:   true,
+			expectSyncedDest: true,
 		},
 		{
-			name:       "When both configuration and operator configuration are set, it should sync both",
+			name:       "When the source configmap is missing, it should withhold without an error",
 			featureSet: configv1.TechPreviewNoUpgrade,
-			hostedCluster: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      hostedClusterName,
-					Namespace: testNamespace,
-				},
-				Spec: hyperv1.HostedClusterSpec{
-					Configuration: &hyperv1.ClusterConfiguration{
-						Proxy: &configv1.ProxySpec{
-							TrustedCA: configv1.ConfigMapNameReference{Name: clusterProxyCAName},
-						},
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: proxyCAConfigMapName},
 					},
-					OperatorConfiguration: &hyperv1.OperatorConfiguration{
-						Authentication: hyperv1.AuthenticationOperatorSpec{
-							Proxy: operatorv1.AuthenticationProxyConfig{
-								TrustedCA: operatorv1.AuthenticationConfigMapReference{
-									Name: proxyCAConfigMapName,
+				},
+			}),
+			expectedSynced: false,
+		},
+		{
+			name:       "When the source bundle is unparsable, it should withhold without an error",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: proxyCAConfigMapName},
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      proxyCAConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca-bundle.crt": "not a pem bundle"},
+				},
+			},
+			expectedSynced:        false,
+			expectSourceAnnotated: true,
+		},
+		{
+			name:       "When the synchronization fails, it should report the error and not require the bundle",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: proxyCAConfigMapName},
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      proxyCAConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca-bundle.crt": generateCertPEM(t)},
+				},
+			},
+			failSync:       true,
+			expectedSynced: false,
+			expectError:    true,
+			expectErrorIs:  ErrHostedClusterSpecOperatorConfigurationConfigMaps,
+		},
+		{
+			// A transient read failure is not a missing source: the
+			// reconcile must return the error so it retries, because no
+			// watch event follows an API connection recovery.
+			name:       "When reading the source fails transiently, it should report the error and not require the bundle",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: proxyCAConfigMapName},
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      proxyCAConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca-bundle.crt": generateCertPEM(t)},
+				},
+			},
+			failSourceRead: true,
+			expectedSynced: false,
+			expectError:    true,
+			expectErrorIs:  ErrHostedClusterSpecOperatorConfigurationConfigMaps,
+		},
+		{
+			name:       "When a second read of the source returns malformed data, it should copy the validated data",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: proxyCAConfigMapName},
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      proxyCAConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca-bundle.crt": validSourcePEM},
+				},
+			},
+			corruptSourceOnSecondRead: true,
+			expectedSynced:            true,
+			expectSyncedDest:          true,
+			expectedDestData:          validSourcePEM,
+			// The fixture corrupts every read after the first, so a second run
+			// withholds by construction. The row cannot assert idempotency.
+			skipIdempotency: true,
+		},
+		{
+			// The update path over an existing destination: the fixed name
+			// must adopt the data of the rotated source, not keep the first
+			// bundle it was created with.
+			name:       "When the source bundle rotates, the destination should adopt the new data",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: proxyCAConfigMapName},
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				staleDestination(),
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      proxyCAConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca-bundle.crt": rotatedSourcePEM},
+				},
+			},
+			expectedSynced:   true,
+			expectSyncedDest: true,
+			expectedDestData: rotatedSourcePEM,
+		},
+		{
+			// Removal: nothing references the bundle any more, on either
+			// side, so the destination must not outlive the reference.
+			name:       "When no trusted CA is referenced and none is propagated, it should remove the destination",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						HTTPSProxy: "https://auth.example.com:8443",
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{staleDestination()},
+			expectedSynced:  true,
+		},
+		{
+			// The reference is cleared in the spec but the HostedControlPlane
+			// still carries the previous pair, so the running webhook still
+			// reads the destination. The removal waits for the propagation.
+			name:       "When the propagated configuration still references a trusted CA, it should keep the destination",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						HTTPSProxy: "https://auth.example.com:8443",
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				staleDestination(),
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: controlPlaneNamespace},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						OperatorConfiguration: &hyperv1.OperatorConfiguration{
+							Authentication: hyperv1.AuthenticationOperatorSpec{
+								Proxy: operatorv1.AuthenticationProxyConfig{
+									TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: proxyCAConfigMapName},
 								},
 							},
 						},
 					},
 				},
 			},
-			existingObjects: []crclient.Object{
-				&corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      clusterProxyCAName,
-						Namespace: testNamespace,
-					},
-					Data: map[string]string{"ca-bundle.crt": generateCertPEM(t)},
-				},
-				&corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      proxyCAConfigMapName,
-						Namespace: testNamespace,
-					},
-					Data: map[string]string{"ca-bundle.crt": generateCertPEM(t)},
-				},
-			},
-			verify: func(g *WithT, client crclient.Client) {
-				clusterCM := &corev1.ConfigMap{}
-				g.Expect(client.Get(context.Background(), crclient.ObjectKey{
-					Name:      clusterProxyCAName,
-					Namespace: controlPlaneNamespace,
-				}, clusterCM)).To(Succeed())
-				g.Expect(clusterCM.Data).To(HaveKey("ca-bundle.crt"))
-
-				operatorCM := &corev1.ConfigMap{}
-				g.Expect(client.Get(context.Background(), crclient.ObjectKey{
-					Name:      proxy.AuthProxyTrustedCAConfigMapName,
-					Namespace: controlPlaneNamespace,
-				}, operatorCM)).To(Succeed())
-				g.Expect(operatorCM.Data).To(HaveKey("ca-bundle.crt"))
-			},
+			expectedSynced:   true,
+			expectSyncedDest: true,
+			expectedDestData: validSourcePEM,
+		},
+		{
+			// The feature gate is off, so an existing copy stays: a disabled
+			// gate is not a user removing the reference.
+			name:             "When the feature gate is disabled, it should keep an existing destination",
+			featureSet:       configv1.Default,
+			hostedCluster:    newHostedCluster(nil),
+			existingObjects:  []crclient.Object{staleDestination()},
+			expectedSynced:   true,
+			expectSyncedDest: true,
+			expectedDestData: validSourcePEM,
 		},
 	}
 
@@ -935,21 +1049,54 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 			ctx := t.Context()
 			g := NewWithT(t)
 
-			client := fake.NewClientBuilder().
+			clientBuilder := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
-				WithObjects(tc.existingObjects...).
-				Build()
+				WithObjects(tc.existingObjects...)
+			if tc.failSourceRead {
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+						if _, ok := obj.(*corev1.ConfigMap); ok && key.Name == proxyCAConfigMapName && key.Namespace == testNamespace {
+							return errors2.NewServerTimeout(schema.GroupResource{Group: "", Resource: "configmaps"}, "get", 1)
+						}
+						return c.Get(ctx, key, obj, opts...)
+					},
+				})
+			}
+			if tc.corruptSourceOnSecondRead {
+				var sourceReads int
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+						if err := c.Get(ctx, key, obj, opts...); err != nil {
+							return err
+						}
+						if cm, ok := obj.(*corev1.ConfigMap); ok && key.Name == proxyCAConfigMapName && key.Namespace == testNamespace {
+							sourceReads++
+							if sourceReads > 1 {
+								cm.Data["ca-bundle.crt"] = "not a pem bundle"
+							}
+						}
+						return nil
+					},
+				})
+			}
+			client := clientBuilder.Build()
 
 			r := &HostedClusterReconciler{Client: client}
 			createOrUpdate := upsert.New(false).CreateOrUpdate
+			if tc.failSync {
+				createOrUpdate = func(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+					if obj.GetName() == proxy.AuthProxyTrustedCAConfigMapName {
+						return controllerutil.OperationResultNone, fmt.Errorf("simulated sync failure")
+					}
+					return upsert.New(false).CreateOrUpdate(ctx, c, obj, f)
+				}
+			}
 
-			err := r.reconcileGlobalConfigSync(ctx, tc.hostedCluster, createOrUpdate, controlPlaneNamespace)
+			synced, err := r.reconcileAuthProxyTrustedCA(ctx, tc.hostedCluster, createOrUpdate, controlPlaneNamespace)
 
+			g.Expect(synced).To(Equal(tc.expectedSynced))
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
-				if tc.expectedErrorSubstring != "" {
-					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
-				}
 				if tc.expectErrorIs != nil {
 					g.Expect(errors.Is(err, tc.expectErrorIs)).To(BeTrue())
 				}
@@ -957,11 +1104,339 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 
-			if tc.verify != nil {
-				tc.verify(g, client)
+			destCM := &corev1.ConfigMap{}
+			destErr := client.Get(ctx, crclient.ObjectKey{
+				Name:      proxy.AuthProxyTrustedCAConfigMapName,
+				Namespace: controlPlaneNamespace,
+			}, destCM)
+			if tc.expectSyncedDest {
+				g.Expect(destErr).ToNot(HaveOccurred())
+				g.Expect(destCM.Data).To(HaveKey("ca-bundle.crt"))
+				if tc.expectedDestData != "" {
+					g.Expect(destCM.Data["ca-bundle.crt"]).To(Equal(tc.expectedDestData))
+				}
+			} else {
+				g.Expect(errors2.IsNotFound(destErr)).To(BeTrue())
+			}
+			if tc.expectSourceAnnotated {
+				sourceCM := &corev1.ConfigMap{}
+				g.Expect(client.Get(ctx, crclient.ObjectKey{Name: proxyCAConfigMapName, Namespace: testNamespace}, sourceCM)).To(Succeed())
+				g.Expect(sourceCM.Annotations).To(HaveKey(k8sutil.ReferencedResourceAnnotationPrefix + tc.hostedCluster.Name))
+			}
+
+			if tc.skipIdempotency {
+				return
+			}
+			// A second run over the first run's result is a no-op: the same
+			// verdict, and no write to the destination. An unchanged
+			// resourceVersion is the proof, because the fake client bumps it
+			// on every write that reaches the store.
+			secondSynced, secondErr := r.reconcileAuthProxyTrustedCA(ctx, tc.hostedCluster, createOrUpdate, controlPlaneNamespace)
+			g.Expect(secondSynced).To(Equal(synced))
+			g.Expect(secondErr != nil).To(Equal(err != nil))
+			secondDestCM := &corev1.ConfigMap{}
+			secondDestErr := client.Get(ctx, crclient.ObjectKey{
+				Name:      proxy.AuthProxyTrustedCAConfigMapName,
+				Namespace: controlPlaneNamespace,
+			}, secondDestCM)
+			if tc.expectSyncedDest {
+				g.Expect(secondDestErr).ToNot(HaveOccurred())
+				g.Expect(secondDestCM.ResourceVersion).To(Equal(destCM.ResourceVersion))
+				g.Expect(secondDestCM.Data).To(Equal(destCM.Data))
+			} else {
+				g.Expect(errors2.IsNotFound(secondDestErr)).To(BeTrue())
 			}
 		})
 	}
+}
+
+func TestHostedClusterReconciler_ValidProxyConfigurationCondition(t *testing.T) {
+	const testNamespace = "test-ns"
+
+	validPEM := generateLegacyTestCertPEM(t)
+	caConfigMap := func(name, data string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+			Data:       map[string]string{"ca-bundle.crt": data},
+		}
+	}
+	hostedCluster := func(clusterWideCA, authProxyCA string) *hyperv1.HostedCluster {
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: testNamespace},
+		}
+		if clusterWideCA != "" {
+			hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
+				Proxy: &configv1.ProxySpec{
+					TrustedCA: configv1.ConfigMapNameReference{Name: clusterWideCA},
+				},
+			}
+		}
+		if authProxyCA != "" {
+			hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: authProxyCA},
+					},
+				},
+			}
+		}
+		return hc
+	}
+
+	testCases := []struct {
+		name            string
+		hostedCluster   *hyperv1.HostedCluster
+		existingObjects []crclient.Object
+		expectedStatus  metav1.ConditionStatus
+		expectedReason  string
+		expectedMessage string
+	}{
+		{
+			// A cluster that references no bundle is not a cluster whose
+			// bundles are valid. Claiming otherwise asserts something about a
+			// bundle that does not exist.
+			name:            "When no CA bundle is referenced at all, it should report none configured",
+			hostedCluster:   hostedCluster("", ""),
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "No proxy CA bundle configured",
+		},
+		{
+			name:            "When a proxy is configured without a trustedCA, it should report none configured",
+			hostedCluster:   &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: testNamespace}, Spec: hyperv1.HostedClusterSpec{Configuration: &hyperv1.ClusterConfiguration{Proxy: &configv1.ProxySpec{HTTPProxy: "http://proxy.example.com:3128"}}}},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "No proxy CA bundle configured",
+		},
+		{
+			name:            "When only the cluster-wide bundle is referenced and valid, it should report valid",
+			hostedCluster:   hostedCluster("cluster-wide-ca", ""),
+			existingObjects: []crclient.Object{caConfigMap("cluster-wide-ca", validPEM)},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "Proxy CA bundle is valid",
+		},
+		{
+			name:            "When only the auth proxy bundle is referenced and valid, it should report valid",
+			hostedCluster:   hostedCluster("", "auth-proxy-ca"),
+			existingObjects: []crclient.Object{caConfigMap("auth-proxy-ca", validPEM)},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "Proxy CA bundle is valid",
+		},
+		{
+			name:            "When the auth proxy bundle is unparsable, it should report invalid",
+			hostedCluster:   hostedCluster("", "auth-proxy-ca"),
+			existingObjects: []crclient.Object{caConfigMap("auth-proxy-ca", "not a pem bundle")},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.ProxyCABundleInvalidReason,
+			expectedMessage: "auth-proxy-ca",
+		},
+		{
+			// Both checks run and both errors reach the message: the
+			// condition aggregates, it does not stop at the first failure.
+			name:          "When both bundles are unparsable, it should report both in one message",
+			hostedCluster: hostedCluster("cluster-wide-ca", "auth-proxy-ca"),
+			existingObjects: []crclient.Object{
+				caConfigMap("cluster-wide-ca", "not a pem bundle"),
+				caConfigMap("auth-proxy-ca", "also not a pem bundle"),
+			},
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.ProxyCABundleInvalidReason,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existingObjects...).Build()
+			r := &HostedClusterReconciler{Client: client}
+
+			condition := r.validProxyConfigurationCondition(t.Context(), logr.Discard(), tc.hostedCluster)
+
+			g.Expect(condition.Type).To(Equal(string(hyperv1.ValidProxyConfiguration)))
+			g.Expect(condition.Status).To(Equal(tc.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+			if tc.expectedMessage != "" {
+				g.Expect(condition.Message).To(ContainSubstring(tc.expectedMessage))
+			}
+			if tc.name == "When both bundles are unparsable, it should report both in one message" {
+				g.Expect(condition.Message).To(ContainSubstring("cluster-wide-ca"))
+				g.Expect(condition.Message).To(ContainSubstring("auth-proxy-ca"))
+			}
+		})
+	}
+}
+
+func TestHostedClusterReconciler_ReconcileLegacy(t *testing.T) {
+	// Serial on purpose: each subtest reconfigures the process-wide feature
+	// set, which ConfigureFeatureSet writes without synchronization.
+	// The pull secret is missing, so the legacy reconciler takes the
+	// pull-secret recovery path: the auth proxy CA sync must run there too,
+	// because the propagation below it references the fixed destination.
+	tests := []struct {
+		name                 string
+		sourceData           string
+		failDestWrite        bool
+		expectSyncedDest     bool
+		expectAuthPropagated bool
+	}{
+		{
+			name:                 "When the source bundle is valid, it should synchronize and propagate in the legacy reconciler",
+			sourceData:           generateLegacyTestCertPEM(t),
+			expectSyncedDest:     true,
+			expectAuthPropagated: true,
+		},
+		{
+			name:                 "When the source bundle is unparsable, it should withhold the propagation in the legacy reconciler",
+			sourceData:           "not a pem bundle",
+			expectSyncedDest:     false,
+			expectAuthPropagated: false,
+		},
+		{
+			// The source is valid but the destination write fails: the
+			// propagation must stay withheld, so a new proxy never reads the
+			// stale CA the fixed destination still holds.
+			name:                 "When the destination write fails, it should withhold the propagation in the legacy reconciler",
+			sourceData:           generateLegacyTestCertPEM(t),
+			failDestWrite:        true,
+			expectSyncedDest:     false,
+			expectAuthPropagated: false,
+		},
+	}
+
+	previousFeatureSet := featuregate.FeatureSet()
+	t.Cleanup(func() {
+		featuregate.ConfigureFeatureSet(string(previousFeatureSet))
+	})
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			featuregate.ConfigureFeatureSet(string(configv1.TechPreviewNoUpgrade))
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "12345678-1234-1234-1234-123456789abc",
+					InfraID:   "infra-id",
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service:                   hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+						},
+					},
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:    hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0"},
+					Etcd:       hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Platform:   hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						Authentication: hyperv1.AuthenticationOperatorSpec{
+							Proxy: operatorv1.AuthenticationProxyConfig{
+								HTTPSProxy: "https://auth.example.com:8443",
+								TrustedCA:  operatorv1.AuthenticationConfigMapReference{Name: "proxy-trusted-ca"},
+							},
+						},
+					},
+				},
+			}
+
+			hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hcpNs}}
+			sourceCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "proxy-trusted-ca", Namespace: "any"},
+				Data:       map[string]string{"ca-bundle.crt": tc.sourceData},
+			}
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(hcluster, ns, sourceCM).WithStatusSubresource(hcluster)
+			if tc.failDestWrite {
+				builder = builder.WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, cl crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
+						if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == proxy.AuthProxyTrustedCAConfigMapName && cm.Namespace == hcpNs {
+							return fmt.Errorf("injected destination write failure")
+						}
+						return cl.Create(ctx, obj, opts...)
+					},
+				})
+			}
+			client := builder.Build()
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+
+			r := &HostedClusterReconciler{
+				Client:                        client,
+				ReconcileLegacy:               true,
+				Clock:                         clocktesting.NewFakeClock(time.Now()),
+				CertRotationScale:             24 * time.Hour,
+				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProvider,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+				},
+				now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+			}
+
+			ctx := t.Context()
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring("pull secret"))
+
+			destErr := client.Get(ctx, crclient.ObjectKey{Name: proxy.AuthProxyTrustedCAConfigMapName, Namespace: hcpNs}, &corev1.ConfigMap{})
+			if tc.expectSyncedDest {
+				g.Expect(destErr).ToNot(HaveOccurred())
+			} else {
+				g.Expect(errors2.IsNotFound(destErr)).To(BeTrue())
+			}
+
+			updatedHCP := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+			g.Expect(client.Get(ctx, crclient.ObjectKeyFromObject(updatedHCP), updatedHCP)).To(Succeed())
+			if tc.expectAuthPropagated {
+				g.Expect(updatedHCP.Spec.OperatorConfiguration.Authentication.Proxy.HTTPSProxy).To(Equal("https://auth.example.com:8443"))
+			} else {
+				g.Expect(updatedHCP.Spec.OperatorConfiguration.Authentication.Proxy.HTTPSProxy).To(BeEmpty())
+			}
+		})
+	}
+}
+
+// generateLegacyTestCertPEM returns a parseable self-signed certificate so
+// the auth proxy CA validation accepts the synchronized bundle.
+func generateLegacyTestCertPEM(t *testing.T) string {
+	t.Helper()
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate private key: %v", err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test-cert"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		IsCA:         true,
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("failed to create certificate: %v", err)
+	}
+	var certPEM bytes.Buffer
+	if err := pem.Encode(&certPEM, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		t.Fatalf("failed to encode certificate: %v", err)
+	}
+	return certPEM.String()
 }
 
 func TestHostedClusterReconciler_SyncReferencedConfigMap(t *testing.T) {
@@ -11657,6 +12132,54 @@ func TestHostedClusterReconciler_ReconcileGlobalConfigSync(t *testing.T) {
 		g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(copyBefore), copyAfter)).To(Succeed())
 		g.Expect(copyAfter.Data).To(Equal(copyBefore.Data))
 		g.Expect(copyAfter.Labels).To(Equal(labels))
+	})
+
+	// spec.configuration is this function's whole scope. The auth proxy
+	// trusted CA under spec.operatorConfiguration is synchronized by
+	// reconcileAuthProxyTrustedCA instead, under a fixed destination name, so
+	// this function must copy neither it nor anything else outside
+	// spec.configuration.
+	t.Run("When the HostedCluster also carries an operatorConfiguration, it should sync the configuration ConfigMap refs and ignore it", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						TrustedCA: configv1.ConfigMapNameReference{Name: "cluster-proxy-ca"},
+					},
+				},
+				OperatorConfiguration: &hyperv1.OperatorConfiguration{
+					Authentication: hyperv1.AuthenticationOperatorSpec{
+						Proxy: operatorv1.AuthenticationProxyConfig{
+							TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "auth-proxy-ca"},
+						},
+					},
+				},
+			},
+		}
+		configMap := func(name string) *corev1.ConfigMap {
+			return &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-ns"},
+				Data:       map[string]string{"ca-bundle.crt": name},
+			}
+		}
+		client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			configMap("cluster-proxy-ca"),
+			configMap("auth-proxy-ca"),
+		).Build()
+		r := &HostedClusterReconciler{Client: client, OperatorNamespace: cprpsOperatorNamespace}
+
+		g.Expect(r.reconcileGlobalConfigSync(t.Context(), hcluster, ctrl.CreateOrUpdate, "cp-ns")).To(Succeed())
+
+		synced := &corev1.ConfigMap{}
+		g.Expect(client.Get(t.Context(), crclient.ObjectKey{Namespace: "cp-ns", Name: "cluster-proxy-ca"}, synced)).To(Succeed())
+		g.Expect(synced.Data).To(HaveKeyWithValue("ca-bundle.crt", "cluster-proxy-ca"))
+
+		g.Expect(errors2.IsNotFound(client.Get(t.Context(), crclient.ObjectKey{Namespace: "cp-ns", Name: "auth-proxy-ca"}, &corev1.ConfigMap{}))).To(BeTrue())
+		g.Expect(errors2.IsNotFound(client.Get(t.Context(), crclient.ObjectKey{Namespace: "cp-ns", Name: proxy.AuthProxyTrustedCAConfigMapName}, &corev1.ConfigMap{}))).To(BeTrue())
 	})
 }
 

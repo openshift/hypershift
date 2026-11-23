@@ -103,3 +103,32 @@ func ExpiryTimeProxyCA(ctx context.Context, c client.Client, hcluster *hyperv1.H
 	}
 	return &earliest, nil
 }
+
+// ValidateAuthProxyCABundle checks that the ConfigMap referenced by the
+// auth-scoped proxy override exists and holds a parseable PEM bundle. It does
+// not check certificate validity dates: the HyperShift operator withholds the
+// propagation of an unparsable or missing bundle, while an expired one still
+// reaches the components, matching the reachability semantics of the
+// cluster-wide check.
+func ValidateAuthProxyCABundle(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) error {
+	if hcluster.Spec.OperatorConfiguration == nil {
+		return nil
+	}
+
+	caName := hcluster.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name
+	if caName == "" {
+		return nil
+	}
+
+	caConfigMap := corev1.ConfigMap{}
+	if err := c.Get(ctx, types.NamespacedName{
+		Namespace: hcluster.Namespace,
+		Name:      caName,
+	}, &caConfigMap); err != nil {
+		return err
+	}
+	if _, err := LoadCABundle(caConfigMap); err != nil {
+		return err
+	}
+	return nil
+}

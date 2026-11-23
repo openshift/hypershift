@@ -355,7 +355,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		_, hcpErr := createOrUpdate(ctx, r.Client, hcp, func() error {
 			// Skip cert annotation resolution during pull secret recovery — it requires
 			// the pull secret to resolve the CPO image, which is unavailable here.
-			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, r.authProxyConfigValid(ctx, hcluster),
 				func() (map[string]string, error) { return nil, nil })
 		})
 		if hcpErr != nil {
@@ -760,30 +760,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 
 	// Set ValidProxyConfiguration condition
-	{
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidProxyConfiguration),
-			ObservedGeneration: hcluster.Generation,
-		}
-		if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil && hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
-			if err := r.validateProxyConfiguration(ctx, hcluster); err != nil {
-				condition.Status = metav1.ConditionFalse
-				condition.Message = fmt.Sprintf("Proxy CA bundle is invalid for HostedCluster %s/%s: %v", hcluster.Namespace, hcluster.Name, err)
-				condition.Reason = hyperv1.ProxyCABundleInvalidReason
-				log.Info("Proxy CA bundle validation failed", "namespace", hcluster.Namespace, "name", hcluster.Name, "error", err)
-			} else {
-				condition.Status = metav1.ConditionTrue
-				condition.Message = "Proxy CA bundle is valid"
-				condition.Reason = hyperv1.AsExpectedReason
-			}
-		} else {
-			// No proxy configured or no CA bundle
-			condition.Status = metav1.ConditionTrue
-			condition.Message = "No proxy CA bundle configured"
-			condition.Reason = hyperv1.AsExpectedReason
-		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, r.validProxyConfigurationCondition(ctx, log, hcluster))
 
 	// Set Ignition Server endpoint
 	{
@@ -1565,7 +1542,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, r.authProxyConfigValid(ctx, hcluster),
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
