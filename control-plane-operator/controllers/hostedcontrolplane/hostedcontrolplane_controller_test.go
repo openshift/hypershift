@@ -55,6 +55,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/image/docker10"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -1911,6 +1912,23 @@ func TestControlPlaneComponents(t *testing.T) {
 				}
 			},
 			subDirSuffix: "ModernTLS",
+		},
+		{
+			name:         "When the auth-scoped proxy is configured it should reconcile components",
+			featureSet:   configv1.Default,
+			platformType: nil,
+			subDirSuffix: "AuthProxy",
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					Authentication: hyperv1.AuthenticationOperatorSpec{
+						Proxy: operatorv1.AuthenticationProxyConfig{
+							HTTPProxy:  "http://proxy.auth.example.com:3128",
+							HTTPSProxy: "http://proxy.auth.example.com:3129",
+							NoProxy:    []string{"idp.example.com"},
+						},
+					},
+				}
+			},
 		},
 		{
 			name:         "When etcd snapshot restore is configured, it should reconcile expected components",

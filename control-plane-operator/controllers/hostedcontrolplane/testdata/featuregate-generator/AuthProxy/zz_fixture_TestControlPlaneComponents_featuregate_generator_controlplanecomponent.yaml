@@ -1,0 +1,19 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  name: featuregate-generator
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: Job status unknown
+    reason: Unknown
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: Job status unknown
+    reason: Unknown
+    status: "False"
+    type: RolloutComplete
