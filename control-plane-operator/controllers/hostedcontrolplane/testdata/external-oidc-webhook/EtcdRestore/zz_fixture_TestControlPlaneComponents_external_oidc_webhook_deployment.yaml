@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 831800b365acc4e9913db581fb57de9bb17c1a806b6436fb813da1295e3667ed
+    hypershift.openshift.io/desired-state-hash: d0c93002792eed78dc4a2a8dfe0a72c522395bbf8decea15d14a21b82a8094fa
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: external-oidc-webhook
@@ -112,6 +112,9 @@ spec:
         - mountPath: /etc/pki/ca-trust/extracted/pem
           name: openshift-config-managed-trusted-ca-bundle
           readOnly: true
+        - mountPath: /var/config/system/configmaps/v4-0-config-system-auth-proxy-ca
+          name: v4-0-config-system-auth-proxy-ca
+          readOnly: true
         - mountPath: /tmp
           name: tmp-dir
       priorityClassName: hypershift-control-plane
@@ -142,6 +145,11 @@ spec:
           name: openshift-config-managed-trusted-ca-bundle
           optional: true
         name: openshift-config-managed-trusted-ca-bundle
+      - configMap:
+          defaultMode: 420
+          name: v4-0-config-system-auth-proxy-ca
+          optional: true
+        name: v4-0-config-system-auth-proxy-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}

@@ -42,6 +42,9 @@ spec:
         - mountPath: /etc/pki/ca-trust/extracted/pem
           name: openshift-config-managed-trusted-ca-bundle
           readOnly: true
+        - mountPath: /var/config/system/configmaps/v4-0-config-system-auth-proxy-ca
+          name: v4-0-config-system-auth-proxy-ca
+          readOnly: true
       terminationGracePeriodSeconds: 120
       volumes:
       - name: serving-cert
@@ -60,3 +63,8 @@ spec:
           name: openshift-config-managed-trusted-ca-bundle
           optional: true
         name: openshift-config-managed-trusted-ca-bundle
+      - configMap:
+          defaultMode: 420
+          name: v4-0-config-system-auth-proxy-ca
+          optional: true
+        name: v4-0-config-system-auth-proxy-ca

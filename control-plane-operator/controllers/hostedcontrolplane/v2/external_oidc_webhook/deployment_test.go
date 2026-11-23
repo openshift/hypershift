@@ -231,4 +231,20 @@ func TestDeploymentManifestProxyConfiguration(t *testing.T) {
 		Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
 		Optional:             ptr.To(true),
 	}))
+
+	// The auth proxy trusted CA is a directory mount with no key remapping, so
+	// the webhook reads ca-bundle.crt at the mount path and hot-reloads on
+	// content changes: the ConfigMap is excluded from the pod config hash.
+	g.Expect(podspec.FindVolumeMount("v4-0-config-system-auth-proxy-ca", container.VolumeMounts)).To(Equal(&corev1.VolumeMount{
+		Name:      "v4-0-config-system-auth-proxy-ca",
+		MountPath: "/var/config/system/configmaps/v4-0-config-system-auth-proxy-ca",
+		ReadOnly:  true,
+	}))
+	authProxyCAVolume := podspec.FindVolume("v4-0-config-system-auth-proxy-ca", deployment.Spec.Template.Spec.Volumes)
+	g.Expect(authProxyCAVolume).ToNot(BeNil())
+	g.Expect(authProxyCAVolume.ConfigMap).To(Equal(&corev1.ConfigMapVolumeSource{
+		LocalObjectReference: corev1.LocalObjectReference{Name: "v4-0-config-system-auth-proxy-ca"},
+		DefaultMode:          ptr.To[int32](420),
+		Optional:             ptr.To(true),
+	}))
 }
