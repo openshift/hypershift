@@ -987,11 +987,15 @@ func TestUsesExternalOIDCAsWebhook(t *testing.T) {
 	}
 
 	t.Run("When authentication is not OIDC, it should not use the external OIDC webhook", func(t *testing.T) {
+		fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), featuregates.ExternalOIDCAsWebhook, true)
+
 		require.False(t, usesExternalOIDCAsWebhook(nil))
 		require.False(t, usesExternalOIDCAsWebhook(&configv1.AuthenticationSpec{Type: configv1.AuthenticationTypeIntegratedOAuth}))
 	})
 
 	t.Run("When authentication is OIDC and the feature gate is disabled, it should not use the external OIDC webhook", func(t *testing.T) {
+		fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), featuregates.ExternalOIDCAsWebhook, false)
+
 		require.False(t, usesExternalOIDCAsWebhook(oidcAuthentication))
 	})
 
