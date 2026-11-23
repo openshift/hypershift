@@ -205,6 +205,7 @@ hostedclusters.hypershift.openshift.io:
   Category: ""
   FeatureGates:
   - AWSManagedDNS
+  - AuthenticationComponentProxyExternalOIDC
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
   - DeterministicLBIP
@@ -288,6 +289,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   Category: cluster-api
   FeatureGates:
   - AWSManagedDNS
+  - AuthenticationComponentProxyExternalOIDC
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
   - DeterministicLBIP
