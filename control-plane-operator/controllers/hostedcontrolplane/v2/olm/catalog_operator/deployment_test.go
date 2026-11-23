@@ -19,6 +19,16 @@ import (
 func TestAdaptDeployment(t *testing.T) {
 	t.Parallel()
 
+	// The control plane and user releases deliberately carry different images, so
+	// the test fails if the guest-facing images are taken from the control plane
+	// release, which may be private to the management cluster.
+	const (
+		controlPlaneOLMOperatorImage      = "quay.io/openshift-release-dev/ocp-release-private@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+		controlPlaneOperatorRegistryImage = "quay.io/openshift-release-dev/ocp-release-private@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+		userOLMOperatorImage              = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		userOperatorRegistryImage         = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+
 	testCases := []struct {
 		name                          string
 		olmCatalogPlacement           hyperv1.OLMCatalogPlacement
@@ -28,19 +38,19 @@ func TestAdaptDeployment(t *testing.T) {
 		expectedReleaseVersion        string
 	}{
 		{
-			name:                          "When OLMCatalogPlacement is Management, it should set NO_PROXY with catalog services",
+			name:                          "When OLMCatalogPlacement is Management, it should set NO_PROXY with catalog services and guest workload images from the user release",
 			olmCatalogPlacement:           hyperv1.ManagementOLMCatalogPlacement,
 			expectedNoProxyHosts:          []string{"kube-apiserver", "certified-operators", "community-operators", "redhat-operators"},
-			expectedOLMOperatorImage:      "test-olm-operator-image",
-			expectedOperatorRegistryImage: "test-operator-registry-image",
+			expectedOLMOperatorImage:      userOLMOperatorImage,
+			expectedOperatorRegistryImage: userOperatorRegistryImage,
 			expectedReleaseVersion:        "4.15.0",
 		},
 		{
-			name:                          "When OLMCatalogPlacement is Guest, it should set NO_PROXY without catalog services",
+			name:                          "When OLMCatalogPlacement is Guest, it should set NO_PROXY without catalog services and guest workload images from the user release",
 			olmCatalogPlacement:           hyperv1.GuestOLMCatalogPlacement,
 			expectedNoProxyHosts:          []string{"kube-apiserver"},
-			expectedOLMOperatorImage:      "test-olm-operator-image",
-			expectedOperatorRegistryImage: "test-operator-registry-image",
+			expectedOLMOperatorImage:      userOLMOperatorImage,
+			expectedOperatorRegistryImage: userOperatorRegistryImage,
 			expectedReleaseVersion:        "4.15.0",
 		},
 	}
@@ -60,18 +70,25 @@ func TestAdaptDeployment(t *testing.T) {
 				},
 			}
 
-			releaseProvider := testutil.FakeImageProvider(
+			controlPlaneReleaseProvider := testutil.FakeImageProvider(
+				testutil.WithVersion("4.15.1"),
+				testutil.WithImages(map[string]string{
+					"operator-lifecycle-manager": controlPlaneOLMOperatorImage,
+					"operator-registry":          controlPlaneOperatorRegistryImage,
+				}),
+			)
+			userReleaseProvider := testutil.FakeImageProvider(
 				testutil.WithVersion(tc.expectedReleaseVersion),
 				testutil.WithImages(map[string]string{
-					"operator-lifecycle-manager": tc.expectedOLMOperatorImage,
-					"operator-registry":          tc.expectedOperatorRegistryImage,
+					"operator-lifecycle-manager": userOLMOperatorImage,
+					"operator-registry":          userOperatorRegistryImage,
 				}),
 			)
 
 			cpContext := component.WorkloadContext{
 				HCP:                      hcp,
-				ReleaseImageProvider:     releaseProvider,
-				UserReleaseImageProvider: releaseProvider,
+				ReleaseImageProvider:     controlPlaneReleaseProvider,
+				UserReleaseImageProvider: userReleaseProvider,
 			}
 
 			deployment, err := assets.LoadDeploymentManifest(ComponentName)
