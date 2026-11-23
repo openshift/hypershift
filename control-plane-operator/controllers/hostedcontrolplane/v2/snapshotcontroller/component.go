@@ -40,6 +40,7 @@ func (r *snapshotController) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &snapshotController{}).
 		WithAdaptFunction(adaptDeployment).
+		WithOmniHypershiftTransforms(omniHypershiftTransforms()...).
 		WithPredicate(isStorageAndCSIManaged).
 		WithManifestAdapter(
 			"controller-config.yaml",

@@ -154,6 +154,14 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 				},
 			)
 		}
+		if cpo.OmniHypershift {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  config.OmniHypershiftEnvVar,
+					Value: "1",
+				},
+			)
+		}
 
 		if watchListClient := os.Getenv("KUBE_FEATURE_WatchListClient"); watchListClient != "" {
 			c.Env = append(c.Env,

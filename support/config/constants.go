@@ -158,5 +158,14 @@ const (
 var (
 	Version419 = semver.MustParse("4.19.0")
 	Version420 = semver.MustParse("4.20.0")
+	Version421 = semver.MustParse("4.21.0")
+	Version422 = semver.MustParse("4.22.0")
+	// Version423 is the shared threshold for the 5.0 release and its 4.23 version alias: the same
+	// codebase ships as both, kept in sync by automation. Customers only ever run 5.0, but CI runs
+	// tests on BOTH the 4.23 and 5.0 branches, so a release reports its version as either 4.23.x or
+	// 5.0.x. A gate for a 5.0-era feature MUST use 4.23.0 so it fires identically on 4.23 and 5.0;
+	// using 5.0.0 would wrongly exclude the 4.23 branch. Mirrors supportedversion.prevLatestSupportedMajor.
+	Version423 = semver.MustParse("4.23.0")
+	Version500 = semver.MustParse("5.0.0")
 	Version510 = semver.MustParse("5.1.0")
 )

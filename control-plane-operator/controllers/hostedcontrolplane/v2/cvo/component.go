@@ -43,6 +43,7 @@ func NewComponent(enableCVOManagementClusterMetricsAccess bool) component.Contro
 
 	return component.NewDeploymentComponent(ComponentName, cvo).
 		WithAdaptFunction(cvo.adaptDeployment).
+		WithOmniHypershiftTransforms(omniHypershiftTransforms()...).
 		WithManifestAdapter(
 			"service.yaml",
 			component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices),

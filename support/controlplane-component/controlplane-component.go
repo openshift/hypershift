@@ -13,9 +13,11 @@ import (
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/omnihypershift"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/upsert"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -118,6 +120,27 @@ type WorkloadContext struct {
 	SkipCertificateSigning bool
 }
 
+// ControlPlaneVersion returns the control-plane (operand) payload version, or "" when no
+// release image provider is set (e.g. in unit tests). Components gate operand flags by this
+// version without dereferencing a possibly-nil provider.
+func (c WorkloadContext) ControlPlaneVersion() string {
+	if c.ReleaseImageProvider == nil {
+		return ""
+	}
+	return c.ReleaseImageProvider.Version()
+}
+
+// GetImage resolves a payload component image from the control-plane release payload, or ""
+// when no release image provider is set (e.g. in unit tests). It lets Omni HyperShift transforms
+// resolve an operand image without dereferencing a possibly-nil provider. It satisfies
+// omnihypershift.ResolveContext together with ControlPlaneVersion.
+func (c WorkloadContext) GetImage(name string) string {
+	if c.ReleaseImageProvider == nil {
+		return ""
+	}
+	return c.ReleaseImageProvider.GetImage(name)
+}
+
 func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 	return WorkloadContext{
 		Context:                   cp.Context,
@@ -184,6 +207,12 @@ type controlPlaneWorkload[T client.Object] struct {
 
 	customOperandsRolloutCheck   func(cpContext WorkloadContext) (bool, error)
 	monitorOperandsRolloutStatus bool
+
+	// omniHypershiftTransforms adjust the rendered Deployment, after adapt, when Omni HyperShift is enabled and
+	// the driven control-plane version falls in each transform's range. Registered via
+	// WithOmniHypershiftTransforms. A no-op when Omni HyperShift is off, and only meaningful for Deployment
+	// components (the only workload type Omni HyperShift drives today).
+	omniHypershiftTransforms []omnihypershift.Transform[*appsv1.Deployment]
 }
 
 // AssetDirName returns the asset directory name for loading manifests.
@@ -387,6 +416,19 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 
 	if c.adapt != nil {
 		if err := c.adapt(cpContext.workloadContext(), workloadObj); err != nil {
+			return err
+		}
+	}
+
+	// Omni HyperShift: after the component has rendered its workload for main, apply any declarative
+	// drift adjustments for the driven (older) control plane. Apply is a no-op when Omni HyperShift is
+	// off, so a CPO not deployed from main renders exactly as before.
+	if len(c.omniHypershiftTransforms) > 0 {
+		deployment, ok := any(workloadObj).(*appsv1.Deployment)
+		if !ok {
+			return fmt.Errorf("unsupported workload type %T for Omni HyperShift transforms (want Deployment)", workloadObj)
+		}
+		if err := omnihypershift.Apply(cpContext.workloadContext(), deployment, c.omniHypershiftTransforms); err != nil {
 			return err
 		}
 	}

@@ -51,6 +51,7 @@ func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &KubeAPIServer{}).
 		WithPredicate(checkExternalOIDCWebhookMigration).
 		WithAdaptFunction(adaptDeployment).
+		WithOmniHypershiftTransforms(omniHypershiftTransforms()...).
 		WithDependencies(etcdv2.ComponentName, fg.ComponentName).
 		WithManifestAdapter(
 			"service-network-admin-kubeconfig.yaml",

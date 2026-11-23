@@ -38,6 +38,7 @@ func NewComponent(defaultIngressDomain string) component.ControlPlaneComponent {
 
 	return component.NewDeploymentComponent(ComponentName, ignition).
 		WithAdaptFunction(adaptDeployment).
+		WithOmniHypershiftTransforms(omniHypershiftTransforms()...).
 		WithPredicate(predicate).
 		WithManifestAdapter(
 			"haproxy-config.yaml",

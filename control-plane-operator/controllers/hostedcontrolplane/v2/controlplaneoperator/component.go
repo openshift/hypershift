@@ -28,6 +28,10 @@ type ControlPlaneOperatorOptions struct {
 	DefaultIngressDomain        string
 
 	FeatureSet configv1.FeatureSet
+
+	// OmniHypershift indicates this CPO deployment was given a from-main image for a
+	// configured older release, so it must run in Omni HyperShift mode (see support/config).
+	OmniHypershift bool
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.

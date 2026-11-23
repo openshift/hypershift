@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/omnihypershift"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
@@ -65,6 +66,34 @@ exec /usr/bin/azure-workload-identity-webhook \
 {{- end }}
   --disable-cert-rotation
 `))
+
+// omniHypershiftTransforms lists the drift adjustments a main-built CPO applies to the kube-apiserver
+// Deployment's sidecars when it drives an older control plane. See support/omnihypershift.
+func omniHypershiftTransforms() []omnihypershift.Transform[*appsv1.Deployment] {
+	if !config.IsOmniHypershiftEnabled() {
+		return nil
+	}
+	return []omnihypershift.Transform[*appsv1.Deployment]{
+		{
+			// konnectivity-server gained --tls-min-version at 4.23; a pre-4.23 binary rejects it.
+			// --cipher-suites is NOT new: a pre-4.23 konnectivity-server already accepts it (verified
+			// against release-4.20/4.21, whose CPO renders --cipher-suites on konnectivity-server), so
+			// it must be kept or a custom cipher restriction is silently dropped. konnectivity-server
+			// carries these in Args via getTLSArgs.
+			Reason: "pre-4.23 konnectivity-server rejects --tls-min-version (but accepts --cipher-suites)",
+			When:   omnihypershift.Below(config.Version423),
+			Do:     omnihypershift.StripArgs("konnectivity-server", "--tls-min-version"),
+		},
+		{
+			// aws-pod-identity-webhook gained --tls-min-version/--tls-cipher-suites at 4.23; a
+			// pre-4.23 binary rejects them. This sidecar carries them in Command via config.TLSArgs,
+			// which spells the cipher flag --tls-cipher-suites.
+			Reason: "pre-4.23 aws-pod-identity-webhook rejects --tls-min-version/--tls-cipher-suites",
+			When:   omnihypershift.Below(config.Version423),
+			Do:     omnihypershift.StripCommandArgs("aws-pod-identity-webhook", "--tls-min-version", "--tls-cipher-suites"),
+		},
+	}
+}
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
@@ -409,11 +438,12 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 		"--token-audience=openshift",
 	}
 
+	// Render for main: emit --tls-min-version/--tls-cipher-suites. Omni HyperShift strips them on pre-4.23
+	// operands (see omniHypershiftTransforms).
 	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
 	if err != nil {
 		return err
 	}
-
 	if len(tlsArgs) > 0 {
 		command = append(command, tlsArgs...)
 	}

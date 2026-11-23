@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/omnihypershift"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 
@@ -42,4 +43,20 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	})
 
 	return nil
+}
+
+// omniHypershiftTransforms lists the drift adjustments a main-built CPO applies to the
+// cluster-storage-operator Deployment when it drives an older control plane. See support/omnihypershift.
+func omniHypershiftTransforms() []omnihypershift.Transform[*appsv1.Deployment] {
+	if !config.IsOmniHypershiftEnabled() {
+		return nil
+	}
+	return []omnihypershift.Transform[*appsv1.Deployment]{
+		{
+			// --config arrived at 4.23; a pre-4.23 cluster-storage-operator rejects it.
+			Reason: "pre-4.23 cluster-storage-operator rejects --config",
+			When:   omnihypershift.Below(config.Version423),
+			Do:     omnihypershift.StripArgs(ComponentName, "--config="),
+		},
+	}
 }
