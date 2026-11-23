@@ -1,6 +1,9 @@
 package assets
 
 import (
+	"io/fs"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 
@@ -356,6 +359,18 @@ func TestForEachManifest(t *testing.T) {
 			},
 		},
 		{
+			name:          "When a component has a GMP manifest, it should visit the CoreOS monitor but skip the GMP manifest",
+			componentName: "cluster-autoscaler",
+			validate: func(g Gomega, manifestNames []string, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+				// The skip is only meaningful if the GMP manifest is embedded.
+				_, readErr := manifestsAssets.ReadFile("cluster-autoscaler/gmp-podmonitoring.yaml")
+				g.Expect(readErr).ToNot(HaveOccurred())
+				g.Expect(manifestNames).To(ContainElement("podmonitor.yaml"))
+				g.Expect(manifestNames).ToNot(ContainElement("gmp-podmonitoring.yaml"))
+			},
+		},
+		{
 			name:          "When iterating over etcd manifests, it should skip statefulset and call action for others",
 			componentName: "etcd",
 			validate: func(g Gomega, manifestNames []string, err error) {
@@ -533,6 +548,116 @@ func TestLoadManifestTemplated(t *testing.T) {
 
 			obj, gvk, err := LoadManifestTemplated(tc.componentName, tc.fileName, tc.templateData)
 			tc.validate(g, obj, gvk, err)
+		})
+	}
+}
+
+// gmpManifestPattern matches a manifest that declares a Google Managed
+// Prometheus resource: a PodMonitoring kind or a monitoring.googleapis.com
+// apiVersion. It runs on raw bytes because the embedded assets contain Go
+// template markers that are not valid YAML until rendered.
+var gmpManifestPattern = regexp.MustCompile(
+	`(?m)^\s*(kind:\s*(Cluster)?PodMonitoring\b|apiVersion:\s*monitoring\.googleapis\.com/)`)
+
+// TestGMPManifestsAreNotWalked guards the contract between the GMP manifests and
+// the component framework. They sit in the same directory as the CoreOS monitors
+// they replace, so the gmp- prefix that ForEachManifest skips is the only thing
+// keeping the framework from applying them on every HostedControlPlane.
+//
+// Three checks keep that prefix honest:
+//   - a file that declares a GMP resource carries the prefix, so a GMP monitor
+//     cannot be added under a name the walk would apply;
+//   - a prefixed file declares a GMP resource, so the skip cannot silently hide
+//     a CoreOS manifest;
+//   - ForEachManifest yields no prefixed file for any component.
+//
+//nolint:hypershiftlinter // testfuncstructure: the guard inspects the embedded asset tree, which no single production function owns
+func TestGMPManifestsAreNotWalked(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	var embedded []string
+	components := map[string]struct{}{}
+	g.Expect(fs.WalkDir(manifestsAssets, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			embedded = append(embedded, path)
+			components[filepath.Dir(path)] = struct{}{}
+		}
+		return nil
+	})).To(Succeed())
+
+	// The walk has to see the embedded tree; an empty result would make the
+	// assertions below vacuous.
+	g.Expect(embedded).ToNot(BeEmpty())
+
+	gmpFiles := 0
+	for _, path := range embedded {
+		raw, err := manifestsAssets.ReadFile(path)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		declaresGMP := gmpManifestPattern.Match(raw)
+		prefixed := isGMPManifest(filepath.Base(path))
+		if prefixed {
+			gmpFiles++
+		}
+		g.Expect(declaresGMP).To(Equal(prefixed),
+			"%s: a manifest must declare a GMP resource exactly when its name starts with %q, otherwise ForEachManifest applies a GMP resource or skips a CoreOS one", path, gmpManifestPrefix)
+	}
+	g.Expect(gmpFiles).ToNot(BeZero(), "no GMP manifest is embedded; the guard would pass vacuously")
+
+	for component := range components {
+		g.Expect(ForEachManifest(component, func(manifestName string) error {
+			g.Expect(isGMPManifest(manifestName)).To(BeFalse(),
+				"ForEachManifest yielded GMP manifest %s/%s; the component framework would reconcile it unconditionally", component, manifestName)
+			return nil
+		})).To(Succeed())
+	}
+}
+
+func TestIsGMPManifest(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name         string
+		manifestName string
+		expected     bool
+	}{
+		{
+			name:         "When the manifest is the generated GMP PodMonitoring, it should be a GMP manifest",
+			manifestName: "gmp-podmonitoring.yaml",
+			expected:     true,
+		},
+		{
+			name:         "When the manifest is a CoreOS PodMonitor, it should not be a GMP manifest",
+			manifestName: "podmonitor.yaml",
+			expected:     false,
+		},
+		{
+			name:         "When the manifest is a CoreOS ServiceMonitor, it should not be a GMP manifest",
+			manifestName: "servicemonitor.yaml",
+			expected:     false,
+		},
+		{
+			name:         "When gmp appears without the separator, it should not be a GMP manifest",
+			manifestName: "gmpconfig.yaml",
+			expected:     false,
+		},
+		{
+			name:         "When gmp- appears after the start of the name, it should not be a GMP manifest",
+			manifestName: "config-gmp-podmonitoring.yaml",
+			expected:     false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			g.Expect(isGMPManifest(tc.manifestName)).To(Equal(tc.expected))
 		})
 	}
 }
