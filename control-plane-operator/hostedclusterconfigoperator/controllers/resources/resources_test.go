@@ -1732,10 +1732,12 @@ func TestReconcileOpenStackCredentialsSecret(t *testing.T) {
 	const namespace = "openshift-manila-csi-driver"
 	const name = "manila-cloud-credentials"
 	tests := []struct {
-		name           string
-		existingSecret bool
-		writeError     error
-		expectedError  string
+		name             string
+		missingNamespace bool
+		existingSecret   bool
+		getError         error
+		writeError       error
+		expectedError    string
 	}{
 		{
 			name: "When the namespace exists, it should create the credentials secret",
@@ -1743,6 +1745,15 @@ func TestReconcileOpenStackCredentialsSecret(t *testing.T) {
 		{
 			name:           "When the secret exists, it should update the cloud configuration",
 			existingSecret: true,
+		},
+		{
+			name:             "When the namespace is missing, it should defer credentials until the namespace exists",
+			missingNamespace: true,
+		},
+		{
+			name:          "When reading the namespace fails, it should return the error",
+			getError:      apierrors.NewForbidden(schema.GroupResource{Resource: "namespaces"}, namespace, fmt.Errorf("access denied")),
+			expectedError: "failed to get secret namespace openshift-manila-csi-driver",
 		},
 		{
 			name:          "When writing the secret fails, it should return the error",
@@ -1757,7 +1768,10 @@ func TestReconcileOpenStackCredentialsSecret(t *testing.T) {
 			ctx := t.Context()
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 			key := client.ObjectKey{Namespace: namespace, Name: name}
-			objects := []client.Object{ns}
+			var objects []client.Object
+			if !tt.missingNamespace {
+				objects = append(objects, ns)
+			}
 			if tt.existingSecret {
 				objects = append(objects, &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
@@ -1768,7 +1782,14 @@ func TestReconcileOpenStackCredentialsSecret(t *testing.T) {
 					},
 				})
 			}
-			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*corev1.Namespace); ok && tt.getError != nil {
+						return tt.getError
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			}).Build()
 			r := &reconciler{
 				client:                 guestClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
@@ -1788,6 +1809,9 @@ func TestReconcileOpenStackCredentialsSecret(t *testing.T) {
 			g.Expect(credentials).To(Equal(originalCredentials), "reconciliation should not mutate the source credentials")
 			if tt.expectedError != "" {
 				g.Expect(err).To(MatchError(ContainSubstring(tt.expectedError)))
+				if tt.getError != nil {
+					g.Expect(err).To(MatchError(ContainSubstring(tt.getError.Error())))
+				}
 				if tt.writeError != nil {
 					g.Expect(err).To(MatchError(ContainSubstring(tt.writeError.Error())))
 				}
@@ -1795,6 +1819,15 @@ func TestReconcileOpenStackCredentialsSecret(t *testing.T) {
 			}
 			g.Expect(err).NotTo(HaveOccurred())
 			secret := &corev1.Secret{}
+			if tt.missingNamespace {
+				// The fake client allows secrets in absent namespaces, so this also
+				// verifies that the deferred reconciliation did not write a secret.
+				g.Expect(apierrors.IsNotFound(guestClient.Get(ctx, key, secret))).To(BeTrue())
+				g.Expect(apierrors.IsNotFound(guestClient.Get(ctx, client.ObjectKey{Name: namespace}, &corev1.Namespace{}))).To(BeTrue())
+				g.Expect(guestClient.Create(ctx, ns)).To(Succeed())
+				g.Expect(r.reconcileOpenStackCredentialsSecret(ctx, platform, namespace, name, credentials, nil, nil)).To(Succeed())
+				g.Expect(credentials).To(Equal(originalCredentials), "reconciliation should not mutate the source credentials")
+			}
 			g.Expect(guestClient.Get(ctx, key, secret)).To(Succeed())
 			g.Expect(secret.Data["clouds.yaml"]).To(Equal(credentials.Data["clouds.yaml"]))
 			g.Expect(string(secret.Data["cloud.conf"])).To(ContainSubstring("cloud = openstack\n"))
