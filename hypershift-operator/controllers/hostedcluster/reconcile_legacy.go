@@ -209,7 +209,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			if annotations == nil {
 				return nil
 			}
-			key := referencedResourceAnnotationPrefix + hcluster.Name
+			key := k8sutil.ReferencedResourceAnnotationPrefix + hcluster.Name
 			if _, ok := annotations[key]; !ok {
 				return nil
 			}

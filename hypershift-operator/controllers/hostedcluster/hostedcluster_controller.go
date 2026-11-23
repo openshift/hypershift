@@ -164,7 +164,6 @@ const (
 
 	previouslySyncedRestartDateAnnotation = "hypershift.openshift.io/previous-restart-date"
 	kasServingCertHashAnnotation          = "hypershift.openshift.io/kas-serving-cert-hash"
-	referencedResourceAnnotationPrefix    = "referenced-resource.hypershift.openshift.io/"
 )
 
 var (
@@ -653,7 +652,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if annotations == nil {
 				return nil
 			}
-			key := referencedResourceAnnotationPrefix + hcluster.Name
+			key := k8sutil.ReferencedResourceAnnotationPrefix + hcluster.Name
 			if _, ok := annotations[key]; !ok {
 				return nil
 			}
@@ -4708,10 +4707,10 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 					}
 				}
 				for k := range annotations {
-					if strings.HasPrefix(k, referencedResourceAnnotationPrefix) {
+					if strings.HasPrefix(k, k8sutil.ReferencedResourceAnnotationPrefix) {
 						requests = append(requests, reconcile.Request{
 							NamespacedName: types.NamespacedName{
-								Name:      strings.TrimPrefix(k, referencedResourceAnnotationPrefix),
+								Name:      strings.TrimPrefix(k, k8sutil.ReferencedResourceAnnotationPrefix),
 								Namespace: obj.GetNamespace(),
 							},
 						})
@@ -6441,7 +6440,7 @@ func ensureReferencedResourceAnnotation(ctx context.Context, client client.Clien
 	if existing == nil {
 		existing = map[string]string{}
 	}
-	key := referencedResourceAnnotationPrefix + hcName
+	key := k8sutil.ReferencedResourceAnnotationPrefix + hcName
 	if _, ok := existing[key]; ok {
 		return nil
 	}
