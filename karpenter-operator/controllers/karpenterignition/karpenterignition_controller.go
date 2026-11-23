@@ -151,6 +151,17 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	releaseImage, version, requeue := currentClusterRelease(hostedCluster)
+	if specVersion == "" && hcp.Spec.ControlPlaneReleaseImage != nil {
+		// The version history read above is the control plane's, so with a pinned
+		// control plane release it names that release. It is not the workers'
+		// payload, and it may live in a private registry the cluster pull secret
+		// cannot read. An unpinned NodeClass follows the data plane release instead.
+		releaseImage, version, err = r.dataPlaneRelease(ctx, hcp)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to resolve the data plane release for NodeClass %q: %w", nodeClass.object.GetName(), err)
+		}
+		requeue = false
+	}
 	if requeue && specVersion == "" {
 		log.Info("No version history available for unpinned NodeClass, requeueing")
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
@@ -668,13 +679,10 @@ func kubeletConfigManifest(name string, kubeletConfig map[string]interface{}) (s
 	return strings.TrimSuffix(string(out), "\n"), nil
 }
 
-// buildConfigGenerator creates a ConfigGenerator for the in-memory NodePool
-func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
-	ctx context.Context,
-	hostedCluster *hyperv1.HostedCluster,
-	np *hyperv1.NodePool,
-	controlPlaneNamespace string,
-) (*nodepool.ConfigGenerator, error) {
+// pullSecretBytes returns the cluster pull secret from the control plane namespace.
+// It is the credential the data plane uses, without the provider's control plane
+// release credential.
+func (r *KarpenterIgnitionReconciler) pullSecretBytes(ctx context.Context, controlPlaneNamespace string) ([]byte, error) {
 	pullSecret := common.PullSecret(controlPlaneNamespace)
 	if err := r.ManagementClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return nil, fmt.Errorf("failed to get pull secret: %w", err)
@@ -683,6 +691,42 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
 	if !ok {
 		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+	return pullSecretBytes, nil
+}
+
+// dataPlaneRelease returns the data plane release image from the HostedControlPlane
+// spec, and its version.
+//
+// It is the worker payload for an unpinned NodeClass when the cluster pins a distinct
+// control plane release. The version comes from the payload itself: the control plane
+// version history describes the pinned release, and a later reconcile compares the
+// recorded version against the payload's to detect a version change.
+//
+// Unlike the version history, the spec has no notion of a completed rollout, so
+// workers follow a change to the data plane release as soon as it is made.
+func (r *KarpenterIgnitionReconciler) dataPlaneRelease(ctx context.Context, hcp *hyperv1.HostedControlPlane) (image, version string, err error) {
+	pullSecretBytes, err := r.pullSecretBytes(ctx, hcp.Namespace)
+	if err != nil {
+		return "", "", err
+	}
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hcp.Spec.ReleaseImage, pullSecretBytes)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	return hcp.Spec.ReleaseImage, releaseImage.Version(), nil
+}
+
+// buildConfigGenerator creates a ConfigGenerator for the in-memory NodePool
+func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
+	ctx context.Context,
+	hostedCluster *hyperv1.HostedCluster,
+	np *hyperv1.NodePool,
+	controlPlaneNamespace string,
+) (*nodepool.ConfigGenerator, error) {
+	pullSecretBytes, err := r.pullSecretBytes(ctx, controlPlaneNamespace)
+	if err != nil {
+		return nil, err
 	}
 
 	releaseImage, err := r.ReleaseProvider.Lookup(ctx, np.Spec.Release.Image, pullSecretBytes)

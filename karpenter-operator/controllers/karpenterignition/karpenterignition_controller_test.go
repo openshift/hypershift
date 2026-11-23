@@ -533,6 +533,84 @@ func TestReconcileVersionResolution(t *testing.T) {
 
 	for name, tc := range nodeClassGVKTestCases {
 		t.Run(name, func(t *testing.T) {
+			t.Run("When a control plane release is pinned and no version is specified, it should use the data plane release", func(t *testing.T) {
+				g := NewWithT(t)
+				const pinnedRelease = "quay.io/openshift-release-dev/ocp-release-private@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+				hcp := baseHCP()
+				hcp.Spec.ControlPlaneReleaseImage = ptr.To(pinnedRelease)
+				// The control plane history names the pinned release, at a version
+				// the data plane is not running.
+				hcp.Status.ControlPlaneVersion = hyperv1.ControlPlaneVersionStatus{
+					Desired: configv1.Release{Version: "4.17.5", Image: pinnedRelease},
+					History: []hyperv1.ControlPlaneUpdateHistory{{
+						State:          configv1.CompletedUpdate,
+						Version:        "4.17.5",
+						Image:          pinnedRelease,
+						StartedTime:    metav1.Now(),
+						CompletionTime: metav1.Now(),
+					}},
+				}
+
+				mockedReleaseProvider := releaseinfo.NewMockProvider(gomock.NewController(t))
+				mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), hcp.Spec.ReleaseImage, gomock.Any()).
+					Return(testutils.InitReleaseImageOrDie("4.17.0"), nil).AnyTimes()
+				// The pinned release is still read to detect control plane operator
+				// capabilities. It must never become the worker payload.
+				mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), pinnedRelease, gomock.Any()).
+					Return(testutils.InitReleaseImageOrDie("4.17.5"), nil).AnyTimes()
+
+				nodeClass := newNodeClass(tc.gvk).object
+				nodeClass.SetName("pinned-control-plane-test")
+				nodeClass.Object["spec"] = map[string]interface{}{}
+				nodeClass.Object["status"] = map[string]interface{}{}
+
+				fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
+				fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(nodeClass).
+					WithStatusSubresource(nodeClass).
+					Build()
+
+				r := &KarpenterIgnitionReconciler{
+					ManagementClient:        fakeManagementClient,
+					GuestClient:             fakeGuestClient,
+					NodeClassGVK:            tc.gvk,
+					ReleaseProvider:         mockedReleaseProvider,
+					VersionResolver:         &fakeVersionResolver{},
+					ImageMetadataProvider:   fakeImageMetadataProvider,
+					HypershiftOperatorImage: "test-hypershift-operator-image",
+					IgnitionEndpoint:        testIgnitionEndpoint,
+					Namespace:               testNamespace,
+					CreateOrUpdateProvider:  upsert.New(false),
+				}
+
+				ctx := log.IntoContext(t.Context(), testr.New(t))
+				_, err := r.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKey{Name: "pinned-control-plane-test"},
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+
+				updated := newNodeClass(tc.gvk)
+				g.Expect(fakeGuestClient.Get(ctx, client.ObjectKey{Name: "pinned-control-plane-test"}, updated.object)).To(Succeed())
+				status, err := updated.status()
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.ReleaseImage).To(Equal(hcp.Spec.ReleaseImage))
+				g.Expect(status.Version).To(Equal("4.17.0"))
+
+				secrets := &corev1.SecretList{}
+				g.Expect(fakeManagementClient.List(ctx, secrets, client.InNamespace(testNamespace),
+					client.MatchingLabels{karpenterutil.ManagedByKarpenterLabel: "true"})).To(Succeed())
+				var tokenSecret *corev1.Secret
+				for i := range secrets.Items {
+					if strings.HasPrefix(secrets.Items[i].Name, "token-") {
+						tokenSecret = &secrets.Items[i]
+					}
+				}
+				g.Expect(tokenSecret).NotTo(BeNil())
+				g.Expect(tokenSecret.Data["release"]).To(Equal([]byte(hcp.Spec.ReleaseImage)))
+				g.Expect(tokenSecret.Data["release-version"]).To(Equal([]byte("4.17.0")))
+			})
+
 			t.Run("When version is set, it should call resolver and use resolved image", func(t *testing.T) {
 				g := NewWithT(t)
 				mockCtrl := gomock.NewController(t)
@@ -963,6 +1041,93 @@ func TestReconcileVersionResolution(t *testing.T) {
 			} {
 				g.Expect(userDataSecret.Annotations).To(HaveKeyWithValue(key, value))
 			}
+		})
+	}
+}
+
+func TestKarpenterIgnitionReconciler_DataPlaneRelease(t *testing.T) {
+	const (
+		dataPlaneRelease = "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64"
+		pinnedRelease    = "quay.io/openshift-release-dev/ocp-release-private@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	)
+	pullSecretData := []byte(`{"auths":{"quay.io":{"auth":"dXNlcjpwYXNz"}}}`)
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: testNamespace},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ReleaseImage:             dataPlaneRelease,
+			ControlPlaneReleaseImage: ptr.To(pinnedRelease),
+		},
+	}
+	pullSecret := func(data map[string][]byte) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: testNamespace},
+			Data:       data,
+		}
+	}
+
+	testCases := []struct {
+		name            string
+		objects         []client.Object
+		lookupErr       error
+		expectLookup    bool
+		expectedImage   string
+		expectedVersion string
+		errContains     string
+	}{
+		{
+			name:            "When the data plane release can be read, it should return its image and version",
+			objects:         []client.Object{pullSecret(map[string][]byte{corev1.DockerConfigJsonKey: pullSecretData})},
+			expectLookup:    true,
+			expectedImage:   dataPlaneRelease,
+			expectedVersion: "4.17.0",
+		},
+		{
+			name:         "When the release lookup fails, it should return the error",
+			objects:      []client.Object{pullSecret(map[string][]byte{corev1.DockerConfigJsonKey: pullSecretData})},
+			lookupErr:    fmt.Errorf("unauthorized"),
+			expectLookup: true,
+			errContains:  "failed to lookup release image: unauthorized",
+		},
+		{
+			name:        "When the pull secret is missing, it should return an error",
+			errContains: "failed to get pull secret",
+		},
+		{
+			name:        "When the pull secret has no dockerconfigjson key, it should return an error",
+			objects:     []client.Object{pullSecret(map[string][]byte{})},
+			errContains: "expected .dockerconfigjson key in pull secret",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			mockedReleaseProvider := releaseinfo.NewMockProvider(gomock.NewController(t))
+			if tc.expectLookup {
+				// Only the data plane release is looked up, with the cluster pull secret.
+				call := mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), dataPlaneRelease, pullSecretData)
+				if tc.lookupErr != nil {
+					call.Return(nil, tc.lookupErr)
+				} else {
+					call.Return(testutils.InitReleaseImageOrDie("4.17.0"), nil)
+				}
+			}
+
+			r := &KarpenterIgnitionReconciler{
+				ManagementClient: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...).Build(),
+				ReleaseProvider:  mockedReleaseProvider,
+			}
+
+			image, version, err := r.dataPlaneRelease(t.Context(), hcp)
+			if tc.errContains != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.errContains)))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(image).To(Equal(tc.expectedImage))
+			g.Expect(version).To(Equal(tc.expectedVersion))
 		})
 	}
 }
