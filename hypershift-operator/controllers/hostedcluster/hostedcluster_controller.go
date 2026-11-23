@@ -71,6 +71,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/podspec"
+	supportproxy "github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
@@ -264,6 +265,14 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// so the Secret watch can map a recreated (unannotated) Secret back to its owner.
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &hyperv1.HostedCluster{}, hostedClusterIngressDefaultCertSecretIndex, indexHostedClusterByIngressDefaultCertSecret); err != nil {
 		return fmt.Errorf("failed to set up ingress default certificate secret index: %w", err)
+	}
+
+	// Index HostedClusters by the referenced auth proxy trusted CA ConfigMap name
+	// so the ConfigMap watch can map a missing or recreated source back to its
+	// owner: the auth proxy CA sync withholds on a missing source before any
+	// referenced-resource annotation can exist.
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &hyperv1.HostedCluster{}, hostedClusterAuthProxyTrustedCAConfigMapIndex, indexHostedClusterByAuthProxyTrustedCAConfigMap); err != nil {
+		return fmt.Errorf("failed to set up auth proxy trusted CA configmap index: %w", err)
 	}
 
 	// Set up watches for resource types the controller manages. The list basically
@@ -2475,26 +2484,21 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 	}
 
 	if hcluster.Spec.OperatorConfiguration != nil {
-		operatorConfigurationConfigMapRefs := []string{}
-
 		// The authentication operator configuration (auth-scoped proxy) is only
 		// propagated while the AuthenticationComponentProxyExternalOIDC feature
 		// gate is enabled on the HyperShift operator. Without the gate, the
 		// referenced CA must not be synchronized into the control plane namespace
 		// either.
 		if featuregate.Gate().Enabled(featuregate.AuthenticationComponentProxyExternalOIDC) {
-			operatorConfigurationConfigMapRefs = configrefs.OperatorConfigurationConfigMapRefs(hcluster.Spec.OperatorConfiguration)
-		}
-
-		err := r.handleConfigMapFromRefs(
-			ctx,
-			operatorConfigurationConfigMapRefs,
-			hcluster,
-			controlPlaneNamespace,
-			createOrUpdate,
-		)
-		if err != nil {
-			return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+			// The auth proxy trusted CA is synchronized under a fixed
+			// destination name: the control plane component machinery excludes
+			// that name from the pod config hash, so a CA rotation hot-reloads
+			// in the webhook instead of rolling the pod.
+			for _, ref := range configrefs.OperatorConfigurationConfigMapRefs(hcluster.Spec.OperatorConfiguration) {
+				if err := r.syncReferencedConfigMap(ctx, ref, supportproxy.AuthProxyTrustedCAConfigMapName, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
+					return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+				}
+			}
 		}
 	}
 	return nil
@@ -2543,26 +2547,49 @@ func (r *HostedClusterReconciler) handleConfigMapFromRefs(
 	createOrUpdate upsert.CreateOrUpdateFN,
 ) error {
 	for _, configMapRef := range configMapRefs {
-		sourceCM := &corev1.ConfigMap{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
-			return fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
+		if err := r.syncReferencedConfigMap(ctx, configMapRef, configMapRef, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
+			return err
 		}
-		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
-			return fmt.Errorf("failed to set referenced resource annotation: %w", err)
-		}
-		destCM := &corev1.ConfigMap{}
-		destCM.Name = sourceCM.Name
-		destCM.Namespace = controlPlaneNamespace
-		if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
-			destCM.Annotations = sourceCM.Annotations
-			destCM.Labels = sourceCM.Labels
-			destCM.Data = sourceCM.Data
-			destCM.BinaryData = sourceCM.BinaryData
+	}
+	return nil
+}
+
+// syncReferencedConfigMap copies a ConfigMap referenced by the HostedCluster
+// spec into the control plane namespace under destName. The copy inherits the
+// source's annotations, including the referenced-resource annotation, so the
+// existing watch chains keep firing on content-only updates of the copy.
+func (r *HostedClusterReconciler) syncReferencedConfigMap(
+	ctx context.Context,
+	sourceName, destName string,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string,
+	createOrUpdate upsert.CreateOrUpdateFN,
+) error {
+	sourceCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: sourceName}, sourceCM); err != nil {
+		return fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, sourceName, err)
+	}
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
+		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
+	destCM := &corev1.ConfigMap{}
+	destCM.Name = destName
+	destCM.Namespace = controlPlaneNamespace
+	if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
+		destCM.Annotations = sourceCM.Annotations
+		destCM.Labels = sourceCM.Labels
+		destCM.Data = sourceCM.Data
+		destCM.BinaryData = sourceCM.BinaryData
+		// A fixed destination name follows a changing spec reference, so it
+		// must stay mutable: an immutable destination could never adopt the
+		// data of a later source. Only a name-preserving copy, where the
+		// destination is tied to this one source, inherits immutability.
+		if destName == sourceName {
 			destCM.Immutable = sourceCM.Immutable
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
 		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
 	}
 	return nil
 }
@@ -4436,6 +4463,55 @@ func hostedClustersReferencingSecret(ctx context.Context, c client.Client, secre
 	return requests
 }
 
+// hostedClusterAuthProxyTrustedCAConfigMapIndex indexes HostedClusters by the
+// name of the ConfigMap referenced via
+// spec.operatorConfiguration.authentication.proxy.trustedCA. It lets the
+// ConfigMap watch map a referenced ConfigMap back to its owner with an
+// O(matches) cache lookup, independent of the referenced-resource annotation,
+// which a missing or freshly created source would not carry: the auth proxy
+// CA validation withholds the sync on a missing source before any annotation
+// can exist, so the creation of the source must be matched by the spec
+// reference instead.
+const hostedClusterAuthProxyTrustedCAConfigMapIndex = "spec.operatorConfiguration.authentication.proxy.trustedCA.name"
+
+func indexHostedClusterByAuthProxyTrustedCAConfigMap(o client.Object) []string {
+	hc, ok := o.(*hyperv1.HostedCluster)
+	if !ok {
+		return nil
+	}
+	if hc.Spec.OperatorConfiguration != nil &&
+		hc.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name != "" {
+		return []string{hc.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name}
+	}
+	return nil
+}
+
+// hostedClustersReferencingConfigMap appends reconcile requests for
+// HostedClusters that reference the given ConfigMap by name through spec (via
+// the field index), skipping any already present in requests. Unlike the
+// referenced-resource annotation, a spec reference survives the absence of the
+// object: a source ConfigMap that was missing when the controller last
+// reconciled carries no annotation, so its creation re-enqueues its owner only
+// through the index.
+func hostedClustersReferencingConfigMap(ctx context.Context, c client.Client, configMap *corev1.ConfigMap, requests []reconcile.Request) []reconcile.Request {
+	hcList := &hyperv1.HostedClusterList{}
+	if err := c.List(ctx, hcList,
+		client.InNamespace(configMap.Namespace),
+		client.MatchingFields{hostedClusterAuthProxyTrustedCAConfigMapIndex: configMap.Name},
+	); err != nil {
+		ctrllog.Log.Error(err, "failed to list hosted clusters referencing configmap", "configmap", client.ObjectKeyFromObject(configMap).String())
+		return requests
+	}
+	for i := range hcList.Items {
+		hc := &hcList.Items[i]
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}}
+		if !slices.Contains(requests, req) {
+			requests = append(requests, req)
+		}
+	}
+	return requests
+}
+
 func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) handler.MapFunc {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		log := ctrllog.Log
@@ -4481,7 +4557,10 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 				}
 				return requests
 			}
-			return handleDefault(typedObj)
+			// Enqueue via the referenced-resource annotation, and also via the spec
+			// field index so a source ConfigMap that was missing (or recreated)
+			// still re-enqueues its owner.
+			return hostedClustersReferencingConfigMap(ctx, c, typedObj, handleDefault(typedObj))
 		case *appsv1.StatefulSet:
 			if typedObj.Name != "etcd" {
 				return []reconcile.Request{}
