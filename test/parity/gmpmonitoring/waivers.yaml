@@ -1,0 +1,7 @@
+# Configuration gaps and platform exclusions in the offline GMP parity check.
+# A waiver is removed when its GMP counterpart is added; stale waivers fail CI.
+#
+# Every CoreOS scrape target has a generated GMP equivalent, so there is no scrape
+# target waiver left. Rules are not compared: the rules consumed on GCP live in
+# gcp-hcp-infra.
+scrapeTargets: []
