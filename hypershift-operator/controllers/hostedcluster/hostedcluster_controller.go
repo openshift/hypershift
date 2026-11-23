@@ -2557,7 +2557,7 @@ func (r *HostedClusterReconciler) reconcileAuthProxyTrustedCA(
 			// reconciling. The creation of the source is matched by the
 			// spec field index, not by a retry.
 			ctrl.LoggerFrom(ctx).Info("withholding auth proxy trusted CA sync: source not found", "error", err)
-			return false, nil
+			return false, r.restorePropagatedAuthProxyTrustedCA(ctx, hcluster, ref, createOrUpdate, controlPlaneNamespace)
 		}
 		// The annotation must land before the validation can exit: the
 		// referenced-resource mapper enqueues this HostedCluster only for
@@ -2573,13 +2573,64 @@ func (r *HostedClusterReconciler) reconcileAuthProxyTrustedCA(
 			// condition report the failure. The rest of the HostedCluster keeps
 			// reconciling. An input change, not a retry, clears this path.
 			ctrl.LoggerFrom(ctx).Info("withholding auth proxy trusted CA sync: invalid bundle", "error", err)
-			return false, nil
+			return false, r.restorePropagatedAuthProxyTrustedCA(ctx, hcluster, ref, createOrUpdate, controlPlaneNamespace)
 		}
 		if err := r.syncConfigMap(ctx, sourceCM, supportproxy.AuthProxyTrustedCAConfigMapName, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
 			return false, errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
 		}
 	}
 	return true, nil
+}
+
+// restorePropagatedAuthProxyTrustedCA converges the fixed destination back
+// to the CA required by the authentication configuration currently
+// propagated on the HostedControlPlane. A withheld change must never leave
+// the destination holding a newer CA than the propagated pair it serves: the
+// webhook would trust only the new CA while still using the previous proxy.
+// The restore stays quiet when there is nothing to restore: no propagated
+// configuration, the propagated source equal to the withheld one, or a
+// propagated source that is itself missing or unparsable. Operational
+// failures are returned so the reconcile retries them.
+func (r *HostedClusterReconciler) restorePropagatedAuthProxyTrustedCA(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, withheldRef string,
+	createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string,
+) error {
+	hcp := &hyperv1.HostedControlPlane{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: controlPlaneNamespace, Name: hcluster.Name}, hcp); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Nothing is propagated yet, so no pair depends on the destination.
+			return nil
+		}
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	var propagatedRef string
+	if hcp.Spec.OperatorConfiguration != nil {
+		propagatedRef = hcp.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name
+	}
+	if propagatedRef == "" || propagatedRef == withheldRef {
+		// The propagated pair either uses system trust or the same source
+		// the spec wants: the withheld copy already serves it.
+		return nil
+	}
+	sourceCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: propagatedRef}, sourceCM); err != nil {
+		if apierrors.IsNotFound(err) {
+			// The propagated source is gone too: nothing to restore from.
+			ctrl.LoggerFrom(ctx).Info("cannot restore the propagated auth proxy trusted CA: source not found", "source", propagatedRef)
+			return nil
+		}
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	if _, err := proxy.LoadCABundle(*sourceCM); err != nil {
+		// An unparsable propagated source cannot restore anything: an input
+		// change, not a retry, clears this.
+		ctrl.LoggerFrom(ctx).Info("cannot restore the propagated auth proxy trusted CA: invalid bundle", "source", propagatedRef, "error", err)
+		return nil
+	}
+	if err := r.syncConfigMap(ctx, sourceCM, supportproxy.AuthProxyTrustedCAConfigMapName, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	return nil
 }
 
 func (r *HostedClusterReconciler) handleSecretFromRefs(
