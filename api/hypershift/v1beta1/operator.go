@@ -125,6 +125,22 @@ type OAuthServerOperatorSpec struct {
 	ComponentLogLevelSpec `json:",inline"`
 }
 
+// AuthenticationOperatorSpec specifies the configuration for the
+// authentication-scoped components. Namely the auth stack http proxy
+// configuration.
+// +kubebuilder:validation:MinProperties=1
+type AuthenticationOperatorSpec struct {
+	// proxy configures proxy settings for outbound connections made
+	// by the authentication stack. When set, it replaces the
+	// cluster-wide proxy (proxy.config.openshift.io/cluster)
+	// entirely for authentication — individual fields are not
+	// inherited from the cluster-wide configuration. When omitted,
+	// the cluster-wide proxy is used if configured; otherwise no
+	// proxy is used.
+	// +optional
+	Proxy operatorv1.AuthenticationProxyConfig `json:"proxy,omitempty,omitzero"`
+}
+
 // ClusterVersionOperatorSpec is the specification of the desired behavior of the Cluster Version Operator.
 type ClusterVersionOperatorSpec struct {
 	// operatorLogLevel is an intent based logging for the operator itself. It does not give fine-grained control,
