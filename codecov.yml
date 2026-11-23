@@ -3,17 +3,8 @@ codecov:
   notify:
     wait_for_ci: false
 
-flags:
-  cpo-hostedcontrolplane:
-    carryforward: true
-  cpo-other:
-    carryforward: true
-  hypershift-operator:
-    carryforward: true
-  cmd-support:
-    carryforward: true
-  other:
-    carryforward: true
+# No per-shard flags on purpose: the shards are merged into a single profile and
+# uploaded once per commit (.github/workflows/test-reusable.yaml).
 
 ignore:
   - "test/**"
@@ -64,5 +55,5 @@ ignore:
   - "support/capi-crdmigrator/crd_migrator.go"
 
 comment:
-  layout: "condensed_header, diff, files, flags, components"
+  layout: "condensed_header, diff, files, components"
   behavior: default
