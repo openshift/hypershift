@@ -1,8 +1,6 @@
 package kas
 
 import (
-	"slices"
-	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -14,6 +12,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestApplyGCPWorkloadIdentityFederationWebhookContainer(t *testing.T) {
@@ -23,17 +22,41 @@ func TestApplyGCPWorkloadIdentityFederationWebhookContainer(t *testing.T) {
 		validatePod func(*GomegaWithT, *corev1.PodSpec)
 	}{
 		{
-			name: "When applying the GCP webhook container, it should add the sidecar with correct command flags",
+			name: "When applying the GCP webhook container, it should add the sidecar that waits for the kube-apiserver before starting the webhook",
 			hcp:  testGCPHostedControlPlane(nil),
 			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
 				webhookContainer := findContainerByNameInPod(podSpec, "gcp-workload-identity-federation-webhook")
 				g.Expect(webhookContainer).NotTo(BeNil())
 				g.Expect(webhookContainer.Image).To(Equal("gcp-workload-identity-federation-webhook"))
-				g.Expect(webhookContainer.Command).To(ContainElement("/usr/bin/gcp-workload-identity-federation-webhook"))
-				g.Expect(webhookContainer.Command).To(ContainElement("--annotation-prefix=cloud.google.com"))
-				g.Expect(webhookContainer.Command).To(ContainElement("--gcp-default-region=us-central1"))
-				g.Expect(webhookContainer.Command).To(ContainElement("--kubeconfig=/var/run/app/kubeconfig/kubeconfig"))
-				g.Expect(webhookContainer.Command).To(ContainElement("--token-audience=openshift"))
+				g.Expect(webhookContainer.Command).To(Equal([]string{"/bin/sh", "-ec"}))
+
+				script := gcpWebhookScript(g, webhookContainer)
+				g.Expect(script).To(ContainSubstring(`until curl -kfsS --max-time 5 "https://localhost:6443/version" >/dev/null`))
+				g.Expect(script).To(ContainSubstring("exec /usr/bin/gcp-workload-identity-federation-webhook"))
+				g.Expect(script).To(ContainSubstring("--annotation-prefix=cloud.google.com"))
+				g.Expect(script).To(ContainSubstring("--gcp-default-region=us-central1"))
+				g.Expect(script).To(ContainSubstring("--kubeconfig=/var/run/app/kubeconfig/kubeconfig"))
+				g.Expect(script).To(ContainSubstring("--token-audience=openshift"))
+			},
+		},
+		{
+			name: "When the hosted cluster uses a custom API server port, it should wait on that port",
+			hcp:  testGCPHostedControlPlaneWithAPIServerPort(nil, 7443),
+			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
+				webhookContainer := findContainerByNameInPod(podSpec, "gcp-workload-identity-federation-webhook")
+				g.Expect(webhookContainer).NotTo(BeNil())
+				g.Expect(gcpWebhookScript(g, webhookContainer)).To(ContainSubstring(`"https://localhost:7443/version"`))
+			},
+		},
+		{
+			name: "When the hosted cluster requests API server port 443, it should wait on the legacy pod port instead of 443",
+			hcp:  testGCPHostedControlPlaneWithAPIServerPort(nil, 443),
+			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
+				webhookContainer := findContainerByNameInPod(podSpec, "gcp-workload-identity-federation-webhook")
+				g.Expect(webhookContainer).NotTo(BeNil())
+				script := gcpWebhookScript(g, webhookContainer)
+				g.Expect(script).To(ContainSubstring(`"https://localhost:6443/version"`))
+				g.Expect(script).NotTo(ContainSubstring(`"https://localhost:443/version"`))
 			},
 		},
 		{
@@ -94,10 +117,9 @@ func TestApplyGCPWorkloadIdentityFederationWebhookContainer(t *testing.T) {
 			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
 				webhookContainer := findContainerByNameInPod(podSpec, "gcp-workload-identity-federation-webhook")
 				g.Expect(webhookContainer).NotTo(BeNil())
-				g.Expect(webhookContainer.Command).To(ContainElement("--tls-min-version=VersionTLS13"))
-				g.Expect(slices.ContainsFunc(webhookContainer.Command, func(arg string) bool {
-					return strings.HasPrefix(arg, "--tls-cipher-suites=")
-				})).To(BeFalse())
+				script := gcpWebhookScript(g, webhookContainer)
+				g.Expect(script).To(ContainSubstring("--tls-min-version=VersionTLS13"))
+				g.Expect(script).NotTo(ContainSubstring("--tls-cipher-suites="))
 			},
 		},
 		{
@@ -108,10 +130,9 @@ func TestApplyGCPWorkloadIdentityFederationWebhookContainer(t *testing.T) {
 			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
 				webhookContainer := findContainerByNameInPod(podSpec, "gcp-workload-identity-federation-webhook")
 				g.Expect(webhookContainer).NotTo(BeNil())
-				g.Expect(webhookContainer.Command).To(ContainElement("--tls-min-version=VersionTLS10"))
-				g.Expect(slices.ContainsFunc(webhookContainer.Command, func(arg string) bool {
-					return strings.HasPrefix(arg, "--tls-cipher-suites=")
-				})).To(BeTrue())
+				script := gcpWebhookScript(g, webhookContainer)
+				g.Expect(script).To(ContainSubstring("--tls-min-version=VersionTLS10"))
+				g.Expect(script).To(ContainSubstring("--tls-cipher-suites="))
 			},
 		},
 		{
@@ -122,12 +143,9 @@ func TestApplyGCPWorkloadIdentityFederationWebhookContainer(t *testing.T) {
 			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
 				webhookContainer := findContainerByNameInPod(podSpec, "gcp-workload-identity-federation-webhook")
 				g.Expect(webhookContainer).NotTo(BeNil())
-				g.Expect(slices.ContainsFunc(webhookContainer.Command, func(arg string) bool {
-					return strings.HasPrefix(arg, "--tls-cipher-suites=")
-				})).To(BeTrue())
-				g.Expect(slices.ContainsFunc(webhookContainer.Command, func(arg string) bool {
-					return strings.HasPrefix(arg, "--cipher-suites=")
-				})).To(BeFalse())
+				script := gcpWebhookScript(g, webhookContainer)
+				g.Expect(script).To(ContainSubstring("--tls-cipher-suites="))
+				g.Expect(script).NotTo(ContainSubstring("--cipher-suites="))
 			},
 		},
 		{
@@ -147,8 +165,9 @@ func TestApplyGCPWorkloadIdentityFederationWebhookContainer(t *testing.T) {
 			validatePod: func(g *GomegaWithT, podSpec *corev1.PodSpec) {
 				webhookContainer := findContainerByNameInPod(podSpec, "gcp-workload-identity-federation-webhook")
 				g.Expect(webhookContainer).NotTo(BeNil())
-				g.Expect(webhookContainer.Command).To(ContainElement("--tls-min-version=VersionTLS11"))
-				g.Expect(webhookContainer.Command).To(ContainElement("--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"))
+				script := gcpWebhookScript(g, webhookContainer)
+				g.Expect(script).To(ContainSubstring("--tls-min-version=VersionTLS11"))
+				g.Expect(script).To(ContainSubstring("--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"))
 			},
 		},
 	}
@@ -177,6 +196,16 @@ func TestApplyGCPWorkloadIdentityFederationWebhookContainerError(t *testing.T) {
 }
 
 func testGCPHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1.HostedControlPlane {
+	return testGCPHostedControlPlaneWithAPIServerPort(tlsProfile, 0)
+}
+
+// gcpWebhookScript asserts the webhook container runs a shell wrapper and returns its script.
+func gcpWebhookScript(g *GomegaWithT, webhookContainer *corev1.Container) string {
+	g.Expect(webhookContainer.Args).To(HaveLen(1))
+	return webhookContainer.Args[0]
+}
+
+func testGCPHostedControlPlaneWithAPIServerPort(tlsProfile *configv1.TLSSecurityProfile, apiServerPort int32) *hyperv1.HostedControlPlane {
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-hcp",
@@ -190,6 +219,9 @@ func testGCPHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1
 				},
 			},
 		},
+	}
+	if apiServerPort != 0 {
+		hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: ptr.To(apiServerPort)}
 	}
 	if tlsProfile != nil {
 		hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{

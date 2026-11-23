@@ -66,6 +66,34 @@ exec /usr/bin/azure-workload-identity-webhook \
   --disable-cert-rotation
 `))
 
+// gcpWorkloadIdentityFederationWebhookWaitForKASVersionTemplate waits for the local
+// kube-apiserver to answer before starting the webhook. The webhook exits on the first
+// failed API discovery request, and until the kube-apiserver has applied its RBAC
+// bootstrap roles, every discovery request is rejected, so starting early leaves the
+// container crash looping. The /version endpoint is only reachable once those roles are
+// applied, making it a reliable "kube-apiserver is ready to authorize requests" signal.
+// The Azure workload identity webhook container uses the same approach.
+//
+// This is the in-tree carry for GCP-1426. The durable fix is a retry with backoff in
+// openshift/gcp-workload-identity-federation-webhook, which still calls os.Exit(1) on the
+// first failure; drop the wait once the payload ships that retry.
+var gcpWorkloadIdentityFederationWebhookWaitForKASVersionTemplate = template.Must(template.New("gcp-workload-identity-federation-webhook").Parse(`set -u
+until curl -kfsS --max-time 5 "https://localhost:{{ .KASPodPort }}/version" >/dev/null; do
+  echo "waiting for kube-apiserver /version endpoint to become available"
+  sleep 2
+done
+exec /usr/bin/gcp-workload-identity-federation-webhook \
+  --annotation-prefix=cloud.google.com \
+  --gcp-default-region={{ .GCPDefaultRegion }} \
+  --health-probe-bind-address=:8081 \
+  --kubeconfig=/var/run/app/kubeconfig/kubeconfig \
+  --metrics-bind-address=127.0.0.1:8080 \
+{{- range $flag, $value := .ExtraCommandLineFlags }}
+  {{ $flag }}={{ $value }} \
+{{- end }}
+  --token-audience=openshift
+`))
+
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
@@ -563,30 +591,39 @@ func applyGCPWorkloadIdentityFederationWebhookContainer(podSpec *corev1.PodSpec,
 		return fmt.Errorf("gcp platform type requires spec.platform.gcp")
 	}
 
-	command := []string{
-		"/usr/bin/gcp-workload-identity-federation-webhook",
-		"--annotation-prefix=cloud.google.com",
-		fmt.Sprintf("--gcp-default-region=%s", hcp.Spec.Platform.GCP.Region),
-		"--health-probe-bind-address=:8081",
-		"--kubeconfig=/var/run/app/kubeconfig/kubeconfig",
-		"--metrics-bind-address=127.0.0.1:8080",
-		"--token-audience=openshift",
-	}
-
 	tlsArgs, err := getTLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
 	if err != nil {
 		return err
 	}
-	command = append(command, tlsArgs...)
-	for i, arg := range command {
-		command[i] = strings.Replace(arg, "--cipher-suites=", "--tls-cipher-suites=", 1)
+
+	extraCommandLineFlags := map[string]string{}
+	for _, arg := range tlsArgs {
+		flagName, value, ok := strings.Cut(arg, "=")
+		if !ok {
+			continue
+		}
+		// The webhook takes the OpenShift cipher suite list as --tls-cipher-suites.
+		flagName = strings.Replace(flagName, "--cipher-suites", "--tls-cipher-suites", 1)
+		extraCommandLineFlags[flagName] = value
+	}
+
+	templateData := map[string]any{
+		"KASPodPort":            netutil.KASPodPort(hcp),
+		"GCPDefaultRegion":      hcp.Spec.Platform.GCP.Region,
+		"ExtraCommandLineFlags": extraCommandLineFlags,
+	}
+
+	containerArgs := bytes.NewBuffer(nil)
+	if err := gcpWorkloadIdentityFederationWebhookWaitForKASVersionTemplate.Execute(containerArgs, templateData); err != nil {
+		return fmt.Errorf("failed to execute gcp-workload-identity-federation-webhook command template: %w", err)
 	}
 
 	podSpec.Containers = append(podSpec.Containers, corev1.Container{
 		Name:            "gcp-workload-identity-federation-webhook",
 		Image:           "gcp-workload-identity-federation-webhook",
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         command,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{containerArgs.String()},
 		Resources: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),

@@ -2,7 +2,7 @@
 
 The GCP workload identity webhook mutates hosted cluster pods at admission time so containers can authenticate to Google Cloud through Workload Identity Federation (WIF). It uses annotations on a pod's Kubernetes `ServiceAccount` to decide whether and how to inject GCP credential configuration.
 
-In HyperShift, the webhook runs as a sidecar in the hosted cluster's `kube-apiserver` pod. The hosted cluster `MutatingWebhookConfiguration` points to `https://127.0.0.1:9443/mutate-v1-pod`, so admission calls are handled locally by the webhook sidecar in the same pod as the API server.
+In HyperShift, the webhook runs as a sidecar in the hosted cluster's `kube-apiserver` pod. The hosted cluster `MutatingWebhookConfiguration` points to `https://127.0.0.1:9443/mutate-v1-pod`, so admission calls are handled locally by the webhook sidecar in the same pod as the API server. The sidecar waits for the local `kube-apiserver` `/version` endpoint before it starts, because the webhook exits when its initial API discovery request fails and that request is rejected until the API server has applied its RBAC bootstrap roles.
 
 ## Webhook Configuration
 

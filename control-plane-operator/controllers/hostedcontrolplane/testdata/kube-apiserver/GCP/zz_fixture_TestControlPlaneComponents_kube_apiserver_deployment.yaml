@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d934feac8db720cebaa9a0e9654ee2c9a3fba01c30d9835b6bd4181900077055
+    hypershift.openshift.io/desired-state-hash: d7b9a386e81b783fe6ff78e84358fb2c6d628ea8a5853da23ff41b5bf72f837c
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -334,16 +334,25 @@ spec:
           name: logs
         - mountPath: /tmp
           name: tmp-dir
-      - command:
-        - /usr/bin/gcp-workload-identity-federation-webhook
-        - --annotation-prefix=cloud.google.com
-        - --gcp-default-region=us-central1
-        - --health-probe-bind-address=:8081
-        - --kubeconfig=/var/run/app/kubeconfig/kubeconfig
-        - --metrics-bind-address=127.0.0.1:8080
-        - --token-audience=openshift
-        - --tls-min-version=VersionTLS12
-        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      - args:
+        - |
+          set -u
+          until curl -kfsS --max-time 5 "https://localhost:6443/version" >/dev/null; do
+            echo "waiting for kube-apiserver /version endpoint to become available"
+            sleep 2
+          done
+          exec /usr/bin/gcp-workload-identity-federation-webhook \
+            --annotation-prefix=cloud.google.com \
+            --gcp-default-region=us-central1 \
+            --health-probe-bind-address=:8081 \
+            --kubeconfig=/var/run/app/kubeconfig/kubeconfig \
+            --metrics-bind-address=127.0.0.1:8080 \
+            --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 \
+            --tls-min-version=VersionTLS12 \
+            --token-audience=openshift
+        command:
+        - /bin/sh
+        - -ec
         image: gcp-workload-identity-federation-webhook
         imagePullPolicy: IfNotPresent
         livenessProbe:
