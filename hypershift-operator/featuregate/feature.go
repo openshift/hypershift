@@ -88,23 +88,36 @@ const (
 	// owner: @muraee
 	// alpha: v0.1.84
 	IgnitionPayloadSystem featuregate.Feature = "IgnitionPayloadSystem"
+
+	// AuthenticationComponentProxyExternalOIDC gates propagation of the
+	// operatorConfiguration.authentication proxy block from HostedCluster to
+	// HostedControlPlane. It is the management-side half of the auth-scoped proxy
+	// support for the external OIDC authentication stack: the HyperShift operator
+	// evaluates it before propagating anything, so without it neither the
+	// external-oidc-webhook nor the Console ever sees a component proxy. The
+	// API field half is gated by the openshift/api CRD feature gate of the same
+	// name, served via the TechPreviewNoUpgrade feature set.
+	// owner: @wouldgo
+	// alpha: v0.1.84
+	AuthenticationComponentProxyExternalOIDC featuregate.Feature = "AuthenticationComponentProxyExternalOIDC"
 )
 
 // Initialize new features here
 var (
 	allFeatures = featuregates.NewFeatureSetAwareFeatures()
 
-	aroHCPManagedIdentitiesFeature = featuregates.NewFeature(AROHCPManagedIdentities, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	openStackFeature               = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	gcpHCPFeature                  = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	hcpEtcdBackupFeature           = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	karpenterOperatorFeature       = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	etcdShardingFeature            = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
-	deterministicLBIPFeature       = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	awsManagedDNSFeature           = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	kubeletHAProxyRoutingFeature   = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	ignitionPayloadSystemFeature   = featuregates.NewFeature(IgnitionPayloadSystem, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	aroHCPManagedIdentitiesFeature        = featuregates.NewFeature(AROHCPManagedIdentities, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	openStackFeature                      = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	gcpHCPFeature                         = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	hcpEtcdBackupFeature                  = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	karpenterOperatorFeature              = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	etcdShardingFeature                   = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	osStreamsFeature                      = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
+	deterministicLBIPFeature              = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	awsManagedDNSFeature                  = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	kubeletHAProxyRoutingFeature          = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	ignitionPayloadSystemFeature          = featuregates.NewFeature(IgnitionPayloadSystem, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	authComponentProxyExternalOIDCFeature = featuregates.NewFeature(AuthenticationComponentProxyExternalOIDC, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -120,6 +133,7 @@ func init() {
 	allFeatures.AddFeature(awsManagedDNSFeature)
 	allFeatures.AddFeature(kubeletHAProxyRoutingFeature)
 	allFeatures.AddFeature(ignitionPayloadSystemFeature)
+	allFeatures.AddFeature(authComponentProxyExternalOIDCFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
