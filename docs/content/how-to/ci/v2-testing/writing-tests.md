@@ -98,6 +98,25 @@ Eventually(func(g Gomega) {
     WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(Succeed())
 ```
 
+A helper that polls internally follows the same rule: it calls `g.Eventually`
+on the caller's instance and makes its assertions inside the poll closure using
+the closure's own instance, so a failed poll retries instead of failing the
+spec:
+
+```go
+func eventuallyDeleteConfigMap(g Gomega, ctx context.Context, c crclient.Client, key crclient.ObjectKey) {
+    GinkgoHelper()
+    g.Eventually(func(pollG Gomega, pollCtx context.Context) {
+        err := c.Delete(pollCtx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}})
+        if apierrors.IsNotFound(err) {
+            return
+        }
+        pollG.Expect(err).NotTo(HaveOccurred(), "delete ConfigMap %s", key)
+    }).WithContext(ctx).
+        WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(Succeed())
+}
+```
+
 Derive expected values from configuration when testing relationships between
 resources. Assert the outcome the scenario promises: an updated desired release
 alone does not establish that an upgrade completed. Identify affected resources
