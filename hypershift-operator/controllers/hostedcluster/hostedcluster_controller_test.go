@@ -1,13 +1,16 @@
 package hostedcluster
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -44,6 +47,7 @@ import (
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
@@ -537,7 +541,7 @@ func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			updated := test.controlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.cluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(updated, &test.cluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Error(err)
 			}
@@ -560,6 +564,8 @@ func TestReconcileHostedControlPlaneAuthenticationOperatorConfiguration(t *testi
 	tests := []struct {
 		name                   string
 		featureSet             configv1.FeatureSet
+		authProxyCASynced      bool
+		existingAuthentication hyperv1.AuthenticationOperatorSpec
 		cluster                hyperv1.HostedCluster
 		expectedAuthentication hyperv1.AuthenticationOperatorSpec
 		// expectNilOperatorConfig asserts the HCP operator configuration is
@@ -585,8 +591,9 @@ func TestReconcileHostedControlPlaneAuthenticationOperatorConfiguration(t *testi
 			expectedAuthentication: hyperv1.AuthenticationOperatorSpec{},
 		},
 		{
-			name:       "When the feature gate is enabled, it should propagate the authentication operator configuration",
-			featureSet: configv1.TechPreviewNoUpgrade,
+			name:              "When the feature gate is enabled, it should propagate the authentication operator configuration",
+			featureSet:        configv1.TechPreviewNoUpgrade,
+			authProxyCASynced: true,
 			cluster: hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					OperatorConfiguration: &hyperv1.OperatorConfiguration{
@@ -602,6 +609,32 @@ func TestReconcileHostedControlPlaneAuthenticationOperatorConfiguration(t *testi
 			expectedAuthentication: hyperv1.AuthenticationOperatorSpec{
 				Proxy: operatorv1.AuthenticationProxyConfig{
 					TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "proxy-ca"},
+				},
+			},
+		},
+		{
+			name:              "When the auth proxy CA did not reach the destination, it should keep the previously propagated authentication",
+			featureSet:        configv1.TechPreviewNoUpgrade,
+			authProxyCASynced: false,
+			existingAuthentication: hyperv1.AuthenticationOperatorSpec{
+				Proxy: operatorv1.AuthenticationProxyConfig{
+					HTTPSProxy: "https://previous.example.com:8443",
+				},
+			},
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						Authentication: hyperv1.AuthenticationOperatorSpec{
+							Proxy: operatorv1.AuthenticationProxyConfig{
+								HTTPSProxy: "https://new.example.com:8443",
+							},
+						},
+					},
+				},
+			},
+			expectedAuthentication: hyperv1.AuthenticationOperatorSpec{
+				Proxy: operatorv1.AuthenticationProxyConfig{
+					HTTPSProxy: "https://previous.example.com:8443",
 				},
 			},
 		},
@@ -627,10 +660,12 @@ func TestReconcileHostedControlPlaneAuthenticationOperatorConfiguration(t *testi
 
 			controlPlane := &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
-					OperatorConfiguration: &hyperv1.OperatorConfiguration{},
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						Authentication: test.existingAuthentication,
+					},
 				},
 			}
-			err := reconcileHostedControlPlane(controlPlane, &test.cluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(controlPlane, &test.cluster, true, true, test.authProxyCASynced, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Error(err)
 			}
@@ -656,8 +691,34 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 		hostedClusterName     = "test-cluster"
 		proxyCAConfigMapName  = "proxy-trusted-ca"
 		clusterProxyCAName    = "cluster-proxy-ca"
-		proxyCAData           = "-----BEGIN CERTIFICATE-----\nMIIBkTCB..."
 	)
+
+	// generateCertPEM returns a parseable self-signed certificate so the auth
+	// proxy CA validation accepts the synchronized bundle.
+	generateCertPEM := func(t *testing.T) string {
+		t.Helper()
+		privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatalf("failed to generate private key: %v", err)
+		}
+		template := x509.Certificate{
+			SerialNumber: big.NewInt(1),
+			Subject:      pkix.Name{CommonName: "test-cert"},
+			NotBefore:    time.Now().Add(-time.Hour),
+			NotAfter:     time.Now().Add(24 * time.Hour),
+			KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+			IsCA:         true,
+		}
+		certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+		if err != nil {
+			t.Fatalf("failed to create certificate: %v", err)
+		}
+		var certPEM bytes.Buffer
+		if err := pem.Encode(&certPEM, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+			t.Fatalf("failed to encode certificate: %v", err)
+		}
+		return certPEM.String()
+	}
 
 	newHostedCluster := func(operatorConfiguration *hyperv1.OperatorConfiguration) *hyperv1.HostedCluster {
 		return &hyperv1.HostedCluster{
@@ -712,18 +773,18 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 						Namespace: testNamespace,
 					},
 					Data: map[string]string{
-						"ca-bundle.crt": proxyCAData,
+						"ca-bundle.crt": generateCertPEM(t),
 					},
 				},
 			},
 			verify: func(g *WithT, client crclient.Client) {
 				destCM := &corev1.ConfigMap{}
 				err := client.Get(context.Background(), crclient.ObjectKey{
-					Name:      proxyCAConfigMapName,
+					Name:      proxy.AuthProxyTrustedCAConfigMapName,
 					Namespace: controlPlaneNamespace,
 				}, destCM)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(destCM.Data).To(HaveKeyWithValue("ca-bundle.crt", proxyCAData))
+				g.Expect(destCM.Data).To(HaveKey("ca-bundle.crt"))
 			},
 		},
 		{
@@ -745,21 +806,21 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 						Namespace: testNamespace,
 					},
 					Data: map[string]string{
-						"ca-bundle.crt": proxyCAData,
+						"ca-bundle.crt": generateCertPEM(t),
 					},
 				},
 			},
 			verify: func(g *WithT, client crclient.Client) {
 				destCM := &corev1.ConfigMap{}
 				err := client.Get(context.Background(), crclient.ObjectKey{
-					Name:      proxyCAConfigMapName,
+					Name:      proxy.AuthProxyTrustedCAConfigMapName,
 					Namespace: controlPlaneNamespace,
 				}, destCM)
 				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
 			},
 		},
 		{
-			name:       "When the proxy trusted CA references a missing configmap, it should fail",
+			name:       "When the proxy trusted CA references a missing configmap, it should withhold the sync",
 			featureSet: configv1.TechPreviewNoUpgrade,
 			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
 				Authentication: hyperv1.AuthenticationOperatorSpec{
@@ -770,9 +831,38 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 					},
 				},
 			}),
-			expectError:            true,
-			expectedErrorSubstring: fmt.Sprintf("failed to get referenced configmap %s/%s", testNamespace, proxyCAConfigMapName),
-			expectErrorIs:          ErrHostedClusterSpecOperatorConfigurationConfigMaps,
+			verify: func(g *WithT, client crclient.Client) {
+				destCM := &corev1.ConfigMap{}
+				err := client.Get(context.Background(), crclient.ObjectKey{
+					Name:      proxy.AuthProxyTrustedCAConfigMapName,
+					Namespace: controlPlaneNamespace,
+				}, destCM)
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+			},
+		},
+		{
+			name:       "When the proxy trusted CA bundle is unparsable, it should withhold the sync",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{
+							Name: proxyCAConfigMapName,
+						},
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      proxyCAConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "not a pem bundle",
+					},
+				},
+			},
 		},
 		{
 			name:       "When both configuration and operator configuration are set, it should sync both",
@@ -805,14 +895,14 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 						Name:      clusterProxyCAName,
 						Namespace: testNamespace,
 					},
-					Data: map[string]string{"ca-bundle.crt": "cluster-proxy-data"},
+					Data: map[string]string{"ca-bundle.crt": generateCertPEM(t)},
 				},
 				&corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      proxyCAConfigMapName,
 						Namespace: testNamespace,
 					},
-					Data: map[string]string{"ca-bundle.crt": proxyCAData},
+					Data: map[string]string{"ca-bundle.crt": generateCertPEM(t)},
 				},
 			},
 			verify: func(g *WithT, client crclient.Client) {
@@ -821,14 +911,14 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 					Name:      clusterProxyCAName,
 					Namespace: controlPlaneNamespace,
 				}, clusterCM)).To(Succeed())
-				g.Expect(clusterCM.Data).To(HaveKeyWithValue("ca-bundle.crt", "cluster-proxy-data"))
+				g.Expect(clusterCM.Data).To(HaveKey("ca-bundle.crt"))
 
 				operatorCM := &corev1.ConfigMap{}
 				g.Expect(client.Get(context.Background(), crclient.ObjectKey{
-					Name:      proxyCAConfigMapName,
+					Name:      proxy.AuthProxyTrustedCAConfigMapName,
 					Namespace: controlPlaneNamespace,
 				}, operatorCM)).To(Succeed())
-				g.Expect(operatorCM.Data).To(HaveKeyWithValue("ca-bundle.crt", proxyCAData))
+				g.Expect(operatorCM.Data).To(HaveKey("ca-bundle.crt"))
 			},
 		},
 	}
@@ -874,6 +964,59 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 	}
 }
 
+func TestHostedClusterReconciler_SyncReferencedConfigMap(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := t.Context()
+
+	const (
+		namespace             = "test-ns"
+		controlPlaneNamespace = "test-hcp-ns"
+		fixedDestination      = "auth-proxy-fixed-dest"
+	)
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: namespace},
+	}
+	immutableSource := func(name, data string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Immutable:  ptr.To(true),
+			Data:       map[string]string{"ca-bundle.crt": data},
+		}
+	}
+	client := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(immutableSource("ca-a", "bundle-a"), immutableSource("ca-b", "bundle-b")).
+		Build()
+	r := &HostedClusterReconciler{Client: client}
+	createOrUpdate := upsert.New(false).CreateOrUpdate
+
+	// A fixed destination follows a changing spec reference, so it must not
+	// inherit the source's immutability: a later switch to another source
+	// must update it.
+	g.Expect(r.syncReferencedConfigMap(ctx, "ca-a", fixedDestination, hcluster, controlPlaneNamespace, createOrUpdate)).To(Succeed())
+	g.Expect(r.syncReferencedConfigMap(ctx, "ca-b", fixedDestination, hcluster, controlPlaneNamespace, createOrUpdate)).To(Succeed())
+	dest := &corev1.ConfigMap{}
+	g.Expect(client.Get(ctx, crclient.ObjectKey{Name: fixedDestination, Namespace: controlPlaneNamespace}, dest)).To(Succeed())
+	g.Expect(dest.Data).To(HaveKeyWithValue("ca-bundle.crt", "bundle-b"))
+	g.Expect(dest.Immutable).To(BeNil())
+
+	// A second run over the converged destination is a no-op.
+	destBefore := dest.DeepCopy()
+	g.Expect(r.syncReferencedConfigMap(ctx, "ca-b", fixedDestination, hcluster, controlPlaneNamespace, createOrUpdate)).To(Succeed())
+	g.Expect(client.Get(ctx, crclient.ObjectKey{Name: fixedDestination, Namespace: controlPlaneNamespace}, dest)).To(Succeed())
+	g.Expect(dest.Data).To(Equal(destBefore.Data))
+
+	// A name-preserving copy is tied to this one source, so it keeps
+	// inheriting the source's immutability.
+	g.Expect(r.syncReferencedConfigMap(ctx, "ca-a", "ca-a", hcluster, controlPlaneNamespace, createOrUpdate)).To(Succeed())
+	sameName := &corev1.ConfigMap{}
+	g.Expect(client.Get(ctx, crclient.ObjectKey{Name: "ca-a", Namespace: controlPlaneNamespace}, sameName)).To(Succeed())
+	g.Expect(sameName.Immutable).ToNot(BeNil())
+	g.Expect(*sameName.Immutable).To(BeTrue())
+}
+
 func TestReconcileHostedControlPlaneLabelSync(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -917,7 +1060,7 @@ func TestReconcileHostedControlPlaneLabelSync(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Labels: test.hcpLabels},
 			}
-			err := reconcileHostedControlPlane(hcp, hc, false, false, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hcp, hc, false, false, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 
 			for key, val := range test.expectedLabels {
@@ -1024,7 +1167,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(updated, &test.Cluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Error(err)
 			}
@@ -1164,7 +1307,7 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{}
 			hostedCluster.Spec.Networking.APIServer = test.networking
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -1223,7 +1366,7 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
 			g := NewGomegaWithT(t)
 
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// DeepEqual to check that all ClusterConfiguration fields are deep copied to HostedControlPlane
@@ -1329,7 +1472,7 @@ func TestReconcileHostedControlPlaneMonitoring(t *testing.T) {
 			hostedCluster.Spec.Monitoring = test.monitoring
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
 
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(hostedControlPlane.Spec.Monitoring).To(Equal(test.expectedMonitoring))
 			if test.expectAnnotationOnHCP {
