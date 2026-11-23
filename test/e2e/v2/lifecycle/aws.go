@@ -127,6 +127,16 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 
 	var kmsKeyARNArgs []string
 	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
+		// If the value is an alias (alias/<name>), resolve it to a full ARN.
+		// IAM policy Resources require ARN format; aliases are rejected.
+		if strings.HasPrefix(kmsKeyARN, "alias/") {
+			resolved, err := a.resolveKMSKeyARN(ctx, kmsKeyARN)
+			if err != nil {
+				panic(fmt.Sprintf("HYPERSHIFT_ETCD_KMS_KEY_ARN is set to alias %q but could not be resolved to an ARN: %v", kmsKeyARN, err))
+			}
+			log.Printf("Resolved etcd KMS key alias %q to ARN %q", kmsKeyARN, resolved)
+			kmsKeyARN = resolved
+		}
 		kmsKeyARNArgs = append(kmsKeyARNArgs, "--kms-key-arn="+kmsKeyARN)
 	}
 
