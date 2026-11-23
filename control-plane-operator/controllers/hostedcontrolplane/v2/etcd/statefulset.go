@@ -24,14 +24,6 @@ import (
 	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
 )
 
-// etcdMetricsProxyListenAddr is the private gRPC listen address of the etcd-metrics
-// grpc-proxy sidecar. Nothing connects to it: no Service exposes it, and the empty
-// --advertise-client-url keeps the proxy from dialing it for self health checks. It is the
-// IPv4 loopback for every hosted cluster network family because 127.0.0.1 is present on
-// the management pod loopback, while ::1 is absent when IPv6 is disabled in the pod and
-// binding it makes the proxy exit.
-const etcdMetricsProxyListenAddr = "127.0.0.1:2383"
-
 // minTLSVersion assesses what is the minimum TLS version we should use. This
 // function takes into account that etcd supports only 1.2 and 1.3.
 func minTLSVersion(profile *configv1.TLSSecurityProfile) (tlsutil.TLSVersion, error) {
@@ -118,12 +110,16 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	})
 
 	podspec.UpdateContainer("etcd-metrics", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		allInterfaces := "0.0.0.0"
-		if !ipv4 {
+		var loInterface, allInterfaces string
+		if ipv4 {
+			loInterface = "127.0.0.1"
+			allInterfaces = "0.0.0.0"
+		} else {
+			loInterface = "[::1]"
 			allInterfaces = "[::]"
 		}
 		c.Args = append(c.Args,
-			fmt.Sprintf("--listen-addr=%s", etcdMetricsProxyListenAddr),
+			fmt.Sprintf("--listen-addr=%s:2383", loInterface),
 			fmt.Sprintf("--metrics-addr=https://%s:2381", allInterfaces),
 			"--advertise-client-url=",
 			fmt.Sprintf("--tls-min-version=%s", tlsMinVersion),

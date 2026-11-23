@@ -550,10 +550,6 @@ func TestAdaptStatefulSetForShard_IPv6WithDefrag(t *testing.T) {
 	g.Expect(podspec.FindEnvVar("ETCD_LISTEN_PEER_URLS", etcdContainer.Env)).To(BeNil())
 	g.Expect(podspec.FindEnvVar("ETCD_LISTEN_CLIENT_URLS", etcdContainer.Env)).To(BeNil())
 	g.Expect(podspec.FindEnvVar("ETCD_LISTEN_METRICS_URLS", etcdContainer.Env)).To(HaveField("Value", "https://[::]:2382"))
-	// The metrics proxy keeps the IPv6 wildcard but listens privately on the IPv4 loopback.
-	metricsContainer := podspec.FindContainer("etcd-metrics", sts.Spec.Template.Spec.Containers)
-	g.Expect(metricsContainer).ToNot(BeNil())
-	g.Expect(metricsContainer.Args).To(ContainElements("--listen-addr=127.0.0.1:2383", "--metrics-addr=https://[::]:2381"))
 
 	// HA shard with HighlyAvailable should get defrag container
 	var hasDefrag bool

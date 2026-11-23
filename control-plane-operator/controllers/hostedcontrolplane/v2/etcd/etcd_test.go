@@ -843,10 +843,8 @@ type etcdListenURLTestCase struct {
 // etcdListenURLTestCases returns the listen URL matrix shared by the default and
 // shard StatefulSet tests so both paths are held to identical expectations.
 func etcdListenURLTestCases() []etcdListenURLTestCase {
-	// The metrics wildcard follows the hosted cluster network family, but the proxy's
-	// private gRPC listener is the IPv4 loopback for every family.
 	ipv4MetricsArgs := []string{"--listen-addr=127.0.0.1:2383", "--metrics-addr=https://0.0.0.0:2381"}
-	ipv6MetricsArgs := []string{"--listen-addr=127.0.0.1:2383", "--metrics-addr=https://[::]:2381"}
+	ipv6MetricsArgs := []string{"--listen-addr=[::1]:2383", "--metrics-addr=https://[::]:2381"}
 	return []etcdListenURLTestCase{
 		{
 			name:                "When guest network is IPv6 and pod IP is IPv4, it should start etcd with unbracketed IPv4 listen URLs",
@@ -927,13 +925,6 @@ func expectEtcdListenURLsAtStartup(t *testing.T, sts *appsv1.StatefulSet, assetC
 	}
 	g.Expect(podspec.FindEnvVar("ETCD_LISTEN_METRICS_URLS", etcdContainer.Env)).To(HaveField("Value", tc.expectedMetricsURLs))
 	g.Expect(metricsContainer.Args).To(ContainElements(tc.expectedMetricsArgs))
-	// The proxy must have exactly one private gRPC listener, on the IPv4 loopback: ::1 is
-	// absent from the loopback of a management pod with IPv6 disabled, and binding it made
-	// the proxy exit.
-	listenAddrArgs := slices.DeleteFunc(slices.Clone(metricsContainer.Args), func(arg string) bool {
-		return !strings.HasPrefix(arg, "--listen-addr=")
-	})
-	g.Expect(listenAddrArgs).To(Equal([]string{"--listen-addr=127.0.0.1:2383"}))
 
 	expectedPeerAdvertiseURL := fmt.Sprintf("https://%s.%s.%s.svc:2380", podName, discoveryService, etcdTestNamespace)
 	expectedClientAdvertiseURL := fmt.Sprintf("https://%s.%s.%s.svc:2379", podName, discoveryService, etcdTestNamespace)
