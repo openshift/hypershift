@@ -27,6 +27,7 @@ import (
 )
 
 func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
+	t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", "")
 	t.Run("When AWS cluster specs are built, it should use public-only networking except for Karpenter and deterministic-lb variants", func(t *testing.T) {
 		t.Setenv("EXTRA_ARGS", "")
 		t.Setenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS", "")
