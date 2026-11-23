@@ -30,12 +30,26 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			c.Args = append(c.Args, "--tls-cipher-suites="+cipherSuite)
 		}
 
-		// Match legacy KAS proxy settings, including hosted pod and service CIDR bypasses.
 		hcp := cpContext.HCP
 		var additionalNoProxyCIDRS []string
 		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, netutil.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork)...)
 		additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, netutil.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork)...)
-		proxy.SetEnvVars(&c.Env, additionalNoProxyCIDRS...)
+
+		// The auth-scoped component proxy takes precedence over the management
+		// cluster proxy and is applied in full: nothing is inherited from the
+		// management cluster's proxy environment. The bypass list keeps the
+		// same internal baseline as the fallback leg: the hosted CIDRs above,
+		// the hostname defaults, and the kube-apiserver Service.
+		if authProxy := proxy.AuthProxyOverride(hcp); authProxy != nil {
+			proxy.SetEnvVarsTo(&c.Env,
+				authProxy.HTTPProxy,
+				authProxy.HTTPSProxy,
+				proxy.AuthProxyNoProxy(authProxy.NoProxy, additionalNoProxyCIDRS...),
+			)
+		} else {
+			// Match legacy KAS proxy settings, including hosted pod and service CIDR bypasses.
+			proxy.SetEnvVars(&c.Env, additionalNoProxyCIDRS...)
+		}
 	})
 
 	return nil
