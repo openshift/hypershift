@@ -25,6 +25,7 @@ import (
 	azureresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/azure"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/configuration"
+	consoleresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/console"
 	gcpresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/gcp"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
@@ -52,6 +53,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
@@ -324,6 +326,19 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to watch ConfigMap: %w", err)
 	}
 
+	// Watch the resources the HyperShift operator synchronizes into this
+	// namespace on behalf of the HostedCluster spec (referenced CA bundles,
+	// image policies, and similar), so content-only updates of a referenced
+	// ConfigMap propagate promptly to the guest instead of waiting for an
+	// unrelated event to trigger a full reconcile. The names are user-chosen,
+	// so the watch selects by the referenced-resource annotation the HyperShift
+	// operator stamps on the copies. The CP cluster cache is already restricted
+	// to this namespace and its ConfigMap informer is already running for the
+	// KubeletConfig watch above, so this adds no new informer.
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &corev1.ConfigMap{}, eventHandler(), referencedResourceConfigMapPredicate())); err != nil {
+		return fmt.Errorf("failed to watch referenced ConfigMaps: %w", err)
+	}
+
 	// Watch metrics-proxy Route on the control plane cluster for hostname changes.
 	// Skip when the management cluster does not expose the route.openshift.io API
 	// (non-OpenShift management cluster); otherwise the watch fails and HCCO does not start.
@@ -356,6 +371,22 @@ func notUserCABundlePredicate() predicate.Funcs {
 	userCABundle := manifests.UserCABundle()
 	return predicate.NewPredicateFuncs(func(o client.Object) bool {
 		return !namespacedNamePredicateFunc(userCABundle.Namespace, userCABundle.Name)(o)
+	})
+}
+
+// referencedResourceConfigMapPredicate selects the ConfigMaps the HyperShift
+// operator synchronizes into this namespace on behalf of a HostedCluster spec
+// reference: they carry the referenced-resource annotation the operator stamps
+// on the source before copying it. It matches any annotation key with the
+// referenced-resource prefix, regardless of which HostedCluster owns it.
+func referencedResourceConfigMapPredicate() predicate.Funcs {
+	return predicate.NewPredicateFuncs(func(o client.Object) bool {
+		for key := range o.GetAnnotations() {
+			if strings.HasPrefix(key, k8sutil.ReferencedResourceAnnotationPrefix) {
+				return true
+			}
+		}
+		return false
 	})
 }
 
@@ -946,6 +977,11 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 	log.Info("reconciling proxy CA bundle")
 	if err := configuration.ReconcileProxyCABundle(ctx, configuration.NewHostedCluster(r.client, r.CreateOrUpdate), configuration.NewControlPlane(r.cpClient, r.CreateOrUpdate), configuration.ProxyParamsFor(hcp.Namespace, hcp.Spec.Configuration)); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy CA bundle: %w", err))
+	}
+
+	log.Info("reconciling console auth proxy")
+	if err := r.reconcileConsoleAuthProxy(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile console auth proxy: %w", err))
 	}
 
 	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
@@ -1826,6 +1862,163 @@ func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context) erro
 		}
 	}
 
+	return nil
+}
+
+// reconcileConsoleAuthProxy reflects the auth-scoped proxy override
+// (hcp.Spec.OperatorConfiguration.Authentication.Proxy) onto the guest Console
+// operator CR's spec.authProxy. The value applies ONLY to console's OIDC login
+// clients.
+//
+// When the override is unset, spec.authProxy is cleared (the CR is not created)
+// so console-operator falls back to the cluster-wide proxy. When set, the
+// referenced trusted-CA bundle is first copied into the guest and spec.authProxy
+// is enforced on the CR.
+func (r *reconciler) reconcileConsoleAuthProxy(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	authProxy := proxy.AuthProxyOverride(hcp)
+
+	consoleCR := manifests.ConsoleOperatorConfig()
+
+	// Unset or empty override: clear any previously-set authProxy so console
+	// falls back to the cluster-wide proxy. Do not create the CR.
+	if authProxy == nil {
+		if err := r.client.Get(ctx, client.ObjectKeyFromObject(consoleCR), consoleCR); err != nil {
+			// A guest that does not serve the Console kind — the Console
+			// capability is off, or the release predates console-operator —
+			// behaves like an absent CR: nothing to clear. Such a guest never
+			// uses the override, so this path must not fail its reconcile.
+			if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+				return r.cleanupConsoleAuthProxyTrustedCA(ctx, hcp)
+			}
+			return err
+		}
+		if !reflect.DeepEqual(consoleCR.Spec.AuthProxy, operatorv1.ConsoleAuthProxyConfig{}) {
+			consoleresources.ClearConsoleAuthProxy(consoleCR)
+			if err := r.client.Update(ctx, consoleCR); err != nil {
+				return fmt.Errorf("failed to clear console auth proxy: %w", err)
+			}
+		}
+		return r.cleanupConsoleAuthProxyTrustedCA(ctx, hcp)
+	}
+
+	// Override set: copy the referenced trusted-CA bundle into the guest, then
+	// enforce spec.authProxy on the Console CR.
+	authProxyConfig := *authProxy
+	guestCAName, err := r.reconcileConsoleAuthProxyTrustedCA(ctx, hcp, authProxyConfig.TrustedCA.Name)
+	if err != nil {
+		return err
+	}
+
+	if _, err := r.CreateOrUpdate(ctx, r.client, consoleCR, func() error {
+		consoleresources.ReconcileConsoleAuthProxy(consoleCR, authProxyConfig, guestCAName)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile console auth proxy: %w", err)
+	}
+
+	// Cross-cluster write-skew check: the guest API server may prune
+	// spec.authProxy when the guest's Console CRD does not serve the field
+	// (an older console-operator payload, or a tenant feature set without the
+	// AuthenticationComponentProxyExternalOIDC gate), and the write succeeds
+	// without an error. Re-read through the uncached client — the guest cache
+	// may still serve the optimistic pre-watch object — and verify the field
+	// persisted. The failure surfaces through the
+	// ConfigOperatorReconciliationSucceeded condition, never through
+	// ValidHostedControlPlaneConfiguration, which CPO overwrites on every
+	// reconcile.
+	if err := r.verifyConsoleAuthProxyPersisted(ctx, consoleCR); err != nil {
+		return err
+	}
+
+	// The guest CA is removed only after the Console stopped referencing it:
+	// a failed Console write above must leave the stored spec.authProxy and
+	// its bundle a consistent pair. A failed cleanup retries on the next
+	// reconcile without restoring the old reference.
+	if guestCAName == "" {
+		return r.cleanupConsoleAuthProxyTrustedCA(ctx, hcp)
+	}
+	return nil
+}
+
+// verifyConsoleAuthProxyPersisted re-reads the guest Console CR through the
+// uncached client and reports an error when spec.authProxy does not match what
+// was written.
+func (r *reconciler) verifyConsoleAuthProxyPersisted(ctx context.Context, written *operatorv1.Console) error {
+	persisted := manifests.ConsoleOperatorConfig()
+	if err := r.uncachedClient.Get(ctx, client.ObjectKeyFromObject(persisted), persisted); err != nil {
+		return fmt.Errorf("failed to read back guest Console auth proxy: %w", err)
+	}
+	if !reflect.DeepEqual(persisted.Spec.AuthProxy, written.Spec.AuthProxy) {
+		return fmt.Errorf("guest Console spec.authProxy did not persist; the guest Console CRD may not serve the field (check the hosted cluster's feature set and console-operator version)")
+	}
+	return nil
+}
+
+// reconcileConsoleAuthProxyTrustedCA copies the CA bundle referenced by the
+// auth-scoped proxy override from the control-plane namespace into a dedicated
+// guest openshift-config ConfigMap, and returns that guest ConfigMap's name.
+// When sourceName is empty, no bundle is needed: it returns an empty name and
+// leaves any previous copy in place — the caller removes it after the Console
+// reference is gone.
+func (r *reconciler) reconcileConsoleAuthProxyTrustedCA(ctx context.Context, hcp *hyperv1.HostedControlPlane, sourceName string) (string, error) {
+	if sourceName == "" {
+		return "", nil
+	}
+
+	// The HyperShift operator synchronizes the user-referenced source bundle
+	// into the control plane namespace under the fixed destination name, so
+	// the copy is read by that name regardless of the source's name.
+	sourceCM := &corev1.ConfigMap{}
+	if err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: proxy.AuthProxyTrustedCAConfigMapName}, sourceCM); err != nil {
+		return "", fmt.Errorf("failed to get console auth proxy TrustedCA configmap %s/%s: %w", hcp.Namespace, proxy.AuthProxyTrustedCAConfigMapName, err)
+	}
+
+	destCM := manifests.ConsoleAuthProxyTrustedCAConfigMap()
+	// The guest name is dedicated but shared namespace-wide: an object at
+	// that name without this control plane's ownership marker was not created
+	// here, and overwriting it would silently destroy a guest administrator's
+	// bundle.
+	existing := manifests.ConsoleAuthProxyTrustedCAConfigMap()
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(existing), existing); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return "", fmt.Errorf("failed to get console auth proxy TrustedCA config map %s/%s: %w", existing.Namespace, existing.Name, err)
+		}
+	} else if existing.Labels[hyperv1.InfraIDLabel] != hcp.Spec.InfraID {
+		return "", fmt.Errorf("refusing to overwrite guest config map %s/%s not owned by this control plane", existing.Namespace, existing.Name)
+	}
+	if _, err := r.CreateOrUpdate(ctx, r.client, destCM, func() error {
+		if destCM.Labels == nil {
+			destCM.Labels = map[string]string{}
+		}
+		destCM.Labels[hyperv1.InfraIDLabel] = hcp.Spec.InfraID
+		destCM.Data = sourceCM.Data
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("failed to reconcile console auth proxy TrustedCA config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
+	}
+
+	return destCM.Name, nil
+}
+
+// cleanupConsoleAuthProxyTrustedCA removes the dedicated guest CA bundle
+// ConfigMap for console's auth-scoped proxy, but only when this control plane
+// created it: an object at the dedicated name without this control plane's
+// ownership marker stays in place. It is a no-op when the ConfigMap does not
+// exist.
+func (r *reconciler) cleanupConsoleAuthProxyTrustedCA(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	destCM := manifests.ConsoleAuthProxyTrustedCAConfigMap()
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(destCM), destCM); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get console auth proxy TrustedCA config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
+	}
+	if destCM.Labels[hyperv1.InfraIDLabel] != hcp.Spec.InfraID {
+		return nil
+	}
+	if err := r.client.Delete(ctx, destCM); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete console auth proxy TrustedCA config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
+	}
 	return nil
 }
 
