@@ -31,6 +31,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hcpmanifests "github.com/openshift/hypershift/pkg/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
@@ -54,6 +55,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -541,6 +543,332 @@ func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
 			}
 			if !equality.Semantic.DeepEqual(test.expectedAdditionalTrustBundle, updated.Spec.AdditionalTrustBundle) {
 				t.Error(cmp.Diff(test.expectedAdditionalTrustBundle, updated.Spec.AdditionalTrustBundle))
+			}
+		})
+	}
+}
+
+// testfuncstructure: the canonical name TestReconcileHostedControlPlane is not
+// usable while the grandfathered legacy TestReconcileHostedControlPlane*
+// tests (AdditionalTrustBundle, LabelSync, Upgrades, Configuration,
+// APINetwork, Monitoring, Annotations) still exist; the linter requires
+// consolidating them all into one top-level test, which is unrelated churn
+// for this change. Revisit when the legacy tests are consolidated.
+//
+//nolint:hypershiftlinter
+func TestReconcileHostedControlPlaneAuthenticationOperatorConfiguration(t *testing.T) {
+	tests := []struct {
+		name                   string
+		featureSet             configv1.FeatureSet
+		cluster                hyperv1.HostedCluster
+		expectedAuthentication hyperv1.AuthenticationOperatorSpec
+		// expectNilOperatorConfig asserts the HCP operator configuration is
+		// cleared entirely, not merely reduced to a zero-valued copy: a nil
+		// and an empty configuration must not stay equivalent.
+		expectNilOperatorConfig bool
+	}{
+		{
+			name:       "When the feature gate is disabled, it should strip the authentication operator configuration",
+			featureSet: configv1.Default,
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						IngressOperator: &hyperv1.IngressOperatorSpec{},
+						Authentication: hyperv1.AuthenticationOperatorSpec{
+							Proxy: operatorv1.AuthenticationProxyConfig{
+								TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "proxy-ca"},
+							},
+						},
+					},
+				},
+			},
+			expectedAuthentication: hyperv1.AuthenticationOperatorSpec{},
+		},
+		{
+			name:       "When the feature gate is enabled, it should propagate the authentication operator configuration",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						IngressOperator: &hyperv1.IngressOperatorSpec{},
+						Authentication: hyperv1.AuthenticationOperatorSpec{
+							Proxy: operatorv1.AuthenticationProxyConfig{
+								TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "proxy-ca"},
+							},
+						},
+					},
+				},
+			},
+			expectedAuthentication: hyperv1.AuthenticationOperatorSpec{
+				Proxy: operatorv1.AuthenticationProxyConfig{
+					TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "proxy-ca"},
+				},
+			},
+		},
+		{
+			name:       "When the operator configuration is nil, it should clear the HCP operator configuration",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{},
+			},
+			expectedAuthentication:  hyperv1.AuthenticationOperatorSpec{},
+			expectNilOperatorConfig: true,
+		},
+	}
+
+	previousFeatureSet := featuregate.FeatureSet()
+	t.Cleanup(func() {
+		featuregate.ConfigureFeatureSet(string(previousFeatureSet))
+	})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			featuregate.ConfigureFeatureSet(string(test.featureSet))
+
+			controlPlane := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{},
+				},
+			}
+			err := reconcileHostedControlPlane(controlPlane, &test.cluster, true, true, func() (map[string]string, error) { return nil, nil })
+			if err != nil {
+				t.Error(err)
+			}
+			var actualAuthentication hyperv1.AuthenticationOperatorSpec
+			if controlPlane.Spec.OperatorConfiguration != nil {
+				actualAuthentication = controlPlane.Spec.OperatorConfiguration.Authentication
+			}
+			if test.expectNilOperatorConfig {
+				if controlPlane.Spec.OperatorConfiguration != nil {
+					t.Error("expected the HCP operator configuration to be cleared to nil")
+				}
+			} else if !equality.Semantic.DeepEqual(test.expectedAuthentication, actualAuthentication) {
+				t.Error(cmp.Diff(test.expectedAuthentication, actualAuthentication))
+			}
+		})
+	}
+}
+
+func TestReconcileGlobalConfigSync(t *testing.T) {
+	const (
+		testNamespace         = "test-ns"
+		controlPlaneNamespace = "test-hcp-ns"
+		hostedClusterName     = "test-cluster"
+		proxyCAConfigMapName  = "proxy-trusted-ca"
+		clusterProxyCAName    = "cluster-proxy-ca"
+		proxyCAData           = "-----BEGIN CERTIFICATE-----\nMIIBkTCB..."
+	)
+
+	newHostedCluster := func(operatorConfiguration *hyperv1.OperatorConfiguration) *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hostedClusterName,
+				Namespace: testNamespace,
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				OperatorConfiguration: operatorConfiguration,
+			},
+		}
+	}
+
+	testCases := []struct {
+		name                   string
+		featureSet             configv1.FeatureSet
+		hostedCluster          *hyperv1.HostedCluster
+		existingObjects        []crclient.Object
+		expectError            bool
+		expectedErrorSubstring string
+		expectErrorIs          error
+		verify                 func(g *WithT, client crclient.Client)
+	}{
+		{
+			name:          "When OperatorConfiguration is nil, it should not attempt any sync",
+			featureSet:    configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(nil),
+		},
+		{
+			name:       "When the authentication operator spec is empty, it should succeed",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{},
+			}),
+		},
+		{
+			name:       "When the proxy trusted CA is set and the source configmap exists, it should sync it",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{
+							Name: proxyCAConfigMapName,
+						},
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      proxyCAConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": proxyCAData,
+					},
+				},
+			},
+			verify: func(g *WithT, client crclient.Client) {
+				destCM := &corev1.ConfigMap{}
+				err := client.Get(context.Background(), crclient.ObjectKey{
+					Name:      proxyCAConfigMapName,
+					Namespace: controlPlaneNamespace,
+				}, destCM)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(destCM.Data).To(HaveKeyWithValue("ca-bundle.crt", proxyCAData))
+			},
+		},
+		{
+			name:       "When the feature gate is disabled, it should not sync the proxy trusted CA",
+			featureSet: configv1.Default,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{
+							Name: proxyCAConfigMapName,
+						},
+					},
+				},
+			}),
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      proxyCAConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": proxyCAData,
+					},
+				},
+			},
+			verify: func(g *WithT, client crclient.Client) {
+				destCM := &corev1.ConfigMap{}
+				err := client.Get(context.Background(), crclient.ObjectKey{
+					Name:      proxyCAConfigMapName,
+					Namespace: controlPlaneNamespace,
+				}, destCM)
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+			},
+		},
+		{
+			name:       "When the proxy trusted CA references a missing configmap, it should fail",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{
+							Name: proxyCAConfigMapName,
+						},
+					},
+				},
+			}),
+			expectError:            true,
+			expectedErrorSubstring: fmt.Sprintf("failed to get referenced configmap %s/%s", testNamespace, proxyCAConfigMapName),
+			expectErrorIs:          ErrHostedClusterSpecOperatorConfigurationConfigMaps,
+		},
+		{
+			name:       "When both configuration and operator configuration are set, it should sync both",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{Name: clusterProxyCAName},
+						},
+					},
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						Authentication: hyperv1.AuthenticationOperatorSpec{
+							Proxy: operatorv1.AuthenticationProxyConfig{
+								TrustedCA: operatorv1.AuthenticationConfigMapReference{
+									Name: proxyCAConfigMapName,
+								},
+							},
+						},
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      clusterProxyCAName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca-bundle.crt": "cluster-proxy-data"},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      proxyCAConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca-bundle.crt": proxyCAData},
+				},
+			},
+			verify: func(g *WithT, client crclient.Client) {
+				clusterCM := &corev1.ConfigMap{}
+				g.Expect(client.Get(context.Background(), crclient.ObjectKey{
+					Name:      clusterProxyCAName,
+					Namespace: controlPlaneNamespace,
+				}, clusterCM)).To(Succeed())
+				g.Expect(clusterCM.Data).To(HaveKeyWithValue("ca-bundle.crt", "cluster-proxy-data"))
+
+				operatorCM := &corev1.ConfigMap{}
+				g.Expect(client.Get(context.Background(), crclient.ObjectKey{
+					Name:      proxyCAConfigMapName,
+					Namespace: controlPlaneNamespace,
+				}, operatorCM)).To(Succeed())
+				g.Expect(operatorCM.Data).To(HaveKeyWithValue("ca-bundle.crt", proxyCAData))
+			},
+		},
+	}
+
+	previousFeatureSet := featuregate.FeatureSet()
+	t.Cleanup(func() {
+		featuregate.ConfigureFeatureSet(string(previousFeatureSet))
+	})
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			featuregate.ConfigureFeatureSet(string(tc.featureSet))
+
+			ctx := t.Context()
+			g := NewWithT(t)
+
+			client := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...).
+				Build()
+
+			r := &HostedClusterReconciler{Client: client}
+			createOrUpdate := upsert.New(false).CreateOrUpdate
+
+			err := r.reconcileGlobalConfigSync(ctx, tc.hostedCluster, createOrUpdate, controlPlaneNamespace)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectedErrorSubstring != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
+				}
+				if tc.expectErrorIs != nil {
+					g.Expect(errors.Is(err, tc.expectErrorIs)).To(BeTrue())
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tc.verify != nil {
+				tc.verify(g, client)
 			}
 		})
 	}
