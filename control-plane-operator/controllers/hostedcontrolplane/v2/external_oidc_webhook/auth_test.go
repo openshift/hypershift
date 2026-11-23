@@ -14,9 +14,11 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/proxy"
 
 	authenticationv1alpha1 "github.com/openshift/api/authentication/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +28,71 @@ import (
 )
 
 func TestAdaptAuthConfig(t *testing.T) {
+	t.Run("When the auth proxy carries a trusted CA, it should publish the mounted bundle path", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cpContext := newAuthWorkloadContext(t, minimalOIDCAuthentication(), &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: proxy.AuthProxyTrustedCAConfigMapName, Namespace: "test-ns"},
+			Data:       map[string]string{"ca-bundle.crt": "-----BEGIN CERTIFICATE-----\n..."},
+		})
+		cpContext.HCP.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+			Authentication: hyperv1.AuthenticationOperatorSpec{
+				Proxy: operatorv1.AuthenticationProxyConfig{
+					HTTPSProxy: "https://auth.example.com:8443",
+					TrustedCA:  operatorv1.AuthenticationConfigMapReference{Name: "user-chosen-ca"},
+				},
+			},
+		}
+		authConfigMap := &corev1.ConfigMap{}
+
+		g.Expect(adaptAuthConfig(cpContext, authConfigMap)).To(Succeed())
+
+		generated := &authenticationv1alpha1.AuthenticationConfiguration{}
+		g.Expect(json.Unmarshal([]byte(authConfigMap.Data[authConfigDataKey]), generated)).To(Succeed())
+		g.Expect(generated.TrustedCAFilePath).To(Equal(proxy.AuthProxyTrustedCAFilePath))
+	})
+
+	t.Run("When the auth proxy trusted CA is not synchronized yet, it should defer the path", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cpContext := newAuthWorkloadContext(t, minimalOIDCAuthentication())
+		cpContext.HCP.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+			Authentication: hyperv1.AuthenticationOperatorSpec{
+				Proxy: operatorv1.AuthenticationProxyConfig{
+					HTTPSProxy: "https://auth.example.com:8443",
+					TrustedCA:  operatorv1.AuthenticationConfigMapReference{Name: "user-chosen-ca"},
+				},
+			},
+		}
+		authConfigMap := &corev1.ConfigMap{}
+
+		g.Expect(adaptAuthConfig(cpContext, authConfigMap)).To(Succeed())
+
+		generated := &authenticationv1alpha1.AuthenticationConfiguration{}
+		g.Expect(json.Unmarshal([]byte(authConfigMap.Data[authConfigDataKey]), generated)).To(Succeed())
+		g.Expect(generated.TrustedCAFilePath).To(BeEmpty())
+	})
+
+	t.Run("When the auth proxy carries no trusted CA, it should leave the path empty", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cpContext := newAuthWorkloadContext(t, minimalOIDCAuthentication())
+		cpContext.HCP.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+			Authentication: hyperv1.AuthenticationOperatorSpec{
+				Proxy: operatorv1.AuthenticationProxyConfig{
+					HTTPSProxy: "https://auth.example.com:8443",
+				},
+			},
+		}
+		authConfigMap := &corev1.ConfigMap{}
+
+		g.Expect(adaptAuthConfig(cpContext, authConfigMap)).To(Succeed())
+
+		generated := &authenticationv1alpha1.AuthenticationConfiguration{}
+		g.Expect(json.Unmarshal([]byte(authConfigMap.Data[authConfigDataKey]), generated)).To(Succeed())
+		g.Expect(generated.TrustedCAFilePath).To(BeEmpty())
+	})
+
 	t.Run("When cluster configuration is absent, it should leave the ConfigMap unchanged", func(t *testing.T) {
 		g := NewWithT(t)
 		cpContext := newAuthWorkloadContext(t, nil)
@@ -118,6 +185,25 @@ func TestAdaptAuthConfig(t *testing.T) {
 		err := adaptAuthConfig(cpContext, &corev1.ConfigMap{})
 		g.Expect(err).To(MatchError(ContainSubstring("issuer url cannot overlap with the ServiceAccount issuer url")))
 	})
+}
+
+// minimalOIDCAuthentication returns the smallest AuthenticationSpec the
+// external OIDC generator accepts, so tests exercising other aspects of
+// adaptAuthConfig still run the generator.
+func minimalOIDCAuthentication() *configv1.AuthenticationSpec {
+	return &configv1.AuthenticationSpec{
+		Type: configv1.AuthenticationTypeOIDC,
+		OIDCProviders: []configv1.OIDCProvider{{
+			Name:   "issuer",
+			Issuer: configv1.TokenIssuer{URL: "https://issuer.example.com"},
+			ClaimMappings: configv1.TokenClaimMappings{
+				Username: configv1.UsernameClaimMapping{
+					Claim:        "sub",
+					PrefixPolicy: configv1.NoPrefix,
+				},
+			},
+		}},
+	}
 }
 
 func newAuthWorkloadContext(t *testing.T, authentication *configv1.AuthenticationSpec, objects ...client.Object) component.WorkloadContext {
