@@ -1,9 +1,13 @@
 package proxy
 
 import (
+	"strings"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // AuthProxyOverride returns the auth-scoped proxy override for the external
@@ -36,4 +40,44 @@ func AuthProxyOverride(hcp *hyperv1.HostedControlPlane) *operatorv1.Authenticati
 // isZeroAuthProxy reports whether the override carries no proxy configuration.
 func isZeroAuthProxy(p operatorv1.AuthenticationProxyConfig) bool {
 	return p.HTTPProxy == "" && p.HTTPSProxy == ""
+}
+
+// AuthProxyNoProxy returns the NO_PROXY value the external-oidc-webhook uses
+// on the component-proxy leg: the component's own noProxy entries, the
+// hostname defaults in both dot forms, the kube-apiserver Service (the only
+// in-HCP endpoint the webhook dials directly, for TokenReview), and the
+// caller-supplied internal CIDRs.
+//
+// Nothing is inherited from the management cluster's NO_PROXY: the component
+// leg builds its bypass list from scratch. The service IP is not baked either:
+// KUBERNETES_SERVICE_HOST on the control plane operator resolves in the
+// management cluster, not in the hosted cluster.
+//
+// The internal CIDRs are part of the baseline the webhook keeps on both proxy
+// legs: internal addresses never traverse a proxy, so they are bypassed even
+// when the component proxy replaces the management cluster's. They are
+// unreachable from the management-cluster network in the common case, but the
+// baseline must not depend on routing assumptions. The caller supplies them
+// so both proxy legs share one source.
+//
+// etcd and the audit webhook Service are absent because the hosted
+// external-oidc-webhook runs the oauth-apiserver external-oidc command with
+// no etcd and no audit webhook; those endpoints belong to the standalone
+// oauth-apiserver shape.
+func AuthProxyNoProxy(componentNoProxy []string, internalCIDRs ...string) string {
+	set := sets.New(
+		"127.0.0.1",
+		"localhost",
+		"localhost.",
+		".svc",
+		".svc.",
+		".cluster.local",
+		".cluster.local.",
+		"kube-apiserver",
+	)
+	set.Insert(componentNoProxy...)
+	set.Insert(internalCIDRs...)
+	// Sorted so the value is deterministic: it feeds the pod template and a
+	// varying order would roll the Deployment on every reconcile.
+	return strings.Join(sets.List(set), ",")
 }
