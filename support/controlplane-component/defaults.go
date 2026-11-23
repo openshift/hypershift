@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -109,6 +110,10 @@ var (
 		"client-ca",
 		// The webhook hot-reloads authentication configuration without a pod rollout.
 		"external-oidc-webhook-auth-config",
+		// The webhook hot-reloads the auth proxy trusted CA without a pod rollout.
+		// This is the opposite contract of the management CA bundle mounted on the
+		// same pod, whose rotation rolls the pod.
+		proxy.AuthProxyTrustedCAConfigMapName,
 	}
 )
 

@@ -10,6 +10,26 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+const (
+	// AuthProxyTrustedCAConfigMapName is the fixed name of the ConfigMap that
+	// holds the auth proxy trusted CA bundle in the control plane namespace.
+	// The HyperShift operator copies the user-referenced source bundle under
+	// this name, matching the operand's v4-0-config-system-* convention (see
+	// the oauth session secrets). A fixed destination name also lets the
+	// control plane component machinery exclude the ConfigMap from the pod
+	// config hash, so a CA rotation hot-reloads instead of rolling the pod.
+	AuthProxyTrustedCAConfigMapName = "v4-0-config-system-auth-proxy-ca"
+
+	// AuthProxyTrustedCAMountPath is the directory the auth proxy trusted CA
+	// ConfigMap is mounted at on the external-oidc-webhook container.
+	AuthProxyTrustedCAMountPath = "/var/config/system/configmaps/" + AuthProxyTrustedCAConfigMapName
+
+	// AuthProxyTrustedCAFilePath is the file the external-oidc-webhook reads
+	// the auth proxy trusted CA bundle from: the ca-bundle.crt key of the
+	// mounted ConfigMap directory.
+	AuthProxyTrustedCAFilePath = AuthProxyTrustedCAMountPath + "/ca-bundle.crt"
+)
+
 // AuthProxyOverride returns the auth-scoped proxy override for the external
 // OIDC authentication components: spec.operatorConfiguration.authentication.proxy
 // on the HostedControlPlane, or nil when it is unset.
