@@ -229,16 +229,12 @@ fi
 
 	// Configure the etcd-metrics grpc-proxy sidecar.
 	podspec.UpdateContainer("etcd-metrics", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		var loInterface, allInterfaces string
-		if ipv4 {
-			loInterface = "127.0.0.1"
-			allInterfaces = "0.0.0.0"
-		} else {
-			loInterface = "[::1]"
+		allInterfaces := "0.0.0.0"
+		if !ipv4 {
 			allInterfaces = "[::]"
 		}
 		c.Args = append(c.Args,
-			fmt.Sprintf("--listen-addr=%s:2383", loInterface),
+			fmt.Sprintf("--listen-addr=%s", etcdMetricsProxyListenAddr),
 			fmt.Sprintf("--metrics-addr=https://%s:2381", allInterfaces),
 			"--advertise-client-url=",
 		)
