@@ -1,6 +1,7 @@
 package haproxy
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,8 +12,15 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/pullsecret"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/image/docker10"
+	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -539,6 +547,114 @@ kind: Config`
 	}
 }
 
+func TestHAProxy_StaticPodCPOImage(t *testing.T) {
+	const (
+		hostedClusterCPOImage = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+		nodePoolCPOImage      = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+		operatorImage         = "quay.io/hypershift/hypershift-operator:latest"
+		proxyPodPath          = "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml"
+	)
+
+	testCases := []struct {
+		name                string
+		controlPlaneRelease *hyperv1.Release
+		nodePoolCPOImage    string
+		expectedImage       string
+	}{
+		{
+			name:             "When no control plane release is pinned, it should use the HostedCluster CPO image",
+			nodePoolCPOImage: nodePoolCPOImage,
+			expectedImage:    hostedClusterCPOImage,
+		},
+		{
+			name:                "When a control plane release is pinned, it should use the NodePool release CPO image",
+			controlPlaneRelease: &hyperv1.Release{Image: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/ocp-release:4.21.10-x86_64"},
+			nodePoolCPOImage:    nodePoolCPOImage,
+			expectedImage:       nodePoolCPOImage,
+		},
+		{
+			name:                "When a control plane release is pinned and the NodePool release has no CPO image, it should use the HostedCluster CPO image",
+			controlPlaneRelease: &hyperv1.Release{Image: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/ocp-release:4.21.10-x86_64"},
+			expectedImage:       hostedClusterCPOImage,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "clusters"},
+				Spec: hyperv1.HostedClusterSpec{
+					ControlPlaneRelease: tc.controlPlaneRelease,
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+					},
+					// The kubernetes-default-proxy static pod is only rendered when
+					// the nodes reach the control plane through an HTTPS proxy.
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{HTTPSProxy: "http://proxy.example.com:3128"},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					KubeConfig: &corev1.LocalObjectReference{Name: "kk"},
+				},
+			}
+			kubeconfig := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hcluster.Namespace},
+				Data: map[string][]byte{"kubeconfig": []byte(`apiVersion: v1
+clusters:
+- cluster:
+    server: https://kubeconfig-host:443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    user: ""
+    namespace: default
+  name: cluster
+current-context: cluster
+kind: Config`)},
+			}
+
+			r := HAProxy{
+				Client:                  fake.NewClientBuilder().WithObjects(kubeconfig).Build(),
+				HAProxyImage:            "some-image",
+				HypershiftOperatorImage: operatorImage,
+				NodePoolCPOImage:        tc.nodePoolCPOImage,
+			}
+			cfg, err := r.reconcileHAProxyIgnitionConfig(t.Context(), hcluster, hostedClusterCPOImage)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			mcfg := &mcfgv1.MachineConfig{}
+			g.Expect(yaml.Unmarshal([]byte(cfg), mcfg)).To(Succeed())
+			ignitionCfg := &ignitionapi.Config{}
+			g.Expect(yaml.Unmarshal(mcfg.Spec.Config.Raw, ignitionCfg)).To(Succeed())
+
+			var proxyPod *corev1.Pod
+			for _, file := range ignitionCfg.Storage.Files {
+				if file.Path != proxyPodPath {
+					continue
+				}
+				data, err := dataurl.DecodeString(*file.Contents.Source)
+				g.Expect(err).ToNot(HaveOccurred())
+				proxyPod = &corev1.Pod{}
+				g.Expect(yaml.Unmarshal(data.Data, proxyPod)).To(Succeed())
+			}
+			g.Expect(proxyPod).ToNot(BeNil(), "the kubernetes-default-proxy static pod should be rendered")
+			g.Expect(proxyPod.Spec.Containers).To(HaveLen(1))
+			g.Expect(proxyPod.Spec.Containers[0].Command[:2]).To(Equal([]string{"control-plane-operator", "kubernetes-default-proxy"}))
+			g.Expect(proxyPod.Spec.Containers[0].Image).To(Equal(tc.expectedImage))
+			// The hypershift-operator image does not ship control-plane-operator.
+			g.Expect(proxyPod.Spec.Containers[0].Image).ToNot(Equal(operatorImage))
+		})
+	}
+}
+
 func TestJoinDefaultPortIfMissing(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -635,6 +751,124 @@ func TestResolveHAProxyImage(t *testing.T) {
 			}
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tt.expectedImage))
+		})
+	}
+}
+
+// recordingImageMetadataProvider records the pull secret each ImageMetadata call
+// received and reports the control plane operator image as skipping HAProxy.
+type recordingImageMetadataProvider struct {
+	imageregistry.ImageMetadataProvider
+	pullSecrets [][]byte
+}
+
+func (p *recordingImageMetadataProvider) ImageMetadata(_ context.Context, _ string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
+	p.pullSecrets = append(p.pullSecrets, pullSecret)
+	return &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
+		Labels: map[string]string{ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel: "true"},
+	}}, nil
+}
+
+// releaseProviderStub returns a release payload that ships a control plane
+// operator image.
+type releaseProviderStub struct {
+	releaseinfo.Provider
+	cpoImage string
+}
+
+func (p *releaseProviderStub) Lookup(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+	return &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{Name: "4.21.10"},
+		Spec: imagev1.ImageStreamSpec{Tags: []imagev1.TagReference{
+			{Name: "hypershift", From: &corev1.ObjectReference{Name: p.cpoImage}},
+		}},
+	}}, nil
+}
+
+func TestHAProxy_IsHAProxyIgnitionConfigManaged(t *testing.T) {
+	const (
+		controlPlaneNamespace = "clusters-example"
+		providerHost          = "quay.io/openshift-release-dev/ocp-release-private"
+		payloadCPOImage       = providerHost + "@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+		annotatedCPOImage     = "quay.io/hypershift/hypershift:latest"
+	)
+	clusterPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+	providerPullSecret := []byte(`{"auths":{"` + providerHost + `":{"auth":"cHJvdmlkZXI6cGFzcw=="}}}`)
+
+	pinned := func(annotations map[string]string) *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			// AutoNode passes a synthetic HostedCluster whose namespace already is
+			// the control plane namespace, so it must not be derived from it again.
+			ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: controlPlaneNamespace, Annotations: annotations},
+			Spec: hyperv1.HostedClusterSpec{
+				PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+				ControlPlaneRelease: &hyperv1.Release{Image: providerHost + ":4.21.10-x86_64"},
+			},
+		}
+	}
+
+	tests := []struct {
+		name               string
+		hostedCluster      *hyperv1.HostedCluster
+		expectedCPOImage   string
+		expectProviderAuth bool
+	}{
+		{
+			name:               "When the CPO image comes from a pinned control plane release, it should read its metadata with the synced copy from the given namespace",
+			hostedCluster:      pinned(nil),
+			expectedCPOImage:   payloadCPOImage,
+			expectProviderAuth: true,
+		},
+		{
+			name:             "When the CPO image comes from the annotation, it should read its metadata with the cluster pull secret",
+			hostedCluster:    pinned(map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: annotatedCPOImage}),
+			expectedCPOImage: annotatedCPOImage,
+		},
+		{
+			name: "When the HostedCluster pins no control plane release, it should use the cluster pull secret unchanged",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: controlPlaneNamespace},
+				Spec:       hyperv1.HostedClusterSpec{PullSecret: corev1.LocalObjectReference{Name: "pull-secret"}},
+			},
+			expectedCPOImage: payloadCPOImage,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			client := fake.NewClientBuilder().WithObjects(
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: controlPlaneNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: clusterPullSecret},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      pullsecret.SyncedControlPlaneReleaseSecretName,
+						Namespace: controlPlaneNamespace,
+						Labels:    map[string]string{pullsecret.ManagedByLabel: "true"},
+					},
+					Data: map[string][]byte{corev1.DockerConfigJsonKey: providerPullSecret},
+				},
+			).Build()
+			metadataProvider := &recordingImageMetadataProvider{}
+			r := &HAProxy{
+				Client:                  client,
+				HypershiftOperatorImage: "quay.io/hypershift/hypershift-operator:latest",
+				ReleaseProvider:         &releaseProviderStub{cpoImage: payloadCPOImage},
+				ImageMetadataProvider:   metadataProvider,
+			}
+
+			managed, cpoImage, err := r.isHAProxyIgnitionConfigManaged(t.Context(), tc.hostedCluster, controlPlaneNamespace)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(managed).To(BeTrue())
+			g.Expect(cpoImage).To(Equal(tc.expectedCPOImage))
+			g.Expect(metadataProvider.pullSecrets).To(HaveLen(1))
+			if tc.expectProviderAuth {
+				g.Expect(string(metadataProvider.pullSecrets[0])).To(ContainSubstring(providerHost))
+			} else {
+				g.Expect(metadataProvider.pullSecrets[0]).To(Equal(clusterPullSecret))
+			}
 		})
 	}
 }

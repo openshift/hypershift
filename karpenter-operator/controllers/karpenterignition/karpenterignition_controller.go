@@ -743,6 +743,7 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 		Client:                  r.ManagementClient,
 		HAProxyImage:            haproxyImage,
 		HypershiftOperatorImage: r.HypershiftOperatorImage,
+		NodePoolCPOImage:        nodepool.ResolveNodePoolCPOImage(releaseImage, true),
 		ReleaseProvider:         r.ReleaseProvider,
 		ImageMetadataProvider:   r.ImageMetadataProvider,
 	}

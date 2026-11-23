@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -1304,12 +1305,20 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	if err != nil {
 		return nil, err
 	}
-	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	// The CPO image is usually resolved out of the control plane release payload,
+	// which may live in a private registry the cluster pull secret does not cover.
+	// These bytes are only used for the CPO image lookups below, never for data
+	// plane content.
+	cpPullSecretBytes, err := pullsecret.ForHostedClusterInNamespace(ctx, r.Client, hostedCluster, manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name), pullSecretBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
+	controlPlaneOperatorImage, cpoImagePullSecret, err := imageregistry.ResolveControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes, cpPullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
 
-	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, cpoImagePullSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
@@ -1388,6 +1397,19 @@ func ResolveHAProxyImage(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 	return haproxy.ResolveHAProxyImage(componentImages)
 }
 
+// ResolveNodePoolCPOImage returns the control-plane-operator image from the
+// NodePool's release payload, or an empty string when the payload has none.
+//
+// Like the HAProxy image, it ends up in a static pod manifest that runs on data
+// plane nodes, so useCanonicalImages selects the non-overridden image reference.
+func ResolveNodePoolCPOImage(releaseImage *releaseinfo.ReleaseImage, useCanonicalImages bool) string {
+	componentImages := releaseImage.ComponentImages()
+	if useCanonicalImages {
+		componentImages = releaseImage.CanonicalComponentImages()
+	}
+	return componentImages["hypershift"]
+}
+
 func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	useCanonicalImages := nodePool.Annotations[nodePoolAnnotationCanonicalDataPlaneImages] == "true"
 	if !useCanonicalImages {
@@ -1410,6 +1432,7 @@ func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodeP
 		Client:                  r.Client,
 		HAProxyImage:            haProxyImage,
 		HypershiftOperatorImage: r.HypershiftOperatorImage,
+		NodePoolCPOImage:        ResolveNodePoolCPOImage(releaseImage, useCanonicalImages),
 		ReleaseProvider:         r.ReleaseProvider,
 		ImageMetadataProvider:   r.ImageMetadataProvider,
 	}
