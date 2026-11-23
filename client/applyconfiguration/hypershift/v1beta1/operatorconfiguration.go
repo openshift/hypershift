@@ -31,6 +31,7 @@ type OperatorConfigurationApplyConfiguration struct {
 	OpenShiftAPIServer         *OpenShiftAPIServerOperatorSpecApplyConfiguration         `json:"openShiftAPIServer,omitempty"`
 	OpenShiftOAuthAPIServer    *OpenShiftOAuthAPIServerOperatorSpecApplyConfiguration    `json:"openShiftOAuthAPIServer,omitempty"`
 	OAuthServer                *OAuthServerOperatorSpecApplyConfiguration                `json:"oauthServer,omitempty"`
+	Authentication             *AuthenticationOperatorSpecApplyConfiguration             `json:"authentication,omitempty"`
 	CSIDriverOperator          *CSIDriverOperatorSpecApplyConfiguration                  `json:"csiDriverOperator,omitempty"`
 }
 
@@ -125,6 +126,14 @@ func (b *OperatorConfigurationApplyConfiguration) WithOpenShiftOAuthAPIServer(va
 // If called multiple times, the OAuthServer field is set to the value of the last call.
 func (b *OperatorConfigurationApplyConfiguration) WithOAuthServer(value *OAuthServerOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
 	b.OAuthServer = value
+	return b
+}
+
+// WithAuthentication sets the Authentication field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Authentication field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithAuthentication(value *AuthenticationOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.Authentication = value
 	return b
 }
 

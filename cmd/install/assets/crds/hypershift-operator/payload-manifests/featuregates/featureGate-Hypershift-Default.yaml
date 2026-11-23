@@ -19,6 +19,9 @@
                       "name": "AROHCPManagedIdentities"
                     },
                     {
+                        "name": "AuthenticationComponentProxyExternalOIDC"
+                    },
+                    {
                         "name": "OpenStack"
                     },
                     {

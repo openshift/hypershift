@@ -79,6 +79,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.APIEndpointApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("APIServerNetworking"):
 		return &hypershiftv1beta1.APIServerNetworkingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AuthenticationOperatorSpec"):
+		return &hypershiftv1beta1.AuthenticationOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AutoNode"):
 		return &hypershiftv1beta1.AutoNodeApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AutoNodeStatus"):
