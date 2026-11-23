@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 )
@@ -604,4 +605,62 @@ func findRefs(sel reflect.Type, prefix, structName string) sets.String {
 		return result
 	}
 	return sets.NewString()
+}
+
+func TestOperatorConfigurationConfigMapRefs(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *hyperv1.OperatorConfiguration
+		refs   []string
+	}{
+		{
+			name:   "nil",
+			config: nil,
+			refs:   []string{},
+		},
+		{
+			name:   "none",
+			config: &hyperv1.OperatorConfiguration{},
+			refs:   []string{},
+		},
+		{
+			name: "empty authentication operator spec",
+			config: &hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{},
+			},
+			refs: []string{},
+		},
+		{
+			name: "zero proxy auth config",
+			config: &hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{},
+				},
+			},
+			refs: []string{},
+		},
+		{
+			name: "proxy auth config with ca",
+			config: &hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{
+							Name: "a-ca",
+						},
+					},
+				},
+			},
+			refs: []string{"a-ca"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			actualRefs := OperatorConfigurationConfigMapRefs(test.config)
+			actual, expected := sets.Set[string]{}.Insert(actualRefs...), sets.Set[string]{}.Insert(test.refs...)
+
+			if !actual.Equal(expected) {
+				t.Errorf("actual: %v, expected: %v", actual.UnsortedList(), expected.UnsortedList())
+			}
+		})
+	}
 }
