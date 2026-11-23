@@ -30,7 +30,8 @@ type AWSPlatformConfig struct {
 	sharedDir      string
 	externalOIDC   externalOIDCSetup
 
-	newMirrorRegistry func(crclient.Client, mirrorregistry.Options) (mirrorRegistry, error)
+	newMirrorRegistry  func(crclient.Client, mirrorregistry.Options) (mirrorRegistry, error)
+	resolveKMSKeyARNFn func(ctx context.Context, alias string) (string, error)
 }
 
 type AWSPlatformOptions struct {
@@ -524,13 +525,32 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {
 	setupExternalOIDCTestEnv(sharedDir)
+
+	// E2E_AWS_KMS_KEY_ARN_ALTERNATE may be set to a KMS alias by CI. The rotation
+	// test writes it verbatim into spec.secretEncryption.kms.aws.activeKey.arn, which
+	// the HostedCluster CRD requires to be a full ARN. Resolve the alias here, before
+	// any test reads the env var, so the patch is never rejected by API validation.
+	if alt := os.Getenv("E2E_AWS_KMS_KEY_ARN_ALTERNATE"); strings.HasPrefix(alt, "alias/") {
+		resolved, err := a.resolveKMSKeyARN(context.Background(), alt)
+		if err != nil {
+			panic(fmt.Sprintf("E2E_AWS_KMS_KEY_ARN_ALTERNATE is set to alias %q but could not be resolved to an ARN: %v", alt, err))
+		}
+		log.Printf("Resolved alternate KMS key alias %q to ARN %q", alt, resolved)
+		if err := os.Setenv("E2E_AWS_KMS_KEY_ARN_ALTERNATE", resolved); err != nil {
+			panic(fmt.Sprintf("failed to update E2E_AWS_KMS_KEY_ARN_ALTERNATE: %v", err))
+		}
+	}
 }
 
 // resolveKMSKeyARN resolves a KMS key alias (e.g. "alias/hypershift-ci") to its
 // full key ARN using DescribeKey. AWS credentials are sourced from the SDK default
 // credential chain (shared config/credentials files, environment variables, and
-// instance/role providers).
+// instance/role providers). resolveKMSKeyARNFn can be set on the struct to override
+// this behaviour in tests without making real AWS API calls.
 func (a *AWSPlatformConfig) resolveKMSKeyARN(ctx context.Context, alias string) (string, error) {
+	if a.resolveKMSKeyARNFn != nil {
+		return a.resolveKMSKeyARNFn(ctx, alias)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
