@@ -5889,8 +5889,10 @@ func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.Rele
 	}
 
 	// Check if ControlPlaneRelease is set.  ControlPlaneRelease should be considered a forced upgrade.
+	// No message is returned: the guest reports the data plane release, so a pinned
+	// cluster takes this branch on every reconcile, and callers log the message.
 	if hcluster.Spec.ControlPlaneRelease != nil {
-		return true, "upgrade is forced by ControlPlaneRelease being set", nil
+		return true, "", nil
 	}
 
 	// Check if upgrade is a z-stream upgrade.  These are allowed even when Upgradeable is false

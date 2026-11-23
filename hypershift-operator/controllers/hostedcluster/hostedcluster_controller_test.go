@@ -3714,6 +3714,7 @@ func TestIsUpgradeable(t *testing.T) {
 		releaseImageLoookup func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error)
 		upgrading           bool
 		err                 bool
+		message             string
 	}{
 		{
 			name: "When version is not reported yet it should be upgradeable",
@@ -3860,6 +3861,7 @@ func TestIsUpgradeable(t *testing.T) {
 			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
+			message:   "upgrade is forced by annotation",
 			upgrading: true,
 			err:       false,
 		},
@@ -3893,6 +3895,32 @@ func TestIsUpgradeable(t *testing.T) {
 				releaseImage := testutils.InitReleaseImageOrDie("4.15.0")
 				releaseImage.ObjectMeta.Name = "4.13.1" // patch with z-stream
 				return releaseImage, nil
+			},
+			upgrading: true,
+			err:       false,
+		},
+		{
+			// A pinned cluster takes this branch on every reconcile, because the
+			// guest reports the data plane release, so it must not produce a
+			// message for callers to log.
+			name: "When not upgradeable and a control plane release is pinned, it should be upgradeable without a message",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release:             hyperv1.Release{Image: releaseImageFrom},
+					ControlPlaneRelease: &hyperv1.Release{Image: releaseImageTo},
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Image: releaseImageFrom, Version: "4.13.0"},
+					},
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ClusterVersionUpgradeable), Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.14.0"), nil
 			},
 			upgrading: true,
 			err:       false,
@@ -4094,9 +4122,12 @@ func TestIsUpgradeable(t *testing.T) {
 			if err != nil {
 				t.Errorf("isUpgrading() internal err = %v", err)
 			}
-			upgrading, _, err := isUpgrading(test.hc, releaseImage)
+			upgrading, message, err := isUpgrading(test.hc, releaseImage)
 			if upgrading != test.upgrading {
 				t.Errorf("isUpgrading() upgrading = %v, want %v", upgrading, test.upgrading)
+			}
+			if message != test.message {
+				t.Errorf("isUpgrading() message = %q, want %q", message, test.message)
 			}
 			if (err == nil) == test.err {
 				t.Errorf("isUpgrading() err = %v, want %v", err, test.err)
