@@ -546,7 +546,7 @@ func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {
 // full key ARN using DescribeKey. AWS credentials are sourced from the SDK default
 // credential chain (shared config/credentials files, environment variables, and
 // instance/role providers). resolveKMSKeyARNFn can be set on the struct to override
-// this behaviour in tests without making real AWS API calls.
+// this behavior in tests without making real AWS API calls.
 func (a *AWSPlatformConfig) resolveKMSKeyARN(ctx context.Context, alias string) (string, error) {
 	if a.resolveKMSKeyARNFn != nil {
 		return a.resolveKMSKeyARNFn(ctx, alias)
