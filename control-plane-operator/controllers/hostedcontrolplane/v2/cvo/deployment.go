@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 
@@ -320,7 +321,15 @@ func discoverCVOReleaseImages(cpContext component.ControlPlaneContext) (string, 
 		cpReleaseImage = *cpContext.HCP.Spec.ControlPlaneReleaseImage
 	}
 
-	_, controlPlaneReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, cpReleaseImage, pullSecretBytes)
+	// The control plane release image may be held in a private registry that the
+	// cluster pull secret does not cover. Only this lookup gets the additional
+	// credential; the data plane release below is resolved with the unmodified pull
+	// secret.
+	controlPlanePullSecretBytes, err := pullsecret.ForHostedControlPlane(cpContext.Context, cpContext.Client, cpContext.HCP, pullSecretBytes)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
+	_, controlPlaneReleaseImageRef, err := cpContext.ImageMetadataProvider.GetDigest(cpContext.Context, cpReleaseImage, controlPlanePullSecretBytes)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get control plane release image digest %s: %w", controlPlaneReleaseImageRef, err)
 	}
