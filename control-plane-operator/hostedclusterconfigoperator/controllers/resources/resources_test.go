@@ -1728,6 +1728,81 @@ region = us-east-1
 	}
 }
 
+func TestReconcileOpenStackCredentialsSecret(t *testing.T) {
+	const namespace = "openshift-manila-csi-driver"
+	const name = "manila-cloud-credentials"
+	tests := []struct {
+		name           string
+		existingSecret bool
+		writeError     error
+		expectedError  string
+	}{
+		{
+			name: "When the namespace exists, it should create the credentials secret",
+		},
+		{
+			name:           "When the secret exists, it should update the cloud configuration",
+			existingSecret: true,
+		},
+		{
+			name:          "When writing the secret fails, it should return the error",
+			writeError:    fmt.Errorf("API server unavailable"),
+			expectedError: "failed to reconcile secret openshift-manila-csi-driver/manila-cloud-credentials",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := t.Context()
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+			key := client.ObjectKey{Namespace: namespace, Name: name}
+			objects := []client.Object{ns}
+			if tt.existingSecret {
+				objects = append(objects, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+					Data: map[string][]byte{
+						"clouds.yaml": []byte("clouds:\n  openstack:\n    auth:\n      auth_url: https://new-identity.openstack.org/v3\n"),
+						"cloud.conf":  []byte("old configuration"),
+						"cacert":      []byte("old CA certificate"),
+					},
+				})
+			}
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+			r := &reconciler{
+				client:                 guestClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+			if tt.writeError != nil {
+				r.CreateOrUpdateProvider = &errorCreateOrUpdater{err: tt.writeError}
+			}
+			platform := &hyperv1.OpenStackPlatformSpec{
+				IdentityRef: hyperv1.OpenStackIdentityReference{CloudName: "openstack"},
+			}
+			credentials := &corev1.Secret{Data: map[string][]byte{
+				"clouds.yaml": []byte("clouds:\n  openstack:\n    auth:\n      auth_url: https://identity.openstack.org/v3\n"),
+			}}
+
+			originalCredentials := credentials.DeepCopy()
+			err := r.reconcileOpenStackCredentialsSecret(ctx, platform, namespace, name, credentials, nil, nil)
+			g.Expect(credentials).To(Equal(originalCredentials), "reconciliation should not mutate the source credentials")
+			if tt.expectedError != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tt.expectedError)))
+				if tt.writeError != nil {
+					g.Expect(err).To(MatchError(ContainSubstring(tt.writeError.Error())))
+				}
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			secret := &corev1.Secret{}
+			g.Expect(guestClient.Get(ctx, key, secret)).To(Succeed())
+			g.Expect(secret.Data["clouds.yaml"]).To(Equal(credentials.Data["clouds.yaml"]))
+			g.Expect(string(secret.Data["cloud.conf"])).To(ContainSubstring("cloud = openstack\n"))
+			g.Expect(secret.Data).To(HaveLen(2), "reconciliation should remove target-only keys, including stale CA data")
+		})
+	}
+}
+
 func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

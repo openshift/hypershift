@@ -2045,9 +2045,10 @@ func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, pl
 			Name:      name,
 			Namespace: namespace,
 		},
-		Data: credentialsSecret.Data,
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
+		// Apply credentials after CreateOrUpdate fetches the existing secret.
+		secret.Data = credentialsSecret.DeepCopy().Data
 		return openstack.ReconcileCloudConfigSecret(platformSpec, secret, credentialsSecret, caCertData, machineNetwork)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile secret %s/%s: %w", secret.Namespace, secret.Name, err)
