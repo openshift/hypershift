@@ -25,6 +25,7 @@ spec:
     managementType: Managed
   fips: false
   infraID: example-sffhb
+  infrastructureAvailabilityPolicy: SingleReplica
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14

@@ -101,18 +101,19 @@ func (p *cachedClientProvider) kubernetesClientSet(_ string) (kubeclient.Interfa
 
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
-		Namespace:                      "clusters",
-		ControlPlaneAvailabilityPolicy: string(hyperv1.SingleReplica),
-		ServiceCIDR:                    []string{globalconfig.DefaultIPv4ServiceCIDR},
-		ClusterCIDR:                    []string{globalconfig.DefaultIPv4ClusterCIDR},
-		MachineCIDR:                    []string{},
-		Log:                            log.Log,
-		Arch:                           "amd64",
-		OLMCatalogPlacement:            hyperv1.ManagementOLMCatalogPlacement,
-		NetworkType:                    string(hyperv1.OVNKubernetes),
-		FeatureSet:                     string(configv1.Default),
-		EnableClusterCapabilities:      []string{},
-		DisableClusterCapabilities:     []string{},
+		Namespace:                        "clusters",
+		ControlPlaneAvailabilityPolicy:   string(hyperv1.SingleReplica),
+		InfrastructureAvailabilityPolicy: string(hyperv1.SingleReplica),
+		ServiceCIDR:                      []string{globalconfig.DefaultIPv4ServiceCIDR},
+		ClusterCIDR:                      []string{globalconfig.DefaultIPv4ClusterCIDR},
+		MachineCIDR:                      []string{},
+		Log:                              log.Log,
+		Arch:                             "amd64",
+		OLMCatalogPlacement:              hyperv1.ManagementOLMCatalogPlacement,
+		NetworkType:                      string(hyperv1.OVNKubernetes),
+		FeatureSet:                       string(configv1.Default),
+		EnableClusterCapabilities:        []string{},
+		DisableClusterCapabilities:       []string{},
 	}
 }
 

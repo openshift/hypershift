@@ -59,6 +59,7 @@ spec:
     managementType: Managed
   fips: false
   infraID: fakeInfraID
+  infrastructureAvailabilityPolicy: SingleReplica
   kubeAPIServerDNSName: test-dns-name.example.com
   networking:
     clusterNetwork:

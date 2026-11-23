@@ -74,6 +74,16 @@ func TestNewCreateCommands(t *testing.T) {
 				g.Expect(defaultDualFlag.Annotations["cobra_annotation_mutually_exclusive"]).To(ContainElement("cluster-cidr default-dual"))
 			},
 		},
+		{
+			name: "When create cluster command is created, it should default infra-availability-policy to SingleReplica",
+			test: func(t *testing.T, cmd *cobra.Command) {
+				g := NewWithT(t)
+
+				infraFlag := cmd.Flag("infra-availability-policy")
+				g.Expect(infraFlag).ToNot(BeNil())
+				g.Expect(infraFlag.DefValue).To(Equal("SingleReplica"))
+			},
+		},
 	}
 
 	for _, tt := range tests {
