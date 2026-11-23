@@ -1,0 +1,30 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: db4faa1cd044882a5f1abdf89d46e6fca680fcda79a9868082f54e341d6b95a5
+  name: etcd-self-register
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+rules:
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - create
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get

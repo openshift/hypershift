@@ -1,0 +1,21 @@
+apiVersion: v1
+data:
+  config.yaml: |
+    components: null
+    endpointResolver:
+      caFile: /etc/metrics-proxy/certs/endpoint-resolver-ca/tls.crt
+      url: https://endpoint-resolver.hcp-namespace.svc
+kind: ConfigMap
+metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 8bd6cc43aeac683678c5a67883546251318f0b9bc61f23841cc2109eb5827fdb
+  name: metrics-proxy-config
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
