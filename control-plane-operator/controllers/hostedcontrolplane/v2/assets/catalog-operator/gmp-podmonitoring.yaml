@@ -6,6 +6,12 @@ apiVersion: monitoring.googleapis.com/v1
 kind: PodMonitoring
 metadata:
   name: catalog-operator-metrics
+  annotations:
+    hypershift.openshift.io/metrics-endpoint: https-metrics
+    hypershift.openshift.io/metrics-job: catalog-operator-metrics
+    hypershift.openshift.io/metrics-namespace: openshift-operator-lifecycle-manager
+    hypershift.openshift.io/metrics-proxy-component: catalog-operator
+    hypershift.openshift.io/metrics-service: catalog-operator-metrics
 spec:
   selector:
     matchLabels:

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/podspec"
 
@@ -29,7 +30,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	namespace := cpContext.HCP.Namespace
 
-	// Discover cert volumes from ServiceMonitors and PodMonitors.
+	// Discover cert volumes from the monitors of the selected backend.
 	volumes, volumeMounts, err := certVolumesFromMonitors(cpContext, namespace)
 	if err != nil {
 		return fmt.Errorf("failed to build cert volumes: %w", err)
@@ -54,63 +55,20 @@ type certRef struct {
 	items    []corev1.KeyToPath // specific key mapping for ConfigMap volumes
 }
 
-// certVolumesFromMonitors lists ServiceMonitors and PodMonitors in the namespace
-// and collects unique Secret and ConfigMap references from their TLS configurations,
+// certVolumesFromMonitors lists the monitors of the selected backend in the
+// namespace (ServiceMonitors and PodMonitors, or GMP PodMonitorings) and collects
+// unique Secret and ConfigMap references from their TLS configurations,
 // generating corresponding volumes and volume mounts.
 func certVolumesFromMonitors(cpContext component.WorkloadContext, namespace string) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	// Collect unique cert references. Use a map keyed by resource name to deduplicate.
 	refs := make(map[string]*certRef)
 
-	// Collect from ServiceMonitors.
-	smList := &prometheusoperatorv1.ServiceMonitorList{}
-	if err := cpContext.Client.List(cpContext, smList, client.InNamespace(namespace)); err != nil {
-		return nil, nil, fmt.Errorf("failed to list ServiceMonitors: %w", err)
-	}
-
-	for i := range smList.Items {
-		sm := &smList.Items[i]
-		if len(sm.Spec.Endpoints) == 0 {
-			continue
+	if cpContext.EnableGMPMonitoring {
+		if err := collectPodMonitoringCertRefs(cpContext, namespace, refs); err != nil {
+			return nil, nil, err
 		}
-		ep := sm.Spec.Endpoints[0]
-		if ep.TLSConfig == nil {
-			continue
-		}
-
-		collectSecretOrConfigMapRef(refs, ep.TLSConfig.CA)
-		collectSecretOrConfigMapRef(refs, ep.TLSConfig.Cert)
-		if ep.TLSConfig.KeySecret != nil {
-			refs[ep.TLSConfig.KeySecret.Name] = &certRef{
-				name:     ep.TLSConfig.KeySecret.Name,
-				isSecret: true,
-			}
-		}
-	}
-
-	// Collect from PodMonitors.
-	pmList := &prometheusoperatorv1.PodMonitorList{}
-	if err := cpContext.Client.List(cpContext, pmList, client.InNamespace(namespace)); err != nil {
-		return nil, nil, fmt.Errorf("failed to list PodMonitors: %w", err)
-	}
-
-	for i := range pmList.Items {
-		pm := &pmList.Items[i]
-		if len(pm.Spec.PodMetricsEndpoints) == 0 {
-			continue
-		}
-		ep := pm.Spec.PodMetricsEndpoints[0]
-		if ep.TLSConfig == nil {
-			continue
-		}
-
-		collectSecretOrConfigMapRef(refs, ep.TLSConfig.CA)
-		collectSecretOrConfigMapRef(refs, ep.TLSConfig.Cert)
-		if ep.TLSConfig.KeySecret != nil {
-			refs[ep.TLSConfig.KeySecret.Name] = &certRef{
-				name:     ep.TLSConfig.KeySecret.Name,
-				isSecret: true,
-			}
-		}
+	} else if err := collectCoreOSMonitorCertRefs(cpContext, namespace, refs); err != nil {
+		return nil, nil, err
 	}
 
 	// Sort by name for deterministic output.
@@ -155,6 +113,90 @@ func certVolumesFromMonitors(cpContext component.WorkloadContext, namespace stri
 	}
 
 	return volumes, mounts, nil
+}
+
+// collectCoreOSMonitorCertRefs collects the TLS Secret and ConfigMap
+// references of the ServiceMonitors and PodMonitors in the namespace.
+func collectCoreOSMonitorCertRefs(cpContext component.WorkloadContext, namespace string, refs map[string]*certRef) error {
+	// Collect from ServiceMonitors.
+	smList := &prometheusoperatorv1.ServiceMonitorList{}
+	if err := cpContext.Client.List(cpContext, smList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list ServiceMonitors: %w", err)
+	}
+
+	for i := range smList.Items {
+		sm := &smList.Items[i]
+		if len(sm.Spec.Endpoints) == 0 {
+			continue
+		}
+		ep := sm.Spec.Endpoints[0]
+		if ep.TLSConfig == nil {
+			continue
+		}
+
+		collectSecretOrConfigMapRef(refs, ep.TLSConfig.CA)
+		collectSecretOrConfigMapRef(refs, ep.TLSConfig.Cert)
+		if ep.TLSConfig.KeySecret != nil {
+			refs[ep.TLSConfig.KeySecret.Name] = &certRef{
+				name:     ep.TLSConfig.KeySecret.Name,
+				isSecret: true,
+			}
+		}
+	}
+
+	// Collect from PodMonitors.
+	pmList := &prometheusoperatorv1.PodMonitorList{}
+	if err := cpContext.Client.List(cpContext, pmList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list PodMonitors: %w", err)
+	}
+
+	for i := range pmList.Items {
+		pm := &pmList.Items[i]
+		if len(pm.Spec.PodMetricsEndpoints) == 0 {
+			continue
+		}
+		ep := pm.Spec.PodMetricsEndpoints[0]
+		if ep.TLSConfig == nil {
+			continue
+		}
+
+		collectSecretOrConfigMapRef(refs, ep.TLSConfig.CA)
+		collectSecretOrConfigMapRef(refs, ep.TLSConfig.Cert)
+		if ep.TLSConfig.KeySecret != nil {
+			refs[ep.TLSConfig.KeySecret.Name] = &certRef{
+				name:     ep.TLSConfig.KeySecret.Name,
+				isSecret: true,
+			}
+		}
+	}
+
+	return nil
+}
+
+// collectPodMonitoringCertRefs collects the TLS Secret references of the GMP
+// PodMonitorings in the namespace.
+func collectPodMonitoringCertRefs(cpContext component.WorkloadContext, namespace string, refs map[string]*certRef) error {
+	pmList := &gmpmonitoring.PodMonitoringList{}
+	if err := cpContext.Client.List(cpContext, pmList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list PodMonitorings: %w", err)
+	}
+
+	for i := range pmList.Items {
+		pm := &pmList.Items[i]
+		if len(pm.Spec.Endpoints) == 0 {
+			continue
+		}
+		tlsCfg := pm.Spec.Endpoints[0].TLS
+		if tlsCfg == nil {
+			continue
+		}
+		for _, ref := range []*gmpmonitoring.SecretSelector{tlsCfg.CA, tlsCfg.Cert, tlsCfg.Key} {
+			if ref != nil && ref.Secret != nil {
+				refs[ref.Secret.Name] = &certRef{name: ref.Secret.Name, isSecret: true}
+			}
+		}
+	}
+	return nil
 }
 
 // sanitizeVolumeName converts a resource name into a valid Kubernetes volume

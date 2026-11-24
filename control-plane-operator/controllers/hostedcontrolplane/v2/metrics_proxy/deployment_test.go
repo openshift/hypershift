@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 	"github.com/openshift/hypershift/support/metrics"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -378,6 +379,56 @@ func TestCertVolumesFromMonitors(t *testing.T) {
 
 		cpContext := newCertVolumeTestContext(namespace, scheme, sm, pm)
 		assertCertVolumeCount(t, cpContext, namespace, 1, 1)
+	})
+
+	t.Run("When GMP monitoring is selected, it should mount the Secrets the PodMonitorings reference and ignore CoreOS monitors", func(t *testing.T) {
+		t.Parallel()
+
+		gmpScheme := runtime.NewScheme()
+		_ = corev1.AddToScheme(gmpScheme)
+		_ = prometheusoperatorv1.AddToScheme(gmpScheme)
+		_ = gmpmonitoring.AddToScheme(gmpScheme)
+
+		secretRef := func(name, key string) *gmpmonitoring.SecretSelector {
+			return &gmpmonitoring.SecretSelector{Secret: &gmpmonitoring.SecretKeySelector{Name: name, Key: key}}
+		}
+		kas := &gmpmonitoring.PodMonitoring{
+			ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: namespace},
+			Spec: gmpmonitoring.PodMonitoringSpec{Endpoints: []gmpmonitoring.ScrapeEndpoint{{
+				HTTPClientConfig: gmpmonitoring.HTTPClientConfig{TLS: &gmpmonitoring.TLS{
+					CA:   secretRef("root-ca-cert", "ca.crt"),
+					Cert: secretRef("metrics-client", "tls.crt"),
+					Key:  secretRef("metrics-client", "tls.key"),
+				}},
+			}}},
+		}
+		autoscaler := &gmpmonitoring.PodMonitoring{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler", Namespace: namespace},
+			Spec:       gmpmonitoring.PodMonitoringSpec{Endpoints: []gmpmonitoring.ScrapeEndpoint{{}}},
+		}
+		staleSM := newServiceMonitorWithTLS("kube-controller-manager", namespace, &prometheusoperatorv1.TLSConfig{
+			SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
+				CA: prometheusoperatorv1.SecretOrConfigMap{
+					ConfigMap: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "root-ca"},
+						Key:                  "ca.crt",
+					},
+				},
+			},
+		})
+
+		cpContext := newCertVolumeTestContext(namespace, gmpScheme, kas, autoscaler, staleSM)
+		cpContext.EnableGMPMonitoring = true
+		volumes, mounts := assertCertVolumeCount(t, cpContext, namespace, 2, 2)
+		if volumes[0].Secret == nil || volumes[0].Secret.SecretName != "metrics-client" {
+			t.Errorf("expected the first volume to mount Secret metrics-client, got %+v", volumes[0].VolumeSource)
+		}
+		if volumes[1].Secret == nil || volumes[1].Secret.SecretName != "root-ca-cert" {
+			t.Errorf("expected the second volume to mount Secret root-ca-cert, got %+v", volumes[1].VolumeSource)
+		}
+		if mounts[1].MountPath != certBasePath+"/root-ca-cert" {
+			t.Errorf("expected root-ca-cert to mount at %s, got %s", certBasePath+"/root-ca-cert", mounts[1].MountPath)
+		}
 	})
 }
 

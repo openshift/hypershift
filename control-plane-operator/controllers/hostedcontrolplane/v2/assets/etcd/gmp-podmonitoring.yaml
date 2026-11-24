@@ -6,6 +6,12 @@ apiVersion: monitoring.googleapis.com/v1
 kind: PodMonitoring
 metadata:
   name: {{ .ClientServiceName }}
+  annotations:
+    hypershift.openshift.io/metrics-endpoint: etcd-metrics
+    hypershift.openshift.io/metrics-job: etcd
+    hypershift.openshift.io/metrics-namespace: openshift-etcd
+    hypershift.openshift.io/metrics-proxy-component: {{ .Name }}
+    hypershift.openshift.io/metrics-service: etcd
 spec:
   selector:
     matchLabels:

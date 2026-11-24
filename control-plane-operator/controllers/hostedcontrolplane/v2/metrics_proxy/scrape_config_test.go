@@ -7,8 +7,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	metricsproxybin "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -276,6 +278,79 @@ func TestAdaptScrapeConfig(t *testing.T) {
 		nto, ok := findComponent(cfg.Components, "node-tuning-operator")
 		g.Expect(ok).To(BeTrue(), "node-tuning-operator not found in components")
 		g.Expect(nto.TLSServerName).To(Equal("node-tuning-operator." + namespace + ".svc"))
+	})
+
+	t.Run("When GMP monitoring is selected, it should describe the targets from the staged PodMonitorings under the CoreOS component names", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		t.Parallel()
+
+		gmpScheme := runtime.NewScheme()
+		_ = corev1.AddToScheme(gmpScheme)
+		_ = prometheusoperatorv1.AddToScheme(gmpScheme)
+		_ = gmpmonitoring.AddToScheme(gmpScheme)
+
+		loadPodMonitoring := func(componentName string, templateData map[string]string) runtime.Object {
+			obj, _, err := assets.LoadManifestTemplated(componentName, assets.GMPPodMonitoringManifest, templateData)
+			g.Expect(err).ToNot(HaveOccurred())
+			obj.SetNamespace(namespace)
+			return obj
+		}
+		objects := []runtime.Object{
+			loadPodMonitoring("kube-apiserver", nil),
+			loadPodMonitoring("etcd", map[string]string{"Name": "etcd", "ClientServiceName": "etcd-client"}),
+			loadPodMonitoring("olm-operator", nil),
+			newPodWithLabels("kube-apiserver-0", namespace, "client", 6443, map[string]string{"app": "kube-apiserver"}),
+			newPodWithLabels("etcd-0", namespace, "metrics", 2381, map[string]string{"app": "etcd"}),
+			newPodWithLabels("olm-operator-0", namespace, "metrics", 8443, map[string]string{"app": "olm-operator"}),
+			// A leftover CoreOS monitor must not be read once GMP is selected.
+			newServiceMonitor("kube-controller-manager", namespace, "kube-controller-manager", "client", "https", "kube-controller-manager",
+				"root-ca", "ca.crt", "metrics-client", "tls.crt", "metrics-client", "tls.key"),
+			newService("kube-controller-manager", namespace, "kube-controller-manager", "client", 10257),
+		}
+
+		gmpContext := component.WorkloadContext{
+			Context:             context.Background(),
+			Client:              fake.NewClientBuilder().WithScheme(gmpScheme).WithRuntimeObjects(objects...).Build(),
+			HCP:                 &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "test"}},
+			EnableGMPMonitoring: true,
+		}
+		gmpCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "metrics-proxy-config"}}
+		g.Expect(adaptScrapeConfig(gmpContext, gmpCM)).To(Succeed())
+
+		var gmpCfg metricsproxybin.FileConfig
+		g.Expect(yaml.Unmarshal([]byte(gmpCM.Data["config.yaml"]), &gmpCfg)).To(Succeed())
+
+		// The guest scrapes /metrics/<name> and the proxy picks metric filters
+		// by name, so the renamed etcd and OLM PodMonitorings keep the CoreOS
+		// monitor names.
+		names := make([]string, 0, len(gmpCfg.Components))
+		for _, comp := range gmpCfg.Components {
+			names = append(names, comp.Name)
+		}
+		g.Expect(names).To(Equal([]string{"etcd", "kube-apiserver", "olm-operator"}))
+
+		kas, _ := findComponent(gmpCfg.Components, "kube-apiserver")
+		g.Expect(kas).To(Equal(metricsproxybin.ComponentFileConfig{
+			Name:             "kube-apiserver",
+			Selector:         map[string]string{"app": "kube-apiserver"},
+			MetricsPort:      6443,
+			MetricsPath:      "/metrics",
+			MetricsScheme:    "https",
+			TLSServerName:    "kube-apiserver",
+			CAFile:           certBasePath + "/root-ca-cert/ca.crt",
+			CertFile:         certBasePath + "/metrics-client/tls.crt",
+			KeyFile:          certBasePath + "/metrics-client/tls.key",
+			MetricsJob:       "apiserver",
+			MetricsNamespace: "default",
+			MetricsService:   "kubernetes",
+			MetricsEndpoint:  "https",
+		}))
+
+		etcd, _ := findComponent(gmpCfg.Components, "etcd")
+		g.Expect(etcd.MetricsPort).To(Equal(int32(2381)))
+		g.Expect(etcd.TLSServerName).To(Equal("etcd-client"))
+		g.Expect(etcd.CAFile).To(Equal(certBasePath + "/etcd-ca-cert/ca.crt"))
+		g.Expect(etcd.MetricsJob).To(Equal("etcd"))
 	})
 }
 
