@@ -151,6 +151,7 @@ type reconciler struct {
 	hcpName                   string
 	hcpNamespace              string
 	releaseProvider           releaseinfo.Provider
+	cpReleaseProvider         releaseinfo.Provider
 	konnectivityServerAddress string
 	konnectivityServerPort    int32
 	oauthAddress              string
@@ -228,6 +229,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 			hcpName:                   opts.HCPName,
 			hcpNamespace:              opts.Namespace,
 			releaseProvider:           opts.ReleaseProvider,
+			cpReleaseProvider:         opts.ControlPlaneReleaseProvider,
 			konnectivityServerAddress: opts.KonnectivityAddress,
 			konnectivityServerPort:    opts.KonnectivityPort,
 			oauthAddress:              opts.OAuthAddress,
@@ -374,7 +376,9 @@ func (r *reconciler) resolveControlPlaneReleaseVersion(ctx context.Context, hcp 
 	if err != nil {
 		return semver.Version{}, fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
 	}
-	controlPlaneReleaseImage, err := r.releaseProvider.Lookup(ctx, *hcp.Spec.ControlPlaneReleaseImage, cpPullSecretBytes)
+	// cpReleaseProvider has its own cache, separate from releaseProvider's: the
+	// cache is keyed by pull spec only, and this lookup adds the provider credential.
+	controlPlaneReleaseImage, err := r.cpReleaseProvider.Lookup(ctx, *hcp.Spec.ControlPlaneReleaseImage, cpPullSecretBytes)
 	if err != nil {
 		return semver.Version{}, fmt.Errorf("failed to lookup control plane release image %s: %w", *hcp.Spec.ControlPlaneReleaseImage, err)
 	}

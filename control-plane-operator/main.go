@@ -291,18 +291,26 @@ func buildReleaseProviders(componentImages map[string]string, registryOverrides 
 	*releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator,
 	*releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator,
 ) {
-	coreReleaseProvider := &releaseinfo.StaticProviderDecorator{
-		Delegate: &releaseinfo.CachedProvider{
-			Inner: &releaseinfo.RegistryClientProvider{},
-			Cache: map[string]*releaseinfo.ReleaseImage{},
-		},
-		ComponentImages: componentImages,
+	// The control plane and data plane release lookups each get their own cache.
+	// CachedProvider is keyed by pull spec only, and the two lookups use different
+	// credentials: the control plane release lookup adds the provider-supplied
+	// control plane release pull secret. With a shared cache, a release image
+	// cached by a control plane lookup would be returned to a data plane lookup of
+	// the same pull spec without the registry ever checking the cluster pull secret.
+	newCoreReleaseProvider := func() *releaseinfo.StaticProviderDecorator {
+		return &releaseinfo.StaticProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			ComponentImages: componentImages,
+		}
 	}
 
 	// It should be used to lookup spec.releaseImage.
 	userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate:          coreReleaseProvider,
+			Delegate:          newCoreReleaseProvider(),
 			RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
 		},
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
@@ -311,7 +319,7 @@ func buildReleaseProviders(componentImages map[string]string, registryOverrides 
 	// It should be used to lookup spec.controlPlaneReleaseImage.
 	cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate:          coreReleaseProvider,
+			Delegate:          newCoreReleaseProvider(),
 			RegistryOverrides: registryOverrides,
 		},
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
