@@ -155,12 +155,6 @@ var allowlist = map[string]map[string][]string{
 			"WithInterval",
 			"WithTimeout",
 		},
-		"waitForEtcdConvergence": {
-			"EventuallyObject",
-			"Predicate",
-			"WithInterval",
-			"WithTimeout",
-		},
 	},
 	"test/e2e/v2/tests/hosted_cluster_aws_test.go": {
 		"AWSCCMWithCustomizationsTest/Context(\"[Feature:AWSNLB] AWS CCM NLB Security Group\")#1/BeforeEach()#1": {
