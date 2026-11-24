@@ -2,7 +2,7 @@ module github.com/openshift/hypershift/hack/capi-vendor/ibmcloud
 
 go 1.25.7
 
-require sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
+require sigs.k8s.io/cluster-api-provider-ibmcloud v0.15.2
 
 require (
 	github.com/IBM/go-sdk-core/v5 v5.21.2 // indirect
