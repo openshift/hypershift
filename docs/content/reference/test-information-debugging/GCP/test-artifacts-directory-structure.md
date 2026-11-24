@@ -50,8 +50,8 @@ The workflow provisions a GKE management cluster, installs the HyperShift
 operator, and then uses the v2 lifecycle binaries (`create-guests`, `run-tests`,
 `dump-guests`, `destroy-guests`) to create the GCP guest clusters, run the test
 suite against them, and tear them down. Cluster names and variants come from the
-resolved `TestPlan`; the default GCP plan creates one cluster for the `default`
-variant.
+resolved `TestPlan`; the default GCP plan creates two clusters, one per variant
+(`default` and `ingress`).
 
 Each step directory contains `build-log.txt`, `finished.json`, and
 `sidecar-logs.json`. Steps with additional artifacts are noted below.
@@ -176,5 +176,5 @@ e2e-v2-gke/
 | File | Description |
 |------|-------------|
 | `artifacts/e2e-v2-gke/hypershift-gcp-create-guests/artifacts/junit_hosted_cluster_<hc-name>.xml` | Per-cluster version-rollout result; emitted only after the cluster becomes Available, so creation and availability failures appear in the step log instead |
-| `artifacts/e2e-v2-gke/tests/artifacts/junit_<test-group>.xml` | Ginkgo v2 results for one `TestGroup` (the default GCP plan has a single group, `default`) |
+| `artifacts/e2e-v2-gke/tests/artifacts/junit_<test-group>.xml` | Ginkgo v2 results for one `TestGroup` (the default GCP plan has two groups, `default` and `ingress`) |
 | `artifacts/junit_operator.xml` | CI operator-level results |
