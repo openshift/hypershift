@@ -2,7 +2,7 @@ module github.com/openshift/hypershift/hack/capi-vendor/kubevirt
 
 go 1.26.0
 
-require sigs.k8s.io/cluster-api-provider-kubevirt v0.0.0-20261028113314-e7108cdb8ccb
+require sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
 
 replace sigs.k8s.io/cluster-api-provider-kubevirt => github.com/openshift/cluster-api-provider-kubevirt v0.0.0-20261028113314-e7108cdb8ccb
 
