@@ -5,7 +5,7 @@ go 1.25.7
 require (
 	k8s.io/api v0.35.1
 	k8s.io/apimachinery v0.35.1
-	kubevirt.io/api v1.8.2
+	kubevirt.io/api v1.10.0
 )
 
 require (
