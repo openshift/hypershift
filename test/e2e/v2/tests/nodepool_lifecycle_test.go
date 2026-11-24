@@ -31,8 +31,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
-	npconst "github.com/openshift/hypershift/pkg/nodepool"
 	"github.com/openshift/hypershift/pkg/manifests"
+	npconst "github.com/openshift/hypershift/pkg/nodepool"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/netutil"
@@ -53,9 +53,9 @@ import (
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/yaml"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -1184,9 +1184,18 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// NodePoolAutoRepairTest verifies that terminating the backing cloud instance for
-// a NodePool node surfaces an InfrastructureFailure condition on AllMachinesReady,
-// and that auto-repair eventually replaces the node.
+// NodePoolAutoRepairTest verifies NodePool auto-repair in two ordered phases.
+//
+// Observation: a one-replica NodePool is created with AutoRepair disabled (set
+// explicitly, since its spec is cloned from the default NodePool and could inherit
+// true). With no MachineHealthCheck, terminating the backing cloud instance (EC2 on
+// AWS, VM on Azure) leaves the failed Machine in place, so AllMachinesReady=False with
+// reason InfrastructureFailure can be observed instead of racing remediation.
+//
+// Repair: only after that condition is observed, AutoRepair is enabled on the live
+// NodePool so the controller creates a MachineHealthCheck, and the test waits for the
+// terminated node to be replaced by a new ready node without memory, disk, or PID
+// pressure.
 func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 	It("should auto-repair a NodePool when a node is terminated", Label("nodepool-auto-repair"), func() {
 		testCtx := getTestCtx()
@@ -1208,12 +1217,14 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 		var oneReplica int32 = 1
 		np := buildTestNodePool(defaultNP, "autorepair", func(pool *hyperv1.NodePool) {
 			pool.Spec.Replicas = &oneReplica
-			pool.Spec.Management.AutoRepair = true
+			// Start with AutoRepair disabled so no MachineHealthCheck can remediate the
+			// Machine before InfrastructureFailure is observed; it is enabled afterwards.
+			pool.Spec.Management.AutoRepair = false
 		})
 
 		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
-		GinkgoWriter.Printf("Created auto-repair NodePool %s\n", np.Name)
+		GinkgoWriter.Printf("Created NodePool %s with AutoRepair disabled\n", np.Name)
 		DeferCleanup(func() {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
@@ -1250,6 +1261,18 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 			e2eutil.WithTimeout(10*time.Minute),
 			e2eutil.WithInterval(15*time.Second),
 		)
+
+		// Enable AutoRepair on the live NodePool only now that the failure has been
+		// observed, so the controller creates a MachineHealthCheck that replaces the
+		// terminated node.
+		liveNP := &hyperv1.NodePool{}
+		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), liveNP)).To(Succeed(),
+			"failed to get NodePool %s before enabling AutoRepair", np.Name)
+		original := liveNP.DeepCopy()
+		liveNP.Spec.Management.AutoRepair = true
+		Expect(testCtx.MgmtClient.Patch(ctx, liveNP, crclient.MergeFrom(original))).To(Succeed(),
+			"failed to enable AutoRepair on NodePool %s", np.Name)
+		GinkgoWriter.Printf("Enabled AutoRepair on NodePool %s\n", np.Name)
 
 		// Wait for auto-repair to replace the terminated node with a new healthy one.
 		oldNodeName := nodes[0].Name
