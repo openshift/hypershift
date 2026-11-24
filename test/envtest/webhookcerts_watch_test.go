@@ -134,7 +134,7 @@ var _ = Describe("Webhook certs CRD conversion caBundle reconciliation", Label("
 		DeferCleanup(func() {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
-			_ = c.Delete(cleanupCtx, ns)
+			Expect(crclient.IgnoreNotFound(c.Delete(cleanupCtx, ns))).To(Succeed(), "failed to delete test namespace %s", ns.Name)
 		})
 
 		By("creating the webhook CA and serving cert Secrets as the operator bootstrap does")
@@ -155,7 +155,8 @@ var _ = Describe("Webhook certs CRD conversion caBundle reconciliation", Label("
 			DeferCleanup(func(name string) {
 				cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 				defer cancel()
-				_ = c.Delete(cleanupCtx, &apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: name}})
+				Expect(crclient.IgnoreNotFound(c.Delete(cleanupCtx, &apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: name}}))).To(Succeed(),
+					"failed to delete test CRD %s", name)
 			}, crd.Name)
 		}
 
