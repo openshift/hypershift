@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,6 +24,10 @@ type ClusterSpec struct {
 	// InitialNodePoolReplicas overrides the default initial NodePool replica count.
 	// A nil value uses HYPERSHIFT_NODE_COUNT.
 	InitialNodePoolReplicas *int `json:"initialNodePoolReplicas,omitempty"`
+
+	// RequiredEnv lists environment variables needed to provision and test this
+	// variant. A missing input does not hide the variant from the catalog.
+	RequiredEnv []string `json:"-"`
 }
 
 // TestGroup describes one logical group of e2e tests to execute.
@@ -125,38 +130,45 @@ func (m TestMatrix) Variants() []string {
 	return variants
 }
 
-// ResolveVariants validates that every variant referenced by the test
-// matrix exists in the manifest and returns a map from variant to
-// ClusterEntry. Returns an error listing all missing variants.
+// ResolveVariants resolves the selected manifest entries and checks that
+// their prerequisites are still present before tests are dispatched.
 func (m TestMatrix) ResolveVariants(manifest *ClusterManifest) (map[string]ClusterEntry, error) {
 	resolved := make(map[string]ClusterEntry)
 	var missing []string
+	var errs []error
 
-	resolve := func(variant string) {
-		if _, ok := resolved[variant]; ok {
-			return
-		}
+	for _, variant := range m.Variants() {
 		entry, err := manifest.LookupCluster(variant)
 		if err != nil {
 			missing = append(missing, variant)
-			return
+			continue
+		}
+		if err := validateRequiredEnv(variant, entry.RequiredEnv); err != nil {
+			errs = append(errs, err)
 		}
 		resolved[variant] = entry
 	}
 
-	for _, g := range m.Parallel {
-		resolve(g.Variant)
-	}
-	for _, sg := range m.Sequential {
-		for _, step := range sg.Steps {
-			resolve(step.Variant)
-		}
-	}
-
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("manifest missing variants: %v", missing)
+		errs = append(errs, fmt.Errorf("manifest missing variants: %v", missing))
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
 	}
 	return resolved, nil
+}
+
+func validateRequiredEnv(variant string, requiredEnv []string) error {
+	var missing []string
+	for _, key := range requiredEnv {
+		if os.Getenv(key) == "" {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("variant %q requires %s, which are not set", variant, strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // PlatformConfig provides all platform-specific configuration for

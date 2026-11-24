@@ -52,25 +52,24 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 			}
 		}
 	})
-	t.Run("When deterministic LB env vars are absent, it should keep the variant but omit its annotations", func(t *testing.T) {
-		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "")
-		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "")
-		g := NewWithT(t)
-		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
-
-		var deterministicLB *ClusterSpec
-		for i := range specs {
-			if specs[i].Variant == "deterministic-lb" {
-				deterministicLB = &specs[i]
-				break
-			}
-		}
-		g.Expect(deterministicLB).NotTo(BeNil())
-		g.Expect(deterministicLB.CreateArgs).To(ContainElement("--endpoint-access=PublicAndPrivate"))
-		for _, arg := range deterministicLB.CreateArgs {
-			g.Expect(arg).NotTo(HavePrefix("--kas-service-annotations="))
-		}
-	})
+	for _, tc := range []struct{ name, eip, subnet string }{
+		{name: "When both deterministic LB inputs are missing, it should retain the variant without annotation flags"},
+		{name: "When only the EIP is set, it should retain the variant without annotation flags", eip: "eipalloc-test"},
+		{name: "When only the subnet is set, it should retain the variant without annotation flags", subnet: "subnet-test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("EXTRA_ARGS", "")
+			t.Setenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS", "")
+			t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", tc.eip)
+			t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", tc.subnet)
+			g := NewWithT(t)
+			specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
+			g.Expect(specs).To(ContainElement(And(
+				HaveField("Variant", "deterministic-lb"),
+				HaveField("CreateArgs", Not(ContainElement(HavePrefix("--kas-service-annotations=")))),
+			)))
+		})
+	}
 	t.Run("When AWS cluster specs are built, it should omit Azure dump credentials for every variant", func(t *testing.T) {
 		g := NewWithT(t)
 		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
@@ -266,8 +265,10 @@ func TestAWSPlatformConfigImageMirroringClusterSpecs(t *testing.T) {
 
 func TestDeterministicLBTestPlan(t *testing.T) {
 	t.Run("When the dedicated deterministic-lb plan is loaded, it should validate against the AWS variant and select the lifecycle lane", func(t *testing.T) {
+		t.Setenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS", "")
 		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "eipalloc-test")
 		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "subnet-test")
+		t.Setenv("E2E_EXPECTED_DETERMINISTIC_LB_IP", "192.0.2.1")
 		g := NewWithT(t)
 
 		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
@@ -286,6 +287,24 @@ func TestDeterministicLBTestPlan(t *testing.T) {
 		g.Expect(plan.TestMatrix.Sequential[0].Steps[0].Variant).To(Equal("deterministic-lb"))
 		g.Expect(plan.TestMatrix.Sequential[0].Steps[0].LabelFilter).To(Equal("deterministic-lb-ip"))
 	})
+	for _, tc := range []struct{ name, missing string }{
+		{name: "When the EIP allocation is missing, it should reject the plan", missing: "HYPERSHIFT_DETERMINISTIC_LB_EIP"},
+		{name: "When the subnet is missing, it should reject the plan", missing: "HYPERSHIFT_DETERMINISTIC_LB_SUBNET"},
+		{name: "When the expected IP is missing, it should reject the plan", missing: "E2E_EXPECTED_DETERMINISTIC_LB_IP"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS", "")
+			t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "eipalloc-test")
+			t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "subnet-test")
+			t.Setenv("E2E_EXPECTED_DETERMINISTIC_LB_IP", "192.0.2.1")
+			t.Setenv(tc.missing, "")
+			g := NewWithT(t)
+			cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+			plan, err := ReadTestPlan(filepath.Join("plans", "deterministic-lb.yaml"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(plan.Validate(cfg.ClusterSpecs(t.Context(), "current", "previous"))).To(MatchError(ContainSubstring(tc.missing)))
+		})
+	}
 }
 
 type stubMirrorRegistry struct {
