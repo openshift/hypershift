@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/utils/ptr"
 )
 
@@ -115,6 +116,9 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	aesCBCBackupKey []byte,
 	port int32,
 	payloadVersion string,
+	// reportedVersion is the version.Info the kube-apiserver must serve on
+	// /version, or nil when it should report its own. See ReportedVersionInfo.
+	reportedVersion *version.Info,
 	featureGateSpec *configv1.FeatureGateSpec,
 	oidcCA *corev1.LocalObjectReference,
 	cipherSuites []string,
@@ -311,6 +315,15 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 
 	if auditWebhookRef != nil {
 		applyKASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, auditWebhookRef)
+	}
+
+	// When the control plane runs a different release payload than spec.release
+	// (spec.controlPlaneReleaseImage), mask the kube-apiserver /version endpoint
+	// so it keeps reporting the user payload's version.
+	if reportedVersion != nil {
+		if err := applyReportedVersionConfig(&deployment.Spec.Template, reportedVersion); err != nil {
+			return fmt.Errorf("failed to apply reported version config: %w", err)
+		}
 	}
 
 	if secretEncryptionData != nil {
