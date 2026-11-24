@@ -23,7 +23,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestReconcileOpenStackCluster(t *testing.T) {
+func TestReconcileOpenStackClusterSpec(t *testing.T) {
 	const externalNetworkID = "a42211a2-4d2c-426f-9413-830e4b4abbbc"
 	const networkID = "803084c1-70a2-44d3-a484-3b9c08dedee0"
 	const subnetID = "e08dd45e-1bce-42c7-a5a9-3f7e1e55640e"
@@ -264,6 +264,62 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 			}
 			if diff := cmp.Diff(initialOpenStackClusterSpec, tc.expectedOpenStackClusterSpec); diff != "" {
 				t.Errorf("reconciled OpenStack cluster spec differs from expected OpenStack cluster spec: %s", diff)
+			}
+		})
+	}
+
+	endpointCases := []struct {
+		name     string
+		endpoint hyperv1.APIEndpoint
+		initial  *ospcapicore.APIEndpoint
+		expected *ospcapicore.APIEndpoint
+	}{
+		{
+			name: "When the control plane endpoint is empty, it should omit the endpoint",
+		},
+		{
+			name:     "When only the endpoint host is known, it should omit the endpoint",
+			endpoint: hyperv1.APIEndpoint{Host: "api-endpoint"},
+		},
+		{
+			name:     "When only the endpoint port is known, it should omit the endpoint",
+			endpoint: hyperv1.APIEndpoint{Port: 6443},
+		},
+		{
+			name:     "When the endpoint becomes available, it should populate the endpoint",
+			endpoint: apiEndpoint,
+			expected: &ospcapicore.APIEndpoint{Host: apiEndpoint.Host, Port: apiEndpoint.Port},
+		},
+		{
+			name:     "When the endpoint is temporarily empty, it should preserve the existing endpoint",
+			initial:  &ospcapicore.APIEndpoint{Host: apiEndpoint.Host, Port: apiEndpoint.Port},
+			expected: &ospcapicore.APIEndpoint{Host: apiEndpoint.Host, Port: apiEndpoint.Port},
+		},
+		{
+			name:     "When the endpoint is available on subsequent reconciliation, it should retain the endpoint",
+			endpoint: apiEndpoint,
+			initial:  &ospcapicore.APIEndpoint{Host: apiEndpoint.Host, Port: apiEndpoint.Port},
+			expected: &ospcapicore.APIEndpoint{Host: apiEndpoint.Host, Port: apiEndpoint.Port},
+		},
+	}
+	for _, tc := range endpointCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hostedCluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						MachineNetwork: []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.0.0.0/24")}},
+					},
+					Platform: hyperv1.PlatformSpec{
+						OpenStack: &hyperv1.OpenStackPlatformSpec{},
+					},
+				},
+			}
+			spec := capo.OpenStackClusterSpec{ControlPlaneEndpoint: tc.initial}
+			if err := reconcileOpenStackClusterSpec(hostedCluster, &spec, tc.endpoint); err != nil {
+				t.Fatalf("reconcileOpenStackClusterSpec() returned an unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.expected, spec.ControlPlaneEndpoint); diff != "" {
+				t.Errorf("unexpected control plane endpoint (-want +got): %s", diff)
 			}
 		})
 	}
