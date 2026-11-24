@@ -11,7 +11,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch == "release-4.18"
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: control-plane-operator
+    appstudio.openshift.io/application: control-plane-operator-4-18
     appstudio.openshift.io/component: control-plane-operator-4-18
     pipelines.appstudio.openshift.io/type: build
   name: control-plane-operator-4-18-on-pull-request
