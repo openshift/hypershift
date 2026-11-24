@@ -90,6 +90,7 @@ func (er *environmentReplacer) setOperatorImageReferences(releaseImageProvider, 
 		"CLUSTER_CLOUD_CONTROLLER_MANAGER_OPERATOR_IMAGE",
 		"KUBE_RBAC_PROXY_IMAGE",
 		"VOLUME_DEVICE_EXPORTER_IMAGE",
+		"VOLUME_DATA_SOURCE_VALIDATOR_IMAGE",
 	}
 
 	for envVar, payloadName := range operatorImageRefs {
