@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/thirdparty/kubernetes/pkg/credentialprovider"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -315,6 +316,23 @@ func dockerConfigJSON(secret *corev1.Secret) ([]byte, error) {
 		return nil, fmt.Errorf("secret %s/%s is missing the %s key", secret.Namespace, secret.Name, corev1.DockerConfigJsonKey)
 	}
 	return data, nil
+}
+
+// Validate reports an error when dockerConfigJSON cannot be used as a control plane
+// release pull secret. It applies the parsing of Merge, which every reader of the
+// credential goes through, and that of the registry clients, which decode each entry of
+// the merged payload: a single entry they cannot decode fails every lookup made with it.
+// A payload that passes is one those readers accept. Kubernetes accepts payloads, such
+// as {"auths":[]} or an entry whose auth field is not base64(username:password), that
+// they do not.
+func Validate(dockerConfigJSON []byte) error {
+	if _, err := authsOf(dockerConfigJSON); err != nil {
+		return err
+	}
+	if _, err := credentialprovider.ReadDockerConfigJSONFileFromBytes(dockerConfigJSON); err != nil {
+		return fmt.Errorf("invalid auths entry: %w", err)
+	}
+	return nil
 }
 
 // authsOf extracts the "auths" object from a dockerconfigjson payload.
