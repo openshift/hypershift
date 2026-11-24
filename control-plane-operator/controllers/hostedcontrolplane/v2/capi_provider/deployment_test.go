@@ -99,8 +99,15 @@ func TestAdaptDeployment(t *testing.T) {
 				HCP:     hcp,
 			}
 
+			originalSpec := tc.deploymentSpec.DeepCopy()
+
 			err = capi.adaptDeployment(cpContext, deployment)
 			g.Expect(err).ToNot(HaveOccurred())
+
+			// Later defaulting mutates the deployment's containers in place; that must not leak into the platform spec.
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+				corev1.VolumeMount{Name: "cloud-token", MountPath: "/var/run/secrets/openshift/serviceaccount"})
+			g.Expect(tc.deploymentSpec).To(Equal(originalSpec), "adapting the deployment should not mutate the platform deployment spec")
 
 			// Check that spec was applied
 			if tc.deploymentSpec.Replicas != nil {

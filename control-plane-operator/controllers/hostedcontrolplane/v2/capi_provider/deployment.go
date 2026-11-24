@@ -11,7 +11,9 @@ import (
 
 // TODO: create a separate component for each platform?
 func (capi *CAPIProviderOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
-	deployment.Spec = *capi.deploymentSpec
+	// Deep copy so that defaulting and sidecar injection never mutate the platform spec held by this component, which
+	// would otherwise accumulate injected volume mounts across reconciles.
+	deployment.Spec = *capi.deploymentSpec.DeepCopy()
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: labels(),
 	}
