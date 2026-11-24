@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/openshift/hypershift/support/gmpmonitoring"
+	"github.com/openshift/hypershift/support/metrics"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -79,6 +80,43 @@ func TestGeneratedTargetLabelsMatchCoreOS(t *testing.T) {
 
 	if checked == 0 {
 		t.Fatal("no generated PodMonitoring was compared; the test would pass vacuously")
+	}
+}
+
+// TestAdaptedPodMonitoringKeepsTargetLabels runs the runtime GMP adapter over
+// every staged PodMonitoring for every MetricsSet and checks that the target
+// labels survive. The adapter replaces the staged filter rules, so without this
+// a change to it could silently drop the service and endpoint labels that
+// TestGeneratedTargetLabelsMatchCoreOS proves the staged assets carry.
+func TestAdaptedPodMonitoringKeepsTargetLabels(t *testing.T) {
+	const clusterID = "cluster-id"
+
+	checked := 0
+	for _, component := range componentAssetsForTest(t) {
+		staged := loadGeneratedPodMonitoring(t, component)
+		if staged == nil {
+			continue
+		}
+		expected := podMonitoringTargetLabels(staged)
+		for _, labels := range expected {
+			labels[metrics.GMPClusterIDLabel] = clusterID
+		}
+
+		for _, set := range []metrics.MetricsSet{metrics.MetricsSetTelemetry, metrics.MetricsSetSRE, metrics.MetricsSetAll} {
+			adapted := staged.DeepCopy()
+			if err := metrics.AdaptGMPPodMonitoring(component.Dir, adapted, set, clusterID, hcpNamespace); err != nil {
+				t.Fatalf("%s %s: %v", component.Name, set, err)
+			}
+			actual := podMonitoringTargetLabels(adapted)
+			if !reflect.DeepEqual(expected, actual) {
+				t.Errorf("%s %s: adapted PodMonitoring target labels differ from the staged asset\nstaged:  %v\nadapted: %v", component.Name, set, expected, actual)
+			}
+			checked++
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("no staged PodMonitoring was adapted; the test would pass vacuously")
 	}
 }
 
