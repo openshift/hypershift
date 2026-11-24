@@ -14,9 +14,19 @@ var packageServerLabels = map[string]string{
 	hyperv1.ControlPlaneComponentLabel: "packageserver",
 }
 
+// OperatorLifecycleManagerParams holds the inputs for the OLM control plane components.
+//
+// GuestOLMImage and OperatorRegistryImage are not images the control plane runs.
+// catalog-operator receives them as OLM_OPERATOR_IMAGE and OPERATOR_REGISTRY_IMAGE,
+// which feed --util-image, --opmImage and --configmapServerImage, and stamps them into
+// workloads it creates in the guest cluster: bundle unpack Jobs, grpc CatalogSource
+// pods using extractContent and ConfigMap-backed CatalogSource pods. Those run on guest
+// nodes, so the images must come from the user release; the control plane release may
+// be held in a private registry the guest cannot pull from.
 type OperatorLifecycleManagerParams struct {
 	CLIImage                                 string
 	OLMImage                                 string
+	GuestOLMImage                            string
 	ProxyImage                               string
 	OperatorRegistryImage                    string
 	CertifiedOperatorsCatalogImageOverride   string
@@ -32,12 +42,13 @@ type OperatorLifecycleManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, releaseVersion string, setDefaultSecurityContext bool) *OperatorLifecycleManagerParams {
+func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, releaseVersion string, setDefaultSecurityContext bool) *OperatorLifecycleManagerParams {
 	params := &OperatorLifecycleManagerParams{
 		CLIImage:                releaseImageProvider.GetImage("cli"),
 		OLMImage:                releaseImageProvider.GetImage("operator-lifecycle-manager"),
+		GuestOLMImage:           userReleaseImageProvider.GetImage("operator-lifecycle-manager"),
 		ProxyImage:              releaseImageProvider.GetImage("socks5-proxy"),
-		OperatorRegistryImage:   releaseImageProvider.GetImage("operator-registry"),
+		OperatorRegistryImage:   userReleaseImageProvider.GetImage("operator-registry"),
 		ReleaseVersion:          releaseVersion,
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		NoProxy:                 []string{"kube-apiserver"},

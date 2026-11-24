@@ -4210,7 +4210,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImageProvider, userReleaseImageProvider.Version(), r.SetDefaultSecurityContext)
+	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImageProvider, userReleaseImageProvider, userReleaseImageProvider.Version(), r.SetDefaultSecurityContext)
 	if (hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OperatorHub != nil &&
 		hcp.Spec.Configuration.OperatorHub.DisableAllDefaultSources) ||
 		hcp.Spec.OLMCatalogPlacement != hyperv1.ManagementOLMCatalogPlacement {
@@ -4340,7 +4340,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	}
 	catalogOperatorDeployment := manifests.CatalogOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, catalogOperatorDeployment, func() error {
-		return olm.ReconcileCatalogOperatorDeployment(catalogOperatorDeployment, p.OwnerRef, p.OLMImage, p.ProxyImage, p.OperatorRegistryImage, p.ReleaseVersion, p.DeploymentConfig, p.AvailabilityProberImage, p.NoProxy, hcp.Spec.Platform.Type)
+		return olm.ReconcileCatalogOperatorDeployment(catalogOperatorDeployment, p.OwnerRef, p.OLMImage, p.GuestOLMImage, p.ProxyImage, p.OperatorRegistryImage, p.ReleaseVersion, p.DeploymentConfig, p.AvailabilityProberImage, p.NoProxy, hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile catalog operator deployment: %w", err)
 	}

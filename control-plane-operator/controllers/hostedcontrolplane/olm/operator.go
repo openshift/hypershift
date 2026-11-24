@@ -53,7 +53,12 @@ func ReconcileCatalogOperatorMetricsService(svc *corev1.Service, ownerRef config
 	return nil
 }
 
-func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string, platformType hyperv1.PlatformType) error {
+// ReconcileCatalogOperatorDeployment reconciles the catalog-operator deployment.
+//
+// olmImage is the image catalog-operator itself runs and comes from the control plane
+// release. guestOLMImage and operatorRegistryImage are stamped into workloads
+// catalog-operator creates in the guest cluster and must come from the user release.
+func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, guestOLMImage, socks5ProxyImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements
@@ -90,7 +95,7 @@ func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef 
 		case "RELEASE_VERSION":
 			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = releaseVersion
 		case "OLM_OPERATOR_IMAGE":
-			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = olmImage
+			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = guestOLMImage
 		case "OPERATOR_REGISTRY_IMAGE":
 			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = operatorRegistryImage
 		case "NO_PROXY":
