@@ -17,10 +17,15 @@ type fakeProvider struct {
 	lastTrustBundleHash string
 	lastHCConfigHash    string
 	lastCloudConfigHash string
+	// err, when set, fails every render (e.g. a broken MCO pipeline or registry outage).
+	err error
 }
 
 func (f *fakeProvider) GetPayload(ctx context.Context, img, cfg, pullSecretHash, trustBundleHash, hcConfigHash, osImageStream, cloudConfigHash string) ([]byte, error) {
 	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
 	f.lastImg = img
 	f.lastPullSecretHash = pullSecretHash
 	f.lastTrustBundleHash = trustBundleHash
