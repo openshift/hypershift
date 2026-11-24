@@ -1267,7 +1267,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
 		// Reconcile cloud credential operator
 		r.Log.Info("Reconciling Cloud Credential Operator")
-		if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+		if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
 		}
 	}
@@ -3163,6 +3163,28 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		}
 	}
 
+	// Under a spec.controlPlaneReleaseImage payload skew, serve the user
+	// payload's version on /version instead of the control plane payload
+	// binary's. The ConfigMap must exist before the deployment mounts it.
+	reportedVersion, reportedVersionEnabled, err := kas.ReportedVersionInfo(ctx, r.Client, hcp, releaseImageProvider, userReleaseImageProvider, r.ImageMetadataProvider)
+	if err != nil {
+		return fmt.Errorf("failed to determine the reported kube-apiserver version: %w", err)
+	}
+	if reportedVersionEnabled {
+		reportedVersionConfigMap := manifests.KASReportedVersionConfigMap(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, reportedVersionConfigMap, func() error {
+			return kas.ReconcileReportedVersionConfigMap(reportedVersionConfigMap, p.OwnerRef, reportedVersion)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile kas reported version configmap: %w", err)
+		}
+	} else {
+		// Deferred: the ConfigMap is kept until the deployment below no longer
+		// mounts it and its rollout is complete.
+		if err := kas.CleanupReportedVersionConfigMap(ctx, r.Client, hcp); err != nil {
+			return fmt.Errorf("failed to clean up kas reported version configmap: %w", err)
+		}
+	}
+
 	if _, err := createOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
 		return kas.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment,
 			hcp,
@@ -3181,6 +3203,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			aesCBCBackupKey,
 			p.KASPodPort,
 			userReleaseImageProvider.Version(),
+			reportedVersion,
 			p.FeatureGate,
 			oidcCA,
 			p.CipherSuites(),
@@ -3880,8 +3903,16 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	params := cco.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	// The CCO uses RELEASE_VERSION both as its desired version for the guest
+	// cluster's featuregates.config.openshift.io/cluster (which carries the user
+	// payload's feature sets) and as the version it reports on its
+	// ClusterOperator. It must follow the user payload (spec.release): using the
+	// control plane payload version under a spec.controlPlaneRelease skew makes
+	// the CCO fail to find its version in the FeatureGate and crashloop, never
+	// creating the cloud-credential ClusterOperator. The operator image itself
+	// still comes from the control plane payload.
+	params := cco.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
