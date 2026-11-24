@@ -83,9 +83,16 @@ func (provider *releaseProviderStub) Lookup(_ context.Context, image string, _ [
 
 func TestGetControlPlaneOperatorImage(t *testing.T) {
 	t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "0")
+
+	overrideImage := controlplaneoperatoroverrides.CPOImage(string(hyperv1.AWSPlatform), "4.17.5")
+	if overrideImage == "" {
+		t.Fatal("expected a CPO override for AWS 4.17.5 in the override fixtures")
+	}
+
 	for _, testCase := range []struct {
 		name            string
 		annotation      string
+		platform        hyperv1.PlatformType
 		provider        releaseProviderStub
 		expected        string
 		expectedError   string
@@ -94,17 +101,20 @@ func TestGetControlPlaneOperatorImage(t *testing.T) {
 		{name: "When an annotation is set, it should bypass release lookup", annotation: "quay.io/hypershift/hypershift:latest", expected: "quay.io/hypershift/hypershift:latest"},
 		{name: "When the payload includes hypershift, it should use the payload image", provider: releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
 		{name: "When the payload lacks hypershift, it should use the operator image", provider: releaseProviderStub{version: "4.21.0"}, expected: "quay.io/hypershift/hypershift-operator:latest"},
-		{name: "When enabled overrides do not match the platform, it should use the payload image", enableOverrides: true, provider: releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
+		{name: "When enabled overrides do not match the platform, it should use the payload image", enableOverrides: true, platform: hyperv1.NonePlatform, provider: releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
+		{name: "When enabled overrides match the platform and version, it should use the override image", enableOverrides: true, platform: hyperv1.AWSPlatform, provider: releaseProviderStub{version: "4.17.5", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.17.5-hypershift"}, expected: overrideImage},
 		{name: "When the release lookup fails, it should return an error", provider: releaseProviderStub{err: fmt.Errorf("lookup failed")}, expectedError: "lookup failed"},
 		{name: "When the release version is invalid, it should return an error", provider: releaseProviderStub{version: "invalid"}, expectedError: "No Major.Minor.Patch elements found"},
 		{name: "When the release is unsupported, it should return an error", provider: releaseProviderStub{version: "4.8.0"}, expectedError: "unsupported release image with version 4.8.0"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			g := NewWithT(t)
-			cluster := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{ControlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.21.11-x86_64"}}}
+			cluster := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
+				ControlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.21.11-x86_64"},
+				Platform:            hyperv1.PlatformSpec{Type: testCase.platform},
+			}}
 			if testCase.enableOverrides {
 				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "1")
-				cluster.Spec.Platform.Type = hyperv1.NonePlatform
 			}
 			if testCase.annotation != "" {
 				cluster.Annotations = map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: testCase.annotation}
@@ -124,6 +134,116 @@ func TestGetControlPlaneOperatorImage(t *testing.T) {
 			} else {
 				g.Expect(testCase.provider.requestedImage).To(BeEmpty())
 			}
+		})
+	}
+}
+
+func TestGetControlPlaneOperatorImageForRelease(t *testing.T) {
+	const (
+		annotationImage = "quay.io/hypershift/custom-cpo:latest"
+		componentImage  = "registry.example.com/cpo:4.17.0"
+		canonicalImage  = "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.17.0-hypershift"
+	)
+
+	overrideImage := controlplaneoperatoroverrides.CPOImage(string(hyperv1.AWSPlatform), "4.17.5")
+	if overrideImage == "" {
+		t.Fatal("expected a CPO override for AWS 4.17.5 in the override fixtures")
+	}
+
+	newReleaseImage := func(version string, componentImages, canonicalImages map[string]string) *releaseinfo.ReleaseImage {
+		releaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imagev1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: version}},
+		}
+		for name, image := range componentImages {
+			releaseImage.ImageStream.Spec.Tags = append(releaseImage.ImageStream.Spec.Tags, imagev1.TagReference{
+				Name: name,
+				From: &corev1.ObjectReference{Name: image},
+			})
+		}
+		if canonicalImages != nil {
+			releaseImage.SetCanonicalComponentImages(canonicalImages)
+		}
+		return releaseImage
+	}
+
+	for _, testCase := range []struct {
+		name               string
+		annotations        map[string]string
+		platform           hyperv1.PlatformType
+		releaseImage       *releaseinfo.ReleaseImage
+		useCanonicalImages bool
+		enableOverrides    bool
+		expected           string
+		expectedError      string
+	}{
+		{
+			name:         "When the annotation is set, it should take precedence over the release payload",
+			annotations:  map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: annotationImage},
+			releaseImage: newReleaseImage("4.17.0", map[string]string{"hypershift": componentImage}, nil),
+			expected:     annotationImage,
+		},
+		{
+			name:         "When the release payload includes hypershift, it should return the component image",
+			releaseImage: newReleaseImage("4.17.0", map[string]string{"hypershift": componentImage}, nil),
+			expected:     componentImage,
+		},
+		{
+			name:               "When canonical images are requested, it should return the canonical component image",
+			releaseImage:       newReleaseImage("4.17.0", map[string]string{"hypershift": "mirror.example.com/cpo:4.17.0"}, map[string]string{"hypershift": canonicalImage}),
+			useCanonicalImages: true,
+			expected:           canonicalImage,
+		},
+		{
+			name:               "When canonical images are not requested, it should return the overridden component image",
+			releaseImage:       newReleaseImage("4.17.0", map[string]string{"hypershift": "mirror.example.com/cpo:4.17.0"}, map[string]string{"hypershift": canonicalImage}),
+			useCanonicalImages: false,
+			expected:           "mirror.example.com/cpo:4.17.0",
+		},
+		{
+			name:         "When the release payload lacks hypershift, it should return an empty image",
+			releaseImage: newReleaseImage("4.17.0", map[string]string{"haproxy-router": componentImage}, nil),
+			expected:     "",
+		},
+		{
+			name:          "When the release version is invalid, it should return an error",
+			releaseImage:  newReleaseImage("invalid", map[string]string{"hypershift": componentImage}, nil),
+			expectedError: "No Major.Minor.Patch elements found",
+		},
+		{
+			name:            "When overrides are enabled and match the platform and version, it should return the override image",
+			platform:        hyperv1.AWSPlatform,
+			releaseImage:    newReleaseImage("4.17.5", map[string]string{"hypershift": componentImage}, nil),
+			enableOverrides: true,
+			expected:        overrideImage,
+		},
+		{
+			name:            "When overrides are enabled and do not match the platform, it should return the component image",
+			platform:        hyperv1.NonePlatform,
+			releaseImage:    newReleaseImage("4.17.5", map[string]string{"hypershift": componentImage}, nil),
+			enableOverrides: true,
+			expected:        componentImage,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewWithT(t)
+			if testCase.enableOverrides {
+				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "1")
+			} else {
+				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "0")
+			}
+
+			cluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Annotations: testCase.annotations},
+				Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: testCase.platform}},
+			}
+
+			image, err := GetControlPlaneOperatorImageForRelease(cluster, testCase.releaseImage, testCase.useCanonicalImages)
+			if testCase.expectedError != "" {
+				g.Expect(err).To(MatchError(testCase.expectedError))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			g.Expect(image).To(Equal(testCase.expected))
 		})
 	}
 }
