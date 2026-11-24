@@ -92,7 +92,7 @@ const (
 	basePrivateSubnetCIDR = "10.0.128.0/20"
 	basePublicSubnetCIDR  = "10.0.0.0/20"
 
-	clusterTagValue         = "owned"
+	clusterTagValue         = supportawsutil.ClusterTagOwnedValue
 	hypershiftLocalZoneName = "hypershift.local"
 )
 
@@ -674,7 +674,7 @@ func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vp
 		ResourceArns: subnetArns,
 		Tags: []ramtypes.Tag{
 			{
-				Key:   aws.String(clusterTag(o.InfraID)),
+				Key:   aws.String(supportawsutil.ClusterTag(o.InfraID)),
 				Value: aws.String(clusterTagValue),
 			},
 			{

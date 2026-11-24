@@ -117,7 +117,7 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 	logger.Info("Created private zone", "name", name, "id", id)
 
 	r53Tags := []route53types.Tag{
-		{Key: aws.String(clusterTag(o.InfraID)), Value: aws.String(clusterTagValue)},
+		{Key: aws.String(supportawsutil.ClusterTag(o.InfraID)), Value: aws.String(clusterTagValue)},
 		{Key: aws.String(supportawsutil.HypershiftInfraIDTagKey), Value: aws.String(o.InfraID)},
 		{Key: aws.String(supportawsutil.HypershiftClusterNameTagKey), Value: aws.String(o.Name)},
 	}

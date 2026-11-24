@@ -261,6 +261,59 @@ func TestInjectTokenMinterContainer(t *testing.T) {
 		g.Expect(podSpec.InitContainers[0].Name).To(Equal("apiserver-token-minter"))
 		g.Expect(podSpec.Containers).To(HaveLen(1), "cloud token should not be injected for non-cloud platform")
 	})
+
+}
+
+func TestSupportsCloudTokenPlatform(t *testing.T) {
+	t.Setenv("MANAGED_SERVICE", "")
+	tests := []struct {
+		name          string
+		platformType  hyperv1.PlatformType
+		platformTypes []hyperv1.PlatformType
+		want          bool
+	}{
+		{
+			name:         "When no platform override is set for AWS, it should enable cloud tokens",
+			platformType: hyperv1.AWSPlatform,
+			want:         true,
+		},
+		{
+			name:         "When no platform override is set for Azure, it should enable cloud tokens",
+			platformType: hyperv1.AzurePlatform,
+			want:         true,
+		},
+		{
+			name:         "When no platform override is set for GCP, it should enable cloud tokens",
+			platformType: hyperv1.GCPPlatform,
+			want:         true,
+		},
+		{
+			name:         "When no platform override is set for KubeVirt, it should disable cloud tokens",
+			platformType: hyperv1.KubevirtPlatform,
+			want:         false,
+		},
+		{
+			name:          "When an explicit platform override includes the platform, it should enable cloud tokens",
+			platformType:  hyperv1.GCPPlatform,
+			platformTypes: []hyperv1.PlatformType{hyperv1.GCPPlatform},
+			want:          true,
+		},
+		{
+			name:          "When an explicit platform override excludes the platform, it should disable cloud tokens",
+			platformType:  hyperv1.GCPPlatform,
+			platformTypes: []hyperv1.PlatformType{hyperv1.AWSPlatform},
+			want:          false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			opts := TokenMinterContainerOptions{PlatformTypes: test.platformTypes}
+			if got := opts.supportsCloudTokenPlatform(test.platformType); got != test.want {
+				t.Fatalf("expected supportsCloudTokenPlatform(%q) to be %t, got %t", test.platformType, test.want, got)
+			}
+		})
+	}
 }
 
 type fakeReleaseImageProvider struct {

@@ -3,6 +3,7 @@ package aws
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -198,6 +199,7 @@ var (
         "elasticloadbalancing:DeleteLoadBalancer",
         "elasticloadbalancing:DeleteLoadBalancerListeners",
         "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeTags",
         "elasticloadbalancing:DescribeLoadBalancerAttributes",
         "elasticloadbalancing:DetachLoadBalancerFromSubnets",
         "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
@@ -961,18 +963,67 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient aw
 				}
 			}`, o.BaseDomain)
 		ingressRoleName := output.Roles.IngressARN[strings.LastIndex(output.Roles.IngressARN, "/")+1:]
+		ccmRoleName := output.Roles.KubeCloudControllerARN[strings.LastIndex(output.Roles.KubeCloudControllerARN, "/")+1:]
+		ccmPolicyStatement := `{
+			"Effect": "Allow",
+			"Action": [
+				"elasticloadbalancing:DescribeTags"
+			],
+			"Resource": "*"
+		}`
 
-		if _, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
-			PolicyName: aws.String(ingressRoleName),
-			RoleName:   aws.String(ingressRoleName),
-			PolicyDocument: aws.String(fmt.Sprintf(`{
-				"Version": "2012-10-17",
-				"Statement": [%s]
-			}`, ingressPolicyStatement)),
-		}); err != nil {
-			return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %w", ingressRoleName, ingressPolicyStatement, err)
+		if ingressRoleName == ccmRoleName {
+			sharedPolicyDocument := fmt.Sprintf(`{
+					"Version": "2012-10-17",
+					"Statement": [
+						%s,
+						%s
+					]
+				}`, ingressPolicyStatement, ccmPolicyStatement)
+			if !json.Valid([]byte(sharedPolicyDocument)) {
+				return nil, fmt.Errorf("generated ROSA shared role policy %q is invalid JSON", ingressRoleName)
+			}
+			if _, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+				PolicyName:     aws.String(ingressRoleName),
+				RoleName:       aws.String(ingressRoleName),
+				PolicyDocument: aws.String(sharedPolicyDocument),
+			}); err != nil {
+				return nil, fmt.Errorf("failed to create shared role policy %q with combined ingress and cloud controller permissions: %w", ingressRoleName, err)
+			}
+			logger.Info("Added inline shared policy to ROSA Managed Role", "role", ingressRoleName)
+		} else {
+			ingressPolicyDocument := fmt.Sprintf(`{
+					"Version": "2012-10-17",
+					"Statement": [%s]
+				}`, ingressPolicyStatement)
+			ccmPolicyDocument := fmt.Sprintf(`{
+					"Version": "2012-10-17",
+					"Statement": [%s]
+				}`, ccmPolicyStatement)
+			if !json.Valid([]byte(ingressPolicyDocument)) {
+				return nil, fmt.Errorf("generated ROSA ingress role policy %q is invalid JSON", ingressRoleName)
+			}
+			if !json.Valid([]byte(ccmPolicyDocument)) {
+				return nil, fmt.Errorf("generated ROSA cloud controller role policy %q is invalid JSON", ccmRoleName)
+			}
+			if _, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+				PolicyName:     aws.String(ingressRoleName),
+				RoleName:       aws.String(ingressRoleName),
+				PolicyDocument: aws.String(ingressPolicyDocument),
+			}); err != nil {
+				return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %w", ingressRoleName, ingressPolicyStatement, err)
+			}
+			logger.Info("Added inline policy to ROSA Ingress Managed Role", "role", ingressRoleName)
+
+			if _, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+				PolicyName:     aws.String(ccmRoleName),
+				RoleName:       aws.String(ccmRoleName),
+				PolicyDocument: aws.String(ccmPolicyDocument),
+			}); err != nil {
+				return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %w", ccmRoleName, ccmPolicyStatement, err)
+			}
+			logger.Info("Added inline policy to ROSA Cloud Controller Manager Managed Role", "role", ccmRoleName)
 		}
-		logger.Info("Added inline policy to ROSA Ingress Managed Role", "role", ingressRoleName)
 	}
 
 	return output, nil
