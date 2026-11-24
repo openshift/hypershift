@@ -2078,6 +2078,20 @@ func TestValidateMiscConfig(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "When a valid control plane release pull secret name is specified, it should pass",
+			opts: Options{
+				ControlPlaneReleasePullSecretName: "pull-secret.generated-1",
+			},
+			expectError: false,
+		},
+		{
+			name: "When the control plane release pull secret name is not a valid Secret name, it should fail",
+			opts: Options{
+				ControlPlaneReleasePullSecretName: "Not_A_Valid/Name",
+			},
+			expectError: true,
+		},
+		{
 			name: "When IfNotPresent image pull policy is specified, it should pass",
 			opts: Options{
 				ImagePullPolicy: "IfNotPresent",

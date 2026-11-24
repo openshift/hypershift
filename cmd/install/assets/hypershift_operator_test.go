@@ -964,6 +964,8 @@ func TestBuildEnvVars(t *testing.T) {
 		deployment     HyperShiftOperatorDeployment
 		expectContains []corev1.EnvVar
 		expectAbsent   []string
+		// expectOnce lists variables that must be rendered exactly once.
+		expectOnce []string
 	}{
 		{
 			name: "When TechPreviewNoUpgrade is enabled, it should include HYPERSHIFT_FEATURESET env var",
@@ -1074,6 +1076,36 @@ func TestBuildEnvVars(t *testing.T) {
 			},
 		},
 		{
+			name: "When ControlPlaneReleasePullSecretName is set, it should include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				ControlPlaneReleasePullSecretName: "generated-by-another-system",
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: ControlPlaneReleasePullSecretNameEnvVar, Value: "generated-by-another-system"},
+			},
+		},
+		{
+			name: "When ControlPlaneReleasePullSecretName is also set in AdditionalOperatorEnvVars, it should render the env var once with the flag's value",
+			deployment: HyperShiftOperatorDeployment{
+				ControlPlaneReleasePullSecretName: "generated-by-another-system",
+				AdditionalOperatorEnvVars:         map[string]string{ControlPlaneReleasePullSecretNameEnvVar: "from-additional-env-vars"},
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: ControlPlaneReleasePullSecretNameEnvVar, Value: "generated-by-another-system"},
+			},
+			expectOnce: []string{ControlPlaneReleasePullSecretNameEnvVar},
+		},
+		{
+			name: "When the env var is only set in AdditionalOperatorEnvVars, it should render that value once",
+			deployment: HyperShiftOperatorDeployment{
+				AdditionalOperatorEnvVars: map[string]string{ControlPlaneReleasePullSecretNameEnvVar: "from-additional-env-vars"},
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: ControlPlaneReleasePullSecretNameEnvVar, Value: "from-additional-env-vars"},
+			},
+			expectOnce: []string{ControlPlaneReleasePullSecretNameEnvVar},
+		},
+		{
 			name: "When CAPI migration is enabled, it should include CAPI_STORAGE_VERSION env var",
 			deployment: HyperShiftOperatorDeployment{
 				CAPIStorageVersion: "v1beta2",
@@ -1088,6 +1120,7 @@ func TestBuildEnvVars(t *testing.T) {
 				CertRotationScale: 24 * time.Hour,
 			},
 			expectAbsent: []string{
+				ControlPlaneReleasePullSecretNameEnvVar,
 				"HYPERSHIFT_FEATURESET",
 				"ENABLE_AUDIT_LOG_PERSISTENCE",
 				"MANAGED_SERVICE",
@@ -1110,6 +1143,15 @@ func TestBuildEnvVars(t *testing.T) {
 				for _, env := range envVars {
 					g.Expect(env.Name).NotTo(Equal(absent))
 				}
+			}
+			for _, name := range tc.expectOnce {
+				count := 0
+				for _, env := range envVars {
+					if env.Name == name {
+						count++
+					}
+				}
+				g.Expect(count).To(Equal(1), "expected %s to be rendered exactly once", name)
 			}
 		})
 	}
