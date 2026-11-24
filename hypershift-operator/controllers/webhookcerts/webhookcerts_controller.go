@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -95,11 +96,44 @@ func (r *WebhookCertReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdat
 }
 
 // operatorConversionCRDPredicate selects CRDs whose conversion webhook is served by the operator Service.
+// Create, delete and generic events are selected for every such CRD. Update events are selected only
+// when they can require a patch: the CRD was retargeted to the operator Service, its conversion webhook
+// caBundle changed, or the service-ca inject-cabundle annotation was added. Status-only and other
+// unrelated updates are ignored.
 func (r *WebhookCertReconciler) operatorConversionCRDPredicate() predicate.Predicate {
-	return predicate.NewPredicateFuncs(func(o client.Object) bool {
+	operatorCRD := func(o client.Object) (*apiextensionsv1.CustomResourceDefinition, bool) {
 		crd, ok := o.(*apiextensionsv1.CustomResourceDefinition)
-		return ok && conversionWebhookTargetsService(crd, r.Namespace, r.ServiceName)
-	})
+		if !ok || !conversionWebhookTargetsService(crd, r.Namespace, r.ServiceName) {
+			return nil, false
+		}
+		return crd, true
+	}
+	targetsOperator := func(o client.Object) bool {
+		_, ok := operatorCRD(o)
+		return ok
+	}
+	return predicate.Funcs{
+		CreateFunc:  func(e event.CreateEvent) bool { return targetsOperator(e.Object) },
+		DeleteFunc:  func(e event.DeleteEvent) bool { return targetsOperator(e.Object) },
+		GenericFunc: func(e event.GenericEvent) bool { return targetsOperator(e.Object) },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			newCRD, ok := operatorCRD(e.ObjectNew)
+			if !ok {
+				return false
+			}
+			// A CRD that did not target the operator Service before (or an unknown old object) was retargeted to it.
+			oldCRD, ok := operatorCRD(e.ObjectOld)
+			if !ok {
+				return true
+			}
+			if !bytes.Equal(oldCRD.Spec.Conversion.Webhook.ClientConfig.CABundle, newCRD.Spec.Conversion.Webhook.ClientConfig.CABundle) {
+				return true
+			}
+			_, hadInjectAnnotation := oldCRD.Annotations[injectCABundleAnnotation]
+			_, hasInjectAnnotation := newCRD.Annotations[injectCABundleAnnotation]
+			return hasInjectAnnotation && !hadInjectAnnotation
+		},
+	}
 }
 
 // mapCRDToReconcileRequests maps a CRD event to the reconcile key used for the webhook CA Secret.

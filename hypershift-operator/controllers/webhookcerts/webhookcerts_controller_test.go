@@ -1349,11 +1349,110 @@ func TestWebhookCertReconciler_OperatorConversionCRDPredicate(t *testing.T) {
 
 			p := r.operatorConversionCRDPredicate()
 			g.Expect(p.Create(event.CreateEvent{Object: tc.obj})).To(Equal(tc.expected))
-			g.Expect(p.Update(event.UpdateEvent{ObjectOld: tc.obj, ObjectNew: tc.obj})).To(Equal(tc.expected))
 			g.Expect(p.Delete(event.DeleteEvent{Object: tc.obj})).To(Equal(tc.expected))
 			g.Expect(p.Generic(event.GenericEvent{Object: tc.obj})).To(Equal(tc.expected))
 		})
 	}
+
+	t.Run("When an update event is received, it should enqueue only relevant changes to CRDs targeting the operator service", func(t *testing.T) {
+		webhookCA, foreignCA := testCABundles(t)
+		matching := func(mutate func(*apiextensionsv1.CustomResourceDefinition)) *apiextensionsv1.CustomResourceDefinition {
+			crd := newConversionCRD("clusters", "hypershift", "operator", webhookCA, map[string]string{"controller-gen.kubebuilder.io/version": "v0.19.0"})
+			crd.ResourceVersion = "100"
+			if mutate != nil {
+				mutate(crd)
+			}
+			return crd
+		}
+		withStatusChange := func(crd *apiextensionsv1.CustomResourceDefinition) {
+			crd.ResourceVersion = "101"
+			crd.Status.Conditions = append(crd.Status.Conditions, apiextensionsv1.CustomResourceDefinitionCondition{
+				Type: apiextensionsv1.Established, Status: apiextensionsv1.ConditionTrue,
+			})
+			crd.Status.StoredVersions = []string{"v1beta1"}
+		}
+		withInjectAnnotation := func(value string) func(*apiextensionsv1.CustomResourceDefinition) {
+			return func(crd *apiextensionsv1.CustomResourceDefinition) {
+				crd.Annotations[injectCABundleAnnotation] = value
+			}
+		}
+		retarget := func(namespace, name string) func(*apiextensionsv1.CustomResourceDefinition) {
+			return func(crd *apiextensionsv1.CustomResourceDefinition) {
+				crd.Spec.Conversion.Webhook.ClientConfig.Service.Namespace = namespace
+				crd.Spec.Conversion.Webhook.ClientConfig.Service.Name = name
+			}
+		}
+		for _, tc := range []struct {
+			name     string
+			oldObj   client.Object
+			newObj   client.Object
+			expected bool
+		}{
+			{name: "When only the status of a matching CRD changes, it should not enqueue",
+				oldObj: matching(nil), newObj: matching(withStatusChange)},
+			{name: "When an unrelated annotation or label of a matching CRD changes, it should not enqueue",
+				oldObj: matching(nil), newObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) {
+					crd.Annotations["example.com/unrelated"] = "true"
+					crd.Labels = map[string]string{"example.com/unrelated": "true"}
+				})},
+			{name: "When a matching CRD is updated with the same caBundle bytes, it should not enqueue",
+				oldObj: matching(nil), newObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) {
+					crd.Spec.Conversion.Webhook.ClientConfig.CABundle = append([]byte(nil), webhookCA...)
+					withStatusChange(crd)
+				})},
+			{name: "When the caBundle of a matching CRD changes, it should enqueue",
+				oldObj: matching(nil), newObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) {
+					crd.Spec.Conversion.Webhook.ClientConfig.CABundle = foreignCA
+				}), expected: true},
+			{name: "When the caBundle of a matching CRD is removed, it should enqueue",
+				oldObj: matching(nil), newObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) {
+					crd.Spec.Conversion.Webhook.ClientConfig.CABundle = nil
+				}), expected: true},
+			{name: "When the inject-cabundle annotation is added to a matching CRD, it should enqueue",
+				oldObj: matching(nil), newObj: matching(withInjectAnnotation("true")), expected: true},
+			{name: "When the inject-cabundle annotation is added with a false value, it should enqueue because only its presence matters",
+				oldObj: matching(nil), newObj: matching(withInjectAnnotation("false")), expected: true},
+			{name: "When the inject-cabundle annotation is already present and only the status changes, it should not enqueue",
+				oldObj: matching(withInjectAnnotation("true")), newObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) {
+					withInjectAnnotation("true")(crd)
+					withStatusChange(crd)
+				})},
+			{name: "When a resync delivers an unchanged CRD that still needs a patch, it should not enqueue",
+				oldObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) {
+					withInjectAnnotation("true")(crd)
+					crd.Spec.Conversion.Webhook.ClientConfig.CABundle = foreignCA
+				}), newObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) {
+					withInjectAnnotation("true")(crd)
+					crd.Spec.Conversion.Webhook.ClientConfig.CABundle = foreignCA
+				})},
+			{name: "When the inject-cabundle annotation is removed, it should not enqueue",
+				oldObj: matching(withInjectAnnotation("true")), newObj: matching(nil)},
+			{name: "When a CRD is retargeted from another service to the operator service, it should enqueue",
+				oldObj: matching(retarget("capi-system", "capi-webhook-service")), newObj: matching(nil), expected: true},
+			{name: "When a CRD without a conversion webhook is retargeted to the operator service, it should enqueue",
+				oldObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) { crd.Spec.Conversion = nil }), newObj: matching(nil), expected: true},
+			{name: "When a CRD is retargeted away from the operator service, it should not enqueue",
+				oldObj: matching(nil), newObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) {
+					retarget("capi-system", "capi-webhook-service")(crd)
+					crd.Spec.Conversion.Webhook.ClientConfig.CABundle = foreignCA
+				})},
+			{name: "When a CRD targeting another service changes its caBundle, it should not enqueue",
+				oldObj: matching(retarget("capi-system", "capi-webhook-service")), newObj: matching(func(crd *apiextensionsv1.CustomResourceDefinition) {
+					retarget("capi-system", "capi-webhook-service")(crd)
+					crd.Spec.Conversion.Webhook.ClientConfig.CABundle = foreignCA
+				})},
+			{name: "When the new object is not a CRD, it should not enqueue",
+				oldObj: matching(nil), newObj: &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: "hypershift"}}},
+			{name: "When the old object is missing and the new CRD targets the operator service, it should enqueue",
+				oldObj: nil, newObj: matching(nil), expected: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				g := NewWithT(t)
+
+				g.Expect(r.operatorConversionCRDPredicate().Update(event.UpdateEvent{ObjectOld: tc.oldObj, ObjectNew: tc.newObj})).To(Equal(tc.expected))
+			})
+		}
+	})
 }
 
 func TestWebhookCertReconciler_MapCRDToReconcileRequests(t *testing.T) {
