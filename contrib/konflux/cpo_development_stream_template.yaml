@@ -10,6 +10,9 @@ spec:
   - name: versionName
     description: A K8s-compliant name for the version
     defaultValue: "{{hyphenize .version}}"
+  - name: revision
+    description: Git revision (branch) to build from
+    defaultValue: "release-{{.version}}"
 
   resources:
   - apiVersion: appstudio.redhat.com/v1alpha1
@@ -36,7 +39,7 @@ spec:
         git:
           context: ./
           dockerfileUrl: Containerfile.control-plane
-          revision: "release-{{.version}}"
+          revision: "{{.revision}}"
           url: https://github.com/openshift/hypershift
 
   - apiVersion: appstudio.redhat.com/v1alpha1
@@ -54,7 +57,7 @@ spec:
         visibility: public
       notifications:
         - config:
-            url: 'https://bombino.preprod.api.redhat.com/v1/sbom/quay/push'
+            url: 'https://bombino.api.redhat.com/v1/sbom/quay/push'
           event: repo_push
           method: webhook
           title: SBOM-event-to-Bombino
