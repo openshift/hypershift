@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
+	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	kubemanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -391,6 +392,16 @@ func (c *componentAssets) convertServiceMonitor(monitor *prometheusServiceMonito
 		return nil, fmt.Errorf("ServiceMonitor %s: %w", monitor.Name, err)
 	}
 
+	annotations := metricsProxyAnnotations(monitor.Annotations)
+	if service.Name != monitor.Name {
+		// The guest metrics proxy keys its metric filters and paths on the
+		// monitor name, so keep it where the proxy can find it.
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		annotations[metricsproxy.ComponentNameAnnotation] = monitor.Name
+	}
+
 	return &podMonitoringDoc{
 		APIVersion: gmpAPIVersion,
 		Kind:       "PodMonitoring",
@@ -398,9 +409,10 @@ func (c *componentAssets) convertServiceMonitor(monitor *prometheusServiceMonito
 			// prometheus-operator sets a ServiceMonitor's job label to the
 			// Service name, and GMP sets it to the PodMonitoring name, so the
 			// PodMonitoring is named after the Service rather than the monitor.
-			Name:      service.Name,
-			Namespace: monitor.Namespace,
-			Labels:    copyStringMap(monitor.Labels),
+			Name:        service.Name,
+			Namespace:   monitor.Namespace,
+			Labels:      copyStringMap(monitor.Labels),
+			Annotations: annotations,
 		},
 		Spec: specDoc{
 			// The monitor's own selector matches Service labels and was consumed
@@ -1172,6 +1184,31 @@ func validateNamespaceSelector(selector prometheusoperatorv1.NamespaceSelector) 
 	return nil
 }
 
+// metricsProxyAnnotationPrefix starts the annotations that configure how the
+// metrics proxy labels and forwards a component's metrics into the hosted
+// cluster. The proxy reads them from the monitor it builds its scrape config
+// from, so a PodMonitoring that replaces a CoreOS monitor must carry them or
+// guest metrics would lose the job, namespace, service and endpoint labels the
+// CoreOS monitor sets.
+const metricsProxyAnnotationPrefix = "hypershift.openshift.io/metrics-"
+
+// metricsProxyAnnotations returns the metrics proxy annotations of a CoreOS
+// monitor. Other annotations are not copied: nothing reads them from a
+// PodMonitoring.
+func metricsProxyAnnotations(source map[string]string) map[string]string {
+	var copied map[string]string
+	for key, value := range source {
+		if !strings.HasPrefix(key, metricsProxyAnnotationPrefix) {
+			continue
+		}
+		if copied == nil {
+			copied = map[string]string{}
+		}
+		copied[key] = value
+	}
+	return copied
+}
+
 func copyStringMap(source map[string]string) map[string]string {
 	if len(source) == 0 {
 		return nil
@@ -1239,9 +1276,10 @@ type podMonitoringDoc struct {
 }
 
 type metadataDoc struct {
-	Name      string            `yaml:"name"`
-	Namespace string            `yaml:"namespace,omitempty"`
-	Labels    map[string]string `yaml:"labels,omitempty"`
+	Name        string            `yaml:"name"`
+	Namespace   string            `yaml:"namespace,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
 type specDoc struct {

@@ -96,6 +96,25 @@ func TestComponentAssets_ConvertServiceMonitor(t *testing.T) {
 			},
 		},
 		{
+			name: "When the Service is named differently from the monitor, it should name the PodMonitoring after the Service and record the monitor name for the metrics proxy",
+			assets: &componentAssets{
+				services: []*corev1.Service{func() *corev1.Service {
+					service := baseService()
+					service.Name = "kube-controller-manager-metrics"
+					return service
+				}()},
+				containerPorts: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 10257}},
+			},
+			monitor: baseMonitor(),
+			validateDocument: func(t *testing.T, doc *podMonitoringDoc) {
+				assert.Equal(t, "kube-controller-manager-metrics", doc.Metadata.Name)
+				assert.Equal(t, map[string]string{
+					"hypershift.openshift.io/metrics-endpoint":        "kube-controller-manager",
+					"hypershift.openshift.io/metrics-proxy-component": "kube-controller-manager",
+				}, doc.Metadata.Annotations)
+			},
+		},
+		{
 			name: "When the Service port has no targetPort, it should resolve the container port by the Service port number",
 			assets: &componentAssets{
 				services: []*corev1.Service{func() *corev1.Service {
@@ -1204,10 +1223,10 @@ func TestGenerateAll(t *testing.T) {
 			"a component's file belongs in its own asset directory, not the management tree")
 		assert.Contains(t, string(generated), generatedHeader)
 		assert.Contains(t, string(generated), "kind: PodMonitoring")
-		// The metrics-* annotations on a CoreOS monitor configure metrics-proxy
-		// forwarding only; GMP derives its labels from the spec, so they must not
-		// be carried over where they would read as the label contract.
-		assert.NotContains(t, string(generated), "hypershift.openshift.io/metrics-")
+		// The metrics-* annotations on a CoreOS monitor configure how metrics-proxy
+		// labels forwarded metrics. The proxy reads them from the PodMonitoring
+		// that replaces the monitor, so they are carried over.
+		assert.Contains(t, string(generated), "hypershift.openshift.io/metrics-endpoint: test-component")
 		assert.Equal(t, []string{stalePath}, result.stale)
 	})
 
@@ -1588,4 +1607,42 @@ func ptr[T any](value T) *T {
 
 func strPtr(value string) *string {
 	return &value
+}
+
+func TestMetricsProxyAnnotations(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   map[string]string
+		expected map[string]string
+	}{
+		{
+			name:     "When the monitor has no annotations, it should return none",
+			source:   nil,
+			expected: nil,
+		},
+		{
+			name: "When the monitor mixes annotations, it should keep only the metrics proxy ones",
+			source: map[string]string{
+				"hypershift.openshift.io/metrics-job":     "etcd",
+				"hypershift.openshift.io/metrics-service": "etcd",
+				"hypershift.openshift.io/other":           "dropped",
+				"example.com/metrics-job":                 "dropped",
+			},
+			expected: map[string]string{
+				"hypershift.openshift.io/metrics-job":     "etcd",
+				"hypershift.openshift.io/metrics-service": "etcd",
+			},
+		},
+		{
+			name:     "When no annotation belongs to the metrics proxy, it should return none",
+			source:   map[string]string{"example.com/note": "dropped"},
+			expected: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, metricsProxyAnnotations(tc.source))
+		})
+	}
 }
