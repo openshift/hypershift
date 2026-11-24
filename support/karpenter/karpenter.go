@@ -160,7 +160,7 @@ const EnableStandaloneKarpenterOperatorEnvVar = "ENABLE_STANDALONE_KARPENTER_OPE
 // IsStandaloneKarpenterOperatorEnabled returns true if the standalone karpenter-operator
 // should be deployed instead of the embedded karpenter controller.
 // Requires both:
-// - the KarpenterOperator feature gate is on (via TechPreviewNoUpgrade), and
+// - the KarpenterOperator feature gate is on (in Default and TechPreviewNoUpgrade), and
 // - the ENABLE_STANDALONE_KARPENTER_OPERATOR env var is set to "1" (via --enable-standalone-karpenter-operator install flag).
 // Note that this function only works in the context of the hypershift-operator since it checks that an env var is set.
 func IsStandaloneKarpenterOperatorEnabled() bool {

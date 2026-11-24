@@ -116,14 +116,14 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 		expected   map[string]bool
 	}{
 		{
-			name:       "When using Default feature set, it should disable all feature gates",
+			name:       "When using Default feature set, it should enable only graduated feature gates",
 			featureSet: configv1.Default,
 			expected: map[string]bool{
 				"AROHCPManagedIdentities": false,
 				"OpenStack":               false,
 				"GCPPlatform":             false,
 				"HCPEtcdBackup":           false,
-				"KarpenterOperator":       false,
+				"KarpenterOperator":       true,
 				"OSStreams":               true,
 				"DeterministicLBIP":       false,
 				"KubeletHAProxyRouting":   false,

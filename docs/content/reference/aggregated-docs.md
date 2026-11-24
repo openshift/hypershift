@@ -11175,13 +11175,12 @@ If you are reusing IAM resources, rerun IAM creation with `--enable-karpenter` a
 
 ## Install the HyperShift Operator with AutoNode Support
 
-Azure AutoNode requires the standalone Karpenter operator and the management cluster `TechPreviewNoUpgrade` feature set:
+Azure AutoNode requires the standalone Karpenter operator:
 
 ```bash
 hypershift install \
     --pull-secret "${PULL_SECRET}" \
     --limit-crd-install Azure \
-    --tech-preview-no-upgrade \
     --enable-standalone-karpenter-operator
 ```
 

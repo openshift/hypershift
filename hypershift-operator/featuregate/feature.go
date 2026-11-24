@@ -36,6 +36,7 @@ const (
 	HCPEtcdBackup featuregate.Feature = "HCPEtcdBackup"
 
 	// KarpenterOperator gates deploying the karpenter-operator as a standalone component instead of using the embedded karpenter-operator code in HyperShift.
+	// Enabled in Default and TechPreviewNoUpgrade. Deployment still requires --enable-standalone-karpenter-operator.
 	// owner: openshift-autoscaling
 	// alpha: v0.1.79
 	// beta: x.y.z
@@ -98,7 +99,7 @@ var (
 	openStackFeature               = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	gcpHCPFeature                  = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	hcpEtcdBackupFeature           = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	karpenterOperatorFeature       = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	karpenterOperatorFeature       = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	etcdShardingFeature            = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	deterministicLBIPFeature       = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
