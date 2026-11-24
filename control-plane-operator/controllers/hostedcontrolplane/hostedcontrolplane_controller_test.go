@@ -1603,6 +1603,30 @@ func TestEventHandling(t *testing.T) {
 			}
 		})
 	}
+
+	for _, tc := range []struct {
+		name                string
+		enableGMPMonitoring bool
+	}{
+		{name: "When GMP monitoring is enabled, it should watch the PodMonitorings the HCP owns", enableGMPMonitoring: true},
+		{name: "When GMP monitoring is disabled, it should not watch PodMonitorings because the CRD may be absent", enableGMPMonitoring: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gmpReconciler := &HostedControlPlaneReconciler{
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				EnableGMPMonitoring:           tc.enableGMPMonitoring,
+			}
+			watched := false
+			for _, h := range gmpReconciler.eventHandlers(c.Scheme(), c.RESTMapper()) {
+				if _, ok := h.obj.(*gmpmonitoring.PodMonitoring); ok {
+					watched = true
+				}
+			}
+			if watched != tc.enableGMPMonitoring {
+				t.Errorf("expected PodMonitoring watch %t, got %t", tc.enableGMPMonitoring, watched)
+			}
+		})
+	}
 }
 
 func TestReconcileFailsWhenCombinedPullSecretCreateFails(t *testing.T) {

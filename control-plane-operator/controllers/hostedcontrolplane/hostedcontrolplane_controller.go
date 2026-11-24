@@ -87,6 +87,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
@@ -429,6 +430,11 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 	}
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		handlers = append(handlers, eventHandler{obj: &routev1.Route{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})})
+	}
+	// Only GMP management clusters install the GMP CRDs, so watching them
+	// elsewhere would fail to start the informer.
+	if r.EnableGMPMonitoring {
+		handlers = append(handlers, eventHandler{obj: &gmpmonitoring.PodMonitoring{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})})
 	}
 
 	return handlers
@@ -1440,6 +1446,14 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		r.Log.Info("Reconciling PKI")
 		if err := r.reconcilePKI(ctx, hcp, infraStatus, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile PKI: %w", err)
+		}
+	}
+
+	// Reconcile GMP collector access
+	if r.EnableGMPMonitoring {
+		r.Log.Info("Reconciling GMP collector access")
+		if err := r.reconcileGMPCollectorAccess(ctx, hcp, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile GMP collector access: %w", err)
 		}
 	}
 
