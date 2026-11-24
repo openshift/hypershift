@@ -661,3 +661,47 @@ func TestIsGMPManifest(t *testing.T) {
 		})
 	}
 }
+
+func TestGMPManifests(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		component string
+		expected  []string
+	}{
+		{
+			name:      "When a component stages a GMP monitor, it should list only the GMP manifest",
+			component: "kube-scheduler",
+			expected:  []string{GMPPodMonitoringManifest},
+		},
+		{
+			name:      "When the component has no asset directory, it should list nothing",
+			component: "no-such-component",
+			expected:  nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			names, err := GMPManifests(tc.component)
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(names).To(Equal(tc.expected))
+		})
+	}
+
+	t.Run("When the staged GMP manifest is loaded, it should decode to a PodMonitoring", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		obj, gvk, err := LoadManifestTemplated("kube-scheduler", GMPPodMonitoringManifest, nil)
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(gvk.Kind).To(Equal("PodMonitoring"))
+		g.Expect(obj.GetName()).To(Equal("kube-scheduler"))
+	})
+}
