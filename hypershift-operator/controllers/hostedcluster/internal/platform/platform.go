@@ -114,7 +114,7 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			}
 		}
 
-		platform = aws.New(utilitiesImage, capiImageProvider, payloadVersion)
+		platform = aws.New(capiImageProvider, payloadVersion)
 	case hyperv1.IBMCloudPlatform:
 		platform = &ibmcloud.IBMCloud{}
 	case hyperv1.NonePlatform:

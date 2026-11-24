@@ -53,16 +53,14 @@ const (
 	CredentialStatusUnknown CredentialStatus = 2
 )
 
-func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *AWS {
+func New(capiProviderImage string, payloadVersion *semver.Version) *AWS {
 	return &AWS{
-		utilitiesImage:    utilitiesImage,
 		capiProviderImage: capiProviderImage,
 		payloadVersion:    payloadVersion,
 	}
 }
 
 type AWS struct {
-	utilitiesImage    string
 	capiProviderImage string
 	payloadVersion    *semver.Version
 }
@@ -168,19 +166,12 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 						},
 					},
 					{
+						// Used by the cloud token minter that the capi-provider component injects.
 						Name: "svc-kubeconfig",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								DefaultMode: &defaultMode,
 								SecretName:  "service-network-admin-kubeconfig",
-							},
-						},
-					},
-					{
-						Name: "token",
-						VolumeSource: corev1.VolumeSource{
-							EmptyDir: &corev1.EmptyDirVolumeSource{
-								Medium: corev1.StorageMediumMemory,
 							},
 						},
 					},
@@ -205,10 +196,6 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 								Name:      "capi-webhooks-tls",
 								ReadOnly:  true,
 								MountPath: "/tmp/k8s-webhook-server/serving-certs",
-							},
-							{
-								Name:      "token",
-								MountPath: "/var/run/secrets/openshift/serviceaccount",
 							},
 						},
 						Env: []corev1.EnvVar{
@@ -251,35 +238,6 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 									Path: "/readyz",
 									Port: intstr.FromString("healthz"),
 								},
-							},
-						},
-					},
-					{
-						Name:            "token-minter",
-						Image:           p.utilitiesImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "token",
-								MountPath: "/var/run/secrets/openshift/serviceaccount",
-							},
-							{
-								Name:      "svc-kubeconfig",
-								MountPath: "/etc/kubernetes",
-							},
-						},
-						Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
-						Args: []string{
-							"--service-account-namespace=kube-system",
-							"--service-account-name=capa-controller-manager",
-							"--token-audience=openshift",
-							"--token-file=/var/run/secrets/openshift/serviceaccount/token",
-							"--kubeconfig=/etc/kubernetes/kubeconfig",
-						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-								corev1.ResourceMemory: resource.MustParse("30Mi"),
 							},
 						},
 					},

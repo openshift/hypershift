@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -386,6 +387,111 @@ func TestEnforceVolumesDefaultMode(t *testing.T) {
 
 			enforceVolumesDefaultMode(podSpec)
 			g.Expect(podSpec).To(Equal(expected))
+		})
+	}
+}
+
+func TestEnforceReadOnlyRootFilesystem(t *testing.T) {
+	t.Parallel()
+
+	tmpDirMount := corev1.VolumeMount{Name: podspec.PodTmpDirMountName, MountPath: podspec.PodTmpDirMountPath}
+	tokenMount := corev1.VolumeMount{Name: "cloud-token", MountPath: "/var/run/secrets/openshift/serviceaccount"}
+
+	tests := []struct {
+		name                   string
+		podSpec                corev1.PodSpec
+		expectedContainers     []corev1.Container
+		expectedInitContainers []corev1.Container
+	}{
+		{
+			name: "When the pod has a regular container, it should set a read-only root filesystem and mount the tmp dir",
+			podSpec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "manager"}},
+			},
+			expectedContainers: []corev1.Container{{
+				Name:            "manager",
+				SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: ptr.To(true)},
+				VolumeMounts:    []corev1.VolumeMount{tmpDirMount},
+			}},
+		},
+		{
+			name: "When an init container restarts always, it should get the same read-only root filesystem and tmp dir mount as regular containers",
+			podSpec: corev1.PodSpec{
+				InitContainers: []corev1.Container{{
+					Name:          "cloud-token-minter",
+					RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+					VolumeMounts:  []corev1.VolumeMount{tokenMount},
+				}},
+				Containers: []corev1.Container{{Name: "manager"}},
+			},
+			expectedInitContainers: []corev1.Container{{
+				Name:            "cloud-token-minter",
+				RestartPolicy:   ptr.To(corev1.ContainerRestartPolicyAlways),
+				SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: ptr.To(true)},
+				VolumeMounts:    []corev1.VolumeMount{tokenMount, tmpDirMount},
+			}},
+			expectedContainers: []corev1.Container{{
+				Name:            "manager",
+				SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: ptr.To(true)},
+				VolumeMounts:    []corev1.VolumeMount{tmpDirMount},
+			}},
+		},
+		{
+			name: "When an init container runs to completion, it should leave it unchanged",
+			podSpec: corev1.PodSpec{
+				InitContainers: []corev1.Container{
+					{Name: "availability-prober"},
+					{Name: "cloud-token-minter", Args: []string{"--oneshot"}, VolumeMounts: []corev1.VolumeMount{tokenMount}},
+				},
+				Containers: []corev1.Container{{Name: "manager"}},
+			},
+			expectedInitContainers: []corev1.Container{
+				{Name: "availability-prober"},
+				{Name: "cloud-token-minter", Args: []string{"--oneshot"}, VolumeMounts: []corev1.VolumeMount{tokenMount}},
+			},
+			expectedContainers: []corev1.Container{{
+				Name:            "manager",
+				SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: ptr.To(true)},
+				VolumeMounts:    []corev1.VolumeMount{tmpDirMount},
+			}},
+		},
+		{
+			name: "When a restartable init container already mounts the tmp dir, it should not add a duplicate mount",
+			podSpec: corev1.PodSpec{
+				InitContainers: []corev1.Container{{
+					Name:          "cloud-token-minter",
+					RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+					VolumeMounts:  []corev1.VolumeMount{tmpDirMount},
+				}},
+				Containers: []corev1.Container{{Name: "manager", VolumeMounts: []corev1.VolumeMount{tmpDirMount}}},
+			},
+			expectedInitContainers: []corev1.Container{{
+				Name:            "cloud-token-minter",
+				RestartPolicy:   ptr.To(corev1.ContainerRestartPolicyAlways),
+				SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: ptr.To(true)},
+				VolumeMounts:    []corev1.VolumeMount{tmpDirMount},
+			}},
+			expectedContainers: []corev1.Container{{
+				Name:            "manager",
+				SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: ptr.To(true)},
+				VolumeMounts:    []corev1.VolumeMount{tmpDirMount},
+			}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			podSpec := tc.podSpec.DeepCopy()
+			enforceReadOnlyRootFilesystem(podSpec)
+
+			g.Expect(podSpec.InitContainers).To(Equal(tc.expectedInitContainers))
+			g.Expect(podSpec.Containers).To(Equal(tc.expectedContainers))
+			g.Expect(podSpec.Volumes).To(Equal([]corev1.Volume{{
+				Name:         podspec.PodTmpDirMountName,
+				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			}}), "the tmp dir volume should be added exactly once")
 		})
 	}
 }

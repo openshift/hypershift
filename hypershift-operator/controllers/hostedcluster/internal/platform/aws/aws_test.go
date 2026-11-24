@@ -381,6 +381,38 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 			if diff := cmp.Diff(managerContainer.Args, tc.expectedArgs); diff != "" {
 				t.Errorf("args differ (-got +want):\n%s", diff)
 			}
+
+			// The cloud token minter is injected by the capi-provider component, so the platform spec only carries
+			// the manager and the volumes it and the injected minter consume.
+			var containerNames []string
+			for _, c := range spec.Template.Spec.Containers {
+				containerNames = append(containerNames, c.Name)
+			}
+			if diff := cmp.Diff([]string{"manager"}, containerNames); diff != "" {
+				t.Errorf("containers differ (-want +got):\n%s", diff)
+			}
+			var volumeNames []string
+			for _, v := range spec.Template.Spec.Volumes {
+				volumeNames = append(volumeNames, v.Name)
+			}
+			if diff := cmp.Diff([]string{"capi-webhooks-tls", "credentials", "svc-kubeconfig"}, volumeNames); diff != "" {
+				t.Errorf("volumes differ (-want +got):\n%s", diff)
+			}
+			expectedMounts := []corev1.VolumeMount{
+				{Name: "credentials", MountPath: "/home/.aws"},
+				{Name: "capi-webhooks-tls", ReadOnly: true, MountPath: "/tmp/k8s-webhook-server/serving-certs"},
+			}
+			if diff := cmp.Diff(expectedMounts, managerContainer.VolumeMounts); diff != "" {
+				t.Errorf("manager volume mounts differ (-want +got):\n%s", diff)
+			}
+			expectedEnv := []corev1.EnvVar{
+				{Name: "MY_NAMESPACE", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
+				{Name: "AWS_SHARED_CREDENTIALS_FILE", Value: "/home/.aws/credentials"},
+				{Name: "AWS_SDK_LOAD_CONFIG", Value: "true"},
+			}
+			if diff := cmp.Diff(expectedEnv, managerContainer.Env); diff != "" {
+				t.Errorf("manager env differs (-want +got):\n%s", diff)
+			}
 		})
 	}
 }

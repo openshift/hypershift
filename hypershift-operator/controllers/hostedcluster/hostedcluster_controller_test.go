@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -23,13 +24,17 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/util"
 	hostedcontrolplanecontroller "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	capimanagerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager"
 	capiproviderv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider"
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	homanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hcpmanifests "github.com/openshift/hypershift/pkg/manifests"
@@ -6038,7 +6043,7 @@ func TestReconcileComponents(t *testing.T) {
 	// (OCPBUGS-143987).
 
 	version := semver.MustParse("4.16.0")
-	awsPlatform := aws.New("test-image", "capi-provider-image", &version)
+	awsPlatform := aws.New("capi-provider-image", &version)
 
 	capiDeploymentSpec, err := awsPlatform.CAPIProviderDeploymentSpec(hcluster, hcp)
 	if err != nil {
@@ -6115,6 +6120,251 @@ func TestReconcileComponents(t *testing.T) {
 	if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
 		t.Fatalf("update loop detected: %v", err)
 	}
+}
+
+func TestHostedClusterReconciler_ReconcileCAPIProvider(t *testing.T) {
+	t.Parallel()
+
+	version := semver.MustParse("4.18.0")
+
+	testCases := []struct {
+		name           string
+		platformType   hyperv1.PlatformType
+		nativeSidecars bool
+	}{
+		{
+			name:           "When the platform is AWS and the management cluster supports native sidecars, it should run the capi-provider cloud token minter as a native sidecar",
+			platformType:   hyperv1.AWSPlatform,
+			nativeSidecars: true,
+		},
+		{
+			name:           "When the platform is AWS and the management cluster does not support native sidecars, it should run the capi-provider cloud token minter as a regular sidecar",
+			platformType:   hyperv1.AWSPlatform,
+			nativeSidecars: false,
+		},
+		{
+			name:           "When the platform is GCP and the management cluster supports native sidecars, it should run the capi-provider cloud token minter as a native sidecar",
+			platformType:   hyperv1.GCPPlatform,
+			nativeSidecars: true,
+		},
+		{
+			name:           "When the platform is GCP and the management cluster does not support native sidecars, it should run the capi-provider cloud token minter as a regular sidecar",
+			platformType:   hyperv1.GCPPlatform,
+			nativeSidecars: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "clusters"},
+				Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: tc.platformType}},
+			}
+			var p platform.Platform
+			switch tc.platformType {
+			case hyperv1.AWSPlatform:
+				hcluster.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{Region: "us-east-1"}
+				p = aws.New("quay.io/openshift/origin-aws-cluster-api-controllers:4.18.0", &version)
+			case hyperv1.GCPPlatform:
+				hcluster.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{Project: "example-project", Region: "us-central1"}
+				p = gcp.New("quay.io/openshift/origin-hypershift:4.18.0", "quay.io/openshift/origin-gcp-cluster-api-controllers:4.18.0", &version)
+			}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: hcluster.Name, Namespace: hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)},
+				Spec:       hyperv1.HostedControlPlaneSpec{Platform: hcluster.Spec.Platform},
+			}
+
+			r := &HostedClusterReconciler{
+				ManagementClusterCapabilities: nativeSidecarsOnlyCapabilityChecker(tc.nativeSidecars),
+			}
+			cpContext := controlplanecomponent.ControlPlaneContext{
+				Context:              t.Context(),
+				Client:               fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				ApplyProvider:        upsert.NewApplyProvider(false),
+				HCP:                  hcp,
+				ReleaseImageProvider: testutil.FakeImageProvider(),
+				OmitOwnerReference:   true,
+			}
+
+			g.Expect(r.reconcileCAPIProvider(cpContext, hcluster, hcp, p)).To(Succeed())
+			g.Expect(cpContext.NativeSidecarContainersEnabled).To(BeFalse(), "the caller's context must not be changed, so other components keep their behavior")
+
+			deployment := &appsv1.Deployment{}
+			g.Expect(cpContext.Client.Get(t.Context(), crclient.ObjectKey{Namespace: hcp.Namespace, Name: capiproviderv2.ComponentName}, deployment)).To(Succeed())
+			expectCloudTokenMinter(t, deployment.Spec.Template.Spec, tc.nativeSidecars)
+		})
+	}
+}
+
+func TestHostedClusterReconciler_ReconcileOperatorDeployments(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		nativeSidecars bool
+	}{
+		{
+			name:           "When the management cluster supports native sidecars, it should run only the capi-provider cloud token minter as a native sidecar",
+			nativeSidecars: true,
+		},
+		{
+			name:           "When the management cluster does not support native sidecars, it should run every operator cloud token minter as a regular sidecar",
+			nativeSidecars: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			mockCtrl := gomock.NewController(t)
+			releaseProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			releaseProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+			releaseProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+
+			releaseImage := testutils.InitReleaseImageOrDie("4.15.0")
+			releaseVersion := semver.MustParse("4.15.0")
+
+			autoNode := hyperv1.AutoNode{
+				Provisioner: hyperv1.ProvisionerConfig{
+					Name: hyperv1.ProvisionerKarpenter,
+					Karpenter: hyperv1.KarpenterConfig{
+						Platform: hyperv1.AWSPlatform,
+						AWS:      hyperv1.KarpenterAWSConfig{RoleARN: "arn:aws:iam::123456789012:role/karpenter"},
+					},
+				},
+			}
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "clusters"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{Region: "us-east-1"},
+					},
+					AutoNode: autoNode,
+				},
+			}
+			controlPlaneNamespace := homanifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: hcluster.Name, Namespace: controlPlaneNamespace.Name},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform:     hcluster.Spec.Platform,
+					AutoNode:     autoNode,
+					ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64",
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					KubeConfig: &hyperv1.KubeconfigSecretRef{Name: "admin-kubeconfig", Key: "kubeconfig"},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(controlPlaneNamespace, hcp, cpomanifests.HCCOKubeconfigSecret(controlPlaneNamespace.Name)).
+				WithStatusSubresource(hcp).
+				Build()
+
+			r := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: nativeSidecarsOnlyCapabilityChecker(tc.nativeSidecars),
+				HypershiftOperatorImage:       "quay.io/openshift/origin-hypershift-operator:4.18.0",
+			}
+			p := aws.New("quay.io/openshift/origin-aws-cluster-api-controllers:4.18.0", &releaseVersion)
+
+			g.Expect(r.reconcileOperatorDeployments(t.Context(), upsert.New(false).CreateOrUpdate,
+				hcluster, hcp, controlPlaneNamespace, p,
+				"quay.io/openshift/origin-hypershift:4.18.0", "quay.io/openshift/origin-hypershift:4.18.0",
+				true, false, time.Hour, releaseImage, releaseVersion, releaseProvider)).To(Succeed())
+
+			getPodSpec := func(name string) corev1.PodSpec {
+				deployment := &appsv1.Deployment{}
+				g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlPlaneNamespace.Name, Name: name}, deployment)).To(Succeed(), "deployment %s should exist", name)
+				return deployment.Spec.Template.Spec
+			}
+
+			expectCloudTokenMinter(t, getPodSpec(capiproviderv2.ComponentName), tc.nativeSidecars)
+			// The control-plane-operator and karpenter-operator minters must stay regular sidecars: they are rendered
+			// from the same caller context, which must not inherit the capi-provider setting.
+			expectCloudTokenMinter(t, getPodSpec(cpov2.ComponentName), false)
+			expectCloudTokenMinter(t, getPodSpec(karpenteroperatorv2.ComponentName), false)
+
+			capiManager := getPodSpec(capimanagerv2.ComponentName)
+			for _, c := range append(slices.Clone(capiManager.InitContainers), capiManager.Containers...) {
+				g.Expect(c.Name).ToNot(HaveSuffix("token-minter"), "the CAPI manager should not get a token minter")
+			}
+		})
+	}
+}
+
+// nativeSidecarsOnlyCapabilityChecker reports only the native sidecar containers capability, and only when supported is true.
+func nativeSidecarsOnlyCapabilityChecker(supported bool) capabilities.CapabiltyChecker {
+	return &capabilities.MockCapabilityChecker{
+		MockHas: func(caps ...capabilities.CapabilityType) bool {
+			for _, c := range caps {
+				if c != capabilities.CapabilityNativeSidecarContainers || !supported {
+					return false
+				}
+			}
+			return true
+		},
+	}
+}
+
+// expectCloudTokenMinter asserts how the cloud token minter is wired into a rendered pod spec. A native minter must be a
+// restartable init container that starts after the availability prober and gates the main containers on the token file;
+// otherwise it must be a regular sidecar container. It also checks that every volume mount resolves to a declared volume
+// and that no container mounts the same path twice.
+func expectCloudTokenMinter(t *testing.T, podSpec corev1.PodSpec, native bool) {
+	t.Helper()
+	g := NewWithT(t)
+	const tokenFile = "/var/run/secrets/openshift/serviceaccount/token"
+
+	volumes := sets.New[string]()
+	for _, v := range podSpec.Volumes {
+		volumes.Insert(v.Name)
+	}
+	for _, c := range append(slices.Clone(podSpec.InitContainers), podSpec.Containers...) {
+		mountPaths := sets.New[string]()
+		for _, m := range c.VolumeMounts {
+			g.Expect(volumes.Has(m.Name)).To(BeTrue(), "container %s mounts undeclared volume %s", c.Name, m.Name)
+			g.Expect(mountPaths.Has(m.MountPath)).To(BeFalse(), "container %s mounts %s more than once", c.Name, m.MountPath)
+			mountPaths.Insert(m.MountPath)
+		}
+	}
+
+	var initNames []string
+	var nativeMinter *corev1.Container
+	for i := range podSpec.InitContainers {
+		initNames = append(initNames, podSpec.InitContainers[i].Name)
+		if podSpec.InitContainers[i].Name == "cloud-token-minter" {
+			nativeMinter = &podSpec.InitContainers[i]
+		}
+	}
+	var regularMinter *corev1.Container
+	for i := range podSpec.Containers {
+		if podSpec.Containers[i].Name == "cloud-token-minter" {
+			regularMinter = &podSpec.Containers[i]
+		}
+	}
+
+	if native {
+		g.Expect(regularMinter).To(BeNil(), "the cloud token minter should not be a regular container")
+		g.Expect(initNames).To(Equal([]string{"availability-prober", "cloud-token-minter"}))
+		g.Expect(nativeMinter.RestartPolicy).To(HaveValue(Equal(corev1.ContainerRestartPolicyAlways)))
+		g.Expect(nativeMinter.StartupProbe).ToNot(BeNil())
+		g.Expect(nativeMinter.StartupProbe.Exec).ToNot(BeNil())
+		g.Expect(nativeMinter.StartupProbe.Exec.Command).To(Equal([]string{"test", "-f", tokenFile}))
+		g.Expect(nativeMinter.Args).To(ContainElement("--token-file=" + tokenFile))
+		g.Expect(nativeMinter.SecurityContext).ToNot(BeNil())
+		g.Expect(nativeMinter.SecurityContext.ReadOnlyRootFilesystem).To(HaveValue(BeTrue()))
+		return
+	}
+	g.Expect(nativeMinter).To(BeNil(), "the cloud token minter should not be an init container")
+	g.Expect(regularMinter).ToNot(BeNil(), "the cloud token minter should be a regular container")
+	g.Expect(regularMinter.RestartPolicy).To(BeNil())
+	g.Expect(regularMinter.StartupProbe).To(BeNil())
+	g.Expect(regularMinter.Args).To(ContainElement("--token-file=" + tokenFile))
 }
 
 func TestEnsureHostedResourcesAreEmpty(t *testing.T) {

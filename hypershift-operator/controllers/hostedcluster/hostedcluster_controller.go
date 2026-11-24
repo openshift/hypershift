@@ -3224,6 +3224,11 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 		}
 	}
 
+	// Run the provider's cloud token minter as a native sidecar when the management cluster supports it, so the token
+	// file exists before the provider manager starts. Only this by-value copy of the context is changed: the
+	// control-plane-operator, CAPI manager and karpenter-operator components keep their current behavior.
+	cpContext.NativeSidecarContainersEnabled = r.ManagementClusterCapabilities.Has(capabilities.CapabilityNativeSidecarContainers)
+
 	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules(), hcluster.Spec.Platform.Type)
 	if err := capi.Reconcile(cpContext); err != nil {
 		return fmt.Errorf("failed to reconcile capi provider component: %w", err)
