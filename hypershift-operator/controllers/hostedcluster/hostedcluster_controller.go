@@ -1734,7 +1734,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	report.executeOrBlock("RBACAndPolicies", func() error {
 		return r.reconcileRBACAndPolicies(ctx, log, createOrUpdate, hcluster, hcp,
-			controlPlanePKIOperatorSignsCSRs, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel,
+			controlPlanePKIOperatorSignsCSRs, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel, enableGMPMonitoring,
 			releaseImageVersion)
 	})
 
@@ -1965,7 +1965,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 func (r *HostedClusterReconciler) reconcileRBACAndPolicies(
 	ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane,
-	controlPlanePKIOperatorSignsCSRs, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool,
+	controlPlanePKIOperatorSignsCSRs, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel, enableGMPMonitoring bool,
 	releaseImageVersion semver.Version,
 ) error {
 	var errs []error
@@ -1980,7 +1980,7 @@ func (r *HostedClusterReconciler) reconcileRBACAndPolicies(
 		}
 	}
 	if err := r.reconcileNetworkPolicies(ctx, log, createOrUpdate, hcluster, hcp,
-		releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
+		releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel, enableGMPMonitoring); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network policies: %w", err))
 	}
 	return utilerrors.NewAggregate(errs)

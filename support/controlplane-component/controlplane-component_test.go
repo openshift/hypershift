@@ -11,7 +11,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
@@ -19,6 +23,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -404,4 +409,169 @@ func TestWorkloadContext(t *testing.T) {
 			g.Expect(cp.workloadContext().EnableGMPMonitoring).To(Equal(tc.enableGMPMonitoring))
 		})
 	}
+}
+
+const (
+	gmpTestNamespace = "clusters-example"
+	gmpTestClusterID = "cluster-123"
+)
+
+func newGMPTestContext(t *testing.T, objects ...client.Object) *ControlPlaneContext {
+	t.Helper()
+	return &ControlPlaneContext{
+		Context:       t.Context(),
+		ApplyProvider: upsert.NewApplyProvider(false),
+		MetricsSet:    metrics.MetricsSetAll,
+		HCP: &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: gmpTestNamespace,
+				Name:      "example",
+				UID:       "hcp-uid",
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{ClusterID: gmpTestClusterID},
+		},
+		Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build(),
+	}
+}
+
+func newKubeAPIServerWorkloadForTest() *controlPlaneWorkload[*appsv1.Deployment] {
+	// Only the GMP helpers under test are exercised, so the component options and
+	// adapt functions stay unset.
+	return &controlPlaneWorkload[*appsv1.Deployment]{
+		name:             "kube-apiserver",
+		workloadProvider: &deploymentProvider{},
+	}
+}
+
+func TestReconcileGMPManifests(t *testing.T) {
+	t.Run("When reconciling the GMP manifests, it should apply the staged monitors adapted for the live cluster", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		cpContext := newGMPTestContext(t)
+		component := newKubeAPIServerWorkloadForTest()
+
+		g.Expect(component.reconcileGMPManifests(*cpContext)).To(Succeed())
+
+		podMonitoring := &gmpmonitoring.PodMonitoring{
+			ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: gmpTestNamespace},
+		}
+		g.Expect(cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(podMonitoring), podMonitoring)).To(Succeed())
+		// The staged asset only carries the Telemetry set and no cluster ID; both
+		// must come from the runtime adaptation instead. The staged service and
+		// endpoint target-label rules must survive it.
+		filterRelabeling, err := metrics.ToGMPRelabelingRules(metrics.KASRelabelConfigs(metrics.MetricsSetAll))
+		g.Expect(err).ToNot(HaveOccurred())
+		expectedRelabeling := []gmpmonitoring.RelabelingRule{
+			{TargetLabel: "service", Replacement: "kube-apiserver", Action: "replace"},
+			{TargetLabel: "endpoint", Replacement: "client", Action: "replace"},
+		}
+		expectedRelabeling = append(expectedRelabeling, filterRelabeling...)
+		expectedRelabeling = append(expectedRelabeling, gmpmonitoring.RelabelingRule{
+			TargetLabel: metrics.GMPClusterIDLabel,
+			Replacement: gmpTestClusterID,
+			Action:      "replace",
+		})
+		g.Expect(podMonitoring.Spec.Endpoints).To(HaveLen(1))
+		g.Expect(podMonitoring.Spec.Endpoints[0].MetricRelabeling).To(Equal(expectedRelabeling))
+		g.Expect(podMonitoring.Spec.TargetLabels.Metadata).To(Equal(&[]string{"container", "pod"}))
+
+		g.Expect(podMonitoring.OwnerReferences).To(HaveLen(1))
+		g.Expect(podMonitoring.OwnerReferences[0].Kind).To(Equal("HostedControlPlane"))
+		g.Expect(podMonitoring.OwnerReferences[0].Name).To(Equal("example"))
+		g.Expect(podMonitoring.OwnerReferences[0].UID).To(BeEquivalentTo("hcp-uid"))
+	})
+
+	t.Run("When the CoreOS monitor adapter disables monitoring, it should remove the owned GMP monitor instead of applying it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ownedPodMonitoring := &gmpmonitoring.PodMonitoring{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "kube-apiserver",
+				Namespace:       gmpTestNamespace,
+				OwnerReferences: []metav1.OwnerReference{*config.ControllerOwnerRef(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: gmpTestNamespace, Name: "example", UID: "hcp-uid"}})},
+			},
+		}
+		cpContext := newGMPTestContext(t, ownedPodMonitoring)
+		cpContext.HCP.Annotations = map[string]string{hyperv1.DisableMonitoringServices: "true"}
+		serviceMonitorAdapter := genericAdapter{}
+		DisableIfAnnotationExist(hyperv1.DisableMonitoringServices)(&serviceMonitorAdapter)
+		component := newKubeAPIServerWorkloadForTest()
+		component.manifestsAdapters = map[string]genericAdapter{
+			coreOSServiceMonitorManifest: serviceMonitorAdapter,
+		}
+
+		g.Expect(component.reconcileGMPManifests(*cpContext)).To(Succeed())
+
+		err := cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(ownedPodMonitoring), &gmpmonitoring.PodMonitoring{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the opted-out GMP monitor should be removed")
+	})
+
+	t.Run("When the CoreOS monitor adapter skips its manifest, it should neither apply nor remove the GMP monitor", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		cpContext := newGMPTestContext(t)
+		component := newKubeAPIServerWorkloadForTest()
+		component.manifestsAdapters = map[string]genericAdapter{
+			coreOSServiceMonitorManifest: {skip: true},
+		}
+
+		g.Expect(component.reconcileGMPManifests(*cpContext)).To(Succeed())
+
+		err := cpContext.Client.Get(t.Context(), client.ObjectKey{Namespace: gmpTestNamespace, Name: "kube-apiserver"}, &gmpmonitoring.PodMonitoring{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "a skipped monitor should not be applied")
+	})
+
+	t.Run("When the component has no staged GMP manifests, it should do nothing", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		cpContext := newGMPTestContext(t)
+		component := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "test-component",
+			workloadProvider: &deploymentProvider{},
+		}
+
+		g.Expect(component.reconcileGMPManifests(*cpContext)).To(Succeed())
+	})
+}
+
+func TestDeleteGMPManifests(t *testing.T) {
+	ownedPodMonitoring := &gmpmonitoring.PodMonitoring{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "kube-apiserver",
+			Namespace:       gmpTestNamespace,
+			OwnerReferences: []metav1.OwnerReference{*config.ControllerOwnerRef(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: gmpTestNamespace, Name: "example", UID: "hcp-uid"}})},
+		},
+	}
+	// A PodMonitoring a different controller created with the same name must
+	// survive: the delete path only owns objects carrying the HCP ownerRef.
+	foreignPodMonitoring := &gmpmonitoring.PodMonitoring{
+		ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: gmpTestNamespace},
+	}
+
+	t.Run("When the HCP owns the staged PodMonitoring, it should delete it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		cpContext := newGMPTestContext(t, ownedPodMonitoring.DeepCopy())
+		component := newKubeAPIServerWorkloadForTest()
+
+		g.Expect(component.deleteGMPManifests(*cpContext)).To(Succeed())
+
+		err := cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(ownedPodMonitoring), &gmpmonitoring.PodMonitoring{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the owned PodMonitoring should be deleted")
+	})
+
+	t.Run("When the PodMonitoring has no HCP owner reference, it should keep it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		cpContext := newGMPTestContext(t, foreignPodMonitoring.DeepCopy())
+		component := newKubeAPIServerWorkloadForTest()
+
+		g.Expect(component.deleteGMPManifests(*cpContext)).To(Succeed())
+
+		g.Expect(cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(foreignPodMonitoring), &gmpmonitoring.PodMonitoring{})).To(Succeed(),
+			"the PodMonitoring without the HCP ownerRef should be kept")
+	})
+
+	t.Run("When the client scheme does not register the GMP types, it should do nothing", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		cpContext := newGMPTestContext(t)
+		cpContext.Client = fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+		component := newKubeAPIServerWorkloadForTest()
+
+		g.Expect(component.deleteGMPManifests(*cpContext)).To(Succeed())
+	})
 }

@@ -41,7 +41,7 @@ const (
 	NeedMetricsServerAccessLabel = "hypershift.openshift.io/need-metrics-server-access"
 )
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel, enableGMPMonitoring bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
 	if err := r.reconcileIngressNetworkPolicy(ctx, createOrUpdate, hcp, controlPlaneNamespaceName); err != nil {
@@ -94,7 +94,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 
 	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
+		return reconcileOpenshiftMonitoringNetworkPolicy(policy, enableGMPMonitoring)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
 	}
@@ -593,18 +593,39 @@ func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPoli
 	return nil
 }
 
-func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, gmpEnabled bool) error {
+	peers := []networkingv1.NetworkPolicyPeer{
 		{
-			From: []networkingv1.NetworkPolicyPeer{
-				{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"network.openshift.io/policy-group": "monitoring",
-						},
-					},
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"network.openshift.io/policy-group": "monitoring",
 				},
 			},
+		},
+	}
+	if gmpEnabled {
+		// Google's managed collectors run in the GKE-managed gke-gmp-system
+		// namespace, outside the namespaces that carry the monitoring
+		// policy-group label. Admit only the collector pods, and only when this
+		// management cluster exports metrics to GMP, so the non-GMP ingress
+		// surface is unchanged.
+		peers = append(peers, networkingv1.NetworkPolicyPeer{
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"kubernetes.io/metadata.name": "gke-gmp-system",
+				},
+			},
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app.kubernetes.io/name": "collector",
+				},
+			},
+		})
+	}
+
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: peers,
 		},
 	}
 	policy.Spec.PodSelector = metav1.LabelSelector{}

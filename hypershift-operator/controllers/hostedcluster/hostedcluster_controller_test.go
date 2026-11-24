@@ -9732,7 +9732,7 @@ func TestReconcileRBACAndPolicies_WhenPKIRBACFails_ItShouldStillCreatePrometheus
 
 	_ = r.reconcileRBACAndPolicies(t.Context(), log, createOrUpdate, hcluster, hcp,
 		true, // controlPlanePKIOperatorSignsCSRs — enables PKI RBAC
-		false, releaseVersion)
+		false, false, releaseVersion)
 
 	// Regardless of PKI RBAC or network policies outcome, prometheus RBAC should have run.
 	// Verify the prometheus Role was created in the HCP namespace.
