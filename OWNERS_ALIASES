@@ -16,6 +16,7 @@ aliases:
     - enxebre
     - csrwng
   e2e-approvers:
+    - cblecker
     - ironcladlou
   hypershift-advisory-approvers:
     - enxebre
@@ -33,7 +34,6 @@ aliases:
     - csrwng
     - muraee
     - bryan-cox
-    - cblecker
     - jparrill
     - devguyio
     - sdminonne
