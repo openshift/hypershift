@@ -686,6 +686,7 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 		MetricsSet:                              metricsSet,
 		EnableGMPMonitoring:                     opts.EnableGMPMonitoring,
 		OperatorNamespace:                       opts.Namespace,
+		ControlPlaneReleasePullSecretName:       os.Getenv(assets.ControlPlaneReleasePullSecretNameEnvVar),
 		SREConfigHash:                           sreConfigHash,
 		KubevirtInfraClients:                    kvinfra.NewKubevirtInfraClientMap(),
 		MonitoringDashboards:                    monitoringDashboards,

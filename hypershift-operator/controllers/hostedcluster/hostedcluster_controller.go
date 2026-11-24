@@ -214,6 +214,12 @@ type HostedClusterReconciler struct {
 
 	OperatorNamespace string
 
+	// ControlPlaneReleasePullSecretName is the name of the Secret in
+	// OperatorNamespace holding the provider's additional credential for control
+	// plane release lookups. When empty, pullsecret.ControlPlaneReleaseSecretName
+	// is used.
+	ControlPlaneReleasePullSecretName string
+
 	RegistryProvider globalconfig.RegistryProvider
 
 	overwriteReconcile   func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
@@ -283,11 +289,13 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// That Secret carries no hostedcluster annotations, so events for it would
 	// map to nothing in enqueueHostedClustersFunc and would be dropped by
 	// PredicatesForHostedClusterAnnotationScoping. Rotating or deleting it must
-	// re-reconcile every HostedCluster pinning a control plane release.
+	// re-reconcile every HostedCluster pinning a control plane release, so that
+	// the copy in each control plane namespace follows the new content. The
+	// provider may rotate the credential as often as hourly.
 	bldr.Watches(
 		&corev1.Secret{},
 		handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersPinningControlPlaneRelease(mgr.GetClient())),
-		builder.WithPredicates(controlPlaneReleasePullSecretPredicate(operatorNamespace)),
+		builder.WithPredicates(controlPlaneReleasePullSecretPredicate(pullsecret.SourceSecretKey(operatorNamespace, r.ControlPlaneReleasePullSecretName))),
 	)
 
 	// Set based on SCC capability
@@ -1517,7 +1525,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		// and is only for lookups of the control plane release payload: the CPO
 		// image resolution here and platform.GetPlatform below. Data plane lookups
 		// in this reconcile read the pull secret separately and must not use it.
-		pullSecretBytes, err = pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.OperatorNamespace, basePullSecretBytes)
+		pullSecretBytes, err = pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.controlPlaneReleasePullSecretSourceKey(), basePullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
 		}
@@ -2184,6 +2192,13 @@ func validateReferencedSecretName(name string) error {
 	return nil
 }
 
+// controlPlaneReleasePullSecretSourceKey returns the key of the provider-supplied
+// control plane release pull secret: ControlPlaneReleasePullSecretName, or the
+// default name when that is unset, in the operator's own namespace.
+func (r *HostedClusterReconciler) controlPlaneReleasePullSecretSourceKey() types.NamespacedName {
+	return pullsecret.SourceSecretKey(r.OperatorNamespace, r.ControlPlaneReleasePullSecretName)
+}
+
 // controlPlaneReleasePullSecretSource returns the provider-supplied control plane
 // release pull secret that applies to the cluster, or nil when none applies: either
 // no distinct control plane release is pinned (see isControlPlaneReleasePinned), or
@@ -2194,7 +2209,7 @@ func (r *HostedClusterReconciler) controlPlaneReleasePullSecretSource(ctx contex
 		return nil, nil
 	}
 	src := &corev1.Secret{}
-	srcKey := client.ObjectKey{Namespace: r.OperatorNamespace, Name: pullsecret.ControlPlaneReleaseSecretName}
+	srcKey := r.controlPlaneReleasePullSecretSourceKey()
 	if err := r.Client.Get(ctx, srcKey, src); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
@@ -4557,11 +4572,13 @@ func hostedClustersReferencingSecret(ctx context.Context, c client.Client, secre
 	return requests
 }
 
-// controlPlaneReleasePullSecretPredicate matches events for the well-known
-// control plane release pull secret in the hypershift-operator's namespace.
-func controlPlaneReleasePullSecretPredicate(operatorNamespace string) predicate.Predicate {
+// controlPlaneReleasePullSecretPredicate matches events for the control plane
+// release pull secret at source, in the hypershift-operator's namespace. Create,
+// update and delete events all match, so a rotation is picked up whether the
+// provider updates the Secret in place or deletes and recreates it.
+func controlPlaneReleasePullSecretPredicate(source types.NamespacedName) predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		return obj.GetNamespace() == operatorNamespace && obj.GetName() == pullsecret.ControlPlaneReleaseSecretName
+		return obj.GetNamespace() == source.Namespace && obj.GetName() == source.Name
 	})
 }
 
@@ -5770,7 +5787,7 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 	}
 	// This resolves the control plane release, which may live in a private registry
 	// the cluster pull secret does not cover.
-	cpPullSecretBytes, err := pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.OperatorNamespace, pullSecretBytes)
+	cpPullSecretBytes, err := pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.controlPlaneReleasePullSecretSourceKey(), pullSecretBytes)
 	if err != nil {
 		return nil, err
 	}

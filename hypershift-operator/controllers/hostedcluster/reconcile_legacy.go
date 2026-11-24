@@ -368,7 +368,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	// private control plane release registry. It must only be used for lookups of
 	// the control plane release payload; pullSecretBytes stays unaugmented and is
 	// what the data plane release lookup below uses.
-	cpPullSecretBytes, err := pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.OperatorNamespace, pullSecretBytes)
+	cpPullSecretBytes, err := pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.controlPlaneReleasePullSecretSourceKey(), pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
 	}

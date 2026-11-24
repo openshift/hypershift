@@ -10923,9 +10923,19 @@ func TestReconcileControlPlaneReleasePullSecretSync(t *testing.T) {
 		Data:       map[string][]byte{"tenant": []byte("data")},
 	}
 
+	// The provider Secret under a name chosen by another system, selected with
+	// ControlPlaneReleasePullSecretName.
+	const configuredName = "generated-by-another-system"
+	configuredProviderSecret := func(data map[string][]byte) *corev1.Secret {
+		secret := cprpsProviderSecret(data)
+		secret.Name = configuredName
+		return secret
+	}
+
 	tests := []struct {
 		name                string
 		controlPlaneRelease *hyperv1.Release
+		configuredName      string
 		existingObjects     []crclient.Object
 		expectErr           bool
 		errContains         string
@@ -10937,6 +10947,32 @@ func TestReconcileControlPlaneReleasePullSecretSync(t *testing.T) {
 			controlPlaneRelease: pinnedRelease,
 			existingObjects:     []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
 			expectSynced:        true,
+		},
+		{
+			name:                "When a secret name is configured, it should sync that secret under the fixed copy name",
+			controlPlaneRelease: pinnedRelease,
+			configuredName:      configuredName,
+			existingObjects: []crclient.Object{
+				configuredProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				// A Secret under the default name is not the provider credential any more.
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"default.example.com":{}}}`)}),
+			},
+			expectSynced: true,
+		},
+		{
+			name:                "When a secret name is configured and only the default secret exists, it should not sync",
+			controlPlaneRelease: pinnedRelease,
+			configuredName:      configuredName,
+			existingObjects:     []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
+		},
+		{
+			name:                "When the configured secret is deleted, it should remove a stale managed copy",
+			controlPlaneRelease: pinnedRelease,
+			configuredName:      configuredName,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
 		},
 		{
 			name:                "When a managed copy is already present, it should update it in place",
@@ -11008,7 +11044,7 @@ func TestReconcileControlPlaneReleasePullSecretSync(t *testing.T) {
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).
 				WithObjects(append([]crclient.Object{tenantSecretWithSourceName.DeepCopy()}, tc.existingObjects...)...).Build()
 
-			r := &HostedClusterReconciler{Client: client, OperatorNamespace: cprpsOperatorNamespace}
+			r := &HostedClusterReconciler{Client: client, OperatorNamespace: cprpsOperatorNamespace, ControlPlaneReleasePullSecretName: tc.configuredName}
 
 			err := r.reconcileControlPlaneReleasePullSecretSync(t.Context(), isControlPlaneReleasePinned(hcluster, nil), ctrl.CreateOrUpdate, "cp-ns")
 			if tc.expectErr {
@@ -11497,7 +11533,7 @@ func TestControlPlaneReleasePullSecretDeleteEventRemovesCopyForPendingUnpin(t *t
 			// way the watch does.
 			deleted := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: pullsecret.ControlPlaneReleaseSecretName, Namespace: cprpsOperatorNamespace}}
 			deleteEvent := event.DeleteEvent{Object: deleted}
-			g.Expect(controlPlaneReleasePullSecretPredicate(cprpsOperatorNamespace).Delete(deleteEvent)).To(BeTrue())
+			g.Expect(controlPlaneReleasePullSecretPredicate(pullsecret.SourceSecretKey(cprpsOperatorNamespace, "")).Delete(deleteEvent)).To(BeTrue())
 			queue := &cprpsCaptureQueue{}
 			handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersPinningControlPlaneRelease(fakeClient)).Delete(t.Context(), deleteEvent, queue)
 			g.Expect(queue.added).To(ConsistOf(reconcile.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}))
