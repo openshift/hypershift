@@ -1,6 +1,8 @@
 package ingressoperator
 
 import (
+	"slices"
+
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -21,6 +23,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "HAPROXY_32_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router-haproxy32"),
 		})
+		if image, exists := cpContext.UserReleaseImageProvider.ImageExist("haproxy-router-haproxy34"); exists && image != "" {
+			podspec.UpsertEnvVar(c, corev1.EnvVar{Name: "HAPROXY_34_IMAGE", Value: image})
+			if !slices.Contains(c.Command, "3.4=$(HAPROXY_34_IMAGE)") {
+				c.Command = append(c.Command, "--haproxy-image", "3.4=$(HAPROXY_34_IMAGE)")
+			}
+		}
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "DEFAULT_HAPROXY_VERSION", Value: "3.2",
 		})

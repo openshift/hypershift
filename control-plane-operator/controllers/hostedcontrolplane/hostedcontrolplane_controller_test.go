@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
+	ingressoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ingressoperator"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	metricsproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/metrics_proxy"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
@@ -44,6 +45,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
@@ -1807,13 +1809,15 @@ func TestControlPlaneComponents(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
 
 	tests := []struct {
-		name           string
-		featureSet     configv1.FeatureSet
-		platformType   *hyperv1.PlatformType
-		hcpAnnotations map[string]string
-		mutateHCP      func(hcp *hyperv1.HostedControlPlane)
-		setup          func(t *testing.T)
-		subDirSuffix   string
+		name             string
+		featureSet       configv1.FeatureSet
+		platformType     *hyperv1.PlatformType
+		hcpAnnotations   map[string]string
+		mutateHCP        func(hcp *hyperv1.HostedControlPlane)
+		setup            func(t *testing.T)
+		subDirSuffix     string
+		componentName    string
+		ingressHAProxy34 bool
 	}{
 		{
 			name:         "When using default feature set and platform type it should reconcile components",
@@ -1924,6 +1928,13 @@ func TestControlPlaneComponents(t *testing.T) {
 					},
 				}
 			},
+		},
+		{
+			name:             "When a 5.1 guest payload provides HAProxy 3.4, it should reconcile opt-in ingress without changing the default",
+			featureSet:       configv1.TechPreviewNoUpgrade,
+			subDirSuffix:     "HAProxy34",
+			componentName:    ingressoperatorv2.ComponentName,
+			ingressHAProxy34: true,
 		},
 	}
 
@@ -2067,15 +2078,42 @@ func TestControlPlaneComponents(t *testing.T) {
 		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
 
 		for _, component := range reconciler.components {
+			if tt.componentName != "" && component.Name() != tt.componentName {
+				continue
+			}
+			cpContext.UserReleaseImageProvider = testutil.FakeImageProvider()
+			if component.Name() == ingressoperatorv2.ComponentName {
+				images := map[string]string{
+					"haproxy-router":           "haproxy-router",
+					"haproxy-router-haproxy32": "haproxy-router-haproxy32",
+					"cluster-ingress-operator": "cluster-ingress-operator",
+				}
+				version := "4.18.0"
+				if tt.ingressHAProxy34 {
+					version = "5.1.0"
+					images["haproxy-router-haproxy34"] = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+					cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion(version))
+					cpContext.HCP.Spec.ReleaseImage = "quay.io/openshift-release-dev/ocp-release:5.1.0-x86_64"
+				}
+				cpContext.UserReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion(version), testutil.WithImages(images))
+			}
 			fakeObjects, err := componentsFakeObjects(hcp.Namespace, tt.featureSet)
 			if err != nil {
 				t.Fatalf("failed to generate fake objects: %v", err)
 			}
 
+			fakeDependencies := componentsFakeDependencies(component.Name(), hcp.Namespace)
+			if tt.ingressHAProxy34 {
+				for _, dependency := range fakeDependencies {
+					if dependencyComponent, ok := dependency.(*hyperv1.ControlPlaneComponent); ok {
+						dependencyComponent.Status.Version = cpContext.ReleaseImageProvider.Version()
+					}
+				}
+			}
 			createdObjects := []client.Object{}
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
 				WithObjects(fakeObjects...).
-				WithObjects(componentsFakeDependencies(component.Name(), hcp.Namespace)...).
+				WithObjects(fakeDependencies...).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Create: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 						createdObjects = append(createdObjects, obj)
@@ -2091,6 +2129,18 @@ func TestControlPlaneComponents(t *testing.T) {
 				if err := component.Reconcile(cpContext); err != nil {
 					t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
 				}
+			}
+			if tt.ingressHAProxy34 {
+				g := NewWithT(t)
+				deployment := &appsv1.Deployment{}
+				g.Expect(fakeClient.Get(t.Context(), client.ObjectKey{Namespace: hcp.Namespace, Name: ingressoperatorv2.ComponentName}, deployment)).To(Succeed())
+				container := podspec.FindContainer(ingressoperatorv2.ComponentName, deployment.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Env).To(ContainElements(
+					corev1.EnvVar{Name: "HAPROXY_34_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router-haproxy34")},
+					corev1.EnvVar{Name: "DEFAULT_HAPROXY_VERSION", Value: "3.2"},
+				))
+				g.Expect(container.Command).To(ContainElements("3.2=$(HAPROXY_32_IMAGE)", "3.4=$(HAPROXY_34_IMAGE)"))
 			}
 
 			for _, obj := range createdObjects {
