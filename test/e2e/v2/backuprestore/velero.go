@@ -295,6 +295,9 @@ func isVeleroResourceInState(
 	return func(ctx context.Context) (bool, error) {
 		resource, err := getResourceFunc(ctx, client, namespace, name)
 		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
 			return false, fmt.Errorf("failed to get %s %s: %w", kind, name, err)
 		}
 
