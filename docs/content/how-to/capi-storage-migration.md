@@ -102,6 +102,37 @@ By running the above command on a completed migration you will get an output suc
 }
 ```
 
+### Monitoring Migration Progress
+
+The HyperShift operator exposes the migration status as Prometheus metrics on its metrics endpoint. The metrics are collected from the `capi-migration-status` ConfigMap described above:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `hypershift_capi_migration_total_crds` | Gauge | Total number of CAPI CRDs configured for storage version migration. |
+| `hypershift_capi_migration_migrated_crds` | Gauge | Number of CAPI CRDs that have completed storage version migration. |
+| `hypershift_capi_migration_collector_success` | Gauge | Whether the migration metrics collector was able to collect metrics successfully. `1` for success, `0` for failure. |
+
+The migration is complete when `hypershift_capi_migration_total_crds` is greater than `0`, `hypershift_capi_migration_migrated_crds` equals `hypershift_capi_migration_total_crds`, `hypershift_capi_migration_collector_success` is `1`, and the `Degraded` condition in the `capi-migration-status` ConfigMap is `False` — the migrated count alone does not reflect reconcile errors.
+
+Note that the migrated count is never reset: if a CAPI CRD's generation changes (e.g. the CRD is edited), the count remains at total and `MigrationComplete` stays `True` until that CRD has re-reconciled successfully. A fresh `Degraded=False` on the ConfigMap confirms the latest reconcile cycle succeeded.
+
+!!! note
+
+    When the operator is installed with `--disable-capi-migration`, the CRD migrator is not started and these metrics are not registered at all. Their absence from the metrics endpoint is therefore expected in that case — it does not indicate a collector failure (`hypershift_capi_migration_collector_success` = `0`), and no completion value will ever appear while migration is disabled.
+
+The HyperShift operator installation also ships cluster-level Prometheus recording rules that aggregate these metrics across operator replicas:
+
+```yaml
+- record: cluster:hypershift_capi_migration_total_crds:max
+  expr: max(hypershift_capi_migration_total_crds)
+- record: cluster:hypershift_capi_migration_migrated_crds:max
+  expr: max(hypershift_capi_migration_migrated_crds)
+- record: cluster:hypershift_capi_migration_collector_success:min
+  expr: min(hypershift_capi_migration_collector_success)
+```
+
+These recording rules allow monitoring migration progress at the management cluster level, for example to gate environment promotion waves during staged rollouts.
+
 
 ### 3. Re-install on an already migrated cluster
 
