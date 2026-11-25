@@ -39,28 +39,91 @@ func minTLSVersion(profile *configv1.TLSSecurityProfile) (tlsutil.TLSVersion, er
 	}
 }
 
+// etcdTLSConfig holds the TLS settings derived from the hosted cluster's TLS
+// security profile that the etcd member, its etcd-metrics grpc-proxy and its
+// healthz sidecar serve with. It is shared by the default etcd StatefulSet and
+// the etcd shard StatefulSets so that both render the same TLS configuration.
+type etcdTLSConfig struct {
+	minVersion tlsutil.TLSVersion
+	// cipherSuites holds the IANA names of the profile ciphers supported by
+	// etcd. When empty, no cipher suites are configured and the Go defaults
+	// are used.
+	cipherSuites []string
+}
+
+// newEtcdTLSConfig assesses the min TLS version and the list of cipher suites
+// to be used from the hosted control plane's TLS security profile.
+func newEtcdTLSConfig(cpContext component.WorkloadContext) (etcdTLSConfig, error) {
+	profile := cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile()
+
+	minVersion, err := minTLSVersion(profile)
+	if err != nil {
+		return etcdTLSConfig{}, fmt.Errorf("failed to get min TLS version: %w", err)
+	}
+	ciphers, err := config.CipherSuites(profile)
+	if err != nil {
+		return etcdTLSConfig{}, fmt.Errorf("failed to get cipher suites: %w", err)
+	}
+
+	return etcdTLSConfig{
+		minVersion:   minVersion,
+		cipherSuites: config.SupportedEtcdCipherSuites(cpContext, ciphers),
+	}, nil
+}
+
+// applyToEtcdContainer upserts the TLS environment variables on the etcd
+// container: ETCD_TLS_MIN_VERSION always, and ETCD_CIPHER_SUITES only when
+// there are cipher suites to configure. Variables that are not present yet are
+// appended to the end of the container env. An existing ETCD_CIPHER_SUITES is
+// not removed when there are no cipher suites; the etcd asset does not define
+// it and the StatefulSet is rendered from the asset on every reconcile.
+func (cfg etcdTLSConfig) applyToEtcdContainer(c *corev1.Container) {
+	podspec.UpsertEnvVar(c, corev1.EnvVar{
+		Name:  "ETCD_TLS_MIN_VERSION",
+		Value: string(cfg.minVersion),
+	})
+
+	if len(cfg.cipherSuites) > 0 {
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
+			Name:  "ETCD_CIPHER_SUITES",
+			Value: strings.Join(cfg.cipherSuites, ","),
+		})
+	}
+}
+
+// metricsArgs returns the TLS flags for the etcd-metrics grpc-proxy container.
+// Callers append them after the container's other flags.
+func (cfg etcdTLSConfig) metricsArgs() []string {
+	args := []string{fmt.Sprintf("--tls-min-version=%s", cfg.minVersion)}
+	if len(cfg.cipherSuites) > 0 {
+		args = append(args, fmt.Sprintf("--listen-cipher-suites=%s", strings.Join(cfg.cipherSuites, ",")))
+	}
+	return args
+}
+
+// healthzArgs returns the TLS flags for the healthz container. Callers append
+// them after the container's other flags.
+func (cfg etcdTLSConfig) healthzArgs() []string {
+	args := []string{fmt.Sprintf("--listen-tls-min-version=%s", cfg.minVersion)}
+	if len(cfg.cipherSuites) > 0 {
+		args = append(args, fmt.Sprintf("--listen-cipher-suites=%s", strings.Join(cfg.cipherSuites, ",")))
+	}
+	return args
+}
+
 func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulSet) error {
 	hcp := cpContext.HCP
 	managedEtcdSpec := hcp.Spec.Etcd.Managed
-	profile := cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile()
 
 	ipv4, err := netutil.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
 		return fmt.Errorf("error checking the ClusterNetworkCIDR: %w", err)
 	}
 
-	// assess what is the min tls version to be used and also the list of
-	// cipher suites. if the cipher list is empty then the go default's
-	// cipher will be used.
-	tlsMinVersion, err := minTLSVersion(profile)
+	tlsConfig, err := newEtcdTLSConfig(cpContext)
 	if err != nil {
-		return fmt.Errorf("failed to get min TLS version: %w", err)
+		return err
 	}
-	ciphers, err := config.CipherSuites(profile)
-	if err != nil {
-		return fmt.Errorf("failed to get cipher suites: %w", err)
-	}
-	cipherSuites := config.SupportedEtcdCipherSuites(cpContext, ciphers)
 
 	replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
 	var members []string
@@ -78,17 +141,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 			},
 		)
 
-		podspec.UpsertEnvVar(c, corev1.EnvVar{
-			Name:  "ETCD_TLS_MIN_VERSION",
-			Value: string(tlsMinVersion),
-		})
-
-		if len(cipherSuites) > 0 {
-			podspec.UpsertEnvVar(c, corev1.EnvVar{
-				Name:  "ETCD_CIPHER_SUITES",
-				Value: strings.Join(cipherSuites, ","),
-			})
-		}
+		tlsConfig.applyToEtcdContainer(c)
 
 		if !ipv4 {
 			podspec.UpsertEnvVar(c, corev1.EnvVar{
@@ -127,19 +180,12 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 			fmt.Sprintf("--listen-addr=%s:2383", loInterface),
 			fmt.Sprintf("--metrics-addr=https://%s:2381", allInterfaces),
 			"--advertise-client-url=",
-			fmt.Sprintf("--tls-min-version=%s", tlsMinVersion),
 		)
-
-		if len(cipherSuites) > 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--listen-cipher-suites=%s", strings.Join(cipherSuites, ",")))
-		}
+		c.Args = append(c.Args, tlsConfig.metricsArgs()...)
 	})
 
 	podspec.UpdateContainer("healthz", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		c.Args = append(c.Args, fmt.Sprintf("--listen-tls-min-version=%s", tlsMinVersion))
-		if len(cipherSuites) > 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--listen-cipher-suites=%s", strings.Join(cipherSuites, ",")))
-		}
+		c.Args = append(c.Args, tlsConfig.healthzArgs()...)
 	})
 
 	// Use etcd SA for self-registration (all topologies) or etcd-defrag-controller SA for defrag (HA-only).

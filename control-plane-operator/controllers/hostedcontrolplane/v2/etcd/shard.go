@@ -123,12 +123,19 @@ func NewShardComponent(shard hyperv1.ManagedEtcdShardSpec) component.ControlPlan
 // service names in the YAML. This function handles dynamic values that depend on runtime
 // state: replica count, member list construction, env var overrides, init container
 // scripts (complex bash that's easier to override wholesale in Go), volume secret
-// remapping, IPv6 adaptation, defrag sidecar injection, storage, and scheduling.
+// remapping, IPv6 adaptation, TLS security profile settings, defrag sidecar injection,
+// storage, and scheduling.
 func adaptStatefulSetForShard(cpContext component.WorkloadContext, sts *appsv1.StatefulSet, shard hyperv1.ManagedEtcdShardSpec) error {
 	hcp := cpContext.HCP
 	shardName := fmt.Sprintf("etcd-%s", shard.Name)
 	discoveryService := etcdutil.DiscoveryServiceName(shardName)
 	clientService := etcdutil.ClientServiceName(shardName)
+
+	// Shards serve with the same TLS settings as the default etcd StatefulSet.
+	tlsConfig, err := newEtcdTLSConfig(cpContext)
+	if err != nil {
+		return err
+	}
 
 	// Use the explicit per-shard replica count from the API.
 	replicas := shard.Replicas
@@ -152,6 +159,7 @@ func adaptStatefulSetForShard(cpContext component.WorkloadContext, sts *appsv1.S
 			Name:  "ETCD_ADVERTISE_CLIENT_URLS",
 			Value: fmt.Sprintf("https://$(HOSTNAME).%s.$(NAMESPACE).svc:2379", discoveryService),
 		})
+		tlsConfig.applyToEtcdContainer(c)
 	})
 
 	podspec.UpdateContainer("ensure-dns", sts.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
@@ -246,6 +254,11 @@ fi
 			fmt.Sprintf("--metrics-addr=https://%s:2381", allInterfaces),
 			"--advertise-client-url=",
 		)
+		c.Args = append(c.Args, tlsConfig.metricsArgs()...)
+	})
+
+	podspec.UpdateContainer("healthz", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.Args = append(c.Args, tlsConfig.healthzArgs()...)
 	})
 
 	// Enable defrag for multi-replica shards.
