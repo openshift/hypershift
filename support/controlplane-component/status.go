@@ -1,13 +1,9 @@
 package controlplanecomponent
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"regexp"
-	"sort"
 	"strings"
-	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
@@ -219,16 +215,10 @@ func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlan
 		}
 	}
 
-	// Only diagnose pod failures when the component was not fully healthy
-	// on the previous reconcile, to avoid unnecessary Get+List API calls
-	// (with 5s timeout) on every reconcile for ~40 healthy components.
 	var diagReason, diagMessage string
-	availCond := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
-	rolloutCond := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentRolloutComplete))
-	previouslyHealthy := availCond != nil && availCond.Status == metav1.ConditionTrue &&
-		rolloutCond != nil && rolloutCond.Status == metav1.ConditionTrue
-	if !previouslyHealthy {
-		diagReason, diagMessage = diagnosePodFailure(cpContext, c.name)
+	workloadObject := c.workloadProvider.NewObject()
+	if err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: c.name}, workloadObject); err == nil {
+		diagReason, diagMessage = podspec.DiagnoseWorkloadPodFailure(cpContext, cpContext.Client, workloadObject)
 	}
 	c.setAvailableCondition(cpContext, &component.Status.Conditions, diagReason, diagMessage)
 	rolloutStatus := c.setRolloutCompleteCondition(cpContext, &component.Status.Conditions, unmetPreconditions, unavailableDependencies, reconcilationError, diagReason, diagMessage)
@@ -257,7 +247,7 @@ func (c *controlPlaneWorkload[T]) setAvailableCondition(cpContext ControlPlaneCo
 	status, reason, message := c.workloadProvider.IsAvailable(workloadObject)
 	if status == metav1.ConditionFalse && diagReason != "" {
 		reason = diagReason
-		message = diagMessage
+		message = fmt.Sprintf("%s; %s", message, diagMessage)
 	}
 	meta.SetStatusCondition(conditions, metav1.Condition{
 		Type:    string(hyperv1.ControlPlaneComponentAvailable),
@@ -321,7 +311,7 @@ func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlP
 	status, reason, message := c.workloadProvider.IsReady(workloadObject)
 	if status == metav1.ConditionFalse && diagReason != "" {
 		reason = diagReason
-		message = diagMessage
+		message = fmt.Sprintf("%s; %s", message, diagMessage)
 	}
 
 	operandsReady, err := checkOperandsRolloutStatusFn(cpContext.workloadContext())
@@ -374,136 +364,4 @@ func (c *controlPlaneWorkload[T]) checkOperandsRolloutStatus(cpContext WorkloadC
 	}
 
 	return true, nil
-}
-
-const maxDiagnosticMessageLen = 256
-
-// diagnosePodFailure inspects pods for the given component and returns a
-// structured reason and message if a pod-level failure is detected.
-// It uses a short timeout to avoid blocking reconciliation.
-// Returns ("", "") if no diagnosable failure is found or on error.
-func diagnosePodFailure(cpContext ControlPlaneContext, componentName string) (string, string) {
-	ctx, cancel := context.WithTimeout(cpContext, 5*time.Second)
-	defer cancel()
-
-	// Look up the workload (Deployment or StatefulSet) to get its label selector.
-	deployment := &appsv1.Deployment{}
-	if err := cpContext.Client.Get(ctx, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: componentName}, deployment); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return "", ""
-		}
-		// Try StatefulSet
-		sts := &appsv1.StatefulSet{}
-		if stsErr := cpContext.Client.Get(ctx, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: componentName}, sts); stsErr != nil {
-			return "", ""
-		}
-		return diagnosePodsBySelector(ctx, cpContext.Client, cpContext.HCP.Namespace, sts.Spec.Selector)
-	}
-	return diagnosePodsBySelector(ctx, cpContext.Client, cpContext.HCP.Namespace, deployment.Spec.Selector)
-}
-
-func diagnosePodsBySelector(ctx context.Context, c client.Client, namespace string, selector *metav1.LabelSelector) (string, string) {
-	if selector == nil {
-		return "", ""
-	}
-	sel, err := metav1.LabelSelectorAsSelector(selector)
-	if err != nil {
-		return "", ""
-	}
-
-	podList := &corev1.PodList{}
-	if err := c.List(ctx, podList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: sel}); err != nil {
-		return "", ""
-	}
-
-	// Sort by name so the first failing pod is deterministic and condition
-	// messages remain stable across reconciles.
-	sort.Slice(podList.Items, func(i, j int) bool {
-		return podList.Items[i].Name < podList.Items[j].Name
-	})
-
-	// First pass: check all eligible pods for scheduling failures so that a
-	// CrashLoopBackOff or ImagePullBackOff on an earlier pod cannot mask an
-	// Unschedulable replica that signals management-cluster resource pressure.
-	for i := range podList.Items {
-		pod := &podList.Items[i]
-		if pod.DeletionTimestamp != nil || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
-			continue
-		}
-		for _, cond := range pod.Status.Conditions {
-			if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == "Unschedulable" {
-				return hyperv1.PodSchedulingFailedReason, truncateMessage(sanitizeSchedulerMessage(pod.Name, cond.Message))
-			}
-		}
-	}
-
-	// Second pass: check container and init container statuses for CrashLoopBackOff
-	// and ImagePullBackOff.
-	for i := range podList.Items {
-		pod := &podList.Items[i]
-		if pod.DeletionTimestamp != nil || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
-			continue
-		}
-
-		for _, cs := range pod.Status.ContainerStatuses {
-			if cs.State.Waiting != nil {
-				switch cs.State.Waiting.Reason {
-				case "CrashLoopBackOff":
-					msg := fmt.Sprintf("Pod %s container %s: CrashLoopBackOff", pod.Name, cs.Name)
-					if cs.LastTerminationState.Terminated != nil {
-						msg += fmt.Sprintf(" (%s)", cs.LastTerminationState.Terminated.Reason)
-					}
-					return hyperv1.CrashLoopBackOffReason, truncateMessage(msg)
-				case "ImagePullBackOff", "ErrImagePull":
-					return hyperv1.ImagePullBackOffReason, truncateMessage(fmt.Sprintf("Pod %s container %s: %s", pod.Name, cs.Name, cs.State.Waiting.Reason))
-				}
-			}
-		}
-		for _, cs := range pod.Status.InitContainerStatuses {
-			if cs.State.Waiting != nil {
-				switch cs.State.Waiting.Reason {
-				case "CrashLoopBackOff":
-					return hyperv1.CrashLoopBackOffReason, truncateMessage(fmt.Sprintf("Pod %s init container %s: CrashLoopBackOff", pod.Name, cs.Name))
-				case "ImagePullBackOff", "ErrImagePull":
-					return hyperv1.ImagePullBackOffReason, truncateMessage(fmt.Sprintf("Pod %s init container %s: %s", pod.Name, cs.Name, cs.State.Waiting.Reason))
-				}
-			}
-		}
-	}
-
-	return "", ""
-}
-
-func truncateMessage(msg string) string {
-	if len(msg) > maxDiagnosticMessageLen {
-		return msg[:maxDiagnosticMessageLen-3] + "..."
-	}
-	return msg
-}
-
-// insufficientResourcePattern matches "Insufficient <resource>" in scheduler messages.
-// The resource name allows word characters, hyphens, dots, and slashes to cover
-// extended resources like "example.com/gpu" or "hugepages-2Mi". The pattern
-// requires the name to end with a word character so that trailing punctuation
-// (periods, commas) from the scheduler message is excluded.
-var insufficientResourcePattern = regexp.MustCompile(`Insufficient\s+([\w]+(?:[.\-/][\w]+)*)`)
-
-// sanitizeSchedulerMessage extracts only resource-type information from a raw
-// scheduler message to avoid leaking management cluster details (node names,
-// IPs, cluster size) into conditions visible to hosted cluster users.
-func sanitizeSchedulerMessage(podName, rawMessage string) string {
-	matches := insufficientResourcePattern.FindAllStringSubmatch(rawMessage, -1)
-	if len(matches) == 0 {
-		return fmt.Sprintf("Pod %s is unschedulable", podName)
-	}
-	seen := make(map[string]struct{})
-	var resources []string
-	for _, m := range matches {
-		res := m[1]
-		if _, ok := seen[res]; !ok {
-			seen[res] = struct{}{}
-			resources = append(resources, res)
-		}
-	}
-	return fmt.Sprintf("Pod %s is unschedulable: Insufficient %s", podName, strings.Join(resources, ", Insufficient "))
 }
