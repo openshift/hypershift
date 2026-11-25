@@ -127,7 +127,8 @@ func serveProxyTestConn(ctx context.Context, raw net.Conn, certificate tls.Certi
 	return nil, true, err
 }
 
-func TestKonnectivityProxy_DialContext(t *testing.T) {
+func testDialContextManagementProxy(t *testing.T) {
+	t.Helper()
 	for _, testCase := range []struct {
 		name, scheme, host, user, mode string
 		missingCA, wrongHost           bool

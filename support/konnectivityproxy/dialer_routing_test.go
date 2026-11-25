@@ -345,6 +345,7 @@ func TestKonnectivityProxy_DialContext(t *testing.T) {
 	testDialContextResolutionModes(t)
 	testDialContextCloudAndCancellation(t)
 	testDialContextSOCKS5(t)
+	testDialContextManagementProxy(t)
 }
 
 func testDialContextRecovery(t *testing.T) {
