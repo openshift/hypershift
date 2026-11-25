@@ -26,21 +26,22 @@ import (
 // HostedClusterStatusApplyConfiguration represents a declarative configuration of the HostedClusterStatus type for use
 // with apply.
 type HostedClusterStatusApplyConfiguration struct {
-	Conditions                  []v1.ConditionApplyConfiguration             `json:"conditions,omitempty"`
-	ControlPlaneVersion         *ControlPlaneVersionStatusApplyConfiguration `json:"controlPlaneVersion,omitempty"`
-	Version                     *ClusterVersionStatusApplyConfiguration      `json:"version,omitempty"`
-	KubeConfig                  *corev1.LocalObjectReference                 `json:"kubeconfig,omitempty"`
-	CustomKubeconfig            *corev1.LocalObjectReference                 `json:"customKubeconfig,omitempty"`
-	KubeadminPassword           *corev1.LocalObjectReference                 `json:"kubeadminPassword,omitempty"`
-	IgnitionEndpoint            *string                                      `json:"ignitionEndpoint,omitempty"`
-	ControlPlaneEndpoint        *APIEndpointApplyConfiguration               `json:"controlPlaneEndpoint,omitempty"`
-	OAuthCallbackURLTemplate    *string                                      `json:"oauthCallbackURLTemplate,omitempty"`
-	PayloadArch                 *hypershiftv1beta1.PayloadArchType           `json:"payloadArch,omitempty"`
-	Platform                    *PlatformStatusApplyConfiguration            `json:"platform,omitempty"`
-	AutoNode                    *AutoNodeStatusApplyConfiguration            `json:"autoNode,omitempty"`
-	Configuration               *ConfigurationStatusApplyConfiguration       `json:"configuration,omitempty"`
-	LastSuccessfulEtcdBackupURL *string                                      `json:"lastSuccessfulEtcdBackupURL,omitempty"`
-	SecretEncryption            *SecretEncryptionStatusApplyConfiguration    `json:"secretEncryption,omitempty"`
+	Conditions                        []v1.ConditionApplyConfiguration             `json:"conditions,omitempty"`
+	ControlPlaneVersion               *ControlPlaneVersionStatusApplyConfiguration `json:"controlPlaneVersion,omitempty"`
+	Version                           *ClusterVersionStatusApplyConfiguration      `json:"version,omitempty"`
+	KubeConfig                        *corev1.LocalObjectReference                 `json:"kubeconfig,omitempty"`
+	CustomKubeconfig                  *corev1.LocalObjectReference                 `json:"customKubeconfig,omitempty"`
+	KubeadminPassword                 *corev1.LocalObjectReference                 `json:"kubeadminPassword,omitempty"`
+	IgnitionEndpoint                  *string                                      `json:"ignitionEndpoint,omitempty"`
+	ControlPlaneEndpoint              *APIEndpointApplyConfiguration               `json:"controlPlaneEndpoint,omitempty"`
+	OAuthCallbackURLTemplate          *string                                      `json:"oauthCallbackURLTemplate,omitempty"`
+	PayloadArch                       *hypershiftv1beta1.PayloadArchType           `json:"payloadArch,omitempty"`
+	Platform                          *PlatformStatusApplyConfiguration            `json:"platform,omitempty"`
+	AutoNode                          *AutoNodeStatusApplyConfiguration            `json:"autoNode,omitempty"`
+	Configuration                     *ConfigurationStatusApplyConfiguration       `json:"configuration,omitempty"`
+	LastSuccessfulEtcdBackupURL       *string                                      `json:"lastSuccessfulEtcdBackupURL,omitempty"`
+	LastSuccessfulEtcdShardBackupURLs []HCPEtcdShardSnapshotApplyConfiguration     `json:"lastSuccessfulEtcdShardBackupURLs,omitempty"`
+	SecretEncryption                  *SecretEncryptionStatusApplyConfiguration    `json:"secretEncryption,omitempty"`
 }
 
 // HostedClusterStatusApplyConfiguration constructs a declarative configuration of the HostedClusterStatus type for use with
@@ -163,6 +164,19 @@ func (b *HostedClusterStatusApplyConfiguration) WithConfiguration(value *Configu
 // If called multiple times, the LastSuccessfulEtcdBackupURL field is set to the value of the last call.
 func (b *HostedClusterStatusApplyConfiguration) WithLastSuccessfulEtcdBackupURL(value string) *HostedClusterStatusApplyConfiguration {
 	b.LastSuccessfulEtcdBackupURL = &value
+	return b
+}
+
+// WithLastSuccessfulEtcdShardBackupURLs adds the given value to the LastSuccessfulEtcdShardBackupURLs field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the LastSuccessfulEtcdShardBackupURLs field.
+func (b *HostedClusterStatusApplyConfiguration) WithLastSuccessfulEtcdShardBackupURLs(values ...*HCPEtcdShardSnapshotApplyConfiguration) *HostedClusterStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithLastSuccessfulEtcdShardBackupURLs")
+		}
+		b.LastSuccessfulEtcdShardBackupURLs = append(b.LastSuccessfulEtcdShardBackupURLs, *values[i])
+	}
 	return b
 }
 

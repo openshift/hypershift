@@ -19,6 +19,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -386,6 +387,184 @@ func componentsFakeObjects() ([]client.Object, error) {
 		csrSigner,
 	}
 	return fakeObjects, nil
+}
+func newTestControlPlaneContext(t *testing.T, objs ...client.Object) ControlPlaneContext {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+
+	fakeObjects, err := componentsFakeObjects()
+	if err != nil {
+		t.Fatalf("failed to build fake objects: %v", err)
+	}
+
+	return ControlPlaneContext{
+		Context:                  t.Context(),
+		ApplyProvider:            upsert.NewApplyProvider(false),
+		ReleaseImageProvider:     testutil.FakeImageProvider(),
+		UserReleaseImageProvider: testutil.FakeImageProvider(),
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result:   &dockerv1client.DockerImageConfig{},
+			Manifest: fakeimagemetadataprovider.FakeManifest{},
+		},
+		HCP: &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testComponentNamespace,
+				Annotations: map[string]string{
+					"hypershift.openshift.io/cluster": "test-cluster",
+				},
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Labels: map[string]string{
+					"test-label": "test",
+				},
+			},
+		},
+		Client: fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(append(fakeObjects, objs...)...).Build(),
+	}
+}
+
+// TestSkipManifestLifecycle proves the SkipManifest contract end to end at the
+// component level: a skipped shared manifest is not created or updated during
+// reconcile, is omitted from ControlPlaneComponent.status.resources, and
+// survives component deletion.
+func TestSkipManifest(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	ga := &genericAdapter{}
+
+	opt := SkipManifest()
+	opt(ga)
+
+	g.Expect(ga.skip).To(BeTrue())
+
+	newComponentWithSkip := func() ControlPlaneComponent {
+		return NewDeploymentComponent(testComponentName, &testComponent{}).
+			InjectServiceAccountKubeConfig(
+				ServiceAccountKubeConfigOpts{
+					Name:      testComponentName,
+					Namespace: "sa-namespace",
+					MountPath: "/test",
+				},
+			).
+			WithManifestAdapter(
+				"serviceaccount.yaml",
+				SkipManifest(),
+			).
+			Build()
+	}
+
+	sa := func(mutate func(*corev1.ServiceAccount)) *corev1.ServiceAccount {
+		obj := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testComponentName,
+				Namespace: testComponentNamespace,
+			},
+		}
+		if mutate != nil {
+			mutate(obj)
+		}
+		return obj
+	}
+
+	componentStatusResources := func(g Gomega, cpContext ControlPlaneContext) []hyperv1.ComponentResource {
+		component := &hyperv1.ControlPlaneComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testComponentName,
+				Namespace: testComponentNamespace,
+			},
+		}
+		g.Expect(cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(component), component)).To(Succeed())
+		return component.Status.Resources
+	}
+
+	t.Run("skipped manifest is not created during reconcile and is omitted from status resources", func(t *testing.T) {
+		g := NewWithT(t)
+		cpContext := newTestControlPlaneContext(t)
+
+		g.Expect(newComponentWithSkip().Reconcile(cpContext)).NotTo(HaveOccurred())
+
+		// The skipped ServiceAccount was not created...
+		err := cpContext.Client.Get(t.Context(),
+			client.ObjectKeyFromObject(sa(nil)), sa(nil))
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "skipped manifest must not be created")
+
+		// ...the workload was created...
+		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+			Name: testComponentName, Namespace: testComponentNamespace,
+		}}
+		g.Expect(cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(deployment), deployment)).To(Succeed())
+
+		// ...and the skipped manifest is omitted from status.resources.
+		for _, r := range componentStatusResources(g, cpContext) {
+			g.Expect(r.Kind).NotTo(Equal("ServiceAccount"), "skipped manifest must be omitted from status.resources")
+		}
+	})
+
+	t.Run("skipped manifest is not updated when it drifts", func(t *testing.T) {
+		g := NewWithT(t)
+		// Pre-create the shared ServiceAccount owned by another component.
+		cpContext := newTestControlPlaneContext(t, sa(func(s *corev1.ServiceAccount) {
+			s.Annotations = map[string]string{"owner": "other-component"}
+		}))
+
+		g.Expect(newComponentWithSkip().Reconcile(cpContext)).NotTo(HaveOccurred())
+
+		// The pre-existing annotation is untouched: the skip must mean "not
+		// reconciled at all", not just "not deleted".
+		got := sa(nil)
+		g.Expect(cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(got), got)).To(Succeed())
+		g.Expect(got.Annotations).To(HaveKeyWithValue("owner", "other-component"))
+	})
+
+	t.Run("skipped manifest survives component deletion", func(t *testing.T) {
+		g := NewWithT(t)
+		cpContext := newTestControlPlaneContext(t,
+			sa(func(s *corev1.ServiceAccount) {
+				s.Annotations = map[string]string{"owner": "other-component"}
+			}),
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+				Name: testComponentName, Namespace: testComponentNamespace,
+			}},
+		)
+
+		// A predicate that disables the component routes Reconcile through the
+		// delete path.
+		component := NewDeploymentComponent(testComponentName, &testComponent{}).
+			WithPredicate(func(cpContext WorkloadContext) (bool, error) {
+				return false, nil
+			}).
+			InjectServiceAccountKubeConfig(
+				ServiceAccountKubeConfigOpts{
+					Name:      testComponentName,
+					Namespace: "sa-namespace",
+					MountPath: "/test",
+				},
+			).
+			WithManifestAdapter(
+				"serviceaccount.yaml",
+				SkipManifest(),
+			).
+			Build()
+
+		g.Expect(component.Reconcile(cpContext)).NotTo(HaveOccurred())
+
+		// The workload is deleted...
+		deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+			Name: testComponentName, Namespace: testComponentNamespace,
+		}}
+		err := cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(deployment), deployment)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "component workload must be deleted")
+
+		// ...but the skipped shared ServiceAccount survives.
+		got := sa(nil)
+		g.Expect(cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(got), got)).To(Succeed())
+		g.Expect(got.Annotations).To(HaveKeyWithValue("owner", "other-component"))
+	})
 }
 
 func TestWorkloadContext(t *testing.T) {
