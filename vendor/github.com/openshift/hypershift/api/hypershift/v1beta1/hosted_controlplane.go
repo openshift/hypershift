@@ -352,6 +352,14 @@ type HostedControlPlaneStatus struct {
 	// +optional
 	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
+	// sharedIngressWorkerAPIEndpoint is the observed address workers use to reach
+	// the API through shared ingress. It is absent when unavailable or not applicable.
+	// It is set by the HyperShift operator from the shared ingress router Service.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self.host != ''",message="host must not be empty"
+	// +kubebuilder:validation:XValidation:rule="self.port >= 1 && self.port <= 65535",message="port must be between 1 and 65535"
+	SharedIngressWorkerAPIEndpoint *APIEndpoint `json:"sharedIngressWorkerAPIEndpoint,omitempty"`
+
 	// oauthCallbackURLTemplate contains a template for the URL to use as a callback
 	// for identity providers. The [identity-provider-name] placeholder must be replaced
 	// with the name of an identity provider defined on the HostedCluster.

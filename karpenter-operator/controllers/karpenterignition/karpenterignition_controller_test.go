@@ -14,7 +14,6 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -118,6 +117,7 @@ func TestReconcile(t *testing.T) {
 			testReconcile(t, tc.gvk)
 		})
 	}
+	t.Run("When the HostedControlPlane publishes the shared ingress endpoint, it should generate user data", testReconcileSharedIngressEndpointPublished)
 }
 
 func testReconcile(t *testing.T, nodeClassGVK schema.GroupVersionKind) {
@@ -445,6 +445,107 @@ kind: Config`),
 	// https://github.com/openshift/hypershift/blob/825484eb33d14b4ab849b428d134582320655fcf/hypershift-operator/controllers/nodepool/token.go#L197
 	g.Expect(len(tokenSecrets)).To(Equal(3), "should have 3 token secrets, got: %v", tokenSecrets)
 	g.Expect(len(userDataSecrets)).To(Equal(2), "should have 2 user-data secrets, got: %v", userDataSecrets)
+}
+
+// testReconcileSharedIngressEndpointPublished reconciles a shared ingress NodeClass
+// before and after the HostedControlPlane publishes the worker API endpoint. The
+// management client holds no router Service, so reading it would fail.
+func testReconcileSharedIngressEndpointPublished(t *testing.T) {
+	g := NewWithT(t)
+	azureGVK := schema.GroupVersionKind{Group: "karpenter.hypershift.openshift.io", Version: "v1alpha1", Kind: "OpenShiftAzureNodeClass"}
+
+	releaseImage := testutils.InitReleaseImageOrDie("4.17.0")
+	releaseImage.StreamMetadata = &stream.Stream{Architectures: map[string]stream.Arch{
+		"x86_64": {RHELCoreOSExtensions: &rhcos.Extensions{Marketplace: &rhcos.Marketplace{Azure: &rhcos.AzureMarketplace{
+			NoPurchasePlan: &rhcos.AzureMarketplaceImages{Gen2: &rhcos.AzureMarketplaceImage{Publisher: "azureopenshift", Offer: "aro4", SKU: "aro_417-v2", Version: "417.9.20250701"}},
+		}}}},
+	}}
+	mockedReleaseProvider := releaseinfo.NewMockProvider(gomock.NewController(t))
+	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(releaseImage, nil).AnyTimes()
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: testNamespace},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64",
+			ClusterID:    "test-cluster-id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					Topology:                  hyperv1.AzureTopologyPublic,
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities},
+				},
+			},
+			Networking: hyperv1.ClusterNetworking{ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}}},
+			PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+			AutoNode: hyperv1.AutoNode{Provisioner: hyperv1.ProvisionerConfig{
+				Name:      hyperv1.ProvisionerKarpenter,
+				Karpenter: hyperv1.KarpenterConfig{Platform: hyperv1.AzurePlatform},
+			}},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			VersionStatus: &hyperv1.ClusterVersionStatus{History: []configv1.UpdateHistory{{
+				State:   configv1.CompletedUpdate,
+				Version: "4.17.0",
+				Image:   "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64",
+			}}},
+			KubeConfig: &hyperv1.KubeconfigSecretRef{Name: "admin-kubeconfig"},
+		},
+	}
+	ignitionServerCACert := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "ignition-server-ca-cert", Namespace: testNamespace},
+		Data:       map[string][]byte{"tls.crt": []byte("fake-ca-cert")},
+	}
+	managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+		WithObjects(append(managementFixtures(), hcp, ignitionServerCACert)...).WithStatusSubresource(hcp).Build()
+
+	nodeClass := newNodeClass(azureGVK).object
+	nodeClass.SetName(testNodeClassName)
+	// The fake client's metadata patches turn an absent status into null.
+	nodeClass.Object["status"] = map[string]interface{}{}
+	guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodeClass).WithStatusSubresource(nodeClass).Build()
+
+	r := &KarpenterIgnitionReconciler{
+		ManagementClient: managementClient,
+		GuestClient:      guestClient,
+		NodeClassGVK:     azureGVK,
+		ReleaseProvider:  mockedReleaseProvider,
+		VersionResolver:  &fakeVersionResolver{},
+		// The CPO skips HAProxy config generation, so the ignition config generated here includes it.
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
+			Labels: map[string]string{haproxy.ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel: "true"},
+		}}},
+		HypershiftOperatorImage: "test-hypershift-operator-image",
+		IgnitionEndpoint:        testIgnitionEndpoint,
+		Namespace:               testNamespace,
+		CreateOrUpdateProvider:  upsert.New(false),
+	}
+	ctx := log.IntoContext(t.Context(), testr.New(t))
+	request := ctrl.Request{NamespacedName: client.ObjectKey{Name: testNodeClassName}}
+	userDataPrefix := "user-data-" + karpenterutil.KarpenterNodePoolName(nodeClass) + "-"
+	hasUserData := func() bool {
+		secrets := &corev1.SecretList{}
+		g.Expect(managementClient.List(ctx, secrets, client.InNamespace(testNamespace))).To(Succeed())
+		for _, secret := range secrets.Items {
+			if strings.HasPrefix(secret.Name, userDataPrefix) {
+				return true
+			}
+		}
+		return false
+	}
+
+	_, err := r.Reconcile(ctx, request)
+	g.Expect(err).To(MatchError(ContainSubstring("waiting on hosted control plane shared ingress worker API endpoint")))
+	g.Expect(hasUserData()).To(BeFalse())
+
+	original := hcp.DeepCopy()
+	hcp.Status.SharedIngressWorkerAPIEndpoint = &hyperv1.APIEndpoint{Host: "10.0.0.100", Port: 6443}
+	g.Expect(managementClient.Status().Patch(ctx, hcp, client.MergeFrom(original))).To(Succeed())
+
+	_, err = r.Reconcile(ctx, request)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(hasUserData()).To(BeTrue())
+	g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+	g.Expect(nodeClass.GetAnnotations()).To(HaveKey(configVersionAnnotation))
 }
 
 func TestReconcileVersionResolution(t *testing.T) {
@@ -3068,15 +3169,18 @@ func TestBuildConfigGenerator(t *testing.T) {
 		platform                  hyperv1.PlatformSpec
 		sharedIngressHAProxyImage string
 		expectedHAProxyImage      string
+		expectedHAProxyServer     string
 	}{
 		"When the HostedCluster uses shared ingress, it should use the shared ingress HAProxy image": {
-			platform:             sharedIngressAzurePlatform,
-			expectedHAProxyImage: images.DefaultSharedIngressHAProxyImage,
+			platform:              sharedIngressAzurePlatform,
+			expectedHAProxyImage:  images.DefaultSharedIngressHAProxyImage,
+			expectedHAProxyServer: "10.0.0.100:7443",
 		},
 		"When IMAGE_SHARED_INGRESS_HAPROXY is set, it should use that image for shared ingress": {
 			platform:                  sharedIngressAzurePlatform,
 			sharedIngressHAProxyImage: "quay.io/test/shared-ingress-haproxy@sha256:1234",
 			expectedHAProxyImage:      "quay.io/test/shared-ingress-haproxy@sha256:1234",
+			expectedHAProxyServer:     "10.0.0.100:7443",
 		},
 		"When the HostedCluster does not use shared ingress, it should use the release payload HAProxy image": {
 			platform: hyperv1.PlatformSpec{
@@ -3129,13 +3233,16 @@ func TestBuildConfigGenerator(t *testing.T) {
 				},
 			}
 
-			sharedIngressService := sharedingress.RouterPublicService()
-			sharedIngressService.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{IP: "10.0.0.100"}}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: hostedCluster.Name, Namespace: testNamespace},
+				Status: hyperv1.HostedControlPlaneStatus{
+					SharedIngressWorkerAPIEndpoint: &hyperv1.APIEndpoint{Host: "10.0.0.100", Port: 7443},
+				},
+			}
 
 			fakeManagementClient := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
-				WithObjects(append(managementFixtures(), sharedIngressService)...).
-				WithStatusSubresource(sharedIngressService).
+				WithObjects(managementFixtures()...).
 				Build()
 
 			r := &KarpenterIgnitionReconciler{
@@ -3149,7 +3256,7 @@ func TestBuildConfigGenerator(t *testing.T) {
 			}
 
 			ctx := log.IntoContext(t.Context(), testr.New(t))
-			cg, err := r.buildConfigGenerator(ctx, hostedCluster, nodePool, testNamespace)
+			cg, err := r.buildConfigGenerator(ctx, hcp, hostedCluster, nodePool)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			compressedConfig, err := cg.CompressedAndEncoded()
@@ -3157,22 +3264,29 @@ func TestBuildConfigGenerator(t *testing.T) {
 			config, err := supportutil.DecodeAndDecompress(compressedConfig.Bytes())
 			g.Expect(err).NotTo(HaveOccurred())
 
-			var kubeAPIServerProxyManifest string
+			var kubeAPIServerProxyManifest, haproxyConfig string
 			for _, manifest := range strings.Split(config.String(), "\n---\n") {
 				machineConfig := &mcfgv1.MachineConfig{}
 				g.Expect(yaml.Unmarshal([]byte(manifest), machineConfig)).To(Succeed())
 				ignitionConfig := &ignitionapi.Config{}
 				g.Expect(yaml.Unmarshal(machineConfig.Spec.Config.Raw, ignitionConfig)).To(Succeed())
 				for _, file := range ignitionConfig.Storage.Files {
-					if file.Path == "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml" {
+					switch file.Path {
+					case "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml":
 						contents, err := dataurl.DecodeString(*file.Contents.Source)
 						g.Expect(err).NotTo(HaveOccurred())
 						kubeAPIServerProxyManifest = string(contents.Data)
-						break
+					case "/etc/kubernetes/apiserver-proxy-config/haproxy.cfg":
+						contents, err := dataurl.DecodeString(*file.Contents.Source)
+						g.Expect(err).NotTo(HaveOccurred())
+						haproxyConfig = string(contents.Data)
 					}
 				}
 			}
 			g.Expect(kubeAPIServerProxyManifest).To(ContainSubstring("image: " + tc.expectedHAProxyImage))
+			if tc.expectedHAProxyServer != "" {
+				g.Expect(haproxyConfig).To(ContainSubstring("server controlplane " + tc.expectedHAProxyServer))
+			}
 		})
 	}
 }

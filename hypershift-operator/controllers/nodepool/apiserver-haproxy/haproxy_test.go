@@ -10,7 +10,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/pullsecret"
@@ -274,6 +273,7 @@ kind: Config`
 		setupEnv                     func(t *testing.T)
 		hc                           *hyperv1.HostedCluster
 		other                        []crclient.Object
+		sharedIngressEndpoint        *hyperv1.APIEndpoint
 		expectedHAProxyConfigContent []string
 	}{
 		{
@@ -478,20 +478,8 @@ kind: Config`
 						"kubeconfig": []byte(kubeconfig(443)),
 					},
 				},
-				&corev1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      sharedingress.RouterPublicService().Name,
-						Namespace: sharedingress.RouterNamespace,
-					},
-					Status: corev1.ServiceStatus{
-						LoadBalancer: corev1.LoadBalancerStatus{
-							Ingress: []corev1.LoadBalancerIngress{
-								{IP: "10.0.0.100"},
-							},
-						},
-					},
-				},
 			},
+			sharedIngressEndpoint:        &hyperv1.APIEndpoint{Host: "10.0.0.100", Port: 6443},
 			expectedHAProxyConfigContent: []string{"10.0.0.100:6443"},
 		},
 	}
@@ -503,8 +491,9 @@ kind: Config`
 			}
 
 			r := HAProxy{
-				Client:       fake.NewClientBuilder().WithObjects(tc.other...).Build(),
-				HAProxyImage: "some-image",
+				Client:                         fake.NewClientBuilder().WithObjects(tc.other...).Build(),
+				HAProxyImage:                   "some-image",
+				SharedIngressWorkerAPIEndpoint: tc.sharedIngressEndpoint,
 			}
 			cfg, err := r.reconcileHAProxyIgnitionConfig(t.Context(),
 				tc.hc,

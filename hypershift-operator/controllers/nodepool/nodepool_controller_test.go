@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
@@ -4021,7 +4022,7 @@ kind: Config`),
 			g.Expect(releaseImage).ToNot(BeNil())
 
 			// Call generateHAProxyRawConfig
-			cfg, err := reconciler.generateHAProxyRawConfig(ctx, nodePool, hc, releaseImage)
+			cfg, err := reconciler.generateHAProxyRawConfig(ctx, nodePool, hc, releaseImage, nil)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(cfg).ToNot(BeEmpty())
 
@@ -4051,6 +4052,66 @@ kind: Config`),
 			manifestContent := string(kubeAPIServerProxyManifest.Data)
 			g.Expect(manifestContent).To(ContainSubstring(tc.expectedImage),
 				"expected HAProxy image %q to be present in kube-apiserver-proxy.yaml manifest", tc.expectedImage)
+		})
+	}
+}
+
+func TestSharedIngressWorkerAPIEndpoint(t *testing.T) {
+	sharedIngressHC := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "clusters"},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+					},
+				},
+			},
+		},
+	}
+	router := func(ingress ...corev1.LoadBalancerIngress) *corev1.Service {
+		svc := sharedingress.RouterPublicService()
+		svc.Status.LoadBalancer.Ingress = ingress
+		return svc
+	}
+
+	for name, tc := range map[string]struct {
+		hcluster    *hyperv1.HostedCluster
+		objects     []client.Object
+		expected    *hyperv1.APIEndpoint
+		expectedErr string
+	}{
+		"When the HostedCluster does not use shared ingress, it should return nil": {
+			hcluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}}},
+			objects:  []client.Object{router(corev1.LoadBalancerIngress{IP: "10.0.0.1"})},
+		},
+		"When the router reports an address, it should return it": {
+			hcluster: sharedIngressHC,
+			objects:  []client.Object{router(corev1.LoadBalancerIngress{IP: "10.0.0.1"})},
+			expected: &hyperv1.APIEndpoint{Host: "10.0.0.1", Port: sharedingress.KASSVCLBPort},
+		},
+		"When the router reports no address, it should wait": {
+			hcluster:    sharedIngressHC,
+			objects:     []client.Object{router()},
+			expectedErr: "waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress",
+		},
+		"When the router is missing, it should return the lookup error": {
+			hcluster:    sharedIngressHC,
+			expectedErr: "failed to get shared ingress router service",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &NodePoolReconciler{Client: fake.NewClientBuilder().WithObjects(tc.objects...).Build()}
+
+			endpoint, err := r.sharedIngressWorkerAPIEndpoint(t.Context(), tc.hcluster)
+			if tc.expectedErr != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedErr)))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(endpoint).To(Equal(tc.expected))
 		})
 	}
 }

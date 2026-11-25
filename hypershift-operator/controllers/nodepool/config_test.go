@@ -14,7 +14,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -491,7 +490,7 @@ spec:
 					resolvedStream = s
 				}
 			}
-			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", resolvedStream)
+			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", nil, resolvedStream)
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))
@@ -2979,19 +2978,14 @@ users:
 		}
 	}
 
-	routerService := func(ingress ...corev1.LoadBalancerIngress) *corev1.Service {
-		svc := sharedingress.RouterPublicService()
-		svc.Status.LoadBalancer.Ingress = ingress
-		return svc
-	}
-
 	tests := []struct {
-		name              string
-		hcluster          *hyperv1.HostedCluster
-		objects           []crclient.Object
-		failKubeconfigGet bool
-		expectedConfig    string
-		expectedErr       string
+		name                  string
+		hcluster              *hyperv1.HostedCluster
+		objects               []crclient.Object
+		failKubeconfigGet     bool
+		sharedIngressEndpoint *hyperv1.APIEndpoint
+		expectedConfig        string
+		expectedErr           string
 	}{
 		{
 			name: "private cluster omits the server component",
@@ -3052,35 +3046,15 @@ users:
 			expectedErr:       "failed to get kubeconfig",
 		},
 		{
-			name:           "shared ingress cluster resolves the load balancer IP",
-			hcluster:       newAROHCPCluster(),
-			objects:        []crclient.Object{routerService(corev1.LoadBalancerIngress{IP: "10.0.0.1"})},
-			expectedConfig: "private=false,server=10.0.0.1:6443",
+			name:                  "shared ingress cluster uses the shared ingress worker API endpoint",
+			hcluster:              newAROHCPCluster(),
+			sharedIngressEndpoint: &hyperv1.APIEndpoint{Host: "10.0.0.1", Port: 6443},
+			expectedConfig:        "private=false,server=10.0.0.1:6443",
 		},
 		{
-			name:           "shared ingress cluster falls back to the load balancer hostname",
-			hcluster:       newAROHCPCluster(),
-			objects:        []crclient.Object{routerService(corev1.LoadBalancerIngress{Hostname: "router.example.com"})},
-			expectedConfig: "private=false,server=router.example.com:6443",
-		},
-		{
-			// A transient LB state change must not change the hash: the call
-			// fails and the reconcile retries.
-			name:        "shared ingress cluster without load balancer ingress fails",
+			name:        "shared ingress cluster without a shared ingress worker API endpoint fails",
 			hcluster:    newAROHCPCluster(),
-			objects:     []crclient.Object{routerService()},
-			expectedErr: "waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress",
-		},
-		{
-			name:        "shared ingress cluster with empty ingress address fails",
-			hcluster:    newAROHCPCluster(),
-			objects:     []crclient.Object{routerService(corev1.LoadBalancerIngress{})},
-			expectedErr: "waiting on sharedIngress route service ingress to report an IP or hostname",
-		},
-		{
-			name:        "shared ingress cluster with missing router service fails",
-			hcluster:    newAROHCPCluster(),
-			expectedErr: "failed to get shared ingress router service",
+			expectedErr: "missing shared ingress worker API endpoint",
 		},
 	}
 
@@ -3100,7 +3074,7 @@ users:
 			}
 			client := builder.Build()
 
-			config, err := endpointConfigString(t.Context(), client, tc.hcluster)
+			config, err := endpointConfigString(t.Context(), client, tc.hcluster, tc.sharedIngressEndpoint)
 			if tc.expectedErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErr))
