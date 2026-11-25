@@ -26,8 +26,6 @@ import (
 //go:embed external-dns/*
 var CRDS embed.FS
 
-const capiLabel = "cluster.x-k8s.io/v1beta1"
-
 // CAPICRDOverrideEntry configures a CAPI CRD that has both v1beta1 and v1beta2 versions.
 type CAPICRDOverrideEntry struct {
 	StorageVersion  string
@@ -69,41 +67,45 @@ func CAPICRDOverridesWithStorageVersion(storageVersion string) map[string]CAPICR
 	return overrides
 }
 
-// capiResources specifies which CRDs should get labeled with capiLabel
-// to satisfy CAPI contracts. There might be a way to achieve this during CRD
-// generation, but for now we're just post-processing at runtime here.
-var capiResources = map[string]string{
-	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml":                                   "v1beta2",
-	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachines.yaml":                                   "v1beta2",
-	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml":                           "v1beta2",
-	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpclusters.yaml":                                   "v1beta1",
-	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpmachines.yaml":                                   "v1beta1",
-	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpmachinetemplates.yaml":                           "v1beta1",
-	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpclustertemplates.yaml":                           "v1beta1",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsclusters.yaml":                       "v1beta2",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsimages.yaml":                         "v1beta2",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachines.yaml":                       "v1beta2",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachinetemplates.yaml":               "v1beta2",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml":                           "v1beta2",
-	"hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-Hypershift-Default.crd.yaml":              "v1beta1",
-	"hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-Hypershift-TechPreviewNoUpgrade.crd.yaml": "v1beta1",
-	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtclusters.yaml":                         "v1alpha1",
-	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachines.yaml":                         "v1alpha1",
-	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachinetemplates.yaml":                 "v1alpha1",
-	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentclusters.yaml":                      "v1beta1",
-	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachinetemplates.yaml":              "v1beta1",
-	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachines.yaml":                      "v1beta1",
-	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azureclusters.yaml":                               "v1beta1",
-	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachines.yaml":                               "v1beta1",
-	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachinetemplates.yaml":                       "v1beta1",
-	"cluster-api-provider-openstack/openstack.k-orc.cloud_images.yaml":                                            "v1alpha1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclustertemplates.yaml":               "v1beta2",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusters.yaml":                       "v1beta2",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachines.yaml":                       "v1beta2",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachinetemplates.yaml":               "v1beta2",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackfloatingippools.yaml":                "v1alpha1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusteridentities.yaml":              "v1alpha1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackservers.yaml":                        "v1alpha1",
+// capiResources specifies the CAPI contract and API versions advertised by each CRD.
+// These versions are independent: for example, CAPA's v1beta2 API still implements
+// the v1beta1 contract, while CAPO's v1beta2 API implements the v1beta2 contract.
+// Labels are added at runtime because the embedded CRDs do not include them.
+var capiResources = map[string]struct {
+	contractVersion string
+	apiVersion      string
+}{
+	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml":                                   {contractVersion: "v1beta1", apiVersion: "v1beta2"},
+	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachines.yaml":                                   {contractVersion: "v1beta1", apiVersion: "v1beta2"},
+	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml":                           {contractVersion: "v1beta1", apiVersion: "v1beta2"},
+	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpclusters.yaml":                                   {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpmachines.yaml":                                   {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpmachinetemplates.yaml":                           {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpclustertemplates.yaml":                           {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsclusters.yaml":                       {contractVersion: "v1beta1", apiVersion: "v1beta2"},
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsimages.yaml":                         {contractVersion: "v1beta1", apiVersion: "v1beta2"},
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachines.yaml":                       {contractVersion: "v1beta1", apiVersion: "v1beta2"},
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachinetemplates.yaml":               {contractVersion: "v1beta1", apiVersion: "v1beta2"},
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml":                           {contractVersion: "v1beta1", apiVersion: "v1beta2"},
+	"hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-Hypershift-Default.crd.yaml":              {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-Hypershift-TechPreviewNoUpgrade.crd.yaml": {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtclusters.yaml":                         {contractVersion: "v1beta1", apiVersion: "v1alpha1"},
+	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachines.yaml":                         {contractVersion: "v1beta1", apiVersion: "v1alpha1"},
+	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachinetemplates.yaml":                 {contractVersion: "v1beta1", apiVersion: "v1alpha1"},
+	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentclusters.yaml":                      {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachinetemplates.yaml":              {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachines.yaml":                      {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azureclusters.yaml":                               {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachines.yaml":                               {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachinetemplates.yaml":                       {contractVersion: "v1beta1", apiVersion: "v1beta1"},
+	"cluster-api-provider-openstack/openstack.k-orc.cloud_images.yaml":                                            {contractVersion: "v1beta1", apiVersion: "v1alpha1"},
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclustertemplates.yaml":               {contractVersion: "v1beta2", apiVersion: "v1beta2"},
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusters.yaml":                       {contractVersion: "v1beta2", apiVersion: "v1beta2"},
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachines.yaml":                       {contractVersion: "v1beta2", apiVersion: "v1beta2"},
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachinetemplates.yaml":               {contractVersion: "v1beta2", apiVersion: "v1beta2"},
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackfloatingippools.yaml":                {contractVersion: "v1beta1", apiVersion: "v1alpha1"},
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusteridentities.yaml":              {contractVersion: "v1beta1", apiVersion: "v1alpha1"},
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackservers.yaml":                        {contractVersion: "v1beta1", apiVersion: "v1alpha1"},
 }
 
 func getContents(fs embed.FS, file string) []byte {
@@ -161,11 +163,11 @@ func getCustomResourceDefinition(files embed.FS, file string, overrides map[stri
 	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(repaired), 100).Decode(&crd); err != nil {
 		panic(err)
 	}
-	if label, hasLabel := capiResources[file]; hasLabel {
+	if resource, hasLabel := capiResources[file]; hasLabel {
 		if crd.Labels == nil {
 			crd.Labels = map[string]string{}
 		}
-		crd.Labels[capiLabel] = label
+		crd.Labels["cluster.x-k8s.io/"+resource.contractVersion] = resource.apiVersion
 	}
 
 	if override, ok := overrides[crd.Name]; ok && override.StorageVersion != "" {
