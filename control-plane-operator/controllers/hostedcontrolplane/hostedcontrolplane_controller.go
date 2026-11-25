@@ -106,6 +106,7 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
@@ -944,9 +945,17 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return nil, err
 	}
+	// The control plane may run a release image held in a private registry that the
+	// cluster pull secret does not cover. Only the control plane release lookup gets
+	// the additional credential; the data plane release is resolved elsewhere with
+	// the unmodified pull secret.
+	pullSecretBytes, err := pullsecret.ForHostedControlPlane(ctx, r.Client, hcp, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return nil, err
+	}
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
-	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecretBytes)
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
@@ -3917,8 +3926,16 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 		return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 	}
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+	// The CVO image comes from the control plane release, which may be held in a
+	// private registry that the cluster pull secret does not cover. Only this lookup
+	// gets the additional credential; the data plane release below is resolved with
+	// the unmodified pull secret.
+	controlPlanePullSecretBytes, err := pullsecret.ForHostedControlPlane(ctx, r.Client, hcp, pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
 	// Get the CVO image digest. p.CVOImage includes image overrides from the annotation if specified.
-	_, cvoImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, p.CVOImage, pullSecretBytes)
+	_, cvoImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, p.CVOImage, controlPlanePullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to get CVO image digest %s: %w", p.CVOImage, err)
 	}
