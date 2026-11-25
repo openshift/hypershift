@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: c5ea59a7b77b63fcf3d5c7fe9f0077e6455b2f10dd4e41cba2cc08a74b67d379
+    hypershift.openshift.io/desired-state-hash: 6bba3c2bdfbc3056cc550fa4f92ce54fc8c8fd525aa656fa28a42b0d45cc5250
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"rebuild-cache\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
@@ -159,6 +159,8 @@ spec:
         image: from:imagestream
         name: rebuild-cache
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:

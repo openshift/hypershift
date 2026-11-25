@@ -8,10 +8,14 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func findContainer(name string, containers []corev1.Container) *corev1.Container {
@@ -230,59 +234,119 @@ func TestCatalogDeploymentManifests(t *testing.T) {
 	}
 }
 
-// TestAdaptCatalogDeployment verifies that when catalog images are overridden via annotations, the
-// override image is applied to every container that runs opm, including the new rebuild-cache init
-// container, and that the imagestream trigger annotation is dropped.
+// TestAdaptCatalogDeployment verifies that adaptCatalogDeployment resolves the catalog image and
+// applies it to every container that runs opm, including the new rebuild-cache init container, and
+// that the imagestream trigger annotation is handled correctly for both the override and the normal
+// ImageStream flows.
 func TestAdaptCatalogDeployment(t *testing.T) {
 	t.Parallel()
 
 	const overrideImage = "quay.io/openshift-release-dev/ocp-release@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const resolvedImage = "registry.example.com/redhat-operator-index@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
-	g := NewWithT(t)
-
-	hcp := &hyperv1.HostedControlPlane{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "hcp",
-			Namespace: "hcp-namespace",
-			Annotations: map[string]string{
+	testCases := []struct {
+		name string
+		// annotations are set on the HCP; the override catalog image annotations drive the override path.
+		annotations map[string]string
+		// existingRegistryImage, when set, seeds an already-created catalog Deployment whose registry
+		// container carries the ImageStream-resolved image, exercising the existing-Deployment branch.
+		existingRegistryImage string
+		// expectedImage is the image every opm container should end up with.
+		expectedImage string
+		// expectTriggerAnnotation is whether the imagestream trigger annotation should survive.
+		expectTriggerAnnotation bool
+	}{
+		{
+			name: "When catalog images are overridden via annotations, it should apply the override to every opm container and drop the imagestream trigger",
+			annotations: map[string]string{
 				hyperv1.RedHatOperatorsCatalogImageAnnotation:    overrideImage,
 				hyperv1.CommunityOperatorsCatalogImageAnnotation: overrideImage,
 				hyperv1.CertifiedOperatorsCatalogImageAnnotation: overrideImage,
 			},
+			expectedImage:           overrideImage,
+			expectTriggerAnnotation: false,
 		},
-		Spec: hyperv1.HostedControlPlaneSpec{
-			OLMCatalogPlacement: hyperv1.ManagementOLMCatalogPlacement,
+		{
+			name:                    "When no override annotations are set, it should carry the existing ImageStream-resolved image into every opm container and preserve the imagestream trigger",
+			existingRegistryImage:   resolvedImage,
+			expectedImage:           resolvedImage,
+			expectTriggerAnnotation: true,
 		},
 	}
 
-	cpContext := component.WorkloadContext{
-		Context: t.Context(),
-		HCP:     hcp,
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "hcp",
+					Namespace:   "hcp-namespace",
+					Annotations: tc.annotations,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OLMCatalogPlacement: hyperv1.ManagementOLMCatalogPlacement,
+				},
+			}
+
+			deployment, err := assets.LoadDeploymentManifest(redhatOperatorsCatalogComponentName)
+			g.Expect(err).ToNot(HaveOccurred())
+			deployment.Namespace = hcp.Namespace
+
+			cpContext := component.WorkloadContext{
+				Context: t.Context(),
+				HCP:     hcp,
+			}
+
+			// Seed an existing catalog Deployment whose registry container already carries the
+			// ImageStream-resolved image, mirroring what the imagestream trigger produces in-cluster.
+			if tc.existingRegistryImage != "" {
+				existingDeployment := &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      deployment.Name,
+						Namespace: deployment.Namespace,
+					},
+					Spec: appsv1.DeploymentSpec{
+						Template: corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{Name: "registry", Image: tc.existingRegistryImage},
+								},
+							},
+						},
+					},
+				}
+				cpContext.Client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(existingDeployment).Build()
+			}
+
+			c := &catalogOptions{capabilityImageStream: true}
+
+			err = c.adaptCatalogDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// The resolved image should be applied to the registry, extract-content and
+			// rebuild-cache containers so they all run the same catalog image.
+			registry := findContainer("registry", deployment.Spec.Template.Spec.Containers)
+			g.Expect(registry).ToNot(BeNil())
+			g.Expect(registry.Image).To(Equal(tc.expectedImage))
+
+			extractContent := findContainer("extract-content", deployment.Spec.Template.Spec.InitContainers)
+			g.Expect(extractContent).ToNot(BeNil())
+			g.Expect(extractContent.Image).To(Equal(tc.expectedImage))
+
+			rebuildCache := findContainer("rebuild-cache", deployment.Spec.Template.Spec.InitContainers)
+			g.Expect(rebuildCache).ToNot(BeNil())
+			g.Expect(rebuildCache.Image).To(Equal(tc.expectedImage))
+
+			// An override image must drop the imagestream trigger annotation so it is not
+			// overwritten by the imagestream controller, while the existing-Deployment branch must
+			// preserve it to keep the containers in sync on future image updates.
+			if tc.expectTriggerAnnotation {
+				g.Expect(deployment.Annotations).To(HaveKey("image.openshift.io/triggers"))
+			} else {
+				g.Expect(deployment.Annotations).ToNot(HaveKey("image.openshift.io/triggers"))
+			}
+		})
 	}
-
-	c := &catalogOptions{capabilityImageStream: true}
-
-	deployment, err := assets.LoadDeploymentManifest(redhatOperatorsCatalogComponentName)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	err = c.adaptCatalogDeployment(cpContext, deployment)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	// When an override image is set, it should be applied to the registry, extract-content and
-	// rebuild-cache containers so they all run the overridden catalog image.
-	registry := findContainer("registry", deployment.Spec.Template.Spec.Containers)
-	g.Expect(registry).ToNot(BeNil())
-	g.Expect(registry.Image).To(Equal(overrideImage))
-
-	extractContent := findContainer("extract-content", deployment.Spec.Template.Spec.InitContainers)
-	g.Expect(extractContent).ToNot(BeNil())
-	g.Expect(extractContent.Image).To(Equal(overrideImage))
-
-	rebuildCache := findContainer("rebuild-cache", deployment.Spec.Template.Spec.InitContainers)
-	g.Expect(rebuildCache).ToNot(BeNil())
-	g.Expect(rebuildCache.Image).To(Equal(overrideImage))
-
-	// When an override image is set, the imagestream trigger annotation should be removed so the
-	// image is not overwritten by the imagestream controller.
-	g.Expect(deployment.Annotations).ToNot(HaveKey("image.openshift.io/triggers"))
 }

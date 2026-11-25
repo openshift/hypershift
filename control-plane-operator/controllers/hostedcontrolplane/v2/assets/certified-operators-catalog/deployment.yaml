@@ -112,6 +112,8 @@ spec:
           - /bin/opm
           image: from:imagestream
           name: rebuild-cache
+          securityContext:
+            readOnlyRootFilesystem: true
           terminationMessagePath: /dev/termination-log
           terminationMessagePolicy: FallbackToLogsOnError
           volumeMounts:

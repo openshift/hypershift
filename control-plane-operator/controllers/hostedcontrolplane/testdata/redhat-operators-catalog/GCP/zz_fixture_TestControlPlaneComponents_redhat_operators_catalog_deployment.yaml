@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 6d50f08b34aefe9acebc0f5617e05defe46bcd658278d08e8b4b905967826fb1
+    hypershift.openshift.io/desired-state-hash: 4218e0dbc53209568ef24fa6fab01b8cb43ea61bf4e189cde692be807f11658c
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"rebuild-cache\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
@@ -181,6 +181,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
