@@ -25,6 +25,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	docker10 "github.com/openshift/api/image/docker10"
+	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -3670,6 +3671,64 @@ func TestValidateHCPayloadSupportsNodePoolCPUArch(t *testing.T) {
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
 			}
+		})
+	}
+}
+
+func TestResolveNodePoolCPOImage(t *testing.T) {
+	const (
+		overriddenImage = "mirror.example.com/openshift-release-dev/ocp-v4.0-art-dev@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+		canonicalImage  = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	)
+
+	releaseImage := func(tags map[string]string, canonical map[string]string) *releaseinfo.ReleaseImage {
+		imageStream := &imagev1.ImageStream{}
+		for name, image := range tags {
+			imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{
+				Name: name,
+				From: &corev1.ObjectReference{Name: image},
+			})
+		}
+		ri := &releaseinfo.ReleaseImage{ImageStream: imageStream}
+		if canonical != nil {
+			ri.SetCanonicalComponentImages(canonical)
+		}
+		return ri
+	}
+
+	testCases := []struct {
+		name               string
+		releaseImage       *releaseinfo.ReleaseImage
+		useCanonicalImages bool
+		expectedImage      string
+	}{
+		{
+			name:          "When the release has a hypershift image, it should return it",
+			releaseImage:  releaseImage(map[string]string{"hypershift": overriddenImage}, nil),
+			expectedImage: overriddenImage,
+		},
+		{
+			name:               "When canonical images are requested, it should return the non-overridden image",
+			releaseImage:       releaseImage(map[string]string{"hypershift": overriddenImage}, map[string]string{"hypershift": canonicalImage}),
+			useCanonicalImages: true,
+			expectedImage:      canonicalImage,
+		},
+		{
+			name:          "When canonical images are not requested, it should return the overridden image",
+			releaseImage:  releaseImage(map[string]string{"hypershift": overriddenImage}, map[string]string{"hypershift": canonicalImage}),
+			expectedImage: overriddenImage,
+		},
+		{
+			name:          "When the release has no hypershift image, it should return an empty string",
+			releaseImage:  releaseImage(map[string]string{"haproxy-router": "registry.test.io/openshift/haproxy-router:v4.16"}, nil),
+			expectedImage: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(ResolveNodePoolCPOImage(tc.releaseImage, tc.useCanonicalImages)).To(Equal(tc.expectedImage))
 		})
 	}
 }

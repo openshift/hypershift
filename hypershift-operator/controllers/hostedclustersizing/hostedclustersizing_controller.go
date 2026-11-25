@@ -13,6 +13,7 @@ import (
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
@@ -77,11 +78,18 @@ func newReconciler(
 			if !ok {
 				return false, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 			}
-			controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
+			// The CPO image is usually resolved out of the control plane release
+			// payload, which may live in a private registry the cluster pull secret
+			// does not cover.
+			cpPullSecretBytes, err := pullsecret.ForHostedClusterInNamespace(ctx, lister, hostedCluster, manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name), pullSecretBytes)
+			if err != nil {
+				return false, fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+			}
+			controlPlaneOperatorImage, cpoImagePullSecret, err := imageregistry.ResolveControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes, cpPullSecretBytes)
 			if err != nil {
 				return false, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 			}
-			controlPlaneOperatorImageLabels, err := imageregistry.GetControlPlaneOperatorImageLabels(ctx, hostedCluster, controlPlaneOperatorImage, pullSecretBytes, imageMetadataProvider)
+			controlPlaneOperatorImageLabels, err := imageregistry.GetControlPlaneOperatorImageLabels(ctx, hostedCluster, controlPlaneOperatorImage, cpoImagePullSecret, imageMetadataProvider)
 			if err != nil {
 				return false, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 			}

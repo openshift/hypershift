@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -72,12 +73,23 @@ type HAProxy struct {
 
 	HAProxyImage            string
 	HypershiftOperatorImage string
+	// NodePoolCPOImage is the control-plane-operator image taken from the
+	// NodePool's release payload. It is only used for the kubernetes-default-proxy
+	// static pod, and only when the HostedCluster pins a distinct control plane
+	// release. When empty, the image resolved for the HostedCluster is used.
+	NodePoolCPOImage string
 
 	ReleaseProvider       releaseinfo.Provider
 	ImageMetadataProvider imageregistry.ImageMetadataProvider
 }
 
-func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *hyperv1.HostedCluster) (m bool, cpoImage string, err error) {
+// isHAProxyIgnitionConfigManaged reports whether the hypershift-operator manages the
+// HAProxy ignition config, and returns the control plane operator image.
+//
+// controlPlaneNamespace is passed in rather than derived from hcluster because
+// AutoNode hands in a synthetic HostedCluster whose namespace already is the control
+// plane namespace.
+func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) (m bool, cpoImage string, err error) {
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
 		return false, "", fmt.Errorf("failed to get pull secret: %w", err)
@@ -86,12 +98,19 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 	if !ok {
 		return false, "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	// The CPO image is usually resolved out of the control plane release payload,
+	// which may live in a private registry the cluster pull secret does not cover.
+	cpPullSecretBytes, err := pullsecret.ForHostedClusterInNamespace(ctx, r.Client, hcluster, controlPlaneNamespace, pullSecretBytes)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
+
+	controlPlaneOperatorImage, cpoImagePullSecret, err := imageregistry.ResolveControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes, cpPullSecretBytes)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
 
-	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, cpoImagePullSecret)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
@@ -100,7 +119,28 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 	return cpoSkips, controlPlaneOperatorImage, nil
 }
 
+// staticPodCPOImage returns the image for the kubernetes-default-proxy static pod,
+// which runs `control-plane-operator kubernetes-default-proxy` on guest nodes.
+//
+// When a distinct control plane release is pinned, the CPO image resolved for the
+// HostedCluster comes from that payload, which may live in a private registry the
+// guest nodes have no credentials for. The NodePool's release is the data plane
+// release, so its control-plane-operator image is pullable by the nodes and ships
+// the same subcommand.
+//
+// Clusters that do not pin a control plane release keep the image resolved for the
+// HostedCluster, so their rendered config does not change. So does a pinned cluster
+// whose NodePool release payload has no such image.
+func (r *HAProxy) staticPodCPOImage(hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) string {
+	if hcluster.Spec.ControlPlaneRelease != nil && r.NodePoolCPOImage != "" {
+		return r.NodePoolCPOImage
+	}
+	return controlPlaneOperatorImage
+}
+
 func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, err error) {
+	controlPlaneOperatorImage = r.staticPodCPOImage(hcluster, controlPlaneOperatorImage)
+
 	var apiServerExternalAddress string
 	var apiServerExternalPort int32
 	var apiServerInternalAddress string
@@ -601,7 +641,7 @@ func joinDefaultPortIfMissing(addr string) (string, error) {
 
 func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) (string, error) {
 	var haproxyRawConfig string
-	isHAProxyIgnitionConfigManaged, cpoImage, err := r.isHAProxyIgnitionConfigManaged(ctx, hcluster)
+	isHAProxyIgnitionConfigManaged, cpoImage, err := r.isHAProxyIgnitionConfigManaged(ctx, hcluster, controlPlaneNamespace)
 	if err != nil {
 		return "", fmt.Errorf("failed to check if we manage haproxy ignition config: %w", err)
 	}

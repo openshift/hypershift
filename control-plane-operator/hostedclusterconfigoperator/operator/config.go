@@ -70,6 +70,7 @@ type HostedClusterConfigOperatorConfig struct {
 	PlatformType                  hyperv1.PlatformType
 	ControllerFuncs               map[string]ControllerSetupFunc
 	ReleaseProvider               releaseinfo.Provider
+	ControlPlaneReleaseProvider   releaseinfo.Provider
 	KonnectivityAddress           string
 	KonnectivityPort              int32
 	OAuthAddress                  string

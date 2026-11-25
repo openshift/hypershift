@@ -46,6 +46,23 @@ func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Pred
 	return predicate.NewPredicateFuncs(filter)
 }
 
+// HostedClusterIsInScope reports whether the given HostedCluster passes the
+// annotation scoping configured through the ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING
+// and HOSTEDCLUSTERS_SCOPE_ANNOTATION env vars. It is intended for watch mapping
+// functions that enqueue HostedClusters from events on objects which carry no
+// hostedcluster annotations and therefore cannot pass
+// PredicatesForHostedClusterAnnotationScoping.
+func HostedClusterIsInScope(hc *hyperv1.HostedCluster) bool {
+	if os.Getenv(EnableHostedClustersAnnotationScopingEnv) != "true" {
+		return true
+	}
+	hcScope := ""
+	if hc.GetAnnotations() != nil {
+		hcScope = hc.GetAnnotations()[HostedClustersScopeAnnotation]
+	}
+	return hcScope == os.Getenv(HostedClustersScopeAnnotationEnv)
+}
+
 // getHostedClusterScopeAnnotation will extract the "scope" annotation from the hostedcluster resource that owns the specified object.
 // Depending on the object type being passed in, slightly different paths will be used to ultimately retrieve the hostedcluster resource containing the annotation.
 // If an annotation is not found, an empty string is returned.

@@ -67,10 +67,13 @@ type releaseProviderStub struct {
 	image          string
 	err            error
 	requestedImage string
+	// requestedPullSecret records the pull secret the release lookup received.
+	requestedPullSecret []byte
 }
 
-func (provider *releaseProviderStub) Lookup(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+func (provider *releaseProviderStub) Lookup(_ context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
 	provider.requestedImage = image
+	provider.requestedPullSecret = pullSecret
 	if provider.err != nil {
 		return nil, provider.err
 	}
@@ -123,6 +126,68 @@ func TestGetControlPlaneOperatorImage(t *testing.T) {
 				g.Expect(testCase.provider.requestedImage).To(Equal("quay.io/openshift-release-dev/ocp-release:4.21.11-x86_64"))
 			} else {
 				g.Expect(testCase.provider.requestedImage).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestResolveControlPlaneOperatorImage(t *testing.T) {
+	t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "0")
+	basePullSecret := []byte(`{"auths":{"quay.io":{"auth":"cmVkaGF0OnB1bGw="}}}`)
+	controlPlaneReleasePullSecret := []byte(`{"auths":{"quay.io":{"auth":"cHJvdmlkZXI6cHVsbA=="}}}`)
+	const operatorImage = "quay.io/hypershift/hypershift-operator:latest"
+
+	for _, testCase := range []struct {
+		name                    string
+		annotation              string
+		provider                releaseProviderStub
+		expectedImage           string
+		expectedImagePullSecret []byte
+		expectedError           string
+	}{
+		{
+			name:                    "When the image comes from the release payload, it should return the control plane release pull secret",
+			provider:                releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
+			expectedImage:           "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift",
+			expectedImagePullSecret: controlPlaneReleasePullSecret,
+		},
+		{
+			name:                    "When the image comes from the annotation, it should return the base pull secret",
+			annotation:              "quay.io/hypershift/hypershift:latest",
+			expectedImage:           "quay.io/hypershift/hypershift:latest",
+			expectedImagePullSecret: basePullSecret,
+		},
+		{
+			name:                    "When the payload lacks hypershift, it should return the operator image with the base pull secret",
+			provider:                releaseProviderStub{version: "4.21.0"},
+			expectedImage:           operatorImage,
+			expectedImagePullSecret: basePullSecret,
+		},
+		{
+			name:          "When the release lookup fails, it should return an error",
+			provider:      releaseProviderStub{err: fmt.Errorf("lookup failed")},
+			expectedError: "lookup failed",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{ControlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.21.11-x86_64"}}}
+			if testCase.annotation != "" {
+				cluster.Annotations = map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: testCase.annotation}
+			}
+			image, imagePullSecret, err := ResolveControlPlaneOperatorImage(t.Context(), cluster, &testCase.provider, operatorImage, basePullSecret, controlPlaneReleasePullSecret)
+			if testCase.expectedError != "" {
+				g.Expect(err).To(MatchError(testCase.expectedError))
+				g.Expect(imagePullSecret).To(BeNil())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(image).To(Equal(testCase.expectedImage))
+			g.Expect(imagePullSecret).To(Equal(testCase.expectedImagePullSecret))
+			// The release payload itself is always read with the control plane
+			// release pull secret.
+			if testCase.annotation == "" {
+				g.Expect(testCase.provider.requestedPullSecret).To(Equal(controlPlaneReleasePullSecret))
 			}
 		})
 	}

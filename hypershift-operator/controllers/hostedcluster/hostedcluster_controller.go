@@ -70,6 +70,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
@@ -118,6 +119,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/blang/semver"
@@ -276,6 +278,17 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	for _, managedResource := range r.managedResources() {
 		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
 	}
+
+	// Watch the operator-namespace control plane release pull secret directly.
+	// That Secret carries no hostedcluster annotations, so events for it would
+	// map to nothing in enqueueHostedClustersFunc and would be dropped by
+	// PredicatesForHostedClusterAnnotationScoping. Rotating or deleting it must
+	// re-reconcile every HostedCluster pinning a control plane release.
+	bldr.Watches(
+		&corev1.Secret{},
+		handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersPinningControlPlaneRelease(mgr.GetClient())),
+		builder.WithPredicates(controlPlaneReleasePullSecretPredicate(operatorNamespace)),
+	)
 
 	// Set based on SCC capability
 	// When SCC is available (OpenShift), the container's security context and UID range is automatically set
@@ -470,6 +483,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			hcp = nil
 		}
+	}
+
+	// Whether the control plane release pull secret still applies is decided once,
+	// from the HostedControlPlane as it was observed at the start of the reconcile.
+	controlPlaneReleasePinned := isControlPlaneReleasePinned(hcluster, hcp)
+
+	// Remove a control plane release pull secret copy that no longer applies before
+	// anything below can end the reconcile early (pause, validation, registry
+	// lookups), so the provider credential does not outlive its source.
+	if err := r.removeStaleControlPlaneReleasePullSecret(ctx, controlPlaneReleasePinned, controlPlaneNamespace.Name); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Phase 1: Bubble up pre-deletion conditions from HCP.
@@ -1485,16 +1509,27 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	controlPlaneOperatorImageLabelsResolved := false
 
 	report.execute("CPOImageAndNamespace", critical, func() error {
-		var err error
-		pullSecretBytes, err = hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+		basePullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
 		if err != nil {
 			return fmt.Errorf("failed to get pull secret: %w", err)
 		}
-		controlPlaneOperatorImage, err = imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+		// pullSecretBytes carries the additional control plane release credential
+		// and is only for lookups of the control plane release payload: the CPO
+		// image resolution here and platform.GetPlatform below. Data plane lookups
+		// in this reconcile read the pull secret separately and must not use it.
+		pullSecretBytes, err = pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.OperatorNamespace, basePullSecretBytes)
+		if err != nil {
+			return fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+		}
+		// The CPO image may come from an annotation, the overrides or the operator
+		// image rather than the payload; its metadata is then read with the base
+		// pull secret.
+		var cpoImagePullSecret []byte
+		controlPlaneOperatorImage, cpoImagePullSecret, err = imageregistry.ResolveControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, basePullSecretBytes, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 		}
-		controlPlaneOperatorImageLabels, err = imageregistry.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
+		controlPlaneOperatorImageLabels, err = imageregistry.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, cpoImagePullSecret, registryClientImageMetadataProvider)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 		}
@@ -1513,6 +1548,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		cpoHasUtilities = true
 		utilitiesImage = controlPlaneOperatorImage
 	}
+	// This sync runs before platform.GetPlatform, which can end the reconcile
+	// early. Removal of a stale copy does not depend on it: that already ran at
+	// the start of the reconcile, ahead of pause handling and validation.
+	report.execute("ControlPlaneReleasePullSecretSync", critical, func() error {
+		return r.reconcileControlPlaneReleasePullSecretSync(ctx, controlPlaneReleasePinned, createOrUpdate, controlPlaneNamespace.Name)
+	})
+
 	// Platform is a hard prerequisite — all framework operations use the platform
 	// interface and would panic on nil. GetPlatform handles nil pullSecretBytes.
 	p, err := platform.GetPlatform(ctx, hcluster, releaseProvider, utilitiesImage, pullSecretBytes)
@@ -2116,6 +2158,159 @@ func (r *HostedClusterReconciler) reconcilePullSecretSync(
 	return nil
 }
 
+// isControlPlaneReleasePinned reports whether a distinct control plane release is
+// pinned by the HostedCluster or is still applied to its HostedControlPlane.
+//
+// The HostedControlPlane is consulted because clearing spec.controlPlaneRelease only
+// takes effect once the reconcile propagates it. Pause handling or a failed release
+// validation can hold that back, and until then the control plane operator and HCCO
+// keep resolving the private release and still need the credential.
+func isControlPlaneReleasePinned(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) bool {
+	if hcluster.Spec.ControlPlaneRelease != nil {
+		return true
+	}
+	return hcp != nil && hcp.Spec.ControlPlaneReleaseImage != nil
+}
+
+// validateReferencedSecretName rejects a Secret referenced from spec.configuration
+// whose name is reserved for a Secret the hypershift-operator manages in the control
+// plane namespace. Referenced Secrets are copied there under their own names, so one
+// named like the control plane release pull secret copy would replace the provider
+// credential and strip its ownership and backup-exclusion labels.
+func validateReferencedSecretName(name string) error {
+	if name == pullsecret.SyncedControlPlaneReleaseSecretName {
+		return fmt.Errorf("secret name %q is reserved for the control plane release pull secret and cannot be referenced from spec.configuration", name)
+	}
+	return nil
+}
+
+// controlPlaneReleasePullSecretSource returns the provider-supplied control plane
+// release pull secret that applies to the cluster, or nil when none applies: either
+// no distinct control plane release is pinned (see isControlPlaneReleasePinned), or
+// the provider has not configured the Secret. A control plane release held in a
+// public registry is a legitimate configuration, so an absent Secret is not an error.
+func (r *HostedClusterReconciler) controlPlaneReleasePullSecretSource(ctx context.Context, controlPlaneReleasePinned bool) (*corev1.Secret, error) {
+	if !controlPlaneReleasePinned {
+		return nil, nil
+	}
+	src := &corev1.Secret{}
+	srcKey := client.ObjectKey{Namespace: r.OperatorNamespace, Name: pullsecret.ControlPlaneReleaseSecretName}
+	if err := r.Client.Get(ctx, srcKey, src); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get control plane release pull secret %s: %w", srcKey, err)
+	}
+	return src, nil
+}
+
+// removeStaleControlPlaneReleasePullSecret deletes the synced copy of the control
+// plane release pull secret when it no longer applies to the cluster.
+//
+// It only reads the provider Secret, never a registry, so both reconcile paths run
+// it before pause handling, release image validation and any registry lookup. Those
+// can all end a reconcile early, and must not leave the provider credential behind
+// in the control plane namespace.
+//
+// The copy is removed as soon as the provider deletes its Secret. When the cluster
+// stops pinning a control plane release, it is removed only once the
+// HostedControlPlane no longer applies the pin: a paused or rejected unpin leaves the
+// control plane on the private release, which still needs the credential.
+func (r *HostedClusterReconciler) removeStaleControlPlaneReleasePullSecret(ctx context.Context, controlPlaneReleasePinned bool, controlPlaneNamespace string) error {
+	src, err := r.controlPlaneReleasePullSecretSource(ctx, controlPlaneReleasePinned)
+	if err != nil {
+		return err
+	}
+	if src != nil {
+		return nil
+	}
+	return r.deleteControlPlaneReleasePullSecretCopy(ctx, controlPlaneNamespace)
+}
+
+// deleteControlPlaneReleasePullSecretCopy deletes the synced copy of the control
+// plane release pull secret from controlPlaneNamespace. A Secret with the same name
+// that the hypershift-operator does not own is left alone.
+func (r *HostedClusterReconciler) deleteControlPlaneReleasePullSecretCopy(ctx context.Context, controlPlaneNamespace string) error {
+	existing := &corev1.Secret{}
+	key := client.ObjectKey{Namespace: controlPlaneNamespace, Name: pullsecret.SyncedControlPlaneReleaseSecretName}
+	if err := r.Client.Get(ctx, key, existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get control plane release pull secret copy %s: %w", key, err)
+	}
+	if !pullsecret.IsManagedCopy(existing) {
+		return nil
+	}
+	if err := r.Client.Delete(ctx, existing, client.Preconditions{UID: &existing.UID, ResourceVersion: &existing.ResourceVersion}); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete stale control plane release pull secret copy %s: %w", key, err)
+	}
+	return nil
+}
+
+// reconcileControlPlaneReleasePullSecretSync copies the provider-supplied control
+// plane release pull secret from the operator's namespace into the control plane
+// namespace, where the control plane operator and HCCO read it when resolving the
+// control plane release image.
+//
+// The Secret is optional and only applies to clusters pinning a distinct control
+// plane release. It is deliberately kept separate from the cluster pull-secret
+// Secret, which HCCO propagates into the guest cluster and onto nodes; merging these
+// credentials there would expose them to the data plane.
+//
+// The copy is written under its own name and labeled as owned by the
+// hypershift-operator, so it cannot collide with a Secret copied from
+// spec.configuration, and it is excluded from OADP backups so the credential does
+// not travel with a backup to another management cluster.
+//
+// When the Secret is absent, or no control plane release is pinned any longer, any
+// previously synced copy is removed so the credential does not linger.
+func (r *HostedClusterReconciler) reconcileControlPlaneReleasePullSecretSync(
+	ctx context.Context, controlPlaneReleasePinned bool, createOrUpdate upsert.CreateOrUpdateFN,
+	controlPlaneNamespace string,
+) error {
+	src, err := r.controlPlaneReleasePullSecretSource(ctx, controlPlaneReleasePinned)
+	if err != nil {
+		return err
+	}
+	if src == nil {
+		return r.deleteControlPlaneReleasePullSecretCopy(ctx, controlPlaneNamespace)
+	}
+
+	srcData, ok := src.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return fmt.Errorf("control plane release pull secret %s/%s must have a %s key", src.Namespace, src.Name, corev1.DockerConfigJsonKey)
+	}
+
+	dst := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      pullsecret.SyncedControlPlaneReleaseSecretName,
+		},
+	}
+	_, err = createOrUpdate(ctx, r.Client, dst, func() error {
+		// The ownership check runs on the object createOrUpdate just read, so a
+		// Secret created by someone else between a separate read and this update
+		// cannot be overwritten. An object that does not exist yet has no
+		// ResourceVersion and is created normally.
+		if dst.ResourceVersion != "" && !pullsecret.IsManagedCopy(dst) {
+			return fmt.Errorf("secret %s/%s exists but is not managed by the hypershift-operator; refusing to overwrite it with the control plane release pull secret", dst.Namespace, dst.Name)
+		}
+		if dst.Labels == nil {
+			dst.Labels = map[string]string{}
+		}
+		dst.Labels[pullsecret.ManagedByLabel] = "true"
+		dst.Labels[pullsecret.VeleroExcludeFromBackupLabel] = "true"
+		dst.Type = corev1.SecretTypeDockerConfigJson
+		if dst.Data == nil {
+			dst.Data = map[string][]byte{}
+		}
+		dst.Data[corev1.DockerConfigJsonKey] = srcData
+		return nil
+	})
+	return err
+}
+
 // reconcileSecretEncryptionSync syncs secret encryption configuration from the
 // HostedCluster to the control plane namespace.
 func (r *HostedClusterReconciler) reconcileSecretEncryptionSync(
@@ -2472,6 +2667,9 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 	}
 	secretRefs := configrefs.SecretRefs(hcluster.Spec.Configuration)
 	for _, secretRef := range secretRefs {
+		if err := validateReferencedSecretName(secretRef); err != nil {
+			return err
+		}
 		sourceSecret := &corev1.Secret{}
 		if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef}, sourceSecret); err != nil {
 			return fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
@@ -4359,6 +4557,62 @@ func hostedClustersReferencingSecret(ctx context.Context, c client.Client, secre
 	return requests
 }
 
+// controlPlaneReleasePullSecretPredicate matches events for the well-known
+// control plane release pull secret in the hypershift-operator's namespace.
+func controlPlaneReleasePullSecretPredicate(operatorNamespace string) predicate.Predicate {
+	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		return obj.GetNamespace() == operatorNamespace && obj.GetName() == pullsecret.ControlPlaneReleaseSecretName
+	})
+}
+
+// enqueueHostedClustersPinningControlPlaneRelease enqueues every in-scope
+// HostedCluster for which a control plane release is pinned, as decided by
+// isControlPlaneReleasePinned. A change to the operator-namespace control plane
+// release pull secret affects the credentials those clusters resolve their control
+// plane release image with.
+//
+// That includes a cluster whose spec.controlPlaneRelease has been cleared while its
+// HostedControlPlane still applies the pin, for example because the HostedCluster
+// is paused. Its copy of the credential is still in use, so deleting the source
+// Secret must reconcile it for the copy to be removed.
+func enqueueHostedClustersPinningControlPlaneRelease(c client.Client) handler.MapFunc {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
+		hcList := &hyperv1.HostedClusterList{}
+		if err := c.List(ctx, hcList); err != nil {
+			ctrllog.Log.Error(err, "failed to list hosted clusters while processing control plane release pull secret event")
+			return nil
+		}
+		requests := make([]reconcile.Request, 0, len(hcList.Items))
+		for i := range hcList.Items {
+			hc := &hcList.Items[i]
+			if !reconcilerpolicy.HostedClusterIsInScope(hc) {
+				continue
+			}
+			if hc.Spec.ControlPlaneRelease == nil && !hostedControlPlaneMayApplyControlPlaneRelease(ctx, c, hc) {
+				continue
+			}
+			requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})
+		}
+		return requests
+	}
+}
+
+// hostedControlPlaneMayApplyControlPlaneRelease reports whether the
+// HostedControlPlane of hc still applies a control plane release pin. When the
+// HostedControlPlane cannot be read for a reason other than its absence, it
+// reports true, so the cluster is reconciled and the reconcile decides.
+func hostedControlPlaneMayApplyControlPlaneRelease(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) bool {
+	hcp := controlplaneoperator.HostedControlPlane(pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name), hc.Name)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false
+		}
+		ctrllog.Log.Error(err, "failed to get hosted control plane while processing control plane release pull secret event", "hostedcluster", client.ObjectKeyFromObject(hc))
+		return true
+	}
+	return isControlPlaneReleasePinned(hc, hcp)
+}
+
 func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) handler.MapFunc {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		log := ctrllog.Log
@@ -4622,6 +4876,15 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 
 	var currentVersion *semver.Version
 	if hc.Status.Version != nil && !sameReleaseImage(hc.Status.Version.Desired.Image, imageregistry.HCControlPlaneReleaseImage(hc)) {
+		// Only the cluster pull secret is used here, never the provider credential.
+		//
+		// Both reconcile paths recompute Status.Version before validating, so when
+		// this lookup runs, Desired.Image is the release reported by the guest CVO.
+		// Until the guest reports, computeClusterVersionStatus sets Desired.Image to
+		// the current control plane release, which the check above skips. The CVO
+		// always runs the data plane release (hcp.Spec.ReleaseImage), so the image
+		// looked up here is always a data plane release, including while the CVO
+		// still reports the previous release during an upgrade.
 		releaseInfo, err := releaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to lookup release image: %w", err)
@@ -5505,7 +5768,13 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 	if err != nil {
 		return nil, err
 	}
-	return releaseProvider.Lookup(ctx, imageregistry.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
+	// This resolves the control plane release, which may live in a private registry
+	// the cluster pull secret does not cover.
+	cpPullSecretBytes, err := pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.OperatorNamespace, pullSecretBytes)
+	if err != nil {
+		return nil, err
+	}
+	return releaseProvider.Lookup(ctx, imageregistry.HCControlPlaneReleaseImage(hcluster), cpPullSecretBytes)
 }
 
 func (r *HostedClusterReconciler) isAutoscalingNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
@@ -5620,8 +5889,10 @@ func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.Rele
 	}
 
 	// Check if ControlPlaneRelease is set.  ControlPlaneRelease should be considered a forced upgrade.
+	// No message is returned: the guest reports the data plane release, so a pinned
+	// cluster takes this branch on every reconcile, and callers log the message.
 	if hcluster.Spec.ControlPlaneRelease != nil {
-		return true, "upgrade is forced by ControlPlaneRelease being set", nil
+		return true, "", nil
 	}
 
 	// Check if upgrade is a z-stream upgrade.  These are allowed even when Upgradeable is false

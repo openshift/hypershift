@@ -41,32 +41,62 @@ func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
 //
 // If no image can be found according to these rules, an error is returned.
 func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	image, _, err := controlPlaneOperatorImage(ctx, hc, releaseProvider, hypershiftOperatorImage, pullSecret)
+	return image, err
+}
+
+// ResolveControlPlaneOperatorImage resolves the control plane operator image like
+// GetControlPlaneOperatorImage, and also returns the pull secret to use when looking
+// up that image's metadata.
+//
+// controlPlaneReleasePullSecret may carry an additional, provider-supplied
+// credential for a privately hosted control plane release (see support/pullsecret).
+// It is used to read the control plane release payload. The returned pull secret is
+// controlPlaneReleasePullSecret only when the image was taken from that payload; an
+// image from the ControlPlaneOperatorImageAnnotation, the CPO overrides or the
+// hypershift-operator fallback gets pullSecret instead. The additional credential
+// replaces the cluster's entry for its registry host, so handing it to an image that
+// is not in the private release could make an otherwise readable image unreadable.
+func ResolveControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret, controlPlaneReleasePullSecret []byte) (image string, imagePullSecret []byte, err error) {
+	image, fromPayload, err := controlPlaneOperatorImage(ctx, hc, releaseProvider, hypershiftOperatorImage, controlPlaneReleasePullSecret)
+	if err != nil {
+		return "", nil, err
+	}
+	if fromPayload {
+		return image, controlPlaneReleasePullSecret, nil
+	}
+	return image, pullSecret, nil
+}
+
+// controlPlaneOperatorImage implements GetControlPlaneOperatorImage and reports
+// whether the image was taken from the control plane release payload.
+func controlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (image string, fromPayload bool, err error) {
 	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
-		return val, nil
+		return val, false, nil
 	}
 	releaseInfo, err := releaseProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	version, err := semver.Parse(releaseInfo.Version())
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if controlplaneoperatoroverrides.IsOverridesEnabled() {
 		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String())
 		if overrideImage != "" {
-			return overrideImage, nil
+			return overrideImage, false, nil
 		}
 	}
 
 	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
-		return hypershiftImage, nil
+		return hypershiftImage, true, nil
 	}
 
 	if version.Minor < 9 {
-		return "", fmt.Errorf("unsupported release image with version %s", version.String())
+		return "", false, fmt.Errorf("unsupported release image with version %s", version.String())
 	}
-	return hypershiftOperatorImage, nil
+	return hypershiftOperatorImage, false, nil
 }
 
 // GetControlPlaneOperatorImageLabels resolves the appropriate control plane
