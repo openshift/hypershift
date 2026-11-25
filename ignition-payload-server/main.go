@@ -135,6 +135,7 @@ func run(ctx context.Context, opts Options) error {
 	srv := &Server{
 		Namespace: namespace,
 		Verifier:  verifier,
+		Payloads:  payloadstore.NewSecretBackedReader(mgr.GetAPIReader(), namespace),
 		APIReader: mgr.GetAPIReader(),
 		OnServed:  reached.Enqueue,
 	}

@@ -39,8 +39,13 @@ type Server struct {
 	// Verifier validates the presented bearer token statelessly against the public signing key and
 	// returns the owner it is scoped to.
 	Verifier *payloadstore.TokenVerifier
-	// APIReader reads directly from the API server (uncached). It backs both the payload lookup and
-	// the retained-generation check on a miss.
+	// Payloads reads rendered payload bytes from the store. The serving tier depends on this interface,
+	// not a concrete backend, so the store implementation can change without touching the serving tier.
+	// It is backed by the uncached APIReader so every serve observes the latest write.
+	Payloads payloadstore.PayloadReader
+	// APIReader reads the IgnitionPayload CR directly from the API server (uncached) for the
+	// retained-generation check on a miss. The CR is the public API object, read generically — not
+	// store access.
 	APIReader client.Reader
 	// OnServed, if set, is invoked after a successful serve with the owning CR and the served rollout
 	// generation, to record IgnitionReached. It is called inline on the request path, so it must not
@@ -149,7 +154,7 @@ func (s *Server) HandleIgnition(w http.ResponseWriter, r *http.Request) {
 // the instant the generator's Put returns, an in-place refresh is served immediately, and a deleted
 // generation is never served.
 func (s *Server) lookup(ctx context.Context, owner payloadstore.OwnerRef, rolloutGeneration int64) ([]byte, error) {
-	payload, _, err := payloadstore.ReadPayload(ctx, s.APIReader, s.Namespace, owner, rolloutGeneration)
+	payload, _, err := s.Payloads.Get(ctx, owner, rolloutGeneration)
 	return payload, err
 }
 

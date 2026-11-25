@@ -110,7 +110,9 @@ func TestServe(t *testing.T) {
 
 	// stored → 200; OnServed receives owner+generation.
 	served := make(chan servedCall, 1)
-	s := &Server{Namespace: testNS, Verifier: verifier, APIReader: withPayload,
+	s := &Server{Namespace: testNS, Verifier: verifier,
+		Payloads:  payloadstore.NewSecretBackedReader(withPayload, testNS),
+		APIReader: withPayload,
 		OnServed: func(o payloadstore.OwnerRef, gen int64) {
 			served <- servedCall{o, gen}
 		}}
@@ -120,7 +122,7 @@ func TestServe(t *testing.T) {
 	g.Eventually(served).Should(Receive(Equal(servedCall{owner, testGen})))
 
 	// not stored (and no IgnitionPayload status to prove retirement) → 511 so ignition retries.
-	s2 := &Server{Namespace: testNS, Verifier: verifier, APIReader: empty}
+	s2 := &Server{Namespace: testNS, Verifier: verifier, Payloads: payloadstore.NewSecretBackedReader(empty, testNS), APIReader: empty}
 	g.Expect(doGet(s2.HandleIgnition, "/ignition/"+testName, tok, "2").Code).To(Equal(http.StatusNetworkAuthenticationRequired))
 }
 
@@ -146,7 +148,7 @@ func TestServeObservesStoreWrites(t *testing.T) {
 	store := payloadstore.NewSecretBackedStoreForClient(c, testNS)
 	g.Expect(store.Put(ctx, owner, 3, "cfg-1", []byte(validIgn))).To(Succeed())
 	g.Expect(store.Put(ctx, owner, 1, "cfg-0", []byte(validIgn))).To(Succeed())
-	s := &Server{Namespace: testNS, Verifier: payloadstore.NewTokenVerifier(&key.PublicKey), APIReader: c}
+	s := &Server{Namespace: testNS, Verifier: payloadstore.NewTokenVerifier(&key.PublicKey), Payloads: payloadstore.NewSecretBackedReader(c, testNS), APIReader: c}
 
 	g.Expect(doGet(s.HandleIgnition, "/ignition/"+testName, tok, "3").Body.String()).To(Equal(validIgn))
 
@@ -183,7 +185,7 @@ func TestServeMissClassification(t *testing.T) {
 		},
 	}
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cr).Build()
-	s := &Server{Namespace: testNS, Verifier: payloadstore.NewTokenVerifier(&key.PublicKey), APIReader: c}
+	s := &Server{Namespace: testNS, Verifier: payloadstore.NewTokenVerifier(&key.PublicKey), Payloads: payloadstore.NewSecretBackedReader(c, testNS), APIReader: c}
 
 	// below the floor → retired → 410 (ignition gives up); the message names requested and current.
 	retired := doGet(s.HandleIgnition, "/ignition/"+testName, tok, "1")
@@ -205,7 +207,7 @@ func TestAuthorization(t *testing.T) {
 	verifier := payloadstore.NewTokenVerifier(&key.PublicKey)
 	tok := mintToken(t, key, owner)
 	withPayload := seedStore(t, testGen)
-	s := &Server{Namespace: testNS, Verifier: verifier, APIReader: withPayload}
+	s := &Server{Namespace: testNS, Verifier: verifier, Payloads: payloadstore.NewSecretBackedReader(withPayload, testNS), APIReader: withPayload}
 
 	// missing auth → 401.
 	g.Expect(doGet(s.HandleIgnition, "/ignition/"+testName, "", "2").Code).To(Equal(http.StatusUnauthorized))
@@ -252,6 +254,7 @@ func TestRejectsNonGET(t *testing.T) {
 	withPayload := seedStore(t, testGen)
 	served := make(chan servedCall, 1)
 	s := &Server{Namespace: testNS, Verifier: payloadstore.NewTokenVerifier(&key.PublicKey),
+		Payloads:  payloadstore.NewSecretBackedReader(withPayload, testNS),
 		APIReader: withPayload,
 		OnServed:  func(o payloadstore.OwnerRef, gen int64) { served <- servedCall{o, gen} }}
 
@@ -273,6 +276,7 @@ func TestWriteFailureDoesNotRecordIgnitionReached(t *testing.T) {
 	withPayload := seedStore(t, testGen)
 	served := make(chan servedCall, 1)
 	s := &Server{Namespace: testNS, Verifier: payloadstore.NewTokenVerifier(&key.PublicKey),
+		Payloads:  payloadstore.NewSecretBackedReader(withPayload, testNS),
 		APIReader: withPayload,
 		OnServed:  func(o payloadstore.OwnerRef, gen int64) { served <- servedCall{o, gen} }}
 

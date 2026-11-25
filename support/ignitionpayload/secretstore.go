@@ -124,14 +124,30 @@ func (s *SecretBackedStore) Put(ctx context.Context, owner OwnerRef, rolloutGene
 }
 
 func (s *SecretBackedStore) Get(ctx context.Context, owner OwnerRef, rolloutGeneration int64) (payload []byte, configHash string, err error) {
-	return ReadPayload(ctx, s.client, s.namespace, owner, rolloutGeneration)
+	return readPayload(ctx, s.client, s.namespace, owner, rolloutGeneration)
 }
 
-// ReadPayload reads the payload bytes and recorded configHash for (owner, rolloutGeneration) from
-// namespace using any client.Reader. The serving tier passes its uncached APIReader so every serve
-// observes the latest write (an in-place refresh or a deletion) rather than lagging informer state.
-// Returns ErrNotFound if the backing Secret does not exist.
-func ReadPayload(ctx context.Context, r client.Reader, namespace string, owner OwnerRef, rolloutGeneration int64) (payload []byte, configHash string, err error) {
+// secretBackedReader is the read-only view of the Secret-backed store, satisfying PayloadReader from a
+// bare client.Reader. The stateless serving tier uses it with its uncached APIReader so every serve
+// observes the latest write (an in-place refresh or a deletion) rather than lagging informer state,
+// without needing the write-capable client the full store holds.
+type secretBackedReader struct {
+	reader    client.Reader
+	namespace string
+}
+
+// NewSecretBackedReader returns a read-only PayloadReader backed by reader for payloads in namespace.
+func NewSecretBackedReader(reader client.Reader, namespace string) PayloadReader {
+	return &secretBackedReader{reader: reader, namespace: namespace}
+}
+
+func (s *secretBackedReader) Get(ctx context.Context, owner OwnerRef, rolloutGeneration int64) (payload []byte, configHash string, err error) {
+	return readPayload(ctx, s.reader, s.namespace, owner, rolloutGeneration)
+}
+
+// readPayload reads the payload bytes and recorded configHash for (owner, rolloutGeneration) from
+// namespace using any client.Reader. Returns ErrNotFound if the backing Secret does not exist.
+func readPayload(ctx context.Context, r client.Reader, namespace string, owner OwnerRef, rolloutGeneration int64) (payload []byte, configHash string, err error) {
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: secretName(owner, rolloutGeneration)}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
