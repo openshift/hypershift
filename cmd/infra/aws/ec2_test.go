@@ -6,12 +6,15 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/awsapi"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go"
+
 	"github.com/go-logr/logr"
-	"github.com/openshift/hypershift/support/awsapi"
 	"go.uber.org/mock/gomock"
 )
 
