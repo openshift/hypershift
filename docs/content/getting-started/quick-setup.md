@@ -94,9 +94,11 @@ hypershift install \
   --enable-defaulting-webhook true
 ```
 
-!!! note 
+!!! note
 
-    `enable-defaulting-webhook` is only for OCP version 4.14 and higher.
+    The defaulting webhook is enabled by default and is required for
+    HostedCluster and HostedControlPlane Route service defaults. The flag is
+    shown explicitly here for clarity and cannot be disabled.
 
 ## Create a Hosted Cluster
 Create a new hosted cluster, specifying the domain of the public zone provided in the
@@ -179,10 +181,6 @@ hypershift create cluster aws \
     avoid unexpected and conflicting cluster management behavior.
 
     The cluster name must also adhere to the [RFC1123 standard](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
-
-!!! important
-
-    You must include either flag, `release-image` or `release-stream`, when the `enable-defaulting-webhook` is not enabled on the installation of the HyperShift operator.
 
 !!! note
 

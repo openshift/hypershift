@@ -54,6 +54,9 @@ func NewHelmRenderCommand(opts *Options) *cobra.Command {
 		if err := opts.Complete(); err != nil {
 			return err
 		}
+		if err := opts.Validate(); err != nil {
+			return err
+		}
 
 		// Helm rendering doesn't need to check for existing CRDs, so pass nil for client
 		crds, manifests, err := hyperShiftOperatorTemplateManifest(cmd.Context(), nil, opts, helmTemplateParams)

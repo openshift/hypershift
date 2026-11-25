@@ -285,3 +285,22 @@ func supportsNativeSidecarContainers(client discovery.ServerVersionInterface) (b
 	// versions (e.g. v1.29.0-gke.1 sorts below v1.29.0 per semver spec).
 	return version.Major > 1 || (version.Major == 1 && version.Minor >= 29), nil
 }
+
+// ValidateCRDValidationRatcheting verifies the management-cluster version
+// required by CRD validation ratcheting and optionalOldSelf CEL rules.
+func ValidateCRDValidationRatcheting(client discovery.ServerVersionInterface) error {
+	info, err := client.ServerVersion()
+	if err != nil {
+		return fmt.Errorf("failed to detect management cluster version: %w", err)
+	}
+
+	version, err := semver.ParseTolerant(info.GitVersion)
+	if err != nil {
+		return fmt.Errorf("failed to parse management cluster version %q: %w", info.GitVersion, err)
+	}
+
+	if version.Major < 1 || (version.Major == 1 && version.Minor < 30) {
+		return fmt.Errorf("management cluster version %q is unsupported: CRDValidationRatcheting must be enabled on Kubernetes 1.30+ (OpenShift 4.17+)", info.GitVersion)
+	}
+	return nil
+}

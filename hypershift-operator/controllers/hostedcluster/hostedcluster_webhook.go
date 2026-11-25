@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/supportedversion"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -27,6 +28,8 @@ import (
 
 type hostedClusterDefaulter struct{}
 
+type hostedControlPlaneDefaulter struct{}
+
 type nodePoolDefaulter struct {
 	client client.Client
 }
@@ -44,6 +47,19 @@ func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, hcluster *
 	if hcluster.Spec.Networking.AllocateNodeCIDRs == nil {
 		disabled := hyperv1.AllocateNodeCIDRsDisabled
 		hcluster.Spec.Networking.AllocateNodeCIDRs = &disabled
+	}
+
+	defaultServices := true
+	if req, err := admission.RequestFromContext(ctx); err == nil {
+		defaultServices = req.Operation == admissionv1.Create
+	}
+	if defaultServices {
+		for i := range hcluster.Spec.Services {
+			service := &hcluster.Spec.Services[i]
+			if service.ServicePublishingStrategy.Type == hyperv1.Route && service.ServicePublishingStrategy.Route == nil {
+				service.ServicePublishingStrategy.Route = &hyperv1.RoutePublishingStrategy{}
+			}
+		}
 	}
 
 	// Default platform specific values
@@ -74,10 +90,26 @@ func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, hcluster *
 			if existingServices[entry.Service] {
 				continue
 			}
+			if entry.ServicePublishingStrategy.Type == hyperv1.Route && entry.ServicePublishingStrategy.Route == nil {
+				entry.ServicePublishingStrategy.Route = &hyperv1.RoutePublishingStrategy{}
+			}
 			hcluster.Spec.Services = append(hcluster.Spec.Services, entry)
 		}
 	}
 
+	return nil
+}
+
+func (defaulter *hostedControlPlaneDefaulter) Default(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if req, err := admission.RequestFromContext(ctx); err == nil && req.Operation != admissionv1.Create {
+		return nil
+	}
+	for i := range hcp.Spec.Services {
+		service := &hcp.Spec.Services[i]
+		if service.ServicePublishingStrategy.Type == hyperv1.Route && service.ServicePublishingStrategy.Route == nil {
+			service.ServicePublishingStrategy.Route = &hyperv1.RoutePublishingStrategy{}
+		}
+	}
 	return nil
 }
 
@@ -135,6 +167,7 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *imageregis
 		return fmt.Errorf("unable to register nodepool webhook: %w", err)
 	}
 	err = ctrl.NewWebhookManagedBy(mgr, &hyperv1.HostedControlPlane{}).
+		WithDefaulter(&hostedControlPlaneDefaulter{}).
 		Complete()
 	if err != nil {
 		return fmt.Errorf("unable to register hostedcontrolplane webhook: %w", err)

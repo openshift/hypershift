@@ -267,6 +267,13 @@ func NewStartCommand() *cobra.Command {
 	return cmd
 }
 
+func detectManagementClusterCapabilities(client capabilities.ManagementClusterDiscoveryClient) (*capabilities.ManagementClusterCapabilities, error) {
+	if err := capabilities.ValidateCRDValidationRatcheting(client); err != nil {
+		return nil, fmt.Errorf("management cluster does not support the required CRD validation behavior: %w", err)
+	}
+	return capabilities.DetectManagementClusterCapabilities(client)
+}
+
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
 
@@ -297,8 +304,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if err != nil {
 		return fmt.Errorf("unable to create discovery client: %w", err)
 	}
-
-	mgmtClusterCaps, err := capabilities.DetectManagementClusterCapabilities(kubeDiscoveryClient)
+	mgmtClusterCaps, err := detectManagementClusterCapabilities(kubeDiscoveryClient)
 	if err != nil {
 		return fmt.Errorf("unable to detect cluster capabilities: %w", err)
 	}

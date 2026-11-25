@@ -3876,7 +3876,9 @@ hypershift install \
 
 !!! note
 
-    `enable-defaulting-webhook` is only for OCP version 4.14 and higher.
+    The defaulting webhook is enabled by default and is required for
+    HostedCluster and HostedControlPlane Route service defaults. The flag is
+    shown explicitly here for clarity and cannot be disabled.
 
 ## Create a Hosted Cluster
 Create a new hosted cluster, specifying the domain of the public zone provided in the
@@ -3959,10 +3961,6 @@ hypershift create cluster aws \
     avoid unexpected and conflicting cluster management behavior.
 
     The cluster name must also adhere to the RFC1123 standard.
-
-!!! important
-
-    You must include either flag, `release-image` or `release-stream`, when the `enable-defaulting-webhook` is not enabled on the installation of the HyperShift operator.
 
 !!! note
 
@@ -5079,17 +5077,20 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OIDC
     servicePublishingStrategy:
       type: Route
-      Route:
+      route:
         hostname: <URL>
   - service: Konnectivity
-    servicePublishingStrate
+    servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 If you wanna know more about how to expose the ingress service in the Data Plane side, please access the Recipes section to see how to do it with MetalLB.
@@ -17367,12 +17368,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 !!! important
@@ -17832,17 +17836,20 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OIDC
     servicePublishingStrategy:
       type: Route
-      Route:
+      route:
         hostname: <URL>
   - service: Konnectivity
-    servicePublishingStrate
+    servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 If you wanna know more about how to expose the ingress service in the Data Plane side, please access the Recipes section to see how to do it with MetalLB.
@@ -32234,17 +32241,20 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OIDC
     servicePublishingStrategy:
       type: Route
-      Route:
+      route:
         hostname: <URL>
   - service: Konnectivity
-    servicePublishingStrate
+    servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 If you wanna know more about how to expose the ingress service in the Data Plane side, please access the Recipes section to see how to do it with MetalLB.
@@ -42028,7 +42038,9 @@ data:
 
 ### Example
 
-To enable the defaulting webhook and disable UWM telemetry remote write:
+The defaulting webhook is enabled by default and is required for Route service
+defaults. To state that setting explicitly while also disabling UWM telemetry
+remote write:
 
 ```bash
 cat <<EOF | kubectl apply -f -
@@ -42506,23 +42518,27 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OIDC
     servicePublishingStrategy:
       type: Route
-      Route:
+      route:
         hostname: <URL>
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 This way, the API server is configured as a LoadBalancer, and the rest of the services are exposed via Route.
 
 !!! Note
     You can specify a specific URL to expose the service you want.
+
 
 ---
 
@@ -44063,11 +44079,7 @@ changed.</p>
 This requires APIServer;OAuthServer;Konnectivity;Ignition.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
-<p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.platform.type == &lsquo;IBMCloud&rsquo; ? [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, and &lsquo;Konnectivity&rsquo; service types&rdquo; : [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&ldquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
-TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
+<p>The list is bounded by MaxItems=6, so the nested uniqueness checks remain bounded.</p>
 </td>
 </tr>
 <tr>
@@ -54072,11 +54084,7 @@ changed.</p>
 This requires APIServer;OAuthServer;Konnectivity;Ignition.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
-<p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.platform.type == &lsquo;IBMCloud&rsquo; ? [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, and &lsquo;Konnectivity&rsquo; service types&rdquo; : [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&ldquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
-TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
+<p>The list is bounded by MaxItems=6, so the nested uniqueness checks remain bounded.</p>
 </td>
 </tr>
 <tr>
@@ -54940,7 +54948,8 @@ for the custom domain, while this field triggers the generation of a kubeconfig 
 </td>
 <td>
 <p>services defines metadata about how control plane services are published
-in the management cluster.</p>
+in the management cluster.
+The list is bounded by MaxItems=6, so the duplicate check remains bounded.</p>
 </td>
 </tr>
 <tr>
@@ -63023,7 +63032,8 @@ RoutePublishingStrategy
 <td>
 <em>(Optional)</em>
 <p>route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
-The specifics of the setup are platform dependent.</p>
+The specifics of the setup are platform dependent.
+An empty object uses management ingress.Spec.Domain as the hostname.</p>
 </td>
 </tr>
 </tbody>
@@ -72885,12 +72895,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -72956,9 +72969,11 @@ spec:
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -73016,12 +73031,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -73081,15 +73099,19 @@ spec:
   - service: APIServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -73354,9 +73376,11 @@ spec:
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -73425,9 +73449,11 @@ spec:
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -73562,15 +73588,19 @@ spec:
   - service: APIServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 ```mermaid
@@ -73653,12 +73683,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 **Architecture Diagram:**
@@ -73878,12 +73911,15 @@ spec:
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route: {}
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route: {}
 ```
 
 **Architecture Diagram:**
@@ -74477,16 +74513,36 @@ authoritative support matrix.
 
 Red Hat OpenShift on IBM Cloud may support OCP versions beyond standard
 OCP timelines. As of September 28, 2025:
-- Management cluster (where the HyperShift Operator runs): OpenShift 4.15 or later or Kubernetes 1.30 or later
+- Management cluster (where the HyperShift Operator runs): OpenShift 4.17 or later or Kubernetes 1.30 or later
 - HostedClusters created by HyperShift on IBM Cloud: OpenShift 4.14 or later
 
 Information above is subject to change; check IBM Cloud documentation or
 contact IBM development.
 
 ### Management Cluster
-In general, the upstream HyperShift project does not place strict requirements on the OpenShift version of your
-management cluster. This may vary depending on the particular platform; for example, Kubevirt requires management
-clusters with OCP 4.14 and higher.
+The management cluster must run OpenShift 4.17 or later, or Kubernetes 1.30
+or later, because the HostedCluster and HostedControlPlane CRDs use
+validation ratcheting. Individual platforms or downstream products may
+impose additional requirements.
+
+#### Service validation compatibility
+
+The HostedCluster and HostedControlPlane CRDs use Kubernetes validation
+ratcheting to preserve unchanged legacy service publishing configurations while
+enforcing new objects. A single `optionalOldSelf` rule preserves a legacy
+non-IBMCloud HostedControlPlane that omitted Ignition; a separate transition
+rule preserves unchanged legacy Route entries. New objects and changed legacy
+lists must satisfy the current service rules. The management cluster must run
+Kubernetes 1.30 or later (OpenShift 4.17 or later) with the
+`CRDValidationRatcheting` feature gate enabled, which is the default at that
+version floor. The installer and operator reject older management-cluster
+versions before using these CRDs. Kubernetes discovery cannot reliably report
+whether an administrator disabled the feature gate, so a disabled gate is
+unsupported and CRD application/dry-run remains the authoritative check.
+Clients that construct service publishing strategies directly must include
+`route: {}` when setting `type: Route`; the required defaulting webhook adds
+this member on HostedCluster and HostedControlPlane CREATE requests, and the
+HyperShift CLI emits it automatically.
 
 The HO determines what versions of OCP can be installed through the HostedCluster (HC); see the HO section for
 more details. However, different versions of the HO are thoroughly tested only on a limited set of OpenShift versions,
@@ -74515,8 +74571,8 @@ to product documentation to determine the bundled MCE version.
 The full list of HostedCluster OCP versions that can be installed via the HO on a Management Cluster will depend on the
 version of the installed HO. However, if you are running a tested configuration or MCE, this list will always include at
 least (a) the same OCP version as the Management Cluster and (b) Two previous minor versions relative to the Management
-Cluster. For example, if the Management Cluster is running 4.16 and a supported version of MCE, then the HO will at
-least be able to install 4.16, 4.15, and 4.14 Hosted Clusters. See the Multi-Cluster Engine section, under the expanded
+Cluster. For example, if the Management Cluster is running 4.17 and a supported version of MCE, then the HO will at
+least be able to install 4.17, 4.16, and 4.15 Hosted Clusters. See the Multi-Cluster Engine section, under the expanded
 section titled "OpenShift Advanced Cluster Management" on this page for more details.
 
 ### API

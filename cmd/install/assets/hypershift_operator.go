@@ -2186,6 +2186,7 @@ const (
 func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1.MutatingWebhookConfiguration {
 	scope := admissionregistrationv1.NamespacedScope
 	hcPath := "/mutate-hypershift-openshift-io-v1beta1-hostedcluster"
+	hcpPath := "/mutate-hypershift-openshift-io-v1beta1-hostedcontrolplane"
 	npPath := "/mutate-hypershift-openshift-io-v1beta1-nodepool"
 	sideEffects := admissionregistrationv1.SideEffectClassNone
 	timeout := int32(15)
@@ -2220,6 +2221,33 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 						Namespace: "hypershift",
 						Name:      "operator",
 						Path:      &hcPath,
+					},
+				},
+				SideEffects:             &sideEffects,
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          &timeout,
+			},
+			{
+				Name: "hostedcontrolplanes.hypershift.openshift.io",
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Create,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"hypershift.openshift.io"},
+							APIVersions: []string{"v1beta1"},
+							Resources:   []string{"hostedcontrolplanes"},
+							Scope:       &scope,
+						},
+					},
+				},
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: nil,
+					Service: &admissionregistrationv1.ServiceReference{
+						Namespace: "hypershift",
+						Name:      "operator",
+						Path:      &hcpPath,
 					},
 				},
 				SideEffects:             &sideEffects,

@@ -1844,13 +1844,27 @@ func (r *HostedClusterReconciler) reconcileCoreHCPChain(
 	}
 
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hcluster.Name)
+	var existingHCP *hyperv1.HostedControlPlane
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err == nil {
+		existingHCP = hcp.DeepCopy()
+	} else if !apierrors.IsNotFound(err) {
+		return hcp, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+	}
+	if existingHCP == nil {
+		hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hcluster.Name)
+	}
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		err := reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
 				r.kasServingCertHashFromSecret(ctx, hcp),
 				r.kasServingCertHashFromEndpoint(ctx, kasHostAndPortFromHCP(hcp))))
+		if err != nil {
+			return err
+		}
+		reconcileHostedControlPlaneServices(hcp, existingHCP)
+		return nil
 	})
 	if err != nil {
 		return hcp, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -3214,6 +3228,50 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 	return nil
 }
 
+// reconcileHostedControlPlaneServices preserves legacy Route members while
+// preparing a new HostedControlPlane from its HostedCluster source. A newly
+// created HCP must contain the Route member for the current union validation;
+// an existing HCP keeps an omitted Route member unchanged so CRD ratcheting
+// can grandfather the legacy object. Duplicate legacy service types are
+// ambiguous and are left unchanged rather than selecting a winner.
+func reconcileHostedControlPlaneServices(hcp *hyperv1.HostedControlPlane, existingHCP *hyperv1.HostedControlPlane) {
+	if existingHCP != nil {
+		existingRoutes := make(map[hyperv1.ServiceType]*hyperv1.RoutePublishingStrategy, len(existingHCP.Spec.Services))
+		ambiguousServices := make(map[hyperv1.ServiceType]struct{})
+		for i := range existingHCP.Spec.Services {
+			service := &existingHCP.Spec.Services[i]
+			if _, ambiguous := ambiguousServices[service.Service]; ambiguous {
+				continue
+			}
+			if _, exists := existingRoutes[service.Service]; exists {
+				delete(existingRoutes, service.Service)
+				ambiguousServices[service.Service] = struct{}{}
+				continue
+			}
+			existingRoutes[service.Service] = service.ServicePublishingStrategy.Route
+		}
+
+		for i := range hcp.Spec.Services {
+			service := &hcp.Spec.Services[i]
+			if service.ServicePublishingStrategy.Type != hyperv1.Route || service.ServicePublishingStrategy.Route != nil {
+				continue
+			}
+			if route, exists := existingRoutes[service.Service]; exists && route != nil {
+				service.ServicePublishingStrategy.Route = route.DeepCopy()
+			}
+		}
+		return
+	}
+
+	for i := range hcp.Spec.Services {
+		service := &hcp.Spec.Services[i]
+		if service.ServicePublishingStrategy.Type != hyperv1.Route || service.ServicePublishingStrategy.Route != nil {
+			continue
+		}
+		service.ServicePublishingStrategy.Route = &hyperv1.RoutePublishingStrategy{}
+	}
+}
+
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
 func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, isAWSNodeTerminationHandlerNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
@@ -3267,7 +3325,10 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.ClusterID = hcluster.Spec.ClusterID
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
 	hcp.Spec.DNS = hcluster.Spec.DNS
-	hcp.Spec.Services = hcluster.Spec.Services
+	hcp.Spec.Services = make([]hyperv1.ServicePublishingStrategyMapping, len(hcluster.Spec.Services))
+	for i := range hcluster.Spec.Services {
+		hcluster.Spec.Services[i].DeepCopyInto(&hcp.Spec.Services[i])
+	}
 	hcp.Spec.ControllerAvailabilityPolicy = hcluster.Spec.ControllerAvailabilityPolicy
 	hcp.Spec.InfrastructureAvailabilityPolicy = hcluster.Spec.InfrastructureAvailabilityPolicy
 	hcp.Spec.Etcd.ManagementType = hcluster.Spec.Etcd.ManagementType
