@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/thirdparty/kubernetes/pkg/credentialprovider"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,7 +41,7 @@ import (
 )
 
 const (
-	// ControlPlaneReleaseSecretName is the well-known name of the Secret, in the
+	// ControlPlaneReleaseSecretName is the default name of the Secret, in the
 	// hypershift-operator's own namespace, holding additional credentials for the
 	// registry that hosts the control plane release image. The hypershift-operator
 	// syncs a copy of it into each affected control plane namespace under
@@ -48,6 +49,14 @@ const (
 	//
 	// The Secret is expected to be of type kubernetes.io/dockerconfigjson. Its
 	// absence is the normal case and is never an error.
+	//
+	// A provider that cannot choose the Secret's name, for example because another
+	// system generates it, points the hypershift-operator at a different name in
+	// the same namespace with "hypershift install
+	// --control-plane-release-pull-secret-name". Use SourceSecretKey rather than
+	// this constant to locate the Secret. Only the hypershift-operator reads the
+	// source Secret; every other consumer reads the synced copy, whose name does
+	// not change.
 	ControlPlaneReleaseSecretName = "control-plane-release-pull-secret"
 
 	// SyncedControlPlaneReleaseSecretName is the name of the copy the
@@ -74,6 +83,17 @@ const (
 	// ControlPlaneReleaseSecretName.
 	VeleroExcludeFromBackupLabel = "velero.io/exclude-from-backup"
 )
+
+// SourceSecretKey returns the key of the provider's control plane release pull
+// secret in operatorNamespace. name is the Secret name the hypershift-operator was
+// installed with; when it is empty the default, ControlPlaneReleaseSecretName, is
+// used.
+func SourceSecretKey(operatorNamespace, name string) types.NamespacedName {
+	if name == "" {
+		name = ControlPlaneReleaseSecretName
+	}
+	return types.NamespacedName{Namespace: operatorNamespace, Name: name}
+}
 
 // IsManagedCopy reports whether secret is a control plane release pull secret copy
 // created by the hypershift-operator.
@@ -193,13 +213,13 @@ func credentialStoreKey(key string) string {
 }
 
 // ForControlPlaneRelease returns base merged with the provider's control plane
-// release pull secret, ControlPlaneReleaseSecretName in operatorNamespace.
+// release pull secret at source, see SourceSecretKey.
 //
 // When that Secret does not exist, base is returned unchanged. Callers should only
 // invoke this for lookups of the control plane release image; passing the result to
 // a data plane lookup would widen the credentials available to it.
-func ForControlPlaneRelease(ctx context.Context, c client.Reader, operatorNamespace string, base []byte) ([]byte, error) {
-	additional, err := sourceBytes(ctx, c, operatorNamespace)
+func ForControlPlaneRelease(ctx context.Context, c client.Reader, source types.NamespacedName, base []byte) ([]byte, error) {
+	additional, err := sourceBytes(ctx, c, source)
 	if err != nil {
 		return nil, err
 	}
@@ -208,16 +228,16 @@ func ForControlPlaneRelease(ctx context.Context, c client.Reader, operatorNamesp
 
 // ForHostedCluster returns the credentials the hypershift-operator should use when
 // resolving hc's control plane release image. The additional credential is read from
-// the operator's own namespace.
+// source, the provider Secret in the operator's own namespace, see SourceSecretKey.
 //
 // When hc does not pin a distinct control plane release, base is returned unchanged:
 // the release being resolved is then the data plane release, which must not gain
 // access to the additional credential.
-func ForHostedCluster(ctx context.Context, c client.Reader, hc *hyperv1.HostedCluster, operatorNamespace string, base []byte) ([]byte, error) {
+func ForHostedCluster(ctx context.Context, c client.Reader, hc *hyperv1.HostedCluster, source types.NamespacedName, base []byte) ([]byte, error) {
 	if hc.Spec.ControlPlaneRelease == nil {
 		return base, nil
 	}
-	return ForControlPlaneRelease(ctx, c, operatorNamespace, base)
+	return ForControlPlaneRelease(ctx, c, source, base)
 }
 
 // ForHostedClusterInNamespace is like ForHostedCluster but reads the synced copy of
@@ -268,10 +288,10 @@ func forSyncedCopy(ctx context.Context, c client.Reader, controlPlaneNamespace s
 	return Merge(base, additional)
 }
 
-// sourceBytes reads the dockerconfigjson payload of the provider Secret in
-// operatorNamespace, returning nil when the Secret is absent.
-func sourceBytes(ctx context.Context, c client.Reader, operatorNamespace string) ([]byte, error) {
-	secret, err := getSecret(ctx, c, types.NamespacedName{Namespace: operatorNamespace, Name: ControlPlaneReleaseSecretName})
+// sourceBytes reads the dockerconfigjson payload of the provider Secret at source,
+// returning nil when the Secret is absent.
+func sourceBytes(ctx context.Context, c client.Reader, source types.NamespacedName) ([]byte, error) {
+	secret, err := getSecret(ctx, c, source)
 	if err != nil || secret == nil {
 		return nil, err
 	}
@@ -296,6 +316,23 @@ func dockerConfigJSON(secret *corev1.Secret) ([]byte, error) {
 		return nil, fmt.Errorf("secret %s/%s is missing the %s key", secret.Namespace, secret.Name, corev1.DockerConfigJsonKey)
 	}
 	return data, nil
+}
+
+// Validate reports an error when dockerConfigJSON cannot be used as a control plane
+// release pull secret. It applies the parsing of Merge, which every reader of the
+// credential goes through, and that of the registry clients, which decode each entry of
+// the merged payload: a single entry they cannot decode fails every lookup made with it.
+// A payload that passes is one those readers accept. Kubernetes accepts payloads, such
+// as {"auths":[]} or an entry whose auth field is not base64(username:password), that
+// they do not.
+func Validate(dockerConfigJSON []byte) error {
+	if _, err := authsOf(dockerConfigJSON); err != nil {
+		return err
+	}
+	if _, err := credentialprovider.ReadDockerConfigJSONFileFromBytes(dockerConfigJSON); err != nil {
+		return fmt.Errorf("invalid auths entry: %w", err)
+	}
+	return nil
 }
 
 // authsOf extracts the "auths" object from a dockerconfigjson payload.

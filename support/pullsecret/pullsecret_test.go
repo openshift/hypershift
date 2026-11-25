@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -174,7 +175,7 @@ func TestForControlPlaneRelease(t *testing.T) {
 		g := NewWithT(t)
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-		got, err := ForControlPlaneRelease(context.Background(), c, namespace, base)
+		got, err := ForControlPlaneRelease(context.Background(), c, SourceSecretKey(namespace, ""), base)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(got).To(Equal(base))
 	})
@@ -186,7 +187,7 @@ func TestForControlPlaneRelease(t *testing.T) {
 		})
 		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
 
-		got, err := ForControlPlaneRelease(context.Background(), c, namespace, base)
+		got, err := ForControlPlaneRelease(context.Background(), c, SourceSecretKey(namespace, ""), base)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		auths := authsIn(t, g, got)
@@ -202,9 +203,29 @@ func TestForControlPlaneRelease(t *testing.T) {
 		other.Namespace = "some-other-namespace"
 		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(other).Build()
 
-		got, err := ForControlPlaneRelease(context.Background(), c, namespace, base)
+		got, err := ForControlPlaneRelease(context.Background(), c, SourceSecretKey(namespace, ""), base)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(got).To(Equal(base))
+	})
+
+	t.Run("When a secret name is configured, it should merge that secret and ignore the default one", func(t *testing.T) {
+		g := NewWithT(t)
+		defaultNamed := newSecret(map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{"auths":{"default.example.com":{"auth":"default-token"}}}`),
+		})
+		configured := newSecret(map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{"auths":{"cve.example.com":{"auth":"cve-token"}}}`),
+		})
+		configured.Name = "generated-by-another-system"
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(defaultNamed, configured).Build()
+
+		got, err := ForControlPlaneRelease(context.Background(), c, SourceSecretKey(namespace, "generated-by-another-system"), base)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		auths := authsIn(t, g, got)
+		g.Expect(auths).To(HaveKey("registry.redhat.io"))
+		g.Expect(auths).To(HaveKey("cve.example.com"))
+		g.Expect(auths).ToNot(HaveKey("default.example.com"))
 	})
 
 	t.Run("errors when the secret lacks the dockerconfigjson key", func(t *testing.T) {
@@ -212,9 +233,72 @@ func TestForControlPlaneRelease(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).
 			WithObjects(newSecret(map[string][]byte{"wrong-key": []byte("{}")})).Build()
 
-		_, err := ForControlPlaneRelease(context.Background(), c, namespace, base)
+		_, err := ForControlPlaneRelease(context.Background(), c, SourceSecretKey(namespace, ""), base)
 		g.Expect(err).To(HaveOccurred())
 	})
+}
+
+func TestValidate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		payload   []byte
+		expectErr bool
+	}{
+		{name: "When the payload has an auths object, it should accept it", payload: []byte(`{"auths":{"quay.io":{"auth":"dXNlcjpwYXNz"}}}`)},
+		{name: "When the auths object is empty, it should accept it", payload: []byte(`{"auths":{}}`)},
+		// Kubernetes accepts this payload in a kubernetes.io/dockerconfigjson Secret.
+		{name: "When auths is a list, it should return an error", payload: []byte(`{"auths":[]}`), expectErr: true},
+		{name: "When the auths key is missing, it should return an error", payload: []byte(`{}`), expectErr: true},
+		{name: "When the payload is not JSON, it should return an error", payload: []byte(`not json`), expectErr: true},
+		{name: "When one entry's auth is not a string, it should return an error", payload: []byte(`{"auths":{"quay.io":{"auth":"dXNlcjpwYXNz"},"registry.example.com":{"auth":42}}}`), expectErr: true},
+		{name: "When one entry's auth is not base64, it should return an error", payload: []byte(`{"auths":{"registry.example.com":{"auth":"not base64!"}}}`), expectErr: true},
+		{name: "When one entry's auth does not decode to username:password, it should return an error", payload: []byte(`{"auths":{"registry.example.com":{"auth":"bm9jb2xvbg=="}}}`), expectErr: true},
+		{name: "When an entry carries a username and password instead of auth, it should accept it", payload: []byte(`{"auths":{"registry.example.com":{"username":"user","password":"pass"}}}`)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			err := Validate(tc.payload)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			// Whatever passes must be accepted by Merge, which every reader uses, and
+			// its result by the registry clients' credential store.
+			merged, mergeErr := Merge([]byte(`{"auths":{}}`), tc.payload)
+			g.Expect(mergeErr).ToNot(HaveOccurred())
+			_, storeErr := dockercredentials.NewFromBytes(merged)
+			g.Expect(storeErr).ToNot(HaveOccurred())
+		})
+	}
+}
+
+func TestSourceSecretKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured string
+		expected   types.NamespacedName
+	}{
+		{
+			name:     "When no name is configured, it should return the default name in the operator namespace",
+			expected: types.NamespacedName{Namespace: "hypershift", Name: ControlPlaneReleaseSecretName},
+		},
+		{
+			name:       "When a name is configured, it should return that name in the operator namespace",
+			configured: "generated-by-another-system",
+			expected:   types.NamespacedName{Namespace: "hypershift", Name: "generated-by-another-system"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(SourceSecretKey("hypershift", tt.configured)).To(Equal(tt.expected))
+		})
+	}
 }
 
 func TestCredentialStoreKey(t *testing.T) {

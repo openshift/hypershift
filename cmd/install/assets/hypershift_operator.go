@@ -121,7 +121,14 @@ const (
 	scaleFromZeroCredsSecretName  = "hypershift-operator-scale-from-zero-credentials"
 	externaDNSCredsSecretName     = "external-dns-credentials"
 
-	HypershiftOperatorName                = "operator"
+	HypershiftOperatorName = "operator"
+
+	// ControlPlaneReleasePullSecretNameEnvVar is the environment variable that
+	// tells the hypershift-operator which Secret, in its own namespace, holds the
+	// additional credentials for resolving a private control plane release image.
+	// When it is unset the operator uses its default Secret name.
+	ControlPlaneReleasePullSecretNameEnvVar = "CONTROL_PLANE_RELEASE_PULL_SECRET_NAME"
+
 	HypershiftOperatorHealthProbePort     = 8081
 	ExternalDNSDeploymentName             = "external-dns"
 	HyperShiftInstallCLIVersionAnnotation = "hypershift.openshift.io/install-cli-version"
@@ -576,6 +583,7 @@ type HyperShiftOperatorDeployment struct {
 	TechPreviewNoUpgrade                    bool
 	RegistryOverrides                       string
 	PlatformsInstalled                      string
+	ControlPlaneReleasePullSecretName       string
 	ImagePullPolicy                         string
 	EnableAuditLogPersistence               bool
 	ScaleFromZeroSecret                     *corev1.Secret
@@ -856,6 +864,13 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 			Name:  "KUBE_FEATURE_WatchListClient",
 			Value: "false",
 		},
+	}
+
+	// Added before the additional variables, which skip a name already present, so
+	// that the dedicated flag takes precedence over --additional-operator-env-vars
+	// and the variable is not rendered twice.
+	if o.ControlPlaneReleasePullSecretName != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: ControlPlaneReleasePullSecretNameEnvVar, Value: o.ControlPlaneReleasePullSecretName})
 	}
 
 	for key, value := range o.AdditionalOperatorEnvVars {

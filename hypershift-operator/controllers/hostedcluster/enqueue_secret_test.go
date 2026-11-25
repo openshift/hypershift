@@ -133,14 +133,45 @@ func TestEnqueueHostedClustersPinningControlPlaneRelease(t *testing.T) {
 }
 
 // TestControlPlaneReleasePullSecretPredicate ensures the dedicated watch only
-// reacts to the well-known Secret in the operator namespace.
+// reacts to the provider Secret in the operator namespace, under its default
+// name or the configured one.
 func TestControlPlaneReleasePullSecretPredicate(t *testing.T) {
+	const configuredName = "generated-by-another-system"
+
 	tests := []struct {
-		name       string
-		secretName string
-		namespace  string
-		expected   bool
+		name           string
+		configuredName string
+		secretName     string
+		namespace      string
+		expected       bool
 	}{
+		{
+			name:           "When a secret name is configured and that secret is in the operator namespace, it should match",
+			configuredName: configuredName,
+			secretName:     configuredName,
+			namespace:      "hypershift",
+			expected:       true,
+		},
+		{
+			name:           "When a secret name is configured, it should not match the default name",
+			configuredName: configuredName,
+			secretName:     pullsecret.ControlPlaneReleaseSecretName,
+			namespace:      "hypershift",
+			expected:       false,
+		},
+		{
+			name:           "When a secret with the configured name is in another namespace, it should not match",
+			configuredName: configuredName,
+			secretName:     configuredName,
+			namespace:      "clusters",
+			expected:       false,
+		},
+		{
+			name:       "When no secret name is configured, it should not match another provider-named secret",
+			secretName: configuredName,
+			namespace:  "hypershift",
+			expected:   false,
+		},
 		{
 			name:       "When the control plane release pull secret is in the operator namespace, it should match",
 			secretName: pullsecret.ControlPlaneReleaseSecretName,
@@ -170,7 +201,7 @@ func TestControlPlaneReleasePullSecretPredicate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			p := controlPlaneReleasePullSecretPredicate("hypershift")
+			p := controlPlaneReleasePullSecretPredicate(pullsecret.SourceSecretKey("hypershift", tt.configuredName))
 			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: tt.secretName, Namespace: tt.namespace}}
 			g.Expect(p.Create(event.CreateEvent{Object: secret})).To(Equal(tt.expected))
 			g.Expect(p.Update(event.UpdateEvent{ObjectNew: secret})).To(Equal(tt.expected))

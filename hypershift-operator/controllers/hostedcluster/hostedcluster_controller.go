@@ -214,6 +214,12 @@ type HostedClusterReconciler struct {
 
 	OperatorNamespace string
 
+	// ControlPlaneReleasePullSecretName is the name of the Secret in
+	// OperatorNamespace holding the provider's additional credential for control
+	// plane release lookups. When empty, pullsecret.ControlPlaneReleaseSecretName
+	// is used.
+	ControlPlaneReleasePullSecretName string
+
 	RegistryProvider globalconfig.RegistryProvider
 
 	overwriteReconcile   func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
@@ -283,11 +289,13 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// That Secret carries no hostedcluster annotations, so events for it would
 	// map to nothing in enqueueHostedClustersFunc and would be dropped by
 	// PredicatesForHostedClusterAnnotationScoping. Rotating or deleting it must
-	// re-reconcile every HostedCluster pinning a control plane release.
+	// re-reconcile every HostedCluster pinning a control plane release, so that
+	// the copy in each control plane namespace follows the new content. The
+	// provider may rotate the credential as often as hourly.
 	bldr.Watches(
 		&corev1.Secret{},
 		handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersPinningControlPlaneRelease(mgr.GetClient())),
-		builder.WithPredicates(controlPlaneReleasePullSecretPredicate(operatorNamespace)),
+		builder.WithPredicates(controlPlaneReleasePullSecretPredicate(pullsecret.SourceSecretKey(operatorNamespace, r.ControlPlaneReleasePullSecretName))),
 	)
 
 	// Set based on SCC capability
@@ -494,6 +502,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// lookups), so the provider credential does not outlive its source.
 	if err := r.removeStaleControlPlaneReleasePullSecret(ctx, controlPlaneReleasePinned, controlPlaneNamespace.Name); err != nil {
 		return ctrl.Result{}, err
+	}
+	// For the same reason, bring the copy up to date with a rotated credential
+	// here, so that a blocked reconcile does not leave the control plane holding
+	// an expired one, or none at all after the provider recreated its Secret.
+	// A failed refresh must not hold up teardown, pause handling or any other
+	// work, so its error does not end the reconcile here. It is dropped while the
+	// HostedCluster is being deleted, returned by a paused reconcile, and
+	// otherwise returned only by a reconcile that ends before the regular sync
+	// writes the copy again, so that the refresh is retried.
+	refreshErr := r.refreshControlPlaneReleasePullSecretCopy(ctx, hcluster, hcp, controlPlaneReleasePinned, controlPlaneNamespace.Name)
+	if refreshErr != nil {
+		log.Error(refreshErr, "Failed to refresh the control plane release pull secret copy")
 	}
 
 	// Phase 1: Bubble up pre-deletion conditions from HCP.
@@ -1191,7 +1211,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// We don't return the error here as reconciling won't solve the input problem.
 			// An update event will trigger reconciliation.
 			log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, refreshErr // retry a failed refresh of the control plane release pull secret copy
 		}
 		switch serviceStrategy.Type {
 		case hyperv1.Route:
@@ -1213,7 +1233,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				// We don't return the error here as reconciling won't solve the input problem.
 				// An update event will trigger reconciliation.
 				log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
-				return ctrl.Result{}, nil
+				return ctrl.Result{}, refreshErr // retry a failed refresh of the control plane release pull secret copy
 			}
 			ignitionService := ignitionserver.ProxyService(controlPlaneNamespace.GetName())
 			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
@@ -1236,7 +1256,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// We don't return the error here as reconciling won't solve the input problem.
 			// An update event will trigger reconciliation.
 			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, refreshErr // retry a failed refresh of the control plane release pull secret copy
 		}
 	}
 
@@ -1435,8 +1455,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
+		if refreshErr != nil {
+			// Retry the refresh: a paused reconcile is otherwise not requeued
+			// before the pause ends.
+			return ctrl.Result{}, refreshErr
+		}
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
+	// From here on the regular sync writes the copy again and reports its own
+	// failure, so a failed refresh is only returned by the gates below that end
+	// the reconcile without an error before that sync runs.
 
 	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
 		return ctrl.Result{}, err
@@ -1457,7 +1485,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
 		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
 			log.Error(fmt.Errorf("not supported by operator configuration"), "reconciliation is blocked", "message", supportedHostedCluster.Message)
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, refreshErr
 		}
 		validReleaseImage := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
 		if validReleaseImage != nil && validReleaseImage.Status == metav1.ConditionFalse {
@@ -1467,7 +1495,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				log.Error(fmt.Errorf("%s", validReleaseImage.Message), "pull secret unavailable, continuing with degraded reconciliation")
 			} else {
 				log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
-				return ctrl.Result{}, nil
+				return ctrl.Result{}, refreshErr
 			}
 		}
 		if releaseImage != nil {
@@ -1475,7 +1503,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if upgrading {
 				if err != nil {
 					log.Error(err, "reconciliation is blocked", "message", validReleaseImage.Message)
-					return ctrl.Result{}, nil
+					return ctrl.Result{}, refreshErr
 				}
 				if msg != "" {
 					log.Info(msg)
@@ -1517,7 +1545,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		// and is only for lookups of the control plane release payload: the CPO
 		// image resolution here and platform.GetPlatform below. Data plane lookups
 		// in this reconcile read the pull secret separately and must not use it.
-		pullSecretBytes, err = pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.OperatorNamespace, basePullSecretBytes)
+		pullSecretBytes, err = pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.controlPlaneReleasePullSecretSourceKey(), basePullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
 		}
@@ -2184,6 +2212,13 @@ func validateReferencedSecretName(name string) error {
 	return nil
 }
 
+// controlPlaneReleasePullSecretSourceKey returns the key of the provider-supplied
+// control plane release pull secret: ControlPlaneReleasePullSecretName, or the
+// default name when that is unset, in the operator's own namespace.
+func (r *HostedClusterReconciler) controlPlaneReleasePullSecretSourceKey() types.NamespacedName {
+	return pullsecret.SourceSecretKey(r.OperatorNamespace, r.ControlPlaneReleasePullSecretName)
+}
+
 // controlPlaneReleasePullSecretSource returns the provider-supplied control plane
 // release pull secret that applies to the cluster, or nil when none applies: either
 // no distinct control plane release is pinned (see isControlPlaneReleasePinned), or
@@ -2194,7 +2229,7 @@ func (r *HostedClusterReconciler) controlPlaneReleasePullSecretSource(ctx contex
 		return nil, nil
 	}
 	src := &corev1.Secret{}
-	srcKey := client.ObjectKey{Namespace: r.OperatorNamespace, Name: pullsecret.ControlPlaneReleaseSecretName}
+	srcKey := r.controlPlaneReleasePullSecretSourceKey()
 	if err := r.Client.Get(ctx, srcKey, src); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
@@ -2225,6 +2260,123 @@ func (r *HostedClusterReconciler) removeStaleControlPlaneReleasePullSecret(ctx c
 		return nil
 	}
 	return r.deleteControlPlaneReleasePullSecretCopy(ctx, controlPlaneNamespace)
+}
+
+// refreshControlPlaneReleasePullSecretCopy brings the synced copy of the control
+// plane release pull secret up to date with the provider Secret.
+//
+// The provider credential can be short lived: the system that owns it may rotate
+// it as often as hourly, and the previous content stops working soon after. The
+// control plane operator, HCCO and the other readers of the copy keep running while
+// a HostedCluster reconcile is paused or blocked by validation, and a copy left
+// behind at that point would hand them an expired credential for as long as the
+// reconcile stays blocked. Like removeStaleControlPlaneReleasePullSecret, this only
+// reads the provider Secret, never a registry, so both reconcile paths run it
+// before those gates.
+//
+// A rotation can rewrite the provider Secret in place, or delete and recreate it:
+//   - An existing copy is rewritten when its content differs.
+//   - A missing copy is restored for a control plane that already runs the pinned
+//     release (see controlPlaneRunsPinnedRelease). The removal of a stale copy
+//     deletes it as soon as the provider Secret is gone, so without this a
+//     recreated Secret would leave a blocked reconcile without a copy.
+//
+// The first copy for a control plane that does not run the pinned release yet is
+// left to reconcileControlPlaneReleasePullSecretSync. So is reporting a provider
+// Secret that lacks the dockerconfigjson key or whose payload cannot be parsed, or a
+// Secret under the copy's name that the hypershift-operator does not own; none of
+// them is touched or reported here. A payload that cannot be parsed in particular
+// never replaces a working copy, because the readers of the copy would then fail
+// every release lookup.
+//
+// The callers log a returned error and carry on, so that a copy that cannot be
+// written does not hold up deletion, pause handling or the rest of the reconcile.
+func (r *HostedClusterReconciler) refreshControlPlaneReleasePullSecretCopy(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, controlPlaneReleasePinned bool, controlPlaneNamespace string) error {
+	src, err := r.controlPlaneReleasePullSecretSource(ctx, controlPlaneReleasePinned)
+	if err != nil {
+		return err
+	}
+	if src == nil {
+		return nil
+	}
+	srcData, ok := src.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return nil
+	}
+	if err := pullsecret.Validate(srcData); err != nil {
+		// The sync phase reports this too, but a paused or blocked reconcile never
+		// gets there. The payload is a credential and is not logged.
+		ctrl.LoggerFrom(ctx).Error(err, "Control plane release pull secret payload cannot be used, leaving its copy unchanged", "secret", client.ObjectKeyFromObject(src))
+		return nil
+	}
+
+	existing := &corev1.Secret{}
+	key := client.ObjectKey{Namespace: controlPlaneNamespace, Name: pullsecret.SyncedControlPlaneReleaseSecretName}
+	if err := r.Client.Get(ctx, key, existing); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get control plane release pull secret copy %s: %w", key, err)
+		}
+		if !controlPlaneRunsPinnedRelease(hcluster, hcp) {
+			return nil
+		}
+		restored := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+			Namespace: key.Namespace,
+			Name:      key.Name,
+			// The sync phase sets this annotation through createOrUpdate. Without
+			// it, deleting the restored copy would not enqueue the HostedCluster,
+			// and a blocked reconcile would not restore the copy again.
+			Annotations: map[string]string{k8sutil.HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String()},
+		}}
+		setControlPlaneReleasePullSecretCopy(restored, srcData)
+		// A Secret that appeared under this name in the meantime is not overwritten;
+		// the sync phase decides what to do with it.
+		if err := r.Client.Create(ctx, restored); err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to restore control plane release pull secret copy %s: %w", key, err)
+		}
+		return nil
+	}
+	if !pullsecret.IsManagedCopy(existing) || bytes.Equal(existing.Data[corev1.DockerConfigJsonKey], srcData) {
+		return nil
+	}
+
+	if existing.Data == nil {
+		existing.Data = map[string][]byte{}
+	}
+	existing.Data[corev1.DockerConfigJsonKey] = srcData
+	// The update carries the resource version that was just read, so it fails with
+	// a conflict, and the reconcile is retried, if the Secret changed in between.
+	if err := r.Client.Update(ctx, existing); err != nil {
+		return fmt.Errorf("failed to refresh control plane release pull secret copy %s: %w", key, err)
+	}
+	return nil
+}
+
+// controlPlaneRunsPinnedRelease reports whether the HostedControlPlane already
+// applies a pinned control plane release, so that its operators depend on the
+// control plane release pull secret copy right now. A cluster or control plane that
+// is being deleted is excluded: its namespace is going away, and nothing may be
+// created in it.
+func controlPlaneRunsPinnedRelease(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) bool {
+	if hcp == nil || hcp.Spec.ControlPlaneReleaseImage == nil {
+		return false
+	}
+	return hcluster.DeletionTimestamp.IsZero() && hcp.DeletionTimestamp.IsZero()
+}
+
+// setControlPlaneReleasePullSecretCopy sets the content of the control plane
+// release pull secret copy on dst and labels it as owned by the hypershift-operator
+// and excluded from OADP backups.
+func setControlPlaneReleasePullSecretCopy(dst *corev1.Secret, dockerConfigJSON []byte) {
+	if dst.Labels == nil {
+		dst.Labels = map[string]string{}
+	}
+	dst.Labels[pullsecret.ManagedByLabel] = "true"
+	dst.Labels[pullsecret.VeleroExcludeFromBackupLabel] = "true"
+	dst.Type = corev1.SecretTypeDockerConfigJson
+	if dst.Data == nil {
+		dst.Data = map[string][]byte{}
+	}
+	dst.Data[corev1.DockerConfigJsonKey] = dockerConfigJSON
 }
 
 // deleteControlPlaneReleasePullSecretCopy deletes the synced copy of the control
@@ -2281,6 +2433,11 @@ func (r *HostedClusterReconciler) reconcileControlPlaneReleasePullSecretSync(
 	if !ok {
 		return fmt.Errorf("control plane release pull secret %s/%s must have a %s key", src.Namespace, src.Name, corev1.DockerConfigJsonKey)
 	}
+	// Kubernetes accepts payloads the readers of the copy cannot use. Leave the
+	// copy as it is rather than replace a working credential with one of them.
+	if err := pullsecret.Validate(srcData); err != nil {
+		return fmt.Errorf("control plane release pull secret %s/%s has an unusable %s payload, leaving the copy unchanged: %w", src.Namespace, src.Name, corev1.DockerConfigJsonKey, err)
+	}
 
 	dst := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -2296,16 +2453,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneReleasePullSecretSync(
 		if dst.ResourceVersion != "" && !pullsecret.IsManagedCopy(dst) {
 			return fmt.Errorf("secret %s/%s exists but is not managed by the hypershift-operator; refusing to overwrite it with the control plane release pull secret", dst.Namespace, dst.Name)
 		}
-		if dst.Labels == nil {
-			dst.Labels = map[string]string{}
-		}
-		dst.Labels[pullsecret.ManagedByLabel] = "true"
-		dst.Labels[pullsecret.VeleroExcludeFromBackupLabel] = "true"
-		dst.Type = corev1.SecretTypeDockerConfigJson
-		if dst.Data == nil {
-			dst.Data = map[string][]byte{}
-		}
-		dst.Data[corev1.DockerConfigJsonKey] = srcData
+		setControlPlaneReleasePullSecretCopy(dst, srcData)
 		return nil
 	})
 	return err
@@ -4557,11 +4705,13 @@ func hostedClustersReferencingSecret(ctx context.Context, c client.Client, secre
 	return requests
 }
 
-// controlPlaneReleasePullSecretPredicate matches events for the well-known
-// control plane release pull secret in the hypershift-operator's namespace.
-func controlPlaneReleasePullSecretPredicate(operatorNamespace string) predicate.Predicate {
+// controlPlaneReleasePullSecretPredicate matches events for the control plane
+// release pull secret at source, in the hypershift-operator's namespace. Create,
+// update and delete events all match, so a rotation is picked up whether the
+// provider updates the Secret in place or deletes and recreates it.
+func controlPlaneReleasePullSecretPredicate(source types.NamespacedName) predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		return obj.GetNamespace() == operatorNamespace && obj.GetName() == pullsecret.ControlPlaneReleaseSecretName
+		return obj.GetNamespace() == source.Namespace && obj.GetName() == source.Name
 	})
 }
 
@@ -5770,7 +5920,7 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 	}
 	// This resolves the control plane release, which may live in a private registry
 	// the cluster pull secret does not cover.
-	cpPullSecretBytes, err := pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.OperatorNamespace, pullSecretBytes)
+	cpPullSecretBytes, err := pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.controlPlaneReleasePullSecretSourceKey(), pullSecretBytes)
 	if err != nil {
 		return nil, err
 	}
