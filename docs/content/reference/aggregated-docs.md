@@ -35816,6 +35816,32 @@ Traditionally, in standalone OCP, the CVO has been the sole source of truth for 
 
 HyperShift exposes available upgrades in HostedCluster.Status by bubbling up the status of the ClusterVersion resource inside a hosted cluster. This info is purely informational and doesn't determine upgradability, which is dictated by the `.spec.release` input in practice. This does result in the loss of some of the builtin features and guardrails from CVO like recommendations, allowed upgrade paths, risks, etc. However, this information is still available in the HostedCluster.Status field for consumers to read.
 
+### HAProxy 3.4 ingress prerequisites with split payloads
+
+For hosted ingress, the guest payload selected by `HostedCluster.spec.release.image`
+must provide a nonempty `haproxy-router-haproxy34` image reference, even when a
+separate control-plane payload is used. The running ingress operator comes from
+the control-plane payload's `cluster-ingress-operator` image and must support
+selecting HAProxy 3.4. The guest payload's ingress-operator image supplies the
+canary image, not the running operator, in this split-payload configuration.
+A HAProxy 3.4 image present only in the control-plane payload is not a fallback.
+
+The running Control Plane Operator (CPO) must also include the conditional HAProxy
+3.4 image wiring. Normally, the CPO is selected from the `hypershift` image in
+`spec.controlPlaneRelease.image`, or `spec.release.image` when no separate
+control-plane release is specified. If the control-plane payload is pinned to a
+CPO without this wiring, updating only the guest payload does not enable HAProxy
+3.4; select a compatible control-plane payload containing the updated CPO as well.
+If a CPO image override is configured, verify that the effective image contains
+the wiring rather than relying only on the payload reference.
+
+When the guest image reference is absent or empty, the CPO omits both the optional
+environment variable and command mapping. HAProxy 3.2 remains the default; image
+availability alone does not opt an IngressController into 3.4. Source support does
+not identify the first published payload containing all prerequisites. Verify the
+selected payloads and running components before opting in, and validate the
+effective version, running router image and Route traffic on a hosted cluster.
+
 ## NodePools
 `.spec.release` dictates the version of any particular NodePool.
 
