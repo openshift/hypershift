@@ -155,6 +155,47 @@ func defaultCommand() *cobra.Command {
 	return cmd
 }
 
+func buildReleaseProviders(componentImages map[string]string, registryOverrides map[string]string, imageRegistryOverrides map[string][]string) (
+	*releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator,
+	*releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator,
+) {
+	// The control plane and data plane release lookups each get their own cache.
+	// CachedProvider is keyed by pull spec only, and the two lookups use different
+	// credentials: the control plane release lookup adds the provider-supplied
+	// control plane release pull secret. With a shared cache, a release image
+	// cached by a control plane lookup would be returned to a data plane lookup of
+	// the same pull spec without the registry ever checking the cluster pull secret.
+	newCoreReleaseProvider := func() *releaseinfo.StaticProviderDecorator {
+		return &releaseinfo.StaticProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			ComponentImages: componentImages,
+		}
+	}
+
+	// It should be used to lookup spec.releaseImage.
+	userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate:          newCoreReleaseProvider(),
+			RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
+		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
+	// It should be used to lookup spec.controlPlaneReleaseImage.
+	cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate:          newCoreReleaseProvider(),
+			RegistryOverrides: registryOverrides,
+		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
+	return cpReleaseProvider, userReleaseProvider
+}
+
 func NewStartCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -418,31 +459,7 @@ func NewStartCommand() *cobra.Command {
 			}
 		}
 
-		coreReleaseProvider := &releaseinfo.StaticProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
-			ComponentImages: componentImages,
-		}
-
-		// It should be used to lookup spec.releaseImage.
-		userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate:          coreReleaseProvider,
-				RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
-			},
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		}
-
-		// It should be used to lookup spec.controlPlaneReleaseImage.
-		cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate:          coreReleaseProvider,
-				RegistryOverrides: registryOverrides,
-			},
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		}
+		cpReleaseProvider, userReleaseProvider := buildReleaseProviders(componentImages, registryOverrides, imageRegistryOverrides)
 
 		imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
