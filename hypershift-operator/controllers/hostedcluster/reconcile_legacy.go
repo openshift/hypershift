@@ -840,6 +840,10 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
 			return ctrl.Result{}, nil
 		}
+	} else {
+		// The ignition server is disabled; clear any stale endpoint left over from a
+		// prior reconcile where the server was enabled.
+		hcluster.Status.IgnitionEndpoint = ""
 	}
 
 	// Set the Control Plane and OAuth endpoints URL
@@ -901,6 +905,10 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
+	} else {
+		// The ignition server is disabled; remove any stale availability condition
+		// left over from a prior reconcile where the server was enabled.
+		meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 	}
 	meta.SetStatusCondition(&hcluster.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
