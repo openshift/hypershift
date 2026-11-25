@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -370,7 +371,7 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 
 	np := r.createInMemoryNodePool(hcp, nodeClass.object, releaseImage, hasKubeletConfig)
 
-	cg, err := r.buildConfigGenerator(ctx, hostedCluster, np, hcp.Namespace)
+	cg, err := r.buildConfigGenerator(ctx, hcp, hostedCluster, np)
 	if err != nil {
 		return fmt.Errorf("failed to build config generator: %w", err)
 	}
@@ -720,10 +721,11 @@ func (r *KarpenterIgnitionReconciler) dataPlaneRelease(ctx context.Context, hcp 
 // buildConfigGenerator creates a ConfigGenerator for the in-memory NodePool
 func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
 	hostedCluster *hyperv1.HostedCluster,
 	np *hyperv1.NodePool,
-	controlPlaneNamespace string,
 ) (*nodepool.ConfigGenerator, error) {
+	controlPlaneNamespace := hcp.Namespace
 	pullSecretBytes, err := r.pullSecretBytes(ctx, controlPlaneNamespace)
 	if err != nil {
 		return nil, err
@@ -739,6 +741,16 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 		return nil, fmt.Errorf("failed to resolve HAProxy image: %w", err)
 	}
 
+	// This manager's cache is scoped to the HostedControlPlane namespace, so it
+	// cannot read the shared ingress router Service.
+	var sharedIngressEndpoint *hyperv1.APIEndpoint
+	if netutil.UseSharedIngressHC(hostedCluster) && !netutil.IsPrivateHC(hostedCluster) {
+		sharedIngressEndpoint = hcp.Status.SharedIngressWorkerAPIEndpoint
+		if sharedIngressEndpoint == nil {
+			return nil, fmt.Errorf("waiting on hosted control plane shared ingress worker API endpoint")
+		}
+	}
+
 	haproxyClient := haproxy.HAProxy{
 		Client:                  r.ManagementClient,
 		HAProxyImage:            haproxyImage,
@@ -746,6 +758,8 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 		NodePoolCPOImage:        nodepool.ResolveNodePoolCPOImage(releaseImage, true),
 		ReleaseProvider:         r.ReleaseProvider,
 		ImageMetadataProvider:   r.ImageMetadataProvider,
+
+		SharedIngressWorkerAPIEndpoint: sharedIngressEndpoint,
 	}
 	haproxyRawConfig, err := haproxyClient.GenerateHAProxyRawConfig(ctx, hostedCluster, controlPlaneNamespace)
 	if err != nil {
@@ -757,7 +771,7 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, sharedIngressEndpoint, resolvedRHELStream)
 }
 
 // hostedClusterFromHCP creates a barebones in-memory HostedCluster from a HostedControlPlane.

@@ -49,6 +49,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
@@ -288,6 +289,15 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		&corev1.Secret{},
 		handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersPinningControlPlaneRelease(mgr.GetClient())),
 		builder.WithPredicates(controlPlaneReleasePullSecretPredicate(operatorNamespace)),
+	)
+
+	// Map shared router changes to affected HostedClusters.
+	bldr.Watches(
+		&corev1.Service{},
+		handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersForSharedIngressRouter(mgr.GetClient())),
+		builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+			return client.ObjectKeyFromObject(obj) == client.ObjectKeyFromObject(sharedingress.RouterPublicService())
+		})),
 	)
 
 	// Set based on SCC capability
@@ -1624,6 +1634,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	report.execute("GlobalConfigSync", nonCritical, func() error {
 		return r.reconcileGlobalConfigSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
+	})
+
+	report.execute("SharedIngressWorkerEndpoint", nonCritical, func() error {
+		return r.reconcileSharedIngressWorkerEndpoint(ctx, hcluster)
 	})
 
 	_, cpoSupportsKASCustomKubeconfig := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsKASCustomKubeconfigLabel]

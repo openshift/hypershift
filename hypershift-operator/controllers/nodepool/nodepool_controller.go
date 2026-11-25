@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/pkg/manifests"
@@ -431,11 +432,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
-	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, nodePool, hcluster, releaseImage)
+	sharedIngressEndpoint, err := r.sharedIngressWorkerAPIEndpoint(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to resolve shared ingress worker API endpoint: %w", err)
+	}
+	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, nodePool, hcluster, releaseImage, sharedIngressEndpoint)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, sharedIngressEndpoint, resolvedRHELStream)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -541,7 +546,11 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 		return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
-	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, nodePool, hcluster, releaseImage)
+	sharedIngressEndpoint, err := r.sharedIngressWorkerAPIEndpoint(ctx, hcluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve shared ingress worker API endpoint: %w", err)
+	}
+	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, nodePool, hcluster, releaseImage, sharedIngressEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
@@ -551,7 +560,7 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, sharedIngressEndpoint, resolvedRHELStream)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -1410,7 +1419,25 @@ func ResolveNodePoolCPOImage(releaseImage *releaseinfo.ReleaseImage, useCanonica
 	return componentImages["hypershift"]
 }
 
-func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+// sharedIngressWorkerAPIEndpoint returns the address workers use to reach the API
+// through the shared ingress router, or nil when the HostedCluster does not use
+// shared ingress.
+func (r *NodePoolReconciler) sharedIngressWorkerAPIEndpoint(ctx context.Context, hcluster *hyperv1.HostedCluster) (*hyperv1.APIEndpoint, error) {
+	if !netutil.UseSharedIngressHC(hcluster) || netutil.IsPrivateHC(hcluster) {
+		return nil, nil
+	}
+	router := sharedingress.RouterPublicService()
+	if err := r.Get(ctx, client.ObjectKeyFromObject(router), router); err != nil {
+		return nil, fmt.Errorf("failed to get shared ingress router service: %w", err)
+	}
+	endpoint := sharedingress.WorkerAPIEndpoint(router)
+	if endpoint == nil {
+		return nil, fmt.Errorf("waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress")
+	}
+	return endpoint, nil
+}
+
+func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, sharedIngressEndpoint *hyperv1.APIEndpoint) (string, error) {
 	useCanonicalImages := nodePool.Annotations[nodePoolAnnotationCanonicalDataPlaneImages] == "true"
 	if !useCanonicalImages {
 		isNewOrUpgrading := nodePool.Status.Version == "" || nodePool.Status.Version != releaseImage.Version()
@@ -1435,6 +1462,8 @@ func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodeP
 		NodePoolCPOImage:        ResolveNodePoolCPOImage(releaseImage, useCanonicalImages),
 		ReleaseProvider:         r.ReleaseProvider,
 		ImageMetadataProvider:   r.ImageMetadataProvider,
+
+		SharedIngressWorkerAPIEndpoint: sharedIngressEndpoint,
 	}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	return haProxy.GenerateHAProxyRawConfig(ctx, hcluster, controlPlaneNamespace)

@@ -107,7 +107,11 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, nodePool, hcluster, releaseImage)
+	sharedIngressEndpoint, err := r.sharedIngressWorkerAPIEndpoint(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to resolve shared ingress worker API endpoint: %w", err)
+	}
+	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, nodePool, hcluster, releaseImage, sharedIngressEndpoint)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
@@ -118,7 +122,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, sharedIngressEndpoint, resolvedRHELStream)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
