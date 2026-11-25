@@ -1,0 +1,606 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedControlPlane networking validation"
+crdName: hostedcontrolplanes.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  # --- networkType open-string validation ---
+  - name: When networkType is an arbitrary third-party value it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "Cilium"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When networkType uses a case variant of a built-in provider it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "openshiftsdn"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
+  - name: When networkType uses a lowercase variant of OVNKubernetes it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "ovnkubernetes"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
+  - name: When networkType uses a mixed-case variant of OVNKubernetes it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "OvnKubernetes"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
+  - name: When networkType is empty it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: ""
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: 'should be at least 1 chars long'
+
+  - name: When networkType exceeds 63 characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: 'spec.networking.networkType: Too long'
+
+  # --- allocateNodeCIDRs validation (ClusterNetworking, shared with HostedCluster) ---
+  - name: When allocateNodeCIDRs is Enabled and networkType is Other it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          allocateNodeCIDRs: Enabled
+          networkType: Other
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When allocateNodeCIDRs is Enabled and networkType is OpenShiftSDN it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          allocateNodeCIDRs: Enabled
+          networkType: OpenShiftSDN
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
+
+  - name: When allocateNodeCIDRs is Enabled and networkType is Cilium it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          allocateNodeCIDRs: Enabled
+          networkType: Cilium
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
+
+  # --- disableMultiNetwork validation (HostedControlPlane spec-level rule) ---
+  - name: When disableMultiNetwork is true and networkType is Other it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: Other
+        operatorConfiguration:
+          clusterNetworkOperator:
+            disableMultiNetwork: true
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When disableMultiNetwork is true and networkType is OpenShiftSDN it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: OpenShiftSDN
+        operatorConfiguration:
+          clusterNetworkOperator:
+            disableMultiNetwork: true
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "disableMultiNetwork can only be set to true when networkType is 'Other'"
+
+  - name: When disableMultiNetwork is true and networkType is Cilium it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: Cilium
+        operatorConfiguration:
+          clusterNetworkOperator:
+            disableMultiNetwork: true
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "disableMultiNetwork can only be set to true when networkType is 'Other'"
+
+  onUpdate:
+  # --- networkType immutability ---
+  # networkType carries XValidation rule="self == oldSelf"; a non-constant value must be
+  # immutable just like the built-in values.
+  - name: When networkType is changed on update it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "Cilium"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "Calico"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType is immutable"
