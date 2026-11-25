@@ -11119,6 +11119,8 @@ func TestValidateReferencedSecretName(t *testing.T) {
 func TestHostedClusterReconciler_ReconcileGlobalConfigSync(t *testing.T) {
 	t.Parallel()
 
+	t.Run("When global configuration references change, it should manage copy lifecycle", runGlobalConfigCopyLifecycle)
+
 	hclusterReferencing := func(secretName string) *hyperv1.HostedCluster {
 		return &hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},

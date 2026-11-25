@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-func TestReconcileGlobalConfigSync(t *testing.T) {
+func runGlobalConfigCopyLifecycle(t *testing.T) {
 	t.Parallel()
 	proxyConfig := func(name string) *hyperv1.ClusterConfiguration {
 		return &hyperv1.ClusterConfiguration{Proxy: &configv1.ProxySpec{TrustedCA: configv1.ConfigMapNameReference{Name: name}}}
