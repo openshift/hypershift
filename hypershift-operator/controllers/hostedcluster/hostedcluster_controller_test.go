@@ -12561,3 +12561,262 @@ func TestEffectiveGMPMonitoring(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileAPIServerEncryptionConfig(t *testing.T) {
+	t.Parallel()
+
+	aescbcAPIServer := func() *hyperv1.ClusterConfiguration {
+		return &hyperv1.ClusterConfiguration{
+			APIServer: &configv1.APIServerSpec{
+				Encryption: configv1.APIServerEncryption{
+					Type: configv1.EncryptionTypeAESCBC,
+				},
+			},
+		}
+	}
+
+	for _, testCase := range []struct {
+		name string
+		hc   *hyperv1.HostedCluster
+		// expectSecretCreated asserts whether the etcd encryption key secret exists after reconcile.
+		expectSecretCreated bool
+		// expectSecretEncryptionSet asserts spec.secretEncryption is populated with the generated AESCBC key.
+		expectSecretEncryptionSet bool
+		// expectPreservedActiveKey, when non-empty, asserts spec.secretEncryption.aescbc.activeKey.Name is unchanged.
+		expectPreservedActiveKey string
+		// expectNilSecretEncryption asserts spec.secretEncryption remains nil after reconcile.
+		expectNilSecretEncryption bool
+		// expectOverrideLog asserts the "secretEncryption takes precedence" warning is logged.
+		expectOverrideLog bool
+	}{
+		{
+			name: "When configuration.apiServer.encryption.type is aescbc and secretEncryption is nil, it should generate a key and set secretEncryption",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+				Spec:       hyperv1.HostedClusterSpec{Configuration: aescbcAPIServer()},
+			},
+			expectSecretCreated:       true,
+			expectSecretEncryptionSet: true,
+		},
+		{
+			name: "When secretEncryption type is aescbc but aescbc config is nil, it should generate a key and set secretEncryption",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration:    aescbcAPIServer(),
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{Type: hyperv1.AESCBC},
+				},
+			},
+			expectSecretCreated:       true,
+			expectSecretEncryptionSet: true,
+		},
+		{
+			name: "When secretEncryption type is aescbc but activeKey name is empty, it should generate a key and set secretEncryption",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: aescbcAPIServer(),
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type:   hyperv1.AESCBC,
+						AESCBC: &hyperv1.AESCBCSpec{ActiveKey: corev1.LocalObjectReference{Name: ""}},
+					},
+				},
+			},
+			expectSecretCreated:       true,
+			expectSecretEncryptionSet: true,
+		},
+		{
+			name: "When secretEncryption is already fully configured with aescbc, it should not override and preserve the existing activeKey",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: aescbcAPIServer(),
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type:   hyperv1.AESCBC,
+						AESCBC: &hyperv1.AESCBCSpec{ActiveKey: corev1.LocalObjectReference{Name: "custom-key"}},
+					},
+				},
+			},
+			expectSecretCreated:       false,
+			expectSecretEncryptionSet: true,
+			expectPreservedActiveKey:  "custom-key",
+		},
+		{
+			name: "When apiServer encryption is aescbc but secretEncryption is kms, it should not override and preserve secretEncryption",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: aescbcAPIServer(),
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.KMS,
+						KMS:  &hyperv1.KMSSpec{Provider: hyperv1.AWS},
+					},
+				},
+			},
+			expectSecretCreated: false,
+			expectOverrideLog:   true,
+		},
+		{
+			name: "When configuration is nil, it should be a no-op",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+			},
+			expectSecretCreated:       false,
+			expectNilSecretEncryption: true,
+		},
+		{
+			name: "When apiServer encryption type is not aescbc, it should be a no-op",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							Encryption: configv1.APIServerEncryption{Type: configv1.EncryptionTypeIdentity},
+						},
+					},
+				},
+			},
+			expectSecretCreated:       false,
+			expectNilSecretEncryption: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(testCase.hc).Build()
+
+			var logged []string
+			logger := funcr.New(func(prefix, args string) { logged = append(logged, args) }, funcr.Options{})
+
+			r := &HostedClusterReconciler{Client: fakeClient}
+			err := r.reconcileAPIServerEncryptionConfig(t.Context(), testCase.hc, upsert.New(false).CreateOrUpdate, logger)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			secret := &corev1.Secret{}
+			getSecretErr := fakeClient.Get(t.Context(), crclient.ObjectKey{
+				Namespace: testCase.hc.Namespace,
+				Name:      testCase.hc.Name + etcdEncKeyPostfix,
+			}, secret)
+
+			if testCase.expectSecretCreated {
+				g.Expect(getSecretErr).ToNot(HaveOccurred())
+				g.Expect(secret.Data).To(HaveKey(hyperv1.AESCBCKeySecretKey))
+				g.Expect(secret.Data[hyperv1.AESCBCKeySecretKey]).To(HaveLen(32))
+			} else {
+				g.Expect(errors2.IsNotFound(getSecretErr)).To(BeTrue())
+			}
+
+			// reconcileAPIServerEncryptionConfig mutates hc.Spec.SecretEncryption in memory; the HostedCluster
+			// itself is persisted later by the main reconcile loop, so assert on the in-memory object here.
+			switch {
+			case testCase.expectSecretEncryptionSet:
+				g.Expect(testCase.hc.Spec.SecretEncryption).ToNot(BeNil())
+				g.Expect(testCase.hc.Spec.SecretEncryption.Type).To(Equal(hyperv1.AESCBC))
+				g.Expect(testCase.hc.Spec.SecretEncryption.AESCBC).ToNot(BeNil())
+				if testCase.expectPreservedActiveKey != "" {
+					g.Expect(testCase.hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name).To(Equal(testCase.expectPreservedActiveKey))
+				} else {
+					g.Expect(testCase.hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name).To(Equal(testCase.hc.Name + etcdEncKeyPostfix))
+				}
+			case testCase.expectNilSecretEncryption:
+				g.Expect(testCase.hc.Spec.SecretEncryption).To(BeNil())
+			}
+
+			if testCase.expectOverrideLog {
+				g.Expect(strings.Join(logged, "\n")).To(ContainSubstring("secretEncryption takes precedence"))
+			} else {
+				g.Expect(strings.Join(logged, "\n")).ToNot(ContainSubstring("secretEncryption takes precedence"))
+			}
+		})
+	}
+
+	t.Run("When reconcileAPIServerEncryptionConfig runs twice, it should be idempotent and not regenerate the key", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						Encryption: configv1.APIServerEncryption{Type: configv1.EncryptionTypeAESCBC},
+					},
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hc).Build()
+		r := &HostedClusterReconciler{Client: fakeClient}
+		createOrUpdate := upsert.New(false).CreateOrUpdate
+
+		g.Expect(r.reconcileAPIServerEncryptionConfig(t.Context(), hc, createOrUpdate, logr.Discard())).To(Succeed())
+
+		secret := &corev1.Secret{}
+		secretKey := crclient.ObjectKey{Namespace: hc.Namespace, Name: hc.Name + etcdEncKeyPostfix}
+		g.Expect(fakeClient.Get(t.Context(), secretKey, secret)).To(Succeed())
+		firstKey := make([]byte, len(secret.Data[hyperv1.AESCBCKeySecretKey]))
+		copy(firstKey, secret.Data[hyperv1.AESCBCKeySecretKey])
+		g.Expect(firstKey).To(HaveLen(32))
+
+		// A second reconcile must not regenerate the key.
+		g.Expect(r.reconcileAPIServerEncryptionConfig(t.Context(), hc, createOrUpdate, logr.Discard())).To(Succeed())
+
+		g.Expect(fakeClient.Get(t.Context(), secretKey, secret)).To(Succeed())
+		g.Expect(secret.Data[hyperv1.AESCBCKeySecretKey]).To(Equal(firstKey))
+
+		// Simulate the case where the HostedCluster spec update failed after the secret was created
+		// (so a fresh reconcile still sees an unset secretEncryption): the existing key must be reused,
+		// never regenerated.
+		freshHC := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						Encryption: configv1.APIServerEncryption{Type: configv1.EncryptionTypeAESCBC},
+					},
+				},
+			},
+		}
+		g.Expect(r.reconcileAPIServerEncryptionConfig(t.Context(), freshHC, createOrUpdate, logr.Discard())).To(Succeed())
+		g.Expect(fakeClient.Get(t.Context(), secretKey, secret)).To(Succeed())
+		g.Expect(secret.Data[hyperv1.AESCBCKeySecretKey]).To(Equal(firstKey))
+	})
+
+	t.Run("When secretEncryption is partially configured with a backupKey, it should preserve the backupKey", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		// type aescbc with an empty activeKey name but a configured backupKey: the helper must fill in
+		// the generated activeKey while preserving the backupKey needed to decrypt older secrets.
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						Encryption: configv1.APIServerEncryption{Type: configv1.EncryptionTypeAESCBC},
+					},
+				},
+				SecretEncryption: &hyperv1.SecretEncryptionSpec{
+					Type: hyperv1.AESCBC,
+					AESCBC: &hyperv1.AESCBCSpec{
+						ActiveKey: corev1.LocalObjectReference{Name: ""},
+						BackupKey: &corev1.LocalObjectReference{Name: "old-key"}, //nolint:staticcheck // deliberately exercising the deprecated BackupKey to prove it is preserved
+					},
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hc).Build()
+		r := &HostedClusterReconciler{Client: fakeClient}
+
+		g.Expect(r.reconcileAPIServerEncryptionConfig(t.Context(), hc, upsert.New(false).CreateOrUpdate, logr.Discard())).To(Succeed())
+
+		g.Expect(hc.Spec.SecretEncryption).ToNot(BeNil())
+		g.Expect(hc.Spec.SecretEncryption.Type).To(Equal(hyperv1.AESCBC))
+		g.Expect(hc.Spec.SecretEncryption.AESCBC).ToNot(BeNil())
+		g.Expect(hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name).To(Equal(hc.Name + etcdEncKeyPostfix))
+		g.Expect(hc.Spec.SecretEncryption.AESCBC.BackupKey).ToNot(BeNil())            //nolint:staticcheck // verifying the deprecated BackupKey survives partial-config completion
+		g.Expect(hc.Spec.SecretEncryption.AESCBC.BackupKey.Name).To(Equal("old-key")) //nolint:staticcheck // verifying the deprecated BackupKey survives partial-config completion
+	})
+}
