@@ -50,7 +50,7 @@ type Options struct {
 func NewStartCommand() *cobra.Command {
 	opts := Options{
 		WorkDir:  "/payloads",
-		TokenTTL: 2 * time.Hour,
+		TokenTTL: 12 * time.Hour,
 	}
 
 	cmd := &cobra.Command{
@@ -158,6 +158,7 @@ func run(ctx context.Context, opts Options) error {
 
 	r := ignitionpayload.NewReconciler(ignitionpayload.ReconcilerConfig{
 		Client:                 mgr.GetClient(),
+		APIReader:              mgr.GetAPIReader(),
 		Store:                  store,
 		Provider:               provider,
 		ReleaseProvider:        provider.ReleaseProvider,

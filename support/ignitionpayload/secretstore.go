@@ -62,6 +62,15 @@ func NewSecretBackedStore(cfg *rest.Config, namespace string) (*SecretBackedStor
 	return newSecretBackedStore(c, namespace), nil
 }
 
+// NewSecretBackedStoreForClient wraps an existing client as a SecretBackedStore. It is for callers
+// that already hold a suitable client — notably tests, which inject a fake client to seed and read
+// payloads through the same code paths production uses. Production generator code must use
+// NewSecretBackedStore instead, so its reads and writes go through a dedicated uncached client
+// regardless of informer-cache state.
+func NewSecretBackedStoreForClient(c client.Client, namespace string) *SecretBackedStore {
+	return newSecretBackedStore(c, namespace)
+}
+
 // newSecretBackedStore wraps an existing client. It exists so tests can inject a fake
 // client; production code must use NewSecretBackedStore to obtain an uncached client.
 func newSecretBackedStore(c client.Client, namespace string) *SecretBackedStore {
@@ -115,8 +124,32 @@ func (s *SecretBackedStore) Put(ctx context.Context, owner OwnerRef, rolloutGene
 }
 
 func (s *SecretBackedStore) Get(ctx context.Context, owner OwnerRef, rolloutGeneration int64) (payload []byte, configHash string, err error) {
+	return readPayload(ctx, s.client, s.namespace, owner, rolloutGeneration)
+}
+
+// secretBackedReader is the read-only view of the Secret-backed store, satisfying PayloadReader from a
+// bare client.Reader. The stateless serving tier uses it with its uncached APIReader so every serve
+// observes the latest write (an in-place refresh or a deletion) rather than lagging informer state,
+// without needing the write-capable client the full store holds.
+type secretBackedReader struct {
+	reader    client.Reader
+	namespace string
+}
+
+// NewSecretBackedReader returns a read-only PayloadReader backed by reader for payloads in namespace.
+func NewSecretBackedReader(reader client.Reader, namespace string) PayloadReader {
+	return &secretBackedReader{reader: reader, namespace: namespace}
+}
+
+func (s *secretBackedReader) Get(ctx context.Context, owner OwnerRef, rolloutGeneration int64) (payload []byte, configHash string, err error) {
+	return readPayload(ctx, s.reader, s.namespace, owner, rolloutGeneration)
+}
+
+// readPayload reads the payload bytes and recorded configHash for (owner, rolloutGeneration) from
+// namespace using any client.Reader. Returns ErrNotFound if the backing Secret does not exist.
+func readPayload(ctx context.Context, r client.Reader, namespace string, owner OwnerRef, rolloutGeneration int64) (payload []byte, configHash string, err error) {
 	secret := &corev1.Secret{}
-	if err := s.client.Get(ctx, client.ObjectKey{Namespace: s.namespace, Name: secretName(owner, rolloutGeneration)}, secret); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: secretName(owner, rolloutGeneration)}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, "", ErrNotFound
 		}

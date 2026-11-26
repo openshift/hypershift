@@ -22,15 +22,23 @@ var ErrNotFound = errors.New("ignition payload not found")
 // without advancing rolloutGeneration. Each entry records the payload-identity hash (configHash)
 // of its content for idempotent generation and observability. Implementations are
 // backend-independent.
-type PayloadStore interface {
-	// Put stores payload under (owner, rolloutGeneration), (re)setting the configHash it
-	// records. If the entry already exists its bytes/configHash are overwritten in place
-	// (last-write-wins; the Policy A refresh path).
-	Put(ctx context.Context, owner OwnerRef, rolloutGeneration int64, configHash string, payload []byte) error
+// PayloadReader is the read-only view of a PayloadStore: resolving rendered payload bytes by rollout
+// identity. The stateless serving tier depends only on this, so the store backend can change — and the
+// serving tier can hold a read-only handle built from an uncached reader — without touching the serving
+// tier or the controller.
+type PayloadReader interface {
 	// Get returns the payload bytes and the recorded configHash for (owner, rolloutGeneration),
 	// or ErrNotFound. The serving tier uses payload; the generator compares configHash for
 	// idempotent regeneration.
 	Get(ctx context.Context, owner OwnerRef, rolloutGeneration int64) (payload []byte, configHash string, err error)
+}
+
+type PayloadStore interface {
+	PayloadReader
+	// Put stores payload under (owner, rolloutGeneration), (re)setting the configHash it
+	// records. If the entry already exists its bytes/configHash are overwritten in place
+	// (last-write-wins; the Policy A refresh path).
+	Put(ctx context.Context, owner OwnerRef, rolloutGeneration int64, configHash string, payload []byte) error
 	// Delete removes the entry for (owner, rolloutGeneration). No-op (nil) if already absent.
 	Delete(ctx context.Context, owner OwnerRef, rolloutGeneration int64) error
 	// ListByOwner returns all rolloutGenerations owned by owner (empty slice if none), for the

@@ -55,6 +55,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/webhookcerts"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	ignitionpayloadcontroller "github.com/openshift/hypershift/ignition-payload-controller"
+	ignitionpayloadserver "github.com/openshift/hypershift/ignition-payload-server"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	sharedingressconfiggenerator "github.com/openshift/hypershift/sharedingress-config-generator"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -144,6 +145,7 @@ func main() {
 	cmd.AddCommand(etcdrecovery.NewRecoveryCommand())
 	cmd.AddCommand(sharedingressconfiggenerator.NewStartCommand())
 	cmd.AddCommand(ignitionpayloadcontroller.NewStartCommand())
+	cmd.AddCommand(ignitionpayloadserver.NewStartCommand())
 
 	if err := cmd.Execute(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
