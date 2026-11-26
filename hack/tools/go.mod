@@ -12,8 +12,8 @@ require (
 	github.com/onsi/gomega v1.39.1
 	github.com/openshift/api/tools v0.0.0-20250915151906-94481d71bb6f
 	go.uber.org/mock v0.6.0
-	golang.org/x/mod v0.38.0
-	golang.org/x/tools v0.48.0
+	golang.org/x/mod v0.40.0
+	golang.org/x/tools v0.49.0
 	gotest.tools/gotestsum v1.13.0
 	honnef.co/go/tools v0.7.0
 	k8s.io/apiextensions-apiserver v0.34.2
@@ -298,7 +298,7 @@ require (
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959 // indirect
+	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
