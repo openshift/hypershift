@@ -437,7 +437,7 @@ func registerScaleDownDiagnostics(t *testing.T, mgtClient crclient.Client, hoste
 			return
 		}
 
-		// The subtest context is already cancelled when cleanups run.
+		// The subtest context is already canceled when cleanups run.
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 
