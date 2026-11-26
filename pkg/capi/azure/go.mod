@@ -3,8 +3,8 @@ module sigs.k8s.io/cluster-api-provider-azure
 go 1.25.7
 
 require (
-	k8s.io/api v0.35.1
-	k8s.io/apimachinery v0.35.1
+	k8s.io/api v0.37.2
+	k8s.io/apimachinery v0.37.2
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570
 )
 
