@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -463,8 +464,19 @@ func GetKeyVaultDNSSuffix(cloud string, keyVaultType hyperv1.AzureKMSKeyVaultTyp
 	}
 }
 
+// keyVaultNameRegex matches the names Azure accepts for a Key Vault or Managed
+// HSM: 3-24 alphanumerics and dashes, starting and ending with an alphanumeric.
+// See https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+var keyVaultNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$`)
+
 // GetKeyVaultFQDN constructs the fully qualified domain name for an Azure Key Vault
 // from the HCP spec. It uses the active key's vault name and the cloud-specific DNS suffix.
+//
+// The vault name is checked against the characters Azure allows before it is
+// interpolated. The CRD only bounds its length, so without this a name carrying
+// a URL delimiter such as "/" or ":" would move the host of every URL built from
+// this FQDN, and point the KAS hostAlias and the router's relay backend at
+// something other than the vault.
 func GetKeyVaultFQDN(hcp *hyperv1.HostedControlPlane) (string, error) {
 	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil ||
 		hcp.Spec.SecretEncryption.KMS.Azure == nil ||
@@ -474,6 +486,9 @@ func GetKeyVaultFQDN(hcp *hyperv1.HostedControlPlane) (string, error) {
 
 	azureKMS := hcp.Spec.SecretEncryption.KMS.Azure
 	activeKey := azureKMS.ActiveKey
+	if !keyVaultNameRegex.MatchString(activeKey.KeyVaultName) {
+		return "", fmt.Errorf("invalid Azure Key Vault name %q: must be 3-24 characters of letters, digits and dashes, starting and ending with a letter or digit", activeKey.KeyVaultName)
+	}
 	suffix, err := GetKeyVaultDNSSuffix(hcp.Spec.Platform.Azure.Cloud, azureKMS.KeyVaultType)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve Azure KMS DNS suffix: %w", err)
