@@ -125,11 +125,12 @@ func dumpPodContainerLogs(ctx context.Context, kubeClient kubeclient.Interface, 
 				Previous:  previous,
 			}).DoRaw(ctx)
 			if err != nil {
-				// A container without a previous instance is expected; anything else
-				// is reported but does not prevent the remaining diagnostics.
-				if !previous {
-					errs = append(errs, fmt.Errorf("failed to get logs of %s/%s container %s: %w", pod.Namespace, pod.Name, container.Name, err))
+				// A container without a previous instance is the common case and the
+				// API reports it as a client error; anything else is unexpected.
+				if previous && isMissingPreviousLogsError(err) {
+					continue
 				}
+				errs = append(errs, fmt.Errorf("failed to get logs of %s/%s container %s: %w", pod.Namespace, pod.Name, container.Name, err))
 				continue
 			}
 			name := fmt.Sprintf("%s-%s.log", pod.Name, container.Name)
@@ -144,39 +145,56 @@ func dumpPodContainerLogs(ctx context.Context, kubeClient kubeclient.Interface, 
 	return utilerrors.NewAggregate(errs)
 }
 
+// isMissingPreviousLogsError reports whether err is the API rejecting a previous log
+// request because the container has no previous instance, which is expected.
+func isMissingPreviousLogsError(err error) bool {
+	if apierrors.IsBadRequest(err) || apierrors.IsNotFound(err) {
+		return true
+	}
+	return strings.Contains(err.Error(), "previous terminated container")
+}
+
 // dumpGuestScaleDownInputs captures the data plane state the autoscaler reads when
 // deciding whether a node can be removed.
 func dumpGuestScaleDownInputs(ctx context.Context, guestClient crclient.Client, artifactDir string) error {
 	var errs []error
 
 	nodes := &corev1.NodeList{}
+	nodesAvailable := true
 	if err := guestClient.List(ctx, nodes); err != nil {
-		return fmt.Errorf("failed to list nodes: %w", err)
+		nodesAvailable = false
+		errs = append(errs, fmt.Errorf("failed to list nodes: %w", err))
+	} else {
+		nodeObjects := make([]crclient.Object, 0, len(nodes.Items))
+		for i := range nodes.Items {
+			nodeObjects = append(nodeObjects, &nodes.Items[i])
+		}
+		if err := writeYAMLObjects(filepath.Join(artifactDir, "nodes.yaml"), nodeObjects); err != nil {
+			errs = append(errs, err)
+		}
 	}
+
 	pods := &corev1.PodList{}
+	podsAvailable := true
 	if err := guestClient.List(ctx, pods); err != nil {
-		return fmt.Errorf("failed to list pods: %w", err)
+		podsAvailable = false
+		errs = append(errs, fmt.Errorf("failed to list pods: %w", err))
+	} else {
+		podObjects := make([]crclient.Object, 0, len(pods.Items))
+		for i := range pods.Items {
+			podObjects = append(podObjects, &pods.Items[i])
+		}
+		if err := writeYAMLObjects(filepath.Join(artifactDir, "pods.yaml"), podObjects); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	nodeObjects := make([]crclient.Object, 0, len(nodes.Items))
-	for i := range nodes.Items {
-		nodeObjects = append(nodeObjects, &nodes.Items[i])
-	}
-	if err := writeYAMLObjects(filepath.Join(artifactDir, "nodes.yaml"), nodeObjects); err != nil {
-		errs = append(errs, err)
-	}
-
-	podObjects := make([]crclient.Object, 0, len(pods.Items))
-	for i := range pods.Items {
-		podObjects = append(podObjects, &pods.Items[i])
-	}
-	if err := writeYAMLObjects(filepath.Join(artifactDir, "pods.yaml"), podObjects); err != nil {
-		errs = append(errs, err)
-	}
-
-	placement := renderPodPlacement(nodes.Items, pods.Items)
-	if err := os.WriteFile(filepath.Join(artifactDir, "pods-by-node.txt"), []byte(placement), 0o644); err != nil {
-		errs = append(errs, fmt.Errorf("failed to write pods-by-node.txt: %w", err))
+	// The placement report needs both lists; the remaining artifacts do not.
+	if nodesAvailable && podsAvailable {
+		placement := renderPodPlacement(nodes.Items, pods.Items)
+		if err := os.WriteFile(filepath.Join(artifactDir, "pods-by-node.txt"), []byte(placement), 0o644); err != nil {
+			errs = append(errs, fmt.Errorf("failed to write pods-by-node.txt: %w", err))
+		}
 	}
 
 	status := &corev1.ConfigMap{}

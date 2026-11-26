@@ -1,6 +1,8 @@
 package dump
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,15 +15,19 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestRenderPodPlacement(t *testing.T) {
@@ -203,5 +209,87 @@ func TestDumpScaleDownDiagnostics(t *testing.T) {
 	}
 	if !strings.Contains(string(logs), "scaled down node") {
 		t.Errorf("expected the autoscaler logs to be captured, got: %q", string(logs))
+	}
+}
+
+func TestDumpScaleDownDiagnosticsKeepsGuestArtifactsWhenPodsFail(t *testing.T) {
+	ctx := t.Context()
+	hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "clusters"}}
+
+	guestClient := crclientfake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(
+		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "ip-10-0-0-1.ec2.internal"}},
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: clusterAutoscalerStatusConfigMap},
+			Data:       map[string]string{"status": "Cluster-autoscaler status"},
+		},
+	).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+			if _, ok := list.(*corev1.PodList); ok {
+				return errors.New("listing pods is forbidden")
+			}
+			return client.List(ctx, list, opts...)
+		},
+	}).Build()
+
+	artifactDir := t.TempDir()
+	err := DumpScaleDownDiagnostics(ctx, artifactDir, hc, nil, nil, guestClient)
+	if err == nil {
+		t.Fatal("expected the pod list failure to be reported")
+	}
+
+	for _, name := range []string{"nodes.yaml", "cluster-autoscaler-status.yaml"} {
+		if _, err := os.Stat(filepath.Join(artifactDir, name)); err != nil {
+			t.Errorf("expected %s to be written despite the pod list failure: %v", name, err)
+		}
+	}
+	for _, name := range []string{"pods.yaml", "pods-by-node.txt"} {
+		if _, err := os.Stat(filepath.Join(artifactDir, name)); err == nil {
+			t.Errorf("expected %s not to be written without a pod list", name)
+		}
+	}
+}
+
+func TestDumpScaleDownDiagnosticsReportsUnexpectedPreviousLogsError(t *testing.T) {
+	ctx := t.Context()
+	hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "clusters"}}
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+
+	kubeClient := k8sfake.NewSimpleClientset(
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "cluster-autoscaler-5f7c9d8b4-abcde",
+				Namespace: hcpNamespace,
+				Labels:    map[string]string{"app": "cluster-autoscaler"},
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "cluster-autoscaler"}}},
+		},
+	)
+	kubeClient.PrependReactor("get", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "log" {
+			return false, nil, nil
+		}
+		genericAction, ok := action.(k8stesting.GenericAction)
+		if !ok {
+			return false, nil, nil
+		}
+		if options, ok := genericAction.GetValue().(*corev1.PodLogOptions); ok && options.Previous {
+			return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "cluster-autoscaler", errors.New("previous logs are forbidden"))
+		}
+		return true, &runtime.Unknown{Raw: []byte("current logs\n")}, nil
+	})
+
+	artifactDir := t.TempDir()
+	err := DumpScaleDownDiagnostics(ctx, artifactDir, hc, nil, kubeClient, nil)
+	if err == nil {
+		t.Fatal("expected the unexpected previous log error to be reported")
+	}
+
+	logFile := filepath.Join(artifactDir, "cluster-autoscaler", "cluster-autoscaler-5f7c9d8b4-abcde-cluster-autoscaler.log")
+	logs, readErr := os.ReadFile(logFile)
+	if readErr != nil {
+		t.Fatalf("expected the current logs to be written despite the previous logs error: %v", readErr)
+	}
+	if !strings.Contains(string(logs), "current logs") {
+		t.Errorf("expected the current logs to be captured, got: %q", string(logs))
 	}
 }
