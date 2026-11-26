@@ -67,6 +67,9 @@ spec:
 
 Scaling a NodePool down will remove Nodes from the hosted cluster.
 
+To choose which Nodes are removed when you lower the replica count without scaling to zero, see
+[Targeted Machine deletion during NodePool scale-down](targeted-machine-deletion.md).
+
 ### Scaling To Zero
 
 Node(s) can become stuck when removing all Nodes from a cluster (scaling NodePool(s) down to zero) because the Node(s) cannot be drained successfully from the cluster.
@@ -82,7 +85,7 @@ Several conditions can prevent Node(s) from being drained successfully:
 
 #### Prevention
 
-To prevent Nodes from becoming stuck when scaling down, set the `.spec.nodeDrainTimeout` and `.spec.nodeVolumeDetachTimeout` in the NodePool CR to a value greater than `0s`. 
+To prevent Nodes from becoming stuck when scaling down, set the `.spec.nodeDrainTimeout` and `.spec.nodeVolumeDetachTimeout` in the NodePool CR to a value greater than `0s`.
 
 This forces Nodes to be removed once the timeout specified in the field has been reached, regardless of whether the node can be drained or the volumes can be detached successfully.
 
