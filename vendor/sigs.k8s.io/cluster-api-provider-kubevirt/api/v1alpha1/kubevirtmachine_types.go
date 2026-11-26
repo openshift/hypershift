@@ -20,8 +20,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint SA1019
-	"sigs.k8s.io/cluster-api/errors"                     //nolint SA1019
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/cluster-api/errors" //nolint:staticcheck // deprecated but no replacement yet
 )
 
 const (
@@ -68,11 +68,23 @@ type VirtualMachineBootstrapCheckSpec struct {
 	CheckStrategy string `json:"checkStrategy,omitempty"`
 }
 
+// KubevirtMachineInitializationStatus tracks CAPI v1beta2 contract fields.
+type KubevirtMachineInitializationStatus struct {
+	// Provisioned indicates that the infrastructure has been provisioned.
+	// Required by CAPI v1beta2 Machine controller to proceed with providerID propagation.
+	// +optional
+	Provisioned *bool `json:"provisioned,omitempty"`
+}
+
 // KubevirtMachineStatus defines the observed state of KubevirtMachine.
 type KubevirtMachineStatus struct {
 	// Ready denotes that the machine is ready
 	// +kubebuilder:default=false
 	Ready bool `json:"ready"`
+
+	// Initialization tracks CAPI v1beta2 contract initialization fields.
+	// +optional
+	Initialization *KubevirtMachineInitializationStatus `json:"initialization,omitempty"`
 
 	// LoadBalancerConfigured denotes that the machine has been
 	// added to the load balancer
@@ -85,7 +97,7 @@ type KubevirtMachineStatus struct {
 
 	// Conditions defines current service state of the KubevirtMachine.
 	// +optional
-	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// NodeUpdated denotes that the ProviderID is updated on Node of this KubevirtMachine
 	// +optional
@@ -146,11 +158,11 @@ type KubevirtMachine struct {
 	Status KubevirtMachineStatus `json:"status,omitempty"`
 }
 
-func (c *KubevirtMachine) GetConditions() clusterv1.Conditions {
+func (c *KubevirtMachine) GetConditions() []metav1.Condition {
 	return c.Status.Conditions
 }
 
-func (c *KubevirtMachine) SetConditions(conditions clusterv1.Conditions) {
+func (c *KubevirtMachine) SetConditions(conditions []metav1.Condition) {
 	c.Status.Conditions = conditions
 }
 
@@ -163,6 +175,3 @@ type KubevirtMachineList struct {
 	Items           []KubevirtMachine `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&KubevirtMachine{}, &KubevirtMachineList{})
-}
