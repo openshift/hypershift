@@ -8,6 +8,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -27,6 +29,28 @@ const (
 	// from all user-defined OpenshiftEC2NodeClass resources.
 	KarpenterSubnetsConfigMapName = "karpenter-subnets"
 )
+
+// KarpenterBaseTaints is the set of taints applied to nodes registered by Karpenter.
+var KarpenterBaseTaints = []corev1.Taint{
+	{
+		Key:    "karpenter.sh/unregistered",
+		Value:  "true",
+		Effect: corev1.TaintEffectNoExecute,
+	},
+}
+
+// KarpenterBaseTaintTolerations returns tolerations for KarpenterBaseTaints.
+func KarpenterBaseTaintTolerations() []corev1.Toleration {
+	tolerations := make([]corev1.Toleration, 0, len(KarpenterBaseTaints))
+	for _, taint := range KarpenterBaseTaints {
+		tolerations = append(tolerations, corev1.Toleration{
+			Key:      taint.Key,
+			Operator: corev1.TolerationOpExists,
+			Effect:   taint.Effect,
+		})
+	}
+	return tolerations
+}
 
 // ErrHCPNotFound is returned when no HostedControlPlane is found in the namespace.
 var ErrHCPNotFound = errors.New("hostedcontrolplane not found")

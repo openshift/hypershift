@@ -14,11 +14,13 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	supportutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -3396,5 +3398,28 @@ func Test_namespacedNamePredicateFunc(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(predicate(tt.object)).To(Equal(tt.want))
 		})
+	}
+}
+
+func TestReconcileAzureCloudNodeManager(t *testing.T) {
+	g := NewWithT(t)
+
+	guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+	r := &reconciler{
+		client:                 guestClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+	}
+
+	errs := r.reconcileAzureCloudNodeManager(t.Context(), "cloud-node-manager-image")
+	g.Expect(errs).To(BeEmpty())
+
+	daemonSet := ccm.CloudNodeManagerDaemonSet()
+	g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(daemonSet), daemonSet)).To(Succeed())
+
+	g.Expect(karpenterutil.KarpenterBaseTaints).ToNot(BeEmpty())
+	for _, taint := range karpenterutil.KarpenterBaseTaints {
+		g.Expect(daemonSet.Spec.Template.Spec.Tolerations).To(ContainElement(Satisfy(func(toleration corev1.Toleration) bool {
+			return toleration.ToleratesTaint(&taint)
+		})), "cloud node manager must tolerate Karpenter taint %s", taint.Key)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -164,5 +165,17 @@ func TestArchToAMILabelKey(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(ArchToAMILabelKey(tc.arch)).To(Equal(tc.expected))
 		})
+	}
+}
+
+func TestKarpenterBaseTaintTolerations(t *testing.T) {
+	g := NewWithT(t)
+
+	tolerations := KarpenterBaseTaintTolerations()
+	g.Expect(tolerations).To(HaveLen(len(KarpenterBaseTaints)))
+	for i, toleration := range tolerations {
+		g.Expect(toleration.Key).To(Equal(KarpenterBaseTaints[i].Key))
+		g.Expect(toleration.Operator).To(Equal(corev1.TolerationOpExists))
+		g.Expect(toleration.Effect).To(Equal(KarpenterBaseTaints[i].Effect))
 	}
 }
