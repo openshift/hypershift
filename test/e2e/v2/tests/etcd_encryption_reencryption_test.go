@@ -338,7 +338,7 @@ func dumpKMSProviderLogs(kubeClient kubernetes.Interface, controlPlaneNamespace 
 	for i := range pods.Items {
 		pod := &pods.Items[i]
 		for _, cs := range pod.Status.ContainerStatuses {
-			if !strings.HasPrefix(cs.Name, "azure-kms-provider") && !strings.HasPrefix(cs.Name, "aws-kms-provider") {
+			if !strings.HasPrefix(cs.Name, "azure-kms-provider") && cs.Name != "aws-kms-active" && cs.Name != "aws-kms-backup" {
 				continue
 			}
 			for _, previous := range []bool{false, true} {
