@@ -12561,3 +12561,129 @@ func TestEffectiveGMPMonitoring(t *testing.T) {
 		})
 	}
 }
+
+// TestHostedClusterReconciler_Reconcile is the canonical test for
+// HostedClusterReconciler.reconcile. The method already has several legacy
+// top-level tests recorded in the hypershiftlinter baseline (e.g.
+// TestReconcileComponents, TestReconcileNonBlockingBehavior); consolidating that
+// whole suite under this name is out of scope for this ignition bug fix, so the
+// testfuncstructure "one top-level test per symbol" check is suppressed here.
+//
+//nolint:hypershiftlinter // testfuncstructure: reconcile has pre-existing legacy top-level tests in the baseline; full consolidation is out of scope for this fix.
+func TestHostedClusterReconciler_Reconcile(t *testing.T) {
+	t.Run("When the ignition server is disabled, it should clear stale ignition status", func(t *testing.T) {
+		g := NewWithT(t)
+		const (
+			hcName      = "test-hc"
+			hcNamespace = "test-ns"
+		)
+
+		mockCtrl := gomock.NewController(t)
+		mockReleaseProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+		mockReleaseProvider.EXPECT().
+			Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(testutils.InitReleaseImageOrDie("4.16.0"), nil).AnyTimes()
+		mockReleaseProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+		mockReleaseProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+		mockReleaseProvider.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
+		fakeMetadata := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result: &dockerv1client.DockerImageConfig{Architecture: "amd64"},
+		}
+
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: hcNamespace, Name: "pull-secret"},
+			Data:       map[string][]byte{".dockerconfigjson": []byte(`{"auths":{}}`)},
+		}
+		ingress := &configv1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+			Spec:       configv1.IngressSpec{Domain: "apps.test.example.com"},
+		}
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hcName,
+				Namespace: hcNamespace,
+				Annotations: map[string]string{
+					hyperv1.ControlPlaneOperatorImageAnnotation:       "test-cpo-image",
+					hyperv1.ControlPlaneOperatorImageLabelsAnnotation: "fake-label=true",
+					hyperv1.SkipReleaseImageValidation:                "true",
+					hyperv1.DisableIgnitionServerAnnotation:           "true",
+				},
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform:   hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+				Release:    hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64"},
+				PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				Etcd:       hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+				InfraID:    "test-infra",
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.test.example.com"},
+						},
+					},
+					{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+				},
+				Networking: hyperv1.ClusterNetworking{
+					ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+					ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+				},
+			},
+		}
+		// Seed stale ignition status as if an earlier reconcile had run with the
+		// ignition server enabled.
+		hcluster.Status.IgnitionEndpoint = "stale-ignition.test.example.com"
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:   string(hyperv1.IgnitionEndpointAvailable),
+			Status: metav1.ConditionTrue,
+			Reason: hyperv1.AsExpectedReason,
+		})
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcluster, pullSecret, ingress).
+			WithStatusSubresource(hcluster).
+			Build()
+
+		r := &HostedClusterReconciler{
+			Client:                        fakeClient,
+			Clock:                         clock.RealClock{},
+			ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+			EnableOCPClusterMonitoring:    true,
+			CertRotationScale:             24 * time.Hour,
+			HypershiftOperatorImage:       "test-hso-image",
+			RegistryProvider: fakeReleaseProvider{
+				releaseProvider:  mockReleaseProvider,
+				metadataProvider: fakeMetadata,
+			},
+			createOrUpdate: func(req reconcile.Request) upsert.CreateOrUpdateFN {
+				return upsert.New(false).CreateOrUpdate
+			},
+			now: metav1.Now,
+		}
+
+		req := ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}
+		log := zap.New(zap.UseDevMode(true), zap.Level(zapcore.InfoLevel))
+
+		// reconcile persists the HostedCluster status (including the ignition status
+		// blocks) before any later reconcile phase can short-circuit it. A later-phase
+		// error is tolerated here because this test only exercises the ignition status
+		// cleanup, but the error is surfaced rather than discarded.
+		if _, err := r.reconcile(t.Context(), req, log, hcluster); err != nil {
+			t.Logf("reconcile returned a tolerated later-phase error: %v", err)
+		}
+
+		// Assert on the persisted object fetched from the API, not the in-memory
+		// argument, to prove the cleared status is actually written back.
+		persisted := &hyperv1.HostedCluster{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(hcluster), persisted)).To(Succeed())
+		g.Expect(persisted.Status.IgnitionEndpoint).To(BeEmpty(), "stale ignition endpoint should be cleared when the ignition server is disabled")
+		g.Expect(meta.FindStatusCondition(persisted.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))).
+			To(BeNil(), "stale IgnitionEndpointAvailable condition should be removed when the ignition server is disabled")
+	})
+}

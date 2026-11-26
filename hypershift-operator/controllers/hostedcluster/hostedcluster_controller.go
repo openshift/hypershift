@@ -1204,8 +1204,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
-	// Set Ignition Server endpoint
-	{
+	// Set Ignition Server endpoint. Skip when the ignition server is disabled via
+	// the DisableIgnitionServerAnnotation, as its route/service are never created.
+	if !isIgnitionServerDisabled(hcluster) {
 		serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
 		if serviceStrategy == nil {
 			// We don't return the error here as reconciling won't solve the input problem.
@@ -1258,6 +1259,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
 			return ctrl.Result{}, refreshErr // retry a failed refresh of the control plane release pull secret copy
 		}
+	} else {
+		// The ignition server is disabled; clear any stale endpoint left over from a
+		// prior reconcile where the server was enabled.
+		hcluster.Status.IgnitionEndpoint = ""
 	}
 
 	// Set the Control Plane and OAuth endpoints URL
@@ -1275,7 +1280,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Set the ignition server availability condition by checking its deployment.
-	{
+	// Skip when the ignition server is disabled via the DisableIgnitionServerAnnotation,
+	// as its deployment is never created and the condition would be misleading.
+	if !isIgnitionServerDisabled(hcluster) {
 		// Assume the server is unavailable unless proven otherwise.
 		newCondition := metav1.Condition{
 			Type:   string(hyperv1.IgnitionEndpointAvailable),
@@ -1317,6 +1324,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
+	} else {
+		// The ignition server is disabled; remove any stale availability condition
+		// left over from a prior reconcile where the server was enabled.
+		meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 	}
 	meta.SetStatusCondition(&hcluster.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
@@ -3838,6 +3849,18 @@ func deterministicLBIPSupportedCondition(hc *hyperv1.HostedCluster, controlPlane
 	condition.Reason = hyperv1.UnsupportedControlPlaneOperatorReason
 	condition.Message = "HostedCluster specifies serviceAnnotations or loadBalancerClass but the control plane operator image does not support deterministic LB IP management; upgrade the control plane release image"
 	return condition
+}
+
+// isIgnitionServerDisabled returns true when the ignition server is disabled for
+// the HostedCluster via the DisableIgnitionServerAnnotation. When disabled, the
+// control-plane-operator never creates the ignition server route, service or
+// deployment, so the hosted cluster controller must skip any logic that expects
+// those resources to exist. The annotation is read from the HostedCluster (the
+// source of truth that is mirrored onto the HostedControlPlane) so the check is
+// safe before the HostedControlPlane has been created.
+func isIgnitionServerDisabled(hcluster *hyperv1.HostedCluster) bool {
+	_, disabled := hcluster.Annotations[hyperv1.DisableIgnitionServerAnnotation]
+	return disabled
 }
 
 // reconcileCLISecrets makes sure the secrets that were created by the cli, and are safe to be deleted with the

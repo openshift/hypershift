@@ -797,8 +797,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
-	// Set Ignition Server endpoint
-	{
+	// Set Ignition Server endpoint. Skip when the ignition server is disabled via
+	// the DisableIgnitionServerAnnotation, as its route/service are never created.
+	if !isIgnitionServerDisabled(hcluster) {
 		serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
 		if serviceStrategy == nil {
 			// We don't return the error here as reconciling won't solve the input problem.
@@ -851,6 +852,10 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
 			return ctrl.Result{}, refreshErr // retry a failed refresh of the control plane release pull secret copy
 		}
+	} else {
+		// The ignition server is disabled; clear any stale endpoint left over from a
+		// prior reconcile where the server was enabled.
+		hcluster.Status.IgnitionEndpoint = ""
 	}
 
 	// Set the Control Plane and OAuth endpoints URL
@@ -868,7 +873,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 
 	// Set the ignition server availability condition by checking its deployment.
-	{
+	// Skip when the ignition server is disabled via the DisableIgnitionServerAnnotation,
+	// as its deployment is never created and the condition would be misleading.
+	if !isIgnitionServerDisabled(hcluster) {
 		// Assume the server is unavailable unless proven otherwise.
 		newCondition := metav1.Condition{
 			Type:   string(hyperv1.IgnitionEndpointAvailable),
@@ -910,6 +917,10 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
+	} else {
+		// The ignition server is disabled; remove any stale availability condition
+		// left over from a prior reconcile where the server was enabled.
+		meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 	}
 	meta.SetStatusCondition(&hcluster.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
