@@ -352,11 +352,20 @@ func dumpKMSProviderLogs(kubeClient kubernetes.Interface, controlPlaneNamespace 
 				})
 				logStream, err := req.Stream(ctx)
 				if err != nil {
+					if !previous {
+						GinkgoWriter.Printf("WARNING: dumpKMSProviderLogs: failed to stream %s/%s logs: %v\n", pod.Name, cs.Name, err)
+					}
 					continue
 				}
 				logBytes, err := io.ReadAll(logStream)
-				logStream.Close()
-				if err != nil || len(logBytes) == 0 {
+				if closeErr := logStream.Close(); closeErr != nil {
+					GinkgoWriter.Printf("WARNING: dumpKMSProviderLogs: failed to close log stream for %s/%s: %v\n", pod.Name, cs.Name, closeErr)
+				}
+				if err != nil {
+					GinkgoWriter.Printf("WARNING: dumpKMSProviderLogs: failed to read %s logs for %s/%s: %v\n", suffix, pod.Name, cs.Name, err)
+					continue
+				}
+				if len(logBytes) == 0 {
 					continue
 				}
 				fileName := filepath.Join(artifactDir, fmt.Sprintf("kms-provider-%s-%s-%s.log", pod.Name, cs.Name, suffix))
