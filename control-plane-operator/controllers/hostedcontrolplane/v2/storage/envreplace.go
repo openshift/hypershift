@@ -82,11 +82,22 @@ func (er *environmentReplacer) setOperatorImageReferences(releaseImageProvider, 
 	// `images` is map from payload image name -> image URL
 	// Create map from env. var name -> image URL
 
+	// Images for workloads the storage operator creates in the guest cluster. These
+	// must come from the user release: the control plane may run a different, and
+	// possibly privately hosted, release that guest nodes cannot pull.
+	//
+	// Note this list is opt-in, so anything added to operatorImageRefs defaults to the
+	// control plane release. A data plane image that is missed here is a silent
+	// version skew while both releases are public, and a hard ImagePullBackOff once
+	// the control plane release is private.
 	dataPlaneImageRefs := []string{
 		"NODE_DRIVER_REGISTRAR_IMAGE",
 		"LIVENESS_PROBE_IMAGE",
 		"CLUSTER_CLOUD_CONTROLLER_MANAGER_OPERATOR_IMAGE",
 		"KUBE_RBAC_PROXY_IMAGE",
+		// volume-data-source-validator runs in the guest's
+		// openshift-cluster-storage-operator namespace.
+		"VOLUME_DATA_SOURCE_VALIDATOR_IMAGE",
 	}
 
 	for envVar, payloadName := range operatorImageRefs {
