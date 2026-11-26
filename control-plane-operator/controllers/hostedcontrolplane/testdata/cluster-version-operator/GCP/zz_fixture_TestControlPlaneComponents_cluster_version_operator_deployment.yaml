@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: e3f7570a231101110ca21e1f15a50133d0691b5ee5e4ebdbffd8ddabf08143ee
+    hypershift.openshift.io/desired-state-hash: ba65cf5963e0bed0de1566b8eed5d943b086a8eeefa49c6154541c884d1fc025
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator
@@ -200,6 +200,8 @@ spec:
           rm -f /var/payload/release-manifests/0000_50_cluster-authentication-operator_02_config.cr.yaml
           rm -f /var/payload/release-manifests/0000_90_etcd-operator_03_prometheusrule.yaml
           rm -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_07_deployment-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_09_clusteroperator.yaml
           rm -f /var/payload/release-manifests/0000_03_marketplace-operator_02_operatorhub.cr.yaml
           cat > /var/payload/release-manifests/0000_01_cleanup.yaml <<EOF
           ---
