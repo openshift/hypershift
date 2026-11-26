@@ -1,6 +1,8 @@
 package oapi
 
 import (
+	"net/url"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -10,9 +12,11 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/podspec"
 
 	configv1 "github.com/openshift/api/config/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,29 +33,29 @@ func TestAdaptDeployment(t *testing.T) {
 		platform       hyperv1.PlatformType
 	}{
 		{
-			name:           "When etcd is managed and PKI reconciliation is enabled, it should retain the managed CA ConfigMap",
+			name:           "When etcd is managed and PKI reconciliation is enabled, it should retain the managed CA ConfigMap and wait for etcd",
 			managementType: hyperv1.Managed,
 			platform:       hyperv1.NonePlatform,
 		},
 		{
-			name:           "When etcd is managed and PKI reconciliation is disabled, it should retain the managed CA ConfigMap",
+			name:           "When etcd is managed and PKI reconciliation is disabled, it should retain the managed CA ConfigMap and wait for etcd",
 			managementType: hyperv1.Managed,
 			disablePKI:     true,
 			platform:       hyperv1.NonePlatform,
 		},
 		{
-			name:           "When etcd is unmanaged and PKI reconciliation is enabled, it should mount the client Secret CA",
+			name:           "When etcd is unmanaged and PKI reconciliation is enabled, it should mount the client Secret CA and not wait for managed etcd",
 			managementType: hyperv1.Unmanaged,
 			platform:       hyperv1.NonePlatform,
 		},
 		{
-			name:           "When etcd is unmanaged and PKI reconciliation is disabled, it should mount the client Secret CA",
+			name:           "When etcd is unmanaged and PKI reconciliation is disabled, it should mount the client Secret CA and not wait for managed etcd",
 			managementType: hyperv1.Unmanaged,
 			disablePKI:     true,
 			platform:       hyperv1.NonePlatform,
 		},
 		{
-			name:           "When IBMCloud etcd is unmanaged and PKI reconciliation is disabled, it should mount the client Secret CA",
+			name:           "When IBMCloud etcd is unmanaged and PKI reconciliation is disabled, it should mount the client Secret CA and not wait for managed etcd",
 			managementType: hyperv1.Unmanaged,
 			disablePKI:     true,
 			platform:       hyperv1.IBMCloudPlatform,
@@ -93,6 +97,10 @@ func TestAdaptDeployment(t *testing.T) {
 			g.Expect(originalContainer).NotTo(BeNil())
 			originalContainer = originalContainer.DeepCopy()
 			originalVolumeCount := len(podSpec.Volumes)
+			originalTrustAnchor := podspec.FindContainer("oas-trust-anchor-generator", podSpec.InitContainers)
+			g.Expect(originalTrustAnchor).NotTo(BeNil())
+			originalTrustAnchor = originalTrustAnchor.DeepCopy()
+			originalInitContainerCount := len(podSpec.InitContainers)
 
 			cpContext := component.WorkloadContext{
 				Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
@@ -125,6 +133,42 @@ func TestAdaptDeployment(t *testing.T) {
 				Name: "etcd-client-cert", MountPath: "/etc/kubernetes/certs/etcd-client",
 			}))
 			g.Expect(container.Args).To(ContainElements(originalContainer.Args))
+
+			g.Expect(podspec.FindContainer("oas-trust-anchor-generator", podSpec.InitContainers)).To(Equal(originalTrustAnchor))
+			waitForEtcd := podspec.FindContainer("wait-for-etcd", podSpec.InitContainers)
+			if tt.managementType == hyperv1.Unmanaged {
+				g.Expect(waitForEtcd).To(BeNil(), "unmanaged etcd should not wait for the managed etcd-client service")
+				g.Expect(podSpec.InitContainers).To(HaveLen(originalInitContainerCount - 1))
+			} else {
+				g.Expect(waitForEtcd).NotTo(BeNil(), "managed etcd should be reachable before openshift-apiserver starts")
+				g.Expect(podSpec.InitContainers).To(HaveLen(originalInitContainerCount))
+				g.Expect(waitForEtcd.SecurityContext).NotTo(BeNil())
+				g.Expect(waitForEtcd.SecurityContext.RunAsGroup).To(Equal(ptr.To[int64](0)), "the etcd client Secret is only group-readable")
+				for _, volumeName := range []string{"etcd-client-ca", "etcd-client-cert"} {
+					g.Expect(podspec.FindVolumeMount(volumeName, waitForEtcd.VolumeMounts)).To(Equal(podspec.FindVolumeMount(volumeName, container.VolumeMounts)))
+				}
+
+				// The health check must target the etcd endpoint and TLS material that openshift-apiserver uses.
+				configMap := &corev1.ConfigMap{}
+				_, _, err = assets.LoadManifestInto(ComponentName, "config.yaml", configMap)
+				g.Expect(err).NotTo(HaveOccurred())
+				apiServerConfig := &openshiftcpv1.OpenShiftAPIServerConfig{}
+				g.Expect(k8sutil.DeserializeResource(configMap.Data[openshiftAPIServerConfigKey], apiServerConfig, api.Scheme)).To(Succeed())
+				storage := apiServerConfig.StorageConfig
+				g.Expect(storage.URLs).To(HaveLen(1))
+				etcdURL, parseErr := url.Parse(storage.URLs[0])
+				g.Expect(parseErr).NotTo(HaveOccurred())
+				g.Expect(etcdURL.Scheme).To(Equal("https"))
+				g.Expect(etcdURL.Hostname()).NotTo(BeEmpty())
+				g.Expect(etcdURL.Port()).NotTo(BeEmpty())
+				script := strings.Join(waitForEtcd.Args, "\n")
+				g.Expect(script).To(ContainSubstring(etcdURL.Hostname() + ".$(POD_NAMESPACE).svc"))
+				g.Expect(script).To(ContainSubstring(":" + etcdURL.Port() + "/health"))
+				for _, tlsFile := range []string{storage.CA, storage.CertFile, storage.KeyFile} {
+					g.Expect(tlsFile).NotTo(BeEmpty())
+					g.Expect(script).To(ContainSubstring(tlsFile))
+				}
+			}
 		})
 	}
 }

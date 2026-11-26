@@ -52,6 +52,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if err != nil {
 			return err
 		}
+		// The wait-for-etcd init container only knows how to reach managed etcd.
+		podspec.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
 		podspec.UpdateVolume("etcd-client-ca", deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
 			v.VolumeSource = corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{

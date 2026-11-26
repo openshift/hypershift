@@ -163,6 +163,78 @@ spec:
         volumeMounts:
         - mountPath: /run/ca-trust-generated
           name: oas-trust-anchor
+      - args:
+        - -c
+        - |
+          #!/bin/bash
+          set -eu
+          # openshift-apiserver exits if it cannot reach etcd shortly after it
+          # starts. Wait until the managed etcd client Service resolves and etcd
+          # answers an authenticated health check. Both loops are bounded.
+          etcd_host="etcd-client.$(POD_NAMESPACE).svc"
+          max_attempts=100
+          echo "Waiting for ${etcd_host} to resolve..."
+          attempt=1
+          # Each DNS query times out after one second and is not retried.
+          until nslookup -timeout=1 -retry=1 "${etcd_host}"; do
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              echo "ERROR: ${etcd_host} did not resolve after ${attempt} attempts (${SECONDS}s elapsed); check the etcd-client service and cluster DNS." >&2
+              exit 1
+            fi
+            echo "DNS lookup failed, retrying (attempt ${attempt}/${max_attempts})..."
+            attempt=$((attempt + 1))
+            sleep 1
+          done
+          echo "${etcd_host} resolved, checking etcd health..."
+          attempt=1
+          until curl --connect-timeout 1 --max-time 2 --fail --silent --show-error --output /dev/null \
+            --cacert /etc/kubernetes/certs/etcd-client-ca/ca.crt \
+            --cert /etc/kubernetes/certs/etcd-client/etcd-client.crt \
+            --key /etc/kubernetes/certs/etcd-client/etcd-client.key \
+            "https://${etcd_host}:2379/health"; do
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              echo "ERROR: etcd health check failed after ${attempt} attempts (${SECONDS}s elapsed); check the etcd pods and the etcd-client service." >&2
+              exit 1
+            fi
+            if [ "${attempt}" -eq 10 ]; then
+              echo "WARNING: etcd is still not healthy after ${attempt} attempts; check the etcd pods and the etcd-client service." >&2
+            fi
+            echo "etcd not ready, retrying (attempt ${attempt}/${max_attempts})..."
+            attempt=$((attempt + 1))
+            sleep 1
+          done
+          echo "etcd is ready and accepting connections (${SECONDS}s elapsed)"
+        command:
+        - /bin/bash
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: wait-for-etcd
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          # runAsGroup: 0 required to read etcd secrets (defaultMode: 416/0640 = group-readable only)
+          runAsGroup: 0
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - mountPath: /etc/kubernetes/certs/etcd-client-ca
+          name: etcd-client-ca
+        - mountPath: /etc/kubernetes/certs/etcd-client
+          name: etcd-client-cert
       terminationGracePeriodSeconds: 120
       volumes:
       - emptyDir: {}
