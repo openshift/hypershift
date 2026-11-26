@@ -7536,6 +7536,58 @@ spec:
                   It exposes the config for instances to become kubernetes nodes.
                 maxLength: 1024
                 type: string
+              installation:
+                description: |-
+                  installation tracks the progress of initial cluster provisioning.
+                  When omitted, the HyperShift operator has not yet computed installation
+                  progress for this cluster (for example, while an older HyperShift operator
+                  that does not populate this field is still running).
+                minProperties: 1
+                properties:
+                  lastTransitionTime:
+                    description: |-
+                      lastTransitionTime is the time at which stage last transitioned
+                      to a new value.
+                      When omitted, stage has not yet been set.
+                      For clusters installed before this field existed, this is the time the field
+                      was first populated after upgrade, not the original installation time.
+                    format: date-time
+                    type: string
+                  stage:
+                    description: |-
+                      stage is the current phase of the installation lifecycle.
+                      When omitted, the HyperShift operator has not yet evaluated the
+                      installation stage for this cluster.
+                      The HyperShift operator only advances this value forward through the stages
+                      listed below; it does not move it backward if a precondition is later lost.
+                      Current health is reported by the HostedCluster conditions, not by this field.
+                      Valid values are Initializing, InfrastructureReady, ControlPlaneProvisioning,
+                      APIServerAvailable, WorkerAvailable, WaitingForOperators and InstallationComplete.
+                      When set to Initializing, the cluster has been created but no control plane
+                      components have started yet.
+                      When set to InfrastructureReady, infrastructure prerequisites (networking, DNS,
+                      load balancers) are available.
+                      When set to ControlPlaneProvisioning, control plane components are being
+                      created and started.
+                      When set to APIServerAvailable, the Kubernetes API server is reachable and
+                      serving requests.
+                      When set to WorkerAvailable, at least one worker node has joined the cluster
+                      and is healthy.
+                      When set to WaitingForOperators, the hosted control plane KubeConfig is
+                      available and the cluster is waiting for the ClusterVersion to report all
+                      operators as available.
+                      When set to InstallationComplete, the cluster installation has completed
+                      successfully.
+                    enum:
+                    - Initializing
+                    - InfrastructureReady
+                    - ControlPlaneProvisioning
+                    - APIServerAvailable
+                    - WorkerAvailable
+                    - WaitingForOperators
+                    - InstallationComplete
+                    type: string
+                type: object
               kubeadminPassword:
                 description: |-
                   kubeadminPassword is a reference to the secret that contains the initial

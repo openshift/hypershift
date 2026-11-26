@@ -2451,7 +2451,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "Waiting for components to be available: kube-apiserver",
+			expectedMsg: "1 component unavailable: kube-apiserver",
 		},
 		{
 			name: "When component Available condition is False, it should list component as not available",
@@ -2473,7 +2473,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "Waiting for components to be available: kube-apiserver",
+			expectedMsg: "1 component unavailable: kube-apiserver. First failure: kube-apiserver — Deploying",
 		},
 		{
 			name: "When multiple components are not available, it should list all unavailable components",
@@ -2517,7 +2517,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "Waiting for components to be available: kube-apiserver, kube-scheduler",
+			expectedMsg: "2 components unavailable: kube-apiserver, kube-scheduler. First failure: kube-apiserver — ",
 		},
 		{
 			name: "When some components are available and others are not, it should list only unavailable components",
@@ -2552,7 +2552,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "Waiting for components to be available: oauth-server",
+			expectedMsg: "1 component unavailable: oauth-server. First failure: oauth-server — ",
 		},
 		{
 			name:           "When client fails to list components, it should return error",
@@ -4854,6 +4854,51 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 			expectedCondStatus: metav1.ConditionFalse,
 			expectedCondReason: hyperv1.WaitingOnInfrastructureReadyReason,
 		},
+		{
+			name: "When route is not admitted and hosts are empty, it should set InfrastructureReady with RouteNotAdmitted reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 7,
+				},
+			},
+			infraStatus: infra.InfrastructureStatus{
+				APIHost:             "",
+				APIPort:             0,
+				RouteNotAdmitted:    true,
+				RouteNotAdmittedMsg: "Routes not admitted: kube-apiserver-external",
+			},
+			expectedCondStatus: metav1.ConditionFalse,
+			expectedCondReason: hyperv1.RouteNotAdmittedReason,
+		},
+		{
+			name: "When all hosts are populated, it should set InfrastructureReady to True even if RouteNotAdmitted is set",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 8,
+				},
+			},
+			infraStatus: infra.InfrastructureStatus{
+				APIHost:             "api.example.com",
+				APIPort:             6443,
+				KonnectivityHost:    "konnectivity.example.com",
+				KonnectivityPort:    8091,
+				OAuthEnabled:        true,
+				OAuthHost:           "oauth.example.com",
+				OAuthPort:           443,
+				RouteNotAdmitted:    true,
+				RouteNotAdmittedMsg: "Routes not admitted: oauth",
+			},
+			expectedCondStatus: metav1.ConditionTrue,
+			expectedCondReason: hyperv1.AsExpectedReason,
+			expectedEndpoint: hyperv1.APIEndpoint{
+				Host: "api.example.com",
+				Port: 6443,
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -4880,11 +4925,15 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 				g.Expect(tc.hcp.Status.ControlPlaneEndpoint).To(Equal(tc.expectedEndpoint))
 			}
 
-			if tc.expectedCondStatus == metav1.ConditionFalse && tc.infraStatus.Message == "" {
-				g.Expect(cond.Message).To(Equal("Cluster infrastructure is still provisioning"))
-			}
-			if tc.expectedCondStatus == metav1.ConditionFalse && tc.infraStatus.Message != "" {
-				g.Expect(cond.Message).To(Equal(tc.infraStatus.Message))
+			if tc.expectedCondStatus == metav1.ConditionFalse {
+				switch {
+				case tc.infraStatus.RouteNotAdmitted && tc.infraStatus.RouteNotAdmittedMsg != "":
+					g.Expect(cond.Message).To(ContainSubstring(tc.infraStatus.RouteNotAdmittedMsg))
+				case tc.infraStatus.Message != "":
+					g.Expect(cond.Message).To(Equal(tc.infraStatus.Message))
+				default:
+					g.Expect(cond.Message).To(Equal("Cluster infrastructure is still provisioning"))
+				}
 			}
 		})
 	}
