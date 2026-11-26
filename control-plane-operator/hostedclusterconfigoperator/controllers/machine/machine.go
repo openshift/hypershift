@@ -154,6 +154,16 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, _ 
 		})
 	}
 
+	// The endpoint address is the virt-launcher pod IP. MetalLB announces
+	// externalTrafficPolicy=Local only on nodes that own a ready endpoint,
+	// and it decides ownership from EndpointSlice nodeName. kube-proxy uses
+	// the same field to deliver that traffic without source NAT. Without it
+	// the mirrored LoadBalancer is allocated but never advertised.
+	nodeName, err := r.infraNodeName(ctx, cpService.Namespace, machine.Spec.InfrastructureRef.Name)
+	if err != nil {
+		return fmt.Errorf("failed to get VirtualMachineInstance %s/%s node name: %w", cpService.Namespace, machine.Spec.InfrastructureRef.Name, err)
+	}
+
 	ipAddressesByFamily := map[corev1.IPFamily][]string{
 		corev1.IPv4Protocol: ipv4MachineAddresses,
 		corev1.IPv6Protocol: ipv6MachineAddresses,
@@ -162,7 +172,7 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, _ 
 		if !serviceHasIPFamily(cpService, ipFamily) {
 			continue
 		}
-		err := r.reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx, machine, cpService, ipFamily, ipAddressesByFamily[ipFamily], ports)
+		err = r.reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx, machine, cpService, ipFamily, ipAddressesByFamily[ipFamily], ports, nodeName)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Info(fmt.Sprintf("waiting for kubevirt VM to be created before processing default ingress %s endpoints", ipFamily))
@@ -175,7 +185,7 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, _ 
 	return nil
 }
 
-func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx context.Context, machine *capiv1.Machine, cpService *corev1.Service, ipFamily corev1.IPFamily, machineAddresses []string, ports []discoveryv1.EndpointPort) error {
+func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx context.Context, machine *capiv1.Machine, cpService *corev1.Service, ipFamily corev1.IPFamily, machineAddresses []string, ports []discoveryv1.EndpointPort, nodeName string) error {
 	log := ctrl.LoggerFrom(ctx)
 	endpointSlice := &discoveryv1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{
@@ -207,10 +217,14 @@ func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx 
 		endpointSlice.Labels[discoveryv1.LabelManagedBy] = managedByValue
 		endpointSlice.AddressType = discoveryv1.AddressType(ipFamily)
 		if len(machineAddresses) > 0 {
-			endpointSlice.Endpoints = []discoveryv1.Endpoint{{
+			endpoint := discoveryv1.Endpoint{
 				Addresses:  machineAddresses,
 				Conditions: machinePhaseToEndpointConditions(machine),
-			}}
+			}
+			if nodeName != "" {
+				endpoint.NodeName = ptr.To(nodeName)
+			}
+			endpointSlice.Endpoints = []discoveryv1.Endpoint{endpoint}
 		} else {
 			endpointSlice.Endpoints = []discoveryv1.Endpoint{}
 		}
@@ -231,6 +245,22 @@ func serviceHasIPFamily(service *corev1.Service, ipFamilyToFind corev1.IPFamily)
 		}
 	}
 	return false
+}
+
+// infraNodeName returns the infra-cluster node running the worker VirtualMachineInstance.
+// A missing instance is not an error: the VMI watch reconciles again once it is scheduled.
+func (r *reconciler) infraNodeName(ctx context.Context, namespace, vmiName string) (string, error) {
+	if vmiName == "" {
+		return "", nil
+	}
+	vmi := &kubevirtv1.VirtualMachineInstance{}
+	if err := r.kubevirtInfraClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: vmiName}, vmi); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return vmi.Status.NodeName, nil
 }
 
 func kubevirtInfraNamespace(hcp *hyperv1.HostedControlPlane) string {
