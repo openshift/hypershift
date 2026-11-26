@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/hypershift/test/e2e/util/dump"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -154,6 +156,9 @@ func testAutoscaling(ctx context.Context, mgtClient crclient.Client, hostedClust
 		})
 		g.Expect(err).NotTo(HaveOccurred())
 		t.Logf("Deleted workload")
+
+		// Capture the autoscaler state before teardown if the node does not go away.
+		registerScaleDownDiagnostics(t, mgtClient, hostedCluster, guestClient)
 
 		// Wait for one less node.
 		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
@@ -420,6 +425,42 @@ func waitForAutoscalerDeploymentReady(t *testing.T, ctx context.Context, mgtClie
 // "discovered a paused node group" message, which the CAS fix emits at klog.V(4)
 // when it skips a paused MachineDeployment. Returns true if the message was found
 // before the timeout, false otherwise.
+// registerScaleDownDiagnostics dumps the cluster autoscaler state when the subtest
+// fails, so a scale-down stall leaves the autoscaler's own view of the cluster in the
+// artifacts instead of only the symptom (a node count that does not converge).
+// Cleanups run before the HostedCluster teardown, so the control plane is still up.
+func registerScaleDownDiagnostics(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+
+		// The subtest context is already cancelled when cleanups run.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		mgmtConfig, err := e2eutil.GetConfig()
+		if err != nil {
+			t.Logf("Skipping scale-down diagnostics: failed to get the management cluster config: %v", err)
+			return
+		}
+		mgmtKubeClient, err := kubeclient.NewForConfig(mgmtConfig)
+		if err != nil {
+			t.Logf("Skipping scale-down diagnostics: failed to get the management cluster client: %v", err)
+			return
+		}
+
+		artifactDir := filepath.Join(globalOpts.ArtifactDir, "scale-down-diagnostics", strings.ReplaceAll(t.Name(), "/", "-"))
+		if err := dump.DumpScaleDownDiagnostics(ctx, artifactDir, hostedCluster, mgtClient, mgmtKubeClient, guestClient); err != nil {
+			t.Logf("Scale-down diagnostics are incomplete in %s: %v", artifactDir, err)
+			return
+		}
+		t.Logf("Wrote scale-down diagnostics to %s", artifactDir)
+	})
+}
+
 func pollCASLogsForPausedNodeGroup(t *testing.T, ctx context.Context, controlPlaneNamespace string, timeout time.Duration) bool {
 	t.Helper()
 
@@ -672,6 +713,7 @@ func testAutoscalerRespectsNodePoolPause(ctx context.Context, mgtClient crclient
 		// After unpause, CAS may resume normal scale-down immediately since the
 		// workload is gone and aggressive timers are satisfied. Verify the cluster
 		// converges cleanly back to the autoscaling minimum.
+		registerScaleDownDiagnostics(t, mgtClient, hostedCluster, guestClient)
 		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 		t.Logf("Scaled down to %d nodes after unpause — clean state for next test", numNodes)
 	}
