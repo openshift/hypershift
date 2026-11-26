@@ -6085,7 +6085,9 @@ Options include:
 * Priority - selects the group with the highest user-defined priority.
 * Random - selects a group randomly.
 If not specified, <code>[Priority, LeastWaste]</code> is the default.
-Maximum of 3 expanders can be specified.</p>
+Maximum of 3 expanders can be specified.
+Each expander may only be specified once, and Random, being a fallback that
+always succeeds, must be the last expander in the list when specified.</p>
 </td>
 </tr>
 <tr>

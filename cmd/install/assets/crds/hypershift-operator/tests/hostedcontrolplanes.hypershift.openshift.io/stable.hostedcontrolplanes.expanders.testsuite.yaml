@@ -1,0 +1,478 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedControlPlane autoscaler expander validation"
+crdName: hostedcontrolplanes.hypershift.openshift.io
+version: v1beta1
+# ClusterAutoscaling is shared between HostedCluster and HostedControlPlane, so the
+# expander uniqueness and Random-ordering rules are generated into both CRDs. These
+# cases cover the HostedControlPlane copy, including the ratcheting behaviour required
+# by api/AGENTS.md when tightening validation on an existing field.
+tests:
+  onCreate:
+  - name: When expanders contains duplicates it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - Priority
+          - Priority
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        issuerURL: https://kubernetes.default.svc
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+    expectedError: "expanders must not contain duplicates"
+
+  - name: When expanders has Random before another expander it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - Random
+          - Priority
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        issuerURL: https://kubernetes.default.svc
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+    expectedError: "Random must be the last expander in the list"
+
+  onUpdate:
+  - name: When updating a legit field while previously duplicated expanders are unchanged it should pass
+    initialCRDPatches:
+      # Remove the expanders uniqueness validation so the initial object can be
+      # created with duplicates, as a control plane predating the rule would have.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/autoscaling/properties/expanders/x-kubernetes-validations/0
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - Priority
+          - Priority
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        issuerURL: https://kubernetes.default.svc
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - Priority
+          - Priority
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        issuerURL: https://kubernetes.default.svc
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - Priority
+          - Priority
+          scaling: ScaleUpAndScaleDown
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        olmCatalogPlacement: management
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+
+  - name: When updating a legit field while a previously misordered Random expander is unchanged it should pass
+    initialCRDPatches:
+      # Remove the Random ordering validation so the initial object can be created
+      # with Random before another expander, as a control plane predating the rule would have.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/autoscaling/properties/expanders/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - Random
+          - Priority
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        issuerURL: https://kubernetes.default.svc
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - Random
+          - Priority
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        issuerURL: https://kubernetes.default.svc
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - Random
+          - Priority
+          scaling: ScaleUpAndScaleDown
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        olmCatalogPlacement: management
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+
+  - name: When updating previously duplicated expanders to another duplicated value it should fail
+    initialCRDPatches:
+      # Remove the expanders uniqueness validation so the initial object can be
+      # created with duplicates, as a control plane predating the rule would have.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/autoscaling/properties/expanders/x-kubernetes-validations/0
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - Priority
+          - Priority
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        issuerURL: https://kubernetes.default.svc
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        autoscaling:
+          expanders:
+          - LeastWaste
+          - LeastWaste
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infraID: expanders-test
+        issuerURL: https://kubernetes.default.svc
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        sshKey:
+          name: ssh-key
+    expectedError: "expanders must not contain duplicates"

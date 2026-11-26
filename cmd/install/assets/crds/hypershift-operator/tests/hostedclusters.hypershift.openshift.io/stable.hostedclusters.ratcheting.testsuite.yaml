@@ -211,3 +211,451 @@ tests:
           servicePublishingStrategy:
             route: {}
             type: Route
+
+  - name: When updating a legit field while previously duplicated expanders are unchanged it should pass
+    initialCRDPatches:
+      # Remove the expanders uniqueness validation so the initial object can be
+      # created with duplicates, as a cluster predating the rule would have.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/autoscaling/properties/expanders/x-kubernetes-validations/0
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - Priority
+          - Priority
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - Priority
+          - Priority
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - Priority
+          - Priority
+          scaling: ScaleUpAndScaleDown
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+
+  - name: When updating a legit field while a previously misordered Random expander is unchanged it should pass
+    initialCRDPatches:
+      # Remove the Random ordering validation so the initial object can be created
+      # with Random before another expander, as a cluster predating the rule would have.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/autoscaling/properties/expanders/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - Random
+          - Priority
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - Random
+          - Priority
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - Random
+          - Priority
+          scaling: ScaleUpAndScaleDown
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+
+  - name: When updating previously duplicated expanders to another duplicated value it should fail
+    initialCRDPatches:
+      # Remove the expanders uniqueness validation so the initial object can be
+      # created with duplicates, as a cluster predating the rule would have.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/autoscaling/properties/expanders/x-kubernetes-validations/0
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - Priority
+          - Priority
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - LeastWaste
+          - LeastWaste
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "expanders must not contain duplicates"
+
+  - name: When updating a previously misordered Random expander to another misordered value it should fail
+    initialCRDPatches:
+      # Remove the Random ordering validation so the initial object can be created
+      # with Random before another expander, as a cluster predating the rule would have.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/autoscaling/properties/expanders/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - Random
+          - Priority
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        autoscaling:
+          expanders:
+          - Random
+          - LeastWaste
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Random must be the last expander in the list"
