@@ -27,6 +27,7 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -37,6 +38,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -1220,9 +1222,13 @@ func TestHyperShiftOperatorPodDisruptionBudget(t *testing.T) {
 // fakeDiscovery implements discovery.ServerResourcesInterface for testing.
 type fakeDiscovery struct {
 	resources []*metav1.APIResourceList
+	errs      map[string]error
 }
 
 func (f *fakeDiscovery) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+	if err, found := f.errs[groupVersion]; found {
+		return nil, err
+	}
 	for _, rl := range f.resources {
 		if rl.GroupVersion == groupVersion {
 			return rl, nil
@@ -1236,51 +1242,93 @@ func (f *fakeDiscovery) ServerResourcesForGroupVersion(groupVersion string) (*me
 	}
 }
 
-func TestIsClusterAPIRegistered(t *testing.T) {
+func TestClusterAPIVersion(t *testing.T) {
 	tests := []struct {
-		name           string
-		resources      []*metav1.APIResourceList
-		expectedResult bool
+		name            string
+		resources       []*metav1.APIResourceList
+		errs            map[string]error
+		expectedVersion schema.GroupVersion
+		expectedResult  bool
+		expectError     bool
 	}{
 		{
-			name: "When ClusterAPI API is registered it should detect CCAPIO presence",
+			name: "When v1 ClusterAPI API is registered it should select v1",
 			resources: []*metav1.APIResourceList{
 				{
-					GroupVersion: "operator.openshift.io/v1alpha1",
+					GroupVersion: operatorv1.GroupVersion.String(),
 					APIResources: []metav1.APIResource{
 						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
 						{Name: "clusterapis", Kind: "ClusterAPI"},
 					},
 				},
+				{
+					GroupVersion: operatorv1alpha1.GroupVersion.String(),
+					APIResources: []metav1.APIResource{{Name: "clusterapis", Kind: "ClusterAPI"}},
+				},
 			},
-			expectedResult: true,
+			expectedVersion: operatorv1.GroupVersion,
+			expectedResult:  true,
 		},
 		{
-			name:           "When ClusterAPI API is not registered it should skip CCAPIO coordination",
-			resources:      nil,
-			expectedResult: false,
-		},
-		{
-			name: "When operator.openshift.io/v1alpha1 exists but ClusterAPI kind is not present it should return false",
+			name: "When only v1alpha1 ClusterAPI API is registered it should select v1alpha1",
 			resources: []*metav1.APIResourceList{
 				{
-					GroupVersion: "operator.openshift.io/v1alpha1",
+					GroupVersion: operatorv1alpha1.GroupVersion.String(),
+					APIResources: []metav1.APIResource{{Name: "clusterapis", Kind: "ClusterAPI"}},
+				},
+			},
+			expectedVersion: operatorv1alpha1.GroupVersion,
+			expectedResult:  true,
+		},
+		{
+			name: "When v1 does not expose ClusterAPI and v1alpha1 does it should select v1alpha1",
+			resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: operatorv1.GroupVersion.String(),
 					APIResources: []metav1.APIResource{
 						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
 					},
 				},
+				{
+					GroupVersion: operatorv1alpha1.GroupVersion.String(),
+					APIResources: []metav1.APIResource{{Name: "clusterapis", Kind: "ClusterAPI"}},
+				},
 			},
+			expectedVersion: operatorv1alpha1.GroupVersion,
+			expectedResult:  true,
+		},
+		{
+			name:           "When ClusterAPI API is not registered it should skip CCAPIO coordination",
 			expectedResult: false,
+		},
+		{
+			name: "When v1 discovery returns an error, it should return the error without falling back",
+			errs: map[string]error{
+				operatorv1.GroupVersion.String(): fmt.Errorf("v1 discovery failed"),
+			},
+			expectError: true,
+		},
+		{
+			name: "When v1alpha1 discovery returns an error, it should return the error",
+			errs: map[string]error{
+				operatorv1alpha1.GroupVersion.String(): fmt.Errorf("v1alpha1 discovery failed"),
+			},
+			expectError: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			disco := &fakeDiscovery{resources: tc.resources}
+			disco := &fakeDiscovery{resources: tc.resources, errs: tc.errs}
 
-			registered, err := isClusterAPIRegistered(disco)
+			version, registered, err := clusterAPIVersion(disco)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
 			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(version).To(Equal(tc.expectedVersion))
 			g.Expect(registered).To(Equal(tc.expectedResult))
 		})
 	}
@@ -1300,8 +1348,19 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 			if patch.Type() != types.ApplyPatchType {
 				return c.Patch(ctx, obj, patch, opts...)
 			}
+			unstructuredObject, ok := obj.(*unstructured.Unstructured)
+			if !ok {
+				return fmt.Errorf("expected unstructured ClusterAPI apply object, got %T", obj)
+			}
+			patchData, err := patch.Data(obj)
+			if err != nil {
+				return err
+			}
+			if err := json.Unmarshal(patchData, &unstructuredObject.Object); err != nil {
+				return err
+			}
 			existing := obj.DeepCopyObject().(crclient.Object)
-			err := c.Get(ctx, crclient.ObjectKeyFromObject(obj), existing)
+			err = c.Get(ctx, crclient.ObjectKeyFromObject(obj), existing)
 			if apierrors.IsNotFound(err) {
 				return c.Create(ctx, obj)
 			}
@@ -1392,7 +1451,7 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 			}
 			client := builder.Build()
 
-			_, err := ensureUnmanagedCRDs(t.Context(), io.Discard, client, tc.crds)
+			_, err := ensureUnmanagedCRDs(t.Context(), io.Discard, client, operatorv1alpha1.GroupVersion, tc.crds)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			if tc.expectNoChange {
@@ -1416,6 +1475,29 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 			g.Expect(config.Spec.UnmanagedCustomResourceDefinitions).To(ConsistOf(tc.expectedCRDNames))
 		})
 	}
+
+	t.Run("When ClusterAPI v1 is selected it should apply the v1 spec-only patch", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		var applied map[string]any
+		client := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(_ context.Context, _ crclient.WithWatch, obj crclient.Object, patch crclient.Patch, _ ...crclient.PatchOption) error {
+					g.Expect(obj.GetObjectKind().GroupVersionKind()).To(Equal(operatorv1.GroupVersion.WithKind("ClusterAPI")))
+					patchData, err := patch.Data(obj)
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(json.Unmarshal(patchData, &applied)).To(Succeed())
+					return nil
+				},
+			}).
+			Build()
+
+		_, err := ensureUnmanagedCRDs(t.Context(), io.Discard, client, operatorv1.GroupVersion, capiCRDs)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(applied).To(HaveKeyWithValue("apiVersion", operatorv1.GroupVersion.String()))
+		g.Expect(applied).To(HaveKeyWithValue("kind", "ClusterAPI"))
+		g.Expect(applied).To(HaveKey("spec"))
+	})
 }
 
 func TestWaitForCAPIOperatorSync(t *testing.T) {
@@ -1553,7 +1635,7 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 			defer cancel()
 
-			err := waitForCAPIOperatorSync(ctx, io.Discard, client, tc.patchGeneration)
+			err := waitForCAPIOperatorSync(ctx, io.Discard, client, operatorv1alpha1.GroupVersion, tc.patchGeneration)
 			if tc.expectSuccess {
 				g.Expect(err).ToNot(HaveOccurred())
 			} else {
@@ -1561,6 +1643,30 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When ClusterAPI v1 is selected it should read sync status through v1", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		client := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, obj crclient.Object, _ ...crclient.GetOption) error {
+					g.Expect(obj.GetObjectKind().GroupVersionKind()).To(Equal(operatorv1.GroupVersion.WithKind("ClusterAPI")))
+					unstructuredObject, ok := obj.(*unstructured.Unstructured)
+					g.Expect(ok).To(BeTrue())
+					unstructuredObject.Object = map[string]any{
+						"status": map[string]any{
+							"observedRevisionGeneration": int64(2),
+							"desiredRevision":            "rev-2",
+							"currentRevision":            "rev-2",
+						},
+					}
+					return nil
+				},
+			}).
+			Build()
+
+		g.Expect(waitForCAPIOperatorSync(t.Context(), io.Discard, client, operatorv1.GroupVersion, 2)).To(Succeed())
+	})
 }
 
 func TestApplyDefaults(t *testing.T) {

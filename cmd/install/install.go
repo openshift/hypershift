@@ -41,6 +41,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -50,6 +51,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -604,18 +606,18 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 		if err != nil {
 			return fmt.Errorf("failed to create discovery client: %w", err)
 		}
-		registered, err := isClusterAPIRegistered(discoveryClient)
+		clusterAPIVersion, registered, err := clusterAPIVersion(discoveryClient)
 		if err != nil {
 			return err
 		}
 		if registered {
 			fmt.Fprintf(out, "ClusterAPI API detected, coordinating with Cluster CAPI Operator\n")
-			generation, err := ensureUnmanagedCRDs(ctx, out, client, crdsToApply)
+			generation, err := ensureUnmanagedCRDs(ctx, out, client, clusterAPIVersion, crdsToApply)
 			if err != nil {
 				return err
 			}
 			if generation > 0 {
-				if err := waitForCAPIOperatorSync(ctx, out, client, generation); err != nil {
+				if err := waitForCAPIOperatorSync(ctx, out, client, clusterAPIVersion, generation); err != nil {
 					return err
 				}
 			}
@@ -1158,26 +1160,25 @@ type groupVersionDiscoverer interface {
 	ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error)
 }
 
-// isClusterAPIRegistered checks whether the ClusterAPI API resource (clusterapis)
-// is served on the management cluster via the discovery API. This indicates that the
-// cluster knows about the ClusterAPI config type, independent of whether a config
-// instance exists.
-func isClusterAPIRegistered(discoveryClient groupVersionDiscoverer) (bool, error) {
-	apis, err := discoveryClient.ServerResourcesForGroupVersion(operatorv1alpha1.GroupVersion.String())
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
+// clusterAPIVersion discovers the newest served ClusterAPI API version. It falls
+// back to v1alpha1 only when v1 does not serve ClusterAPI, preserving support for
+// management clusters that predate the v1 API without masking discovery failures.
+func clusterAPIVersion(discoveryClient groupVersionDiscoverer) (schema.GroupVersion, bool, error) {
+	for _, groupVersion := range []schema.GroupVersion{operatorv1.GroupVersion, operatorv1alpha1.GroupVersion} {
+		apis, err := discoveryClient.ServerResourcesForGroupVersion(groupVersion.String())
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return schema.GroupVersion{}, false, fmt.Errorf("failed to discover API resources for %s: %w", groupVersion, err)
 		}
-		return false, fmt.Errorf("failed to discover API resources for %s: %w", operatorv1alpha1.GroupVersion, err)
-	}
-	if apis != nil {
 		for _, api := range apis.APIResources {
-			if api.Kind == "ClusterAPI" {
-				return true, nil
+			if api.Name == "clusterapis" || api.Kind == "ClusterAPI" {
+				return groupVersion, true, nil
 			}
 		}
 	}
-	return false, nil
+	return schema.GroupVersion{}, false, nil
 }
 
 // ensureUnmanagedCRDs ensures the singleton ClusterAPI config resource exists and has
@@ -1187,7 +1188,7 @@ func isClusterAPIRegistered(discoveryClient groupVersionDiscoverer) (bool, error
 // merges set entries across field owners without conflicts.
 // Returns the metadata.generation of the applied ClusterAPI resource so the caller
 // can wait for the CAPI Operator to reconcile this specific version.
-func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, capiCRDs []crclient.Object) (int64, error) {
+func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, clusterAPIVersion schema.GroupVersion, capiCRDs []crclient.Object) (int64, error) {
 	capiCRDNames := set.New[string]()
 	for _, crd := range capiCRDs {
 		name := crd.GetName()
@@ -1200,10 +1201,10 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 	}
 
 	// Build the SSA patch payload as a map so only the fields we intend to own
-	// are included. ApplyConfiguration types for operator/v1alpha1 are not yet
-	// available in openshift/client-go.
+	// are included. The vendored API types do not include the v1 ClusterAPI type,
+	// so use an unstructured object with the discovered served version.
 	patchData, err := json.Marshal(map[string]any{
-		"apiVersion": operatorv1alpha1.GroupVersion.String(),
+		"apiVersion": clusterAPIVersion.String(),
 		"kind":       "ClusterAPI",
 		"metadata": map[string]any{
 			"name": "cluster",
@@ -1216,14 +1217,9 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 		return 0, fmt.Errorf("failed to marshal ClusterAPI config: %w", err)
 	}
 
-	clusterAPI := &operatorv1alpha1.ClusterAPI{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
-		},
-		Spec: &operatorv1alpha1.ClusterAPISpec{
-			UnmanagedCustomResourceDefinitions: capiCRDNames.SortedList(),
-		},
-	}
+	clusterAPI := &unstructured.Unstructured{}
+	clusterAPI.SetGroupVersionKind(clusterAPIVersion.WithKind("ClusterAPI"))
+	clusterAPI.SetName("cluster")
 	if err := c.Patch(
 		ctx, clusterAPI, crclient.RawPatch(types.ApplyPatchType, patchData),
 		crclient.ForceOwnership, crclient.FieldOwner("hypershift"),
@@ -1231,7 +1227,7 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 		return 0, fmt.Errorf("failed to apply ClusterAPI config: %w", err)
 	}
 	fmt.Fprintf(out, "Applied ClusterAPI config with %d unmanaged CRDs\n", capiCRDNames.Len())
-	return clusterAPI.Generation, nil
+	return clusterAPI.GetGeneration(), nil
 }
 
 // waitForCAPIOperatorSync waits for the Cluster CAPI Operator to fully reconcile after
@@ -1240,21 +1236,34 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 // 2. status.currentRevision == status.desiredRevision
 // The generation parameter must be the metadata.generation returned by the SSA patch
 // to avoid false positives from reading a stale object.
-func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Client, generation int64) error {
+func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Client, clusterAPIVersion schema.GroupVersion, generation int64) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	fmt.Fprintf(out, "Waiting for Cluster CAPI Operator to sync...\n")
 	return wait.PollUntilContextCancel(waitCtx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
-		clusterAPI := &operatorv1alpha1.ClusterAPI{}
+		clusterAPI := &unstructured.Unstructured{}
+		clusterAPI.SetGroupVersionKind(clusterAPIVersion.WithKind("ClusterAPI"))
 		if err := c.Get(ctx, crclient.ObjectKey{Name: "cluster"}, clusterAPI); err != nil {
 			return false, fmt.Errorf("failed to get ClusterAPI config: %w", err)
 		}
 
-		if clusterAPI.Status.ObservedRevisionGeneration < generation {
+		observedRevisionGeneration, found, err := unstructured.NestedInt64(clusterAPI.Object, "status", "observedRevisionGeneration")
+		if err != nil {
+			return false, fmt.Errorf("failed to read ClusterAPI observedRevisionGeneration: %w", err)
+		}
+		if !found || observedRevisionGeneration < generation {
 			return false, nil
 		}
-		if clusterAPI.Status.CurrentRevision == "" || clusterAPI.Status.CurrentRevision != clusterAPI.Status.DesiredRevision {
+		desiredRevision, _, err := unstructured.NestedString(clusterAPI.Object, "status", "desiredRevision")
+		if err != nil {
+			return false, fmt.Errorf("failed to read ClusterAPI desiredRevision: %w", err)
+		}
+		currentRevision, _, err := unstructured.NestedString(clusterAPI.Object, "status", "currentRevision")
+		if err != nil {
+			return false, fmt.Errorf("failed to read ClusterAPI currentRevision: %w", err)
+		}
+		if currentRevision == "" || currentRevision != desiredRevision {
 			return false, nil
 		}
 
