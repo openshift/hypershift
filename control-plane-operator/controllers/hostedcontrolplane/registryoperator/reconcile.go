@@ -99,6 +99,7 @@ var (
 
 type Params struct {
 	operatorImage        string
+	guestOperatorImage   string
 	tokenMinterImage     string
 	platform             hyperv1.PlatformType
 	issuerURL            string
@@ -147,6 +148,13 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			},
 		},
 	}
+	// guestOperatorImage is not the operator's own image, which comes from the control
+	// plane release. The operator only reads it, as OPERATOR_IMAGE, to stamp an image
+	// into resources it creates in the guest cluster: the node-ca DaemonSet and the
+	// Azure path fix Job, both in the guest's openshift-image-registry namespace. Those
+	// are data plane workloads, so it must come from the user release; the control
+	// plane release may be held in a private registry the guest cannot pull from.
+	params.guestOperatorImage = userReleaseImageProvider.GetImage("cluster-image-registry-operator")
 
 	if azureutil.IsAroHCP() {
 		params.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ClientID
@@ -177,7 +185,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: ptr.To(false),
 				Containers: []corev1.Container{
-					util.BuildContainer(containerMain(), buildMainContainer(params.operatorImage, params.registryImage, params.prunerImage, params.releaseVersion)),
+					util.BuildContainer(containerMain(), buildMainContainer(params.operatorImage, params.guestOperatorImage, params.registryImage, params.prunerImage, params.releaseVersion)),
 					util.BuildContainer(containerClientTokenMinter(), buildClientTokenMinter(params.tokenMinterImage, params.issuerURL)),
 				},
 				Volumes: []corev1.Volume{
@@ -255,7 +263,7 @@ func operatorStartScript(startScriptTemplate *template.Template) (string, error)
 	return out.String(), nil
 }
 
-func buildMainContainer(image, registryImage, prunerImage, releaseVersion string) func(*corev1.Container) {
+func buildMainContainer(image, guestOperatorImage, registryImage, prunerImage, releaseVersion string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{
@@ -280,7 +288,7 @@ func buildMainContainer(image, registryImage, prunerImage, releaseVersion string
 			},
 			{
 				Name:  "OPERATOR_IMAGE",
-				Value: image,
+				Value: guestOperatorImage,
 			},
 			{
 				Name:  "IMAGE",
