@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -148,6 +149,57 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	if err := c.Watch(source.Kind[client.Object](kubevirtInfraCache, &corev1.Service{}, handler.EnqueueRequestsFromMapFunc(allNodes), isKCCMService)); err != nil {
 		return fmt.Errorf("failed to watch kubevirt services: %w", err)
 	}
+	// Live migration changes the infra node without changing the guest Machine.
+	// Re-queue that Machine so EndpointSlice nodeName follows the VMI.
+	if err := c.Watch(source.Kind[client.Object](kubevirtInfraCache, &kubevirtv1.VirtualMachineInstance{}, handler.EnqueueRequestsFromMapFunc(r.requestsForVirtualMachineInstance), virtualMachineInstanceNodeChanged())); err != nil {
+		return fmt.Errorf("failed to watch kubevirt virtual machine instances: %w", err)
+	}
 
 	return nil
+}
+
+func (r *reconciler) requestsForVirtualMachineInstance(ctx context.Context, obj client.Object) []reconcile.Request {
+	machineList := &capiv1.MachineList{}
+	if err := r.client.List(ctx, machineList); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "failed listing machines for VirtualMachineInstance watch")
+		return nil
+	}
+	requests := make([]reconcile.Request, 0, 1)
+	for i := range machineList.Items {
+		machine := &machineList.Items[i]
+		if machine.Spec.InfrastructureRef.Name != obj.GetName() {
+			continue
+		}
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Namespace: machine.Namespace,
+				Name:      machine.Name,
+			},
+		})
+	}
+	return requests
+}
+
+// virtualMachineInstanceNodeChanged reports changes to the infra node hosting a VMI.
+// Other status updates are ignored so EndpointSlices are not rewritten on every heartbeat.
+func virtualMachineInstanceNodeChanged() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return virtualMachineInstanceNodeName(e.Object) != ""
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return virtualMachineInstanceNodeName(e.ObjectOld) != virtualMachineInstanceNodeName(e.ObjectNew)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return virtualMachineInstanceNodeName(e.Object) != ""
+		},
+	}
+}
+
+func virtualMachineInstanceNodeName(obj client.Object) string {
+	vmi, ok := obj.(*kubevirtv1.VirtualMachineInstance)
+	if !ok || vmi == nil {
+		return ""
+	}
+	return vmi.Status.NodeName
 }

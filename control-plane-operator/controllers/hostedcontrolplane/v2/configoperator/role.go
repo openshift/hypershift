@@ -58,7 +58,10 @@ func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
 				APIGroups: []string{
 					"kubevirt.io",
 				},
-				Resources: []string{"virtualmachines"},
+				// virtualmachineinstances is read to publish the infra node on
+				// selectorless load-balancer EndpointSlices. MetalLB needs that
+				// nodeName to advertise externalTrafficPolicy=Local.
+				Resources: []string{"virtualmachines", "virtualmachineinstances"},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{

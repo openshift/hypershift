@@ -2,6 +2,7 @@ package machine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -21,6 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -39,6 +41,10 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 	}
 	vmTypeMeta := metav1.TypeMeta{
 		Kind:       "VirtualMachine",
+		APIVersion: kubevirtv1.GroupVersion.String(),
+	}
+	vmiTypeMeta := metav1.TypeMeta{
+		Kind:       "VirtualMachineInstance",
 		APIVersion: kubevirtv1.GroupVersion.String(),
 	}
 	newObjectMeta := func(namespace, name string) metav1.ObjectMeta {
@@ -219,6 +225,12 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			return eps
 		}
 	}
+	withNodeName := func(nodeName string) func(eps discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
+		return func(eps discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
+			eps.Endpoints[0].NodeName = ptr.To(nodeName)
+			return eps
+		}
+	}
 
 	defaultIngressEndpointSliceIPv4 := func(machine capiv1.Machine, vm kubevirtv1.VirtualMachine, endpointSliceTransform ...func(discoveryv1.EndpointSlice) discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
 		endpointSlice := discoveryv1.EndpointSlice{
@@ -299,8 +311,8 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		return endpointSlice
 	}
 
-	kccmEndpointSliceIPv4WithNamespace := func(namespace string, machine capiv1.Machine, vm kubevirtv1.VirtualMachine) discoveryv1.EndpointSlice {
-		return discoveryv1.EndpointSlice{
+	kccmEndpointSliceIPv4WithNamespace := func(namespace string, machine capiv1.Machine, vm kubevirtv1.VirtualMachine, endpointSliceTransform ...func(discoveryv1.EndpointSlice) discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
+		endpointSlice := discoveryv1.EndpointSlice{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: namespace,
 				Name:      "kccm-service-cluster1-" + machine.Name + "-ipv4",
@@ -332,14 +344,18 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 				Name:     ptr.To("port1"),
 			}},
 		}
+		for _, transform := range endpointSliceTransform {
+			endpointSlice = transform(endpointSlice)
+		}
+		return endpointSlice
 	}
 
-	kccmEndpointSliceIPv4 := func(machine capiv1.Machine, vm kubevirtv1.VirtualMachine) discoveryv1.EndpointSlice {
-		return kccmEndpointSliceIPv4WithNamespace("ns1", machine, vm)
+	kccmEndpointSliceIPv4 := func(machine capiv1.Machine, vm kubevirtv1.VirtualMachine, endpointSliceTransform ...func(discoveryv1.EndpointSlice) discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
+		return kccmEndpointSliceIPv4WithNamespace("ns1", machine, vm, endpointSliceTransform...)
 	}
 
-	kccmEndpointSliceIPv6 := func(machine capiv1.Machine, vm kubevirtv1.VirtualMachine) discoveryv1.EndpointSlice {
-		return discoveryv1.EndpointSlice{
+	kccmEndpointSliceIPv6 := func(machine capiv1.Machine, vm kubevirtv1.VirtualMachine, endpointSliceTransform ...func(discoveryv1.EndpointSlice) discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
+		endpointSlice := discoveryv1.EndpointSlice{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "ns1",
 				Name:      "kccm-service-cluster1-" + machine.Name + "-ipv6",
@@ -371,6 +387,10 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 				Name:     ptr.To("port1"),
 			}},
 		}
+		for _, transform := range endpointSliceTransform {
+			endpointSlice = transform(endpointSlice)
+		}
+		return endpointSlice
 	}
 
 	withSelector := func(service corev1.Service) corev1.Service {
@@ -465,6 +485,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		name                          string
 		machines                      []capiv1.Machine
 		virtualMachines               []kubevirtv1.VirtualMachine
+		virtualMachineInstances       []kubevirtv1.VirtualMachineInstance
 		services                      []corev1.Service
 		endpointSlices                []discoveryv1.EndpointSlice
 		hcp                           *hyperv1.HostedControlPlane
@@ -553,6 +574,36 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			hcp: kubevirtHCP,
 		},
 		{
+			name:            "When VirtualMachineInstances are scheduled on infra nodes, it should set EndpointSlice nodeName",
+			machines:        pairOfDualStackRunningMachines,
+			virtualMachines: pairOfVirtualMachines,
+			virtualMachineInstances: []kubevirtv1.VirtualMachineInstance{
+				{
+					TypeMeta:   vmiTypeMeta,
+					ObjectMeta: vmWorker1Meta,
+					Status:     kubevirtv1.VirtualMachineInstanceStatus{NodeName: "mgmt-node-1"},
+				},
+				{
+					TypeMeta:   vmiTypeMeta,
+					ObjectMeta: vmWorker2Meta,
+					Status:     kubevirtv1.VirtualMachineInstanceStatus{NodeName: "mgmt-node-2"},
+				},
+			},
+			services:         []corev1.Service{defaultIngressService, kccmService},
+			expectedServices: []corev1.Service{defaultIngressService, kccmService},
+			expectedIngressEndpointSlices: []discoveryv1.EndpointSlice{
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0], withNodeName("mgmt-node-1")),
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], withNodeName("mgmt-node-2")),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0], withNodeName("mgmt-node-1")),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], withNodeName("mgmt-node-2")),
+				kccmEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0], withNodeName("mgmt-node-1")),
+				kccmEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], withNodeName("mgmt-node-2")),
+				kccmEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0], withNodeName("mgmt-node-1")),
+				kccmEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], withNodeName("mgmt-node-2")),
+			},
+			hcp: kubevirtHCP,
+		},
+		{
 			name:            "Should remove orphan endpoint slices",
 			machines:        pairOfDualStackRunningMachines,
 			virtualMachines: pairOfVirtualMachines,
@@ -581,6 +632,10 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			for _, vm := range tc.virtualMachines {
 				virtualMachine := vm // golang bug referencing for loop vars
 				kubevirtInfraClusterObjects = append(kubevirtInfraClusterObjects, &virtualMachine)
+			}
+			for _, vmi := range tc.virtualMachineInstances {
+				virtualMachineInstance := vmi
+				kubevirtInfraClusterObjects = append(kubevirtInfraClusterObjects, &virtualMachineInstance)
 			}
 			for _, svc := range tc.services {
 				service := svc // golang bug referencing for loop vars
@@ -650,4 +705,164 @@ func resetResourceVersionFromEndpointSlices(endpointSlices []discoveryv1.Endpoin
 		endpointSlices[i].ResourceVersion = ""
 	}
 	return endpointSlices
+}
+
+func TestReconcile(t *testing.T) {
+	registerMachineTestScheme()
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+
+	const (
+		namespace = "ns1"
+		nodeName  = "mgmt-node-1"
+	)
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "cluster1",
+			Labels: map[string]string{
+				clusterNameLabelKey: "cluster1",
+			},
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type:     hyperv1.KubevirtPlatform,
+				Kubevirt: &hyperv1.KubevirtPlatformSpec{},
+			},
+			Capabilities: &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability},
+			},
+		},
+	}
+	machine := &capiv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "worker1"},
+		Spec: capiv1.MachineSpec{
+			InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: "vm-worker1"},
+		},
+		Status: capiv1.MachineStatus{
+			Phase: string(capiv1.MachinePhaseRunning),
+			Addresses: []capiv1.MachineAddress{{
+				Type:    capiv1.MachineInternalIP,
+				Address: "192.168.1.3",
+			}},
+		},
+	}
+	vm := &kubevirtv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "vm-worker1", UID: "vm-worker1-uid"},
+	}
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "kccm-service-cluster1",
+			Labels: map[string]string{
+				tenantServiceNameLabelKey: "guest-lb",
+				clusterNameLabelKey:       "cluster1",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:                  corev1.ServiceTypeLoadBalancer,
+			ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyLocal,
+			IPFamilies:            []corev1.IPFamily{corev1.IPv4Protocol},
+			Ports: []corev1.ServicePort{{
+				Name:       "http",
+				Protocol:   corev1.ProtocolTCP,
+				Port:       80,
+				TargetPort: intstr.FromInt(30080),
+			}},
+		},
+	}
+	newVMI := func(scheduledNode string) *kubevirtv1.VirtualMachineInstance {
+		return &kubevirtv1.VirtualMachineInstance{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "vm-worker1"},
+			Status:     kubevirtv1.VirtualMachineInstanceStatus{NodeName: scheduledNode},
+		}
+	}
+	endpointSliceKey := client.ObjectKey{Namespace: namespace, Name: "kccm-service-cluster1-worker1-ipv4"}
+
+	newReconciler := func(infraObjects ...client.Object) (*reconciler, client.Client) {
+		infraClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(infraObjects...).Build()
+		return &reconciler{
+			client:                 fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(hcp, machine).Build(),
+			kubevirtInfraClient:    infraClient,
+			hcpKey:                 client.ObjectKeyFromObject(hcp),
+			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		}, infraClient
+	}
+
+	t.Run("When the VirtualMachineInstance has no node, it should leave EndpointSlice nodeName empty", func(t *testing.T) {
+		g := NewWithT(t)
+		r, infraClient := newReconciler(vm, service, newVMI(""))
+
+		_, err := r.Reconcile(t.Context(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(machine)})
+		g.Expect(err).NotTo(HaveOccurred())
+		slice := &discoveryv1.EndpointSlice{}
+		g.Expect(infraClient.Get(t.Context(), endpointSliceKey, slice)).To(Succeed())
+		g.Expect(slice.Endpoints).To(HaveLen(1))
+		g.Expect(slice.Endpoints[0].NodeName).To(BeNil())
+	})
+
+	t.Run("When the VirtualMachineInstance node changes, it should update EndpointSlice nodeName", func(t *testing.T) {
+		g := NewWithT(t)
+		existingSlice := &discoveryv1.EndpointSlice{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      endpointSliceKey.Name,
+				Labels: map[string]string{
+					discoveryv1.LabelServiceName: service.Name,
+					discoveryv1.LabelManagedBy:   managedByValue,
+				},
+			},
+			AddressType: discoveryv1.AddressTypeIPv4,
+			Endpoints: []discoveryv1.Endpoint{{
+				Addresses: []string{"192.168.1.3"},
+				NodeName:  ptr.To(nodeName),
+				Conditions: discoveryv1.EndpointConditions{
+					Ready:       ptr.To(true),
+					Serving:     ptr.To(true),
+					Terminating: ptr.To(false),
+				},
+			}},
+		}
+		r, infraClient := newReconciler(vm, service, newVMI("mgmt-node-2"), existingSlice)
+
+		_, err := r.Reconcile(t.Context(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(machine)})
+		g.Expect(err).NotTo(HaveOccurred())
+		slice := &discoveryv1.EndpointSlice{}
+		g.Expect(infraClient.Get(t.Context(), endpointSliceKey, slice)).To(Succeed())
+		g.Expect(slice.Endpoints).To(HaveLen(1))
+		g.Expect(slice.Endpoints[0].NodeName).To(Equal(ptr.To("mgmt-node-2")))
+	})
+
+	t.Run("When the VirtualMachineInstance cannot be read, it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+		infraClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(vm, service).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*kubevirtv1.VirtualMachineInstance); ok {
+						return errors.New("virtualmachineinstance lookup failed")
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			}).Build()
+		r := &reconciler{
+			client:                 fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(hcp, machine).Build(),
+			kubevirtInfraClient:    infraClient,
+			hcpKey:                 client.ObjectKeyFromObject(hcp),
+			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		}
+
+		_, err := r.Reconcile(t.Context(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(machine)})
+		g.Expect(err).To(MatchError(ContainSubstring("virtualmachineinstance lookup failed")))
+
+		slices := &discoveryv1.EndpointSliceList{}
+		g.Expect(infraClient.List(t.Context(), slices)).To(Succeed())
+		g.Expect(slices.Items).To(BeEmpty())
+	})
+}
+
+func registerMachineTestScheme() {
+	_ = capiv1.AddToScheme(scheme.Scheme)
+	_ = hyperv1.AddToScheme(scheme.Scheme)
+	_ = kubevirtv1.AddToScheme(scheme.Scheme)
+	_ = discoveryv1.AddToScheme(scheme.Scheme)
+	_ = corev1.AddToScheme(scheme.Scheme)
 }
