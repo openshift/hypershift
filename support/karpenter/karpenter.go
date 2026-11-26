@@ -18,6 +18,12 @@ import (
 )
 
 const (
+	// KarpenterLeaderElectionID is the Karpenter operand's leader-election Lease name.
+	KarpenterLeaderElectionID = "karpenter-leader-election"
+
+	// KarpenterOperatorLeaderElectionID is the Lease name shared by embedded and standalone Karpenter operators.
+	KarpenterOperatorLeaderElectionID = "karpenter-operator.openshift.io"
+
 	// KarpenterFinalizer is the finalizer added to HostedControlPlane resources by the karpenter-operator.
 	// This allows time for Karpenter to delete all NodePools and NodeClaims before the HostedControlPlane is deleted.
 	KarpenterFinalizer = "hypershift.openshift.io/karpenter-finalizer"
