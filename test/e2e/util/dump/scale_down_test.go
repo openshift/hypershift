@@ -263,6 +263,8 @@ func TestDumpScaleDownDiagnosticsReportsUnexpectedPreviousLogsError(t *testing.T
 			},
 			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "cluster-autoscaler"}}},
 		},
+		// Seed the Deployment so a NotFound error cannot satisfy the assertion below.
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler", Namespace: hcpNamespace}},
 	)
 	kubeClient.PrependReactor("get", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		if action.GetSubresource() != "log" {
@@ -282,6 +284,9 @@ func TestDumpScaleDownDiagnosticsReportsUnexpectedPreviousLogsError(t *testing.T
 	err := DumpScaleDownDiagnostics(ctx, artifactDir, hc, nil, kubeClient, nil)
 	if err == nil {
 		t.Fatal("expected the unexpected previous log error to be reported")
+	}
+	if !strings.Contains(err.Error(), "previous logs are forbidden") {
+		t.Errorf("expected the injected previous log error to be reported, got: %v", err)
 	}
 
 	logFile := filepath.Join(artifactDir, "cluster-autoscaler", "cluster-autoscaler-5f7c9d8b4-abcde-cluster-autoscaler.log")
