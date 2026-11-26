@@ -318,13 +318,13 @@ type rotationCase struct {
 // called from a DeferCleanup registered after the rotation-revert cleanup so that it
 // fires first (LIFO order) while the crashing container still exists. If ARTIFACT_DIR
 // is unset (local runs) the function is a no-op.
-func dumpKMSProviderLogs(kubeClient kubernetes.Interface, controlPlaneNamespace string) {
+func dumpKMSProviderLogs(ctx context.Context, kubeClient kubernetes.Interface, controlPlaneNamespace string) {
 	artifactDir := os.Getenv("ARTIFACT_DIR")
 	if artifactDir == "" {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
 	pods, err := kubeClient.CoreV1().Pods(controlPlaneNamespace).List(ctx, metav1.ListOptions{
@@ -413,7 +413,7 @@ func runRotationTest(g Gomega, tc *internal.TestContext, rc rotationCase) {
 	// Registered after the revert DeferCleanup so it fires first (LIFO order), while
 	// any crash-looping container still exists and its logs are still retrievable.
 	DeferCleanup(func() {
-		dumpKMSProviderLogs(mgmtKubeClient, tc.ControlPlaneNamespace)
+		dumpKMSProviderLogs(tc.Context, mgmtKubeClient, tc.ControlPlaneNamespace)
 	})
 
 	kasBaseline := captureKASRestartCounts(g, ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
@@ -642,7 +642,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			// Log capture fires before the revert cleanup (LIFO) so KMS provider
 			// sidecar containers still exist when logs are retrieved.
 			DeferCleanup(func() {
-				dumpKMSProviderLogs(mgmtKubeClient, tc.ControlPlaneNamespace)
+				dumpKMSProviderLogs(tc.Context, mgmtKubeClient, tc.ControlPlaneNamespace)
 			})
 
 			By("Performing first key rotation: original -> alternate")
