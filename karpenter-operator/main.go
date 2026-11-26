@@ -129,9 +129,14 @@ func run(ctx context.Context) error {
 		}
 	}
 
+	// Both operator implementations use the same management-cluster Lease.
+	// The adapter runs alongside the standalone operator and must not compete for it.
 	managerOptions := ctrl.Options{
-		Scheme:         scheme,
-		LeaderElection: false,
+		Scheme:                  scheme,
+		LeaderElection:          !standaloneAdapter,
+		LeaderElectionConfig:    managementKubeconfig,
+		LeaderElectionNamespace: namespace,
+		LeaderElectionID:        karpenterutil.KarpenterOperatorLeaderElectionID,
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				// Reuse the controller's informer for unstructured NodeClass reads.
