@@ -79,6 +79,7 @@ func dumpClusterAutoscalerLogs(ctx context.Context, kubeClient kubeclient.Interf
 		return fmt.Errorf("failed to create %s: %w", logsDir, err)
 	}
 
+	var errs []error
 	pods, err := kubeClient.CoreV1().Pods(hcpNamespace).List(ctx, metav1.ListOptions{LabelSelector: clusterAutoscalerSelector})
 	if err != nil {
 		return fmt.Errorf("failed to list cluster-autoscaler pods in %s: %w", hcpNamespace, err)
@@ -92,19 +93,21 @@ func dumpClusterAutoscalerLogs(ctx context.Context, kubeClient kubeclient.Interf
 		pod := &pods.Items[i]
 		objects = append(objects, pod)
 		if err := dumpPodContainerLogs(ctx, kubeClient, pod, logsDir); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 
 	if err := writeYAMLObjects(filepath.Join(artifactDir, "cluster-autoscaler-pods.yaml"), objects); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 
 	deployment, err := kubeClient.AppsV1().Deployments(hcpNamespace).Get(ctx, "cluster-autoscaler", metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to get the cluster-autoscaler deployment in %s: %w", hcpNamespace, err)
+		errs = append(errs, fmt.Errorf("failed to get the cluster-autoscaler deployment in %s: %w", hcpNamespace, err))
+	} else if err := writeYAMLObjects(filepath.Join(artifactDir, "cluster-autoscaler-deployment.yaml"), []crclient.Object{deployment}); err != nil {
+		errs = append(errs, err)
 	}
-	return writeYAMLObjects(filepath.Join(artifactDir, "cluster-autoscaler-deployment.yaml"), []crclient.Object{deployment})
+	return utilerrors.NewAggregate(errs)
 }
 
 // dumpPodContainerLogs writes the current and previous logs of every container of the
@@ -114,6 +117,7 @@ func dumpPodContainerLogs(ctx context.Context, kubeClient kubeclient.Interface, 
 	containers = append(containers, pod.Spec.InitContainers...)
 	containers = append(containers, pod.Spec.Containers...)
 
+	var errs []error
 	for _, container := range containers {
 		for _, previous := range []bool{false, true} {
 			logs, err := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
@@ -121,21 +125,23 @@ func dumpPodContainerLogs(ctx context.Context, kubeClient kubeclient.Interface, 
 				Previous:  previous,
 			}).DoRaw(ctx)
 			if err != nil {
-				if previous {
-					continue
+				// A container without a previous instance is expected; anything else
+				// is reported but does not prevent the remaining diagnostics.
+				if !previous {
+					errs = append(errs, fmt.Errorf("failed to get logs of %s/%s container %s: %w", pod.Namespace, pod.Name, container.Name, err))
 				}
-				return fmt.Errorf("failed to get logs of %s/%s container %s: %w", pod.Namespace, pod.Name, container.Name, err)
+				continue
 			}
 			name := fmt.Sprintf("%s-%s.log", pod.Name, container.Name)
 			if previous {
 				name = fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)
 			}
 			if err := os.WriteFile(filepath.Join(dir, name), logs, 0o644); err != nil {
-				return fmt.Errorf("failed to write %s: %w", name, err)
+				errs = append(errs, fmt.Errorf("failed to write %s: %w", name, err))
 			}
 		}
 	}
-	return nil
+	return utilerrors.NewAggregate(errs)
 }
 
 // dumpGuestScaleDownInputs captures the data plane state the autoscaler reads when

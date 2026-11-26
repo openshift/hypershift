@@ -1,13 +1,27 @@
 package dump
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/pkg/manifests"
+	hyperapi "github.com/openshift/hypershift/support/api"
+
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/utils/ptr"
+
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	crclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestRenderPodPlacement(t *testing.T) {
@@ -113,5 +127,81 @@ func TestRenderPodPlacementIgnoresSucceededPodsWithoutNode(t *testing.T) {
 	out := renderPodPlacement(nil, []corev1.Pod{succeeded})
 	if !strings.Contains(out, "pending (not scheduled) pods: 0") {
 		t.Errorf("expected completed pods to be excluded from the pending list, got:\n%s", out)
+	}
+}
+
+func TestDumpScaleDownDiagnostics(t *testing.T) {
+	ctx := t.Context()
+
+	hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "clusters"}}
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+
+	managementClient := crclientfake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(
+		&hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "np", Namespace: hc.Namespace}},
+		&capiv1.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "np", Namespace: hcpNamespace},
+			Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To[int32](2)},
+		},
+		&capiv1.MachineSet{ObjectMeta: metav1.ObjectMeta{Name: "np-abcde", Namespace: hcpNamespace}},
+		&capiv1.Machine{ObjectMeta: metav1.ObjectMeta{Name: "np-abcde-xyz", Namespace: hcpNamespace}},
+	).Build()
+
+	guestClient := crclientfake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(
+		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "ip-10-0-0-1.ec2.internal"}},
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: clusterAutoscalerStatusConfigMap},
+			Data:       map[string]string{"status": "Cluster-autoscaler status"},
+		},
+		&policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-ingress", Name: "router-default"}},
+	).Build()
+
+	casPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cluster-autoscaler-5f7c9d8b4-abcde",
+			Namespace: hcpNamespace,
+			Labels:    map[string]string{"app": "cluster-autoscaler"},
+		},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "cluster-autoscaler"}}},
+	}
+	casDeployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "cluster-autoscaler", Namespace: hcpNamespace}}
+
+	kubeClient := k8sfake.NewSimpleClientset(casPod, casDeployment)
+	kubeClient.PrependReactor("get", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "log" {
+			return false, nil, nil
+		}
+		return true, &runtime.Unknown{Raw: []byte("scaled down node ip-10-0-0-2.ec2.internal\n")}, nil
+	})
+
+	artifactDir := t.TempDir()
+	if err := DumpScaleDownDiagnostics(ctx, artifactDir, hc, managementClient, kubeClient, guestClient); err != nil {
+		t.Fatalf("expected diagnostics to be collected, got: %v", err)
+	}
+
+	for _, name := range []string{
+		"cluster-autoscaler/cluster-autoscaler-5f7c9d8b4-abcde-cluster-autoscaler.log",
+		"cluster-autoscaler-pods.yaml",
+		"cluster-autoscaler-deployment.yaml",
+		"cluster-autoscaler-status.yaml",
+		"nodes.yaml",
+		"pods.yaml",
+		"pods-by-node.txt",
+		"poddisruptionbudgets.yaml",
+		"nodepools.yaml",
+		"machinedeployments.yaml",
+		"machinesets.yaml",
+		"machines.yaml",
+	} {
+		if _, err := os.Stat(filepath.Join(artifactDir, name)); err != nil {
+			t.Errorf("expected %s to be written: %v", name, err)
+		}
+	}
+
+	logs, err := os.ReadFile(filepath.Join(artifactDir, "cluster-autoscaler", "cluster-autoscaler-5f7c9d8b4-abcde-cluster-autoscaler.log"))
+	if err != nil {
+		t.Fatalf("failed to read the autoscaler logs: %v", err)
+	}
+	if !strings.Contains(string(logs), "scaled down node") {
+		t.Errorf("expected the autoscaler logs to be captured, got: %q", string(logs))
 	}
 }
