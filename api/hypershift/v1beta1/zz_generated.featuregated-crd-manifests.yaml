@@ -216,6 +216,7 @@ hostedclusters.hypershift.openshift.io:
   - GCPPlatform
   - HCPEtcdBackup
   - HCPUserFacingOperatorLogs
+  - HostedClusterAutoscalerConfiguration
   - HyperShiftOnlyDynamicResourceAllocation
   - IngressComponentRouteLabels
   - IngressControllerLBSecurityGroupsAWS
@@ -298,6 +299,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - GCPPlatform
   - HCPEtcdBackup
   - HCPUserFacingOperatorLogs
+  - HostedClusterAutoscalerConfiguration
   - HyperShiftOnlyDynamicResourceAllocation
   - IngressComponentRouteLabels
   - IngressControllerLBSecurityGroupsAWS

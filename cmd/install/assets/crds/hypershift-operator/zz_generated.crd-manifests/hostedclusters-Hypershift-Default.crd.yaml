@@ -379,7 +379,6 @@ spec:
                       When set to 100, this means node groups will be considered similar regardless of their free resource differences (any difference allowed).
                       A value between 0 and 100 represents the maximum allowed difference ratio for free resources between node groups to be considered similar.
                       When omitted, the autoscaler defaults to 10%.
-                      This affects the "--max-free-difference-ratio" flag on cluster-autoscaler.
                     format: int32
                     maximum: 100
                     minimum: 0
@@ -439,6 +438,10 @@ spec:
                           It must be between 0 and 86400 (24 hours).
                           When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
                           When omitted, the autoscaler defaults to 0s.
+
+                          When scaling is set to ScaleUpAndScaleDown and resourceLimits configures a minimum greater than 0
+                          for any resource type, this field must be explicitly set to at least 60 seconds.
+                          This requirement does not apply when scaling is ScaleUpOnly.
                         format: int32
                         maximum: 86400
                         minimum: 0
