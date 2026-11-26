@@ -176,6 +176,51 @@ func (in CloudCredentialStatus) OpenAPIModelName() string {
 }
 
 // OpenAPIModelName returns the OpenAPI model name for this type.
+func (in ClusterAPI) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.ClusterAPI"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in ClusterAPIInstallerComponent) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.ClusterAPIInstallerComponent"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in ClusterAPIInstallerComponentImage) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.ClusterAPIInstallerComponentImage"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in ClusterAPIInstallerComponentSource) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.ClusterAPIInstallerComponentSource"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in ClusterAPIInstallerRevision) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.ClusterAPIInstallerRevision"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in ClusterAPIInstallerRevisionManifestSubstitution) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.ClusterAPIInstallerRevisionManifestSubstitution"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in ClusterAPIList) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.ClusterAPIList"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in ClusterAPISpec) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.ClusterAPISpec"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in ClusterAPIStatus) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.ClusterAPIStatus"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
 func (in ClusterBootImageAutomatic) OpenAPIModelName() string {
 	return "com.github.openshift.api.operator.v1.ClusterBootImageAutomatic"
 }

@@ -41,7 +41,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
-	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -1163,12 +1163,12 @@ type groupVersionDiscoverer interface {
 // cluster knows about the ClusterAPI config type, independent of whether a config
 // instance exists.
 func isClusterAPIRegistered(discoveryClient groupVersionDiscoverer) (bool, error) {
-	apis, err := discoveryClient.ServerResourcesForGroupVersion(operatorv1alpha1.GroupVersion.String())
+	apis, err := discoveryClient.ServerResourcesForGroupVersion(operatorv1.GroupVersion.String())
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to discover API resources for %s: %w", operatorv1alpha1.GroupVersion, err)
+		return false, fmt.Errorf("failed to discover API resources for %s: %w", operatorv1.GroupVersion, err)
 	}
 	if apis != nil {
 		for _, api := range apis.APIResources {
@@ -1200,10 +1200,9 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 	}
 
 	// Build the SSA patch payload as a map so only the fields we intend to own
-	// are included. ApplyConfiguration types for operator/v1alpha1 are not yet
-	// available in openshift/client-go.
+	// are included.
 	patchData, err := json.Marshal(map[string]any{
-		"apiVersion": operatorv1alpha1.GroupVersion.String(),
+		"apiVersion": operatorv1.GroupVersion.String(),
 		"kind":       "ClusterAPI",
 		"metadata": map[string]any{
 			"name": "cluster",
@@ -1216,11 +1215,11 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 		return 0, fmt.Errorf("failed to marshal ClusterAPI config: %w", err)
 	}
 
-	clusterAPI := &operatorv1alpha1.ClusterAPI{
+	clusterAPI := &operatorv1.ClusterAPI{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cluster",
 		},
-		Spec: &operatorv1alpha1.ClusterAPISpec{
+		Spec: &operatorv1.ClusterAPISpec{
 			UnmanagedCustomResourceDefinitions: capiCRDNames.SortedList(),
 		},
 	}
@@ -1246,7 +1245,7 @@ func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Clie
 
 	fmt.Fprintf(out, "Waiting for Cluster CAPI Operator to sync...\n")
 	return wait.PollUntilContextCancel(waitCtx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
-		clusterAPI := &operatorv1alpha1.ClusterAPI{}
+		clusterAPI := &operatorv1.ClusterAPI{}
 		if err := c.Get(ctx, crclient.ObjectKey{Name: "cluster"}, clusterAPI); err != nil {
 			return false, fmt.Errorf("failed to get ClusterAPI config: %w", err)
 		}

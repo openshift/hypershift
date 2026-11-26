@@ -14,6 +14,7 @@ import (
 // +openshift:file-pattern=cvoRunLevel=0000_30,operatorName=cluster-api,operatorOrdering=01
 // +openshift:enable:FeatureGate=ClusterAPIOperator
 // +kubebuilder:metadata:annotations="release.openshift.io/feature-gate=ClusterAPIOperator"
+// +kubebuilder:metadata:annotations=include.release.openshift.io/self-managed-high-availability=true
 
 // ClusterAPI provides configuration for the capi-operator.
 //
