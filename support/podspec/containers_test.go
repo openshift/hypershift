@@ -742,3 +742,26 @@ func TestEnforceRestrictedSecurityContextToContainers_InvalidCapabilities(t *tes
 		})
 	}
 }
+
+func TestKASReadinessCheckContainer(t *testing.T) {
+	t.Parallel()
+
+	const kasLivezURL = "https://kube-apiserver:6443/livez"
+	container := KASReadinessCheckContainer(kasLivezURL)
+
+	t.Run("When the container is built, it should exec curl directly from the readiness probe", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		g.Expect(container.ReadinessProbe).ToNot(BeNil())
+		g.Expect(container.ReadinessProbe.Exec).ToNot(BeNil())
+
+		// On probe timeout the runtime kills only the process it forked. If that is a
+		// shell, its curl child is orphaned onto PID 1, which never reaps it, and the
+		// zombie pins a seccomp BPF filter until the node's memlock limit is exhausted.
+		probeCommand := container.ReadinessProbe.Exec.Command
+		g.Expect(probeCommand).ToNot(BeEmpty())
+		g.Expect(probeCommand[0]).To(Equal("curl"))
+		g.Expect(probeCommand).To(ContainElement(kasLivezURL))
+	})
+}
