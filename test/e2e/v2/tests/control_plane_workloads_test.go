@@ -1142,6 +1142,60 @@ func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
+// RegistryOverridesTest registers per-workload checks that the pods of every
+// control plane workload run no image from a source overridden with the
+// HyperShift operator --registry-overrides. They skip unless the job configured
+// overrides in E2E_REGISTRY_OVERRIDES; the other registry overrides checks are
+// in registry_overrides_test.go.
+func RegistryOverridesTest(getTestCtx internal.TestContextGetter) {
+	Context("Registry overrides", Label("registry-overrides", internal.InformingLabel), func() {
+		var (
+			expected map[string]string
+			hoImage  string
+		)
+
+		BeforeEach(func() {
+			testCtx := getTestCtx()
+			_, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			var configured bool
+			expected, configured, err = registryOverridesInput(internal.GetEnvVarValue(registryOverridesInputEnv))
+			Expect(err).NotTo(HaveOccurred(), "registry overrides input")
+			if !configured {
+				Skip(registryOverridesInputEnv + " is unset or empty: the job configured no registry overrides")
+			}
+			key := crclient.ObjectKey{Namespace: registryOverridesHONamespace, Name: registryOverridesHOName}
+			deployment := &appsv1.Deployment{}
+			Expect(testCtx.MgmtClient.Get(testCtx.Context, key, deployment)).To(Succeed(), "read HyperShift operator Deployment %s", key)
+			_, _, hoImage, err = registryOverridesOperatorState(deployment)
+			Expect(err).NotTo(HaveOccurred(), "HyperShift operator Deployment %s", key)
+		})
+
+		for _, workload := range workloads {
+			Context(workload.Name, func() {
+				It("should not run pods from an overridden source", func() {
+					testCtx := getTestCtx()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
+
+					pods := getWorkloadPods(testCtx, workload)
+					if len(pods) == 0 {
+						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+					}
+
+					done, reason, err := registryOverridesCheckPodImages(pods, expected, hoImage)
+					Expect(err).NotTo(HaveOccurred(), "check pods of workload %s", workload.Name)
+					Expect(done).To(BeTrue(), reason)
+				})
+			})
+		}
+	})
+}
+
 // RegisterControlPlaneWorkloadsTests registers all control plane workloads tests
 func DesiredStateHashAnnotationTest(getTestCtx internal.TestContextGetter) {
 	Context("Desired state hash annotation", func() {
@@ -1190,6 +1244,7 @@ func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	PodAffinitiesAndTolerationsTest(getTestCtx)
 	CustomLabelsTest(getTestCtx)
 	CustomTolerationsTest(getTestCtx)
+	RegistryOverridesTest(getTestCtx)
 	SecurityContextUIDTest(getTestCtx)
 	DesiredStateHashAnnotationTest(getTestCtx)
 }
