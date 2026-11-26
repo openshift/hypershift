@@ -1,6 +1,7 @@
 package registryclient
 
 import (
+	"context"
 	"fmt"
 	"hash"
 	"io"
@@ -21,7 +22,6 @@ import (
 	"github.com/docker/distribution/registry/client/auth/challenge"
 	"github.com/docker/distribution/registry/client/transport"
 	"github.com/opencontainers/go-digest"
-	"golang.org/x/net/context"
 	"golang.org/x/time/rate"
 )
 
