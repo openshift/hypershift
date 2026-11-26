@@ -118,6 +118,38 @@ func testAutoscaling(ctx context.Context, mgtClient crclient.Client, hostedClust
 
 		// TODO (alberto): check autoscalingEnabled condition.
 
+		// Configure aggressive CAS scale-down timers so the scale-down
+		// wait after workload deletion converges reliably. Without these,
+		// CAS uses default timers that can leave extra nodes lingering
+		// past the 45-minute WaitForNReadyNodes timeout, poisoning the
+		// cluster state for subsequent subtests.
+		// spec.autoscaling.scaleDown requires CPO 4.18+ (CNTRLPLANE-952).
+		if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version418) {
+			err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+					return err
+				}
+				hostedCluster.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+					Scaling: hyperv1.ScaleUpAndScaleDown,
+					ScaleDown: &hyperv1.ScaleDownConfig{
+						DelayAfterAddSeconds:        ptr.To(aggressiveDelayAfterAddSeconds),
+						UnneededDurationSeconds:     ptr.To(aggressiveUnneededDurationSeconds),
+						UtilizationThresholdPercent: ptr.To[int32](50),
+					},
+				}
+				return mgtClient.Update(ctx, hostedCluster)
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to configure autoscaling on HostedCluster")
+			t.Log("Configured aggressive CAS scale-down timers (unneeded=60s, delayAfterAdd=30s)")
+
+			controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			waitForAutoscalerDeploymentReady(t, ctx, mgtClient, controlPlaneNamespace, []string{
+				"--scale-down-unneeded-time=60s",
+				"--scale-down-delay-after-add=30s",
+			})
+			t.Log("Autoscaler deployment is ready with aggressive scale-down settings")
+		}
+
 		// Generate workload.
 		memCapacity := nodes[0].Status.Allocatable[corev1.ResourceMemory]
 		g.Expect(memCapacity).ShouldNot(BeNil())
@@ -474,14 +506,16 @@ func pollCASLogsForPausedNodeGroup(t *testing.T, ctx context.Context, controlPla
 // catastrophic scale-down on unpause.
 //
 // Test flow:
-// 1. Enable autoscaling on the NodePool (self-contained)
-// 2. Configure aggressive CAS scale-down timers
-// 3. Scale up the NodePool to max nodes with workload
-// 4. Pause the NodePool (propagates cluster.x-k8s.io/paused to MachineDeployment)
-// 5. Delete the workload so nodes become unneeded
-// 6. Poll CAS logs for "discovered a paused node group" (or timeout)
-// 7. Verify MachineDeployment.spec.replicas has NOT been decremented
-// 8. Unpause and wait for clean convergence to numNodes
+//  1. Enable autoscaling on the NodePool (self-contained)
+//  2. Configure aggressive CAS scale-down timers (before waiting for initial
+//     node count so leftover nodes from a prior subtest drain promptly)
+//  3. Wait for initial node count
+//  4. Scale up the NodePool to max nodes with workload
+//  5. Pause the NodePool (propagates cluster.x-k8s.io/paused to MachineDeployment)
+//  6. Delete the workload so nodes become unneeded
+//  7. Poll CAS logs for "discovered a paused node group" (or timeout)
+//  8. Verify MachineDeployment.spec.replicas has NOT been decremented
+//  9. Unpause and wait for clean convergence to numNodes
 func testAutoscalerRespectsNodePoolPause(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, numNodes, max int32) func(t *testing.T) {
 	return func(t *testing.T) {
 		// spec.autoscaling.scaleDown requires CPO support added in 4.18 (CNTRLPLANE-952).
@@ -510,11 +544,11 @@ func testAutoscalerRespectsNodePoolPause(ctx context.Context, mgtClient crclient
 		g.Expect(err).NotTo(HaveOccurred(), "failed to enable autoscaling on NodePool")
 		t.Logf("Enabled autoscaling on NodePool %s (min=%d, max=%d)", nodepool.Name, numNodes, max)
 
-		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
-		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
-		t.Logf("Cluster has %d ready nodes", len(nodes))
-
-		// Step 2: Configure aggressive CAS scale-down timers on the HostedCluster.
+		// Step 2: Configure aggressive CAS scale-down timers on the HostedCluster
+		// BEFORE waiting for the initial node count. If a prior subtest left extra
+		// nodes (e.g. scale-down from 3→1 got stuck at 2), the aggressive timers
+		// let CAS drain them within ~90s instead of blocking for the full 45-minute
+		// WaitForNReadyNodes timeout with default (or absent) scale-down settings.
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 				return err
@@ -539,6 +573,12 @@ func testAutoscalerRespectsNodePoolPause(ctx context.Context, mgtClient crclient
 			"--scale-down-delay-after-add=30s",
 		})
 		t.Log("Autoscaler deployment is ready with aggressive scale-down settings")
+
+		// Now wait for the initial node count. With aggressive timers active, any
+		// leftover nodes from a prior subtest will scale down promptly.
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+		t.Logf("Cluster has %d ready nodes", len(nodes))
 
 		// Step 3: Generate workload to scale up to max nodes.
 		memCapacity := nodes[0].Status.Allocatable[corev1.ResourceMemory]
