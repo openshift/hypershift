@@ -171,7 +171,28 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 }
 
 func TestAWSPlatformConfigTestMatrix(t *testing.T) {
-	t.Run("When the default AWS plan is built, kms-reencryption is always in the parallel group", func(t *testing.T) {
+	// clearEnv ensures both gating env vars are unset so inherited values from
+	// the shell don't change results. Each subtest overrides as needed.
+	clearEnv := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", "")
+		t.Setenv("E2E_MERGE_PUBLIC_ROLLOUTS", "")
+	}
+
+	t.Run("When HYPERSHIFT_ETCD_KMS_KEY_ARN is unset, kms-reencryption is absent from the parallel group", func(t *testing.T) {
+		clearEnv(t)
+		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+		matrix := cfg.TestMatrix()
+		for _, g := range matrix.Parallel {
+			if g.Variant == "kms-reencryption" {
+				t.Fatalf("kms-reencryption should be absent from parallel when HYPERSHIFT_ETCD_KMS_KEY_ARN is unset: %+v", matrix.Parallel)
+			}
+		}
+	})
+
+	t.Run("When HYPERSHIFT_ETCD_KMS_KEY_ARN is set, kms-reencryption is present in the parallel group", func(t *testing.T) {
+		clearEnv(t)
+		t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", "arn:aws:kms:us-east-1:123456789012:key/test-key")
 		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
 		matrix := cfg.TestMatrix()
 		want := TestGroup{Name: "kms-reencryption", Variant: "kms-reencryption", LabelFilter: "etcd-encryption-reencryption"}
@@ -180,26 +201,98 @@ func TestAWSPlatformConfigTestMatrix(t *testing.T) {
 		}
 	})
 
-	t.Run("When the default AWS plan is built, ClusterSpecs and TestMatrix are consistent", func(t *testing.T) {
+	t.Run("When E2E_MERGE_PUBLIC_ROLLOUTS is set, rollout labels appear as step 2 on the public variant", func(t *testing.T) {
+		clearEnv(t)
+		t.Setenv("E2E_MERGE_PUBLIC_ROLLOUTS", "true")
 		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
-		specs := cfg.ClusterSpecs(t.Context(), "current", "previous")
-		plan := cfg.DefaultTestPlan()
-		if err := plan.Validate(specs); err != nil {
-			t.Fatalf("default AWS plan is invalid: %v", err)
+		matrix := cfg.TestMatrix()
+
+		// public-rollouts sequential group must be absent.
+		for _, sg := range matrix.Sequential {
+			if sg.Name == "public-rollouts" {
+				t.Fatal("public-rollouts sequential group should be absent when E2E_MERGE_PUBLIC_ROLLOUTS is set")
+			}
+		}
+
+		// The "public" sequential group must have exactly 2 steps, the second
+		// using variant "public" with the rollout label filter.
+		var publicGroup *SequentialGroup
+		for i := range matrix.Sequential {
+			if matrix.Sequential[i].Name == "public" {
+				publicGroup = &matrix.Sequential[i]
+				break
+			}
+		}
+		if publicGroup == nil {
+			t.Fatal("missing public sequential group")
+		}
+		if len(publicGroup.Steps) != 2 {
+			t.Fatalf("expected 2 steps on public group, got %d: %+v", len(publicGroup.Steps), publicGroup.Steps)
+		}
+		rolloutStep := publicGroup.Steps[1]
+		if rolloutStep.Variant != "public" {
+			t.Fatalf("rollout step should use variant %q, got %q", "public", rolloutStep.Variant)
+		}
+		if rolloutStep.Name != "public-nodepool-rollouts" {
+			t.Fatalf("rollout step name = %q, want %q", rolloutStep.Name, "public-nodepool-rollouts")
 		}
 	})
 
-	t.Run("When HYPERSHIFT_ETCD_KMS_KEY_ARN is set, the default plan still validates against ClusterSpecs", func(t *testing.T) {
-		t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", "arn:aws:kms:us-east-1:123456789012:key/test-key")
+	t.Run("When E2E_MERGE_PUBLIC_ROLLOUTS is unset, rollout tests run on a separate public-rollouts variant", func(t *testing.T) {
+		clearEnv(t)
 		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
-		specs := cfg.ClusterSpecs(t.Context(), "current", "previous")
-		plan := cfg.DefaultTestPlan()
-		if err := plan.Validate(specs); err != nil {
-			t.Fatalf("default AWS plan is invalid when HYPERSHIFT_ETCD_KMS_KEY_ARN is set: %v", err)
+		matrix := cfg.TestMatrix()
+
+		var found bool
+		for _, sg := range matrix.Sequential {
+			if sg.Name == "public-rollouts" {
+				found = true
+				if len(sg.Steps) != 1 || sg.Steps[0].Variant != "public-rollouts" {
+					t.Fatalf("unexpected public-rollouts group: %+v", sg)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("public-rollouts sequential group missing when E2E_MERGE_PUBLIC_ROLLOUTS is unset")
+		}
+
+		// The "public" sequential group should have exactly 1 step.
+		for _, sg := range matrix.Sequential {
+			if sg.Name == "public" {
+				if len(sg.Steps) != 1 {
+					t.Fatalf("public group should have 1 step when split, got %d: %+v", len(sg.Steps), sg.Steps)
+				}
+			}
 		}
 	})
+
+	// Consistency: the default plan validates against ClusterSpecs for all 4
+	// env-var combinations.
+	for _, tc := range []struct {
+		name     string
+		kmsARN   string
+		mergeEnv string
+	}{
+		{name: "neither set"},
+		{name: "only HYPERSHIFT_ETCD_KMS_KEY_ARN set", kmsARN: "arn:aws:kms:us-east-1:123456789012:key/test-key"},
+		{name: "only E2E_MERGE_PUBLIC_ROLLOUTS set", mergeEnv: "true"},
+		{name: "both set", kmsARN: "arn:aws:kms:us-east-1:123456789012:key/test-key", mergeEnv: "true"},
+	} {
+		t.Run("When "+tc.name+", the default plan validates against ClusterSpecs", func(t *testing.T) {
+			clearEnv(t)
+			t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", tc.kmsARN)
+			t.Setenv("E2E_MERGE_PUBLIC_ROLLOUTS", tc.mergeEnv)
+			cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+			specs := cfg.ClusterSpecs(t.Context(), "current", "previous")
+			plan := cfg.DefaultTestPlan()
+			if err := plan.Validate(specs); err != nil {
+				t.Fatalf("default AWS plan is invalid (%s): %v", tc.name, err)
+			}
+		})
+	}
 
 	t.Run("When the default AWS plan is built, it should validate and run the image-mirroring tests as a sequential lane ending with the removal", func(t *testing.T) {
+		clearEnv(t)
 		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
 		plan := cfg.DefaultTestPlan()
 		if err := plan.Validate(cfg.ClusterSpecs(t.Context(), "current", "previous")); err != nil {

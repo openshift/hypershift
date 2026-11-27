@@ -74,7 +74,15 @@ func (a *AWSPlatformConfig) DefaultBaseDomain() string {
 }
 
 // ClusterSpecs returns the AWS cluster variants to create for the e2e-v2 run,
-// one per test group.
+// one per test group. The catalog is static (always 12 variants) regardless of
+// environment; only [AWSPlatformConfig.TestMatrix] decides which variants are
+// actually referenced, and [TestPlan.FilterClusterSpecs] prunes the rest.
+//
+// In particular:
+//   - kms-reencryption is only referenced by TestMatrix when
+//     HYPERSHIFT_ETCD_KMS_KEY_ARN is set (see [AWSPlatformConfig.TestMatrix]).
+//   - public-rollouts is only referenced when E2E_MERGE_PUBLIC_ROLLOUTS is
+//     unset; when set, rollout tests share the public cluster instead.
 //
 // Arguments:
 //   - ctx:          used for cancellable setup I/O (e.g. resolving a KMS key alias to an ARN).
@@ -367,159 +375,191 @@ func (a *AWSPlatformConfig) DefaultTestPlan() TestPlan {
 }
 
 func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
+	parallel := []TestGroup{
+		{
+			Name:        "managed-dns",
+			Variant:     "managed-dns",
+			LabelFilter: "hosted-cluster-managed-dns",
+		},
+		{
+			Name:        "karpenter",
+			Variant:     "karpenter",
+			LabelFilter: "karpenter",
+		},
+		// TODO: It might be possible to decompose the karpenter upgrade test
+		// into pre and post upgrade specs which communicate with a well defined
+		// IPC protocol, like the pre step serializing observations which the
+		// post step can use. Then we can compose the regular upgrade test here
+		// instead of duplicating upgrade logic inside the karpenter test.
+		{
+			Name:        "karpenter-upgrade",
+			Variant:     "karpenter-upgrade",
+			LabelFilter: "karpenter-upgrade",
+		},
+	}
+
+	// When HYPERSHIFT_ETCD_KMS_KEY_ARN is unset (presubmit default) the
+	// kms-reencryption tests skip immediately, so omitting the variant from the
+	// matrix lets FilterClusterSpecs avoid provisioning an unused hosted cluster.
+	if os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN") != "" {
+		parallel = append(parallel, TestGroup{
+			Name:        "kms-reencryption",
+			Variant:     "kms-reencryption",
+			LabelFilter: "etcd-encryption-reencryption",
+		})
+	}
+
+	rolloutLabelFilter := "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
+		"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-osimagestream-upgrade || " +
+		"nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config"
+
+	publicSteps := []TestGroup{
+		{
+			Name:    "public",
+			Variant: "public",
+			LabelFilter: "hosted-cluster-aws || hosted-cluster-compliance || hosted-cluster-node-communication || " +
+				"hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || " +
+				"hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress || hosted-cluster-dns || " +
+				"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || storage-kms || " +
+				"hosted-cluster-event-ttl || installation-diagnostics",
+		},
+	}
+
+	// When E2E_MERGE_PUBLIC_ROLLOUTS is set (presubmit via openshift/release),
+	// rollout tests share the "public" cluster as step 2, saving one guest.
+	// When unset (default, safe for periodic) rollout tests run on a dedicated
+	// "public-rollouts" cluster to stay within the 150-min step timeout.
+	if os.Getenv("E2E_MERGE_PUBLIC_ROLLOUTS") != "" {
+		publicSteps = append(publicSteps, TestGroup{
+			Name:        "public-nodepool-rollouts",
+			Variant:     "public",
+			LabelFilter: rolloutLabelFilter,
+		})
+	}
+
+	sequential := []SequentialGroup{
+		// The removal step is a day-2 mutation of imageContentSources that is
+		// not restored, so it must stay the last step on the variant.
+		{
+			Name: "image-mirroring",
+			Steps: []TestGroup{
+				{
+					Name:        "image-mirroring",
+					Variant:     "image-mirroring",
+					LabelFilter: "image-mirroring",
+				},
+				{
+					Name:        "image-mirroring-removal",
+					Variant:     "image-mirroring",
+					LabelFilter: "image-mirroring-removal",
+				},
+			},
+		},
+		{
+			Name:  "public",
+			Steps: publicSteps,
+		},
+	}
+
+	if os.Getenv("E2E_MERGE_PUBLIC_ROLLOUTS") == "" {
+		sequential = append(sequential, SequentialGroup{
+			Name: "public-rollouts",
+			Steps: []TestGroup{
+				{
+					Name:        "public-nodepool-rollouts",
+					Variant:     "public-rollouts",
+					LabelFilter: rolloutLabelFilter,
+				},
+			},
+		})
+	}
+
+	sequential = append(sequential,
+		SequentialGroup{
+			Name: "autoscaling",
+			Steps: []TestGroup{
+				{
+					Name:        "autoscaling-nodepool-machineconfig",
+					Variant:     "autoscaling",
+					LabelFilter: "nodepool-machineconfig-rollout",
+				},
+				{
+					Name:        "autoscaling-balancing",
+					Variant:     "autoscaling",
+					LabelFilter: "nodepool-autoscaling-balancing",
+				},
+			},
+		},
+		SequentialGroup{
+			Name: "external-oidc",
+			Steps: []TestGroup{
+				{
+					Name:        "external-oidc",
+					Variant:     "external-oidc",
+					LabelFilter: "external-oidc || global-pull-secret",
+				},
+				{
+					Name:        "external-oidc-autoscaling",
+					Variant:     "external-oidc",
+					LabelFilter: "nodepool-autoscaling-scale-up-down",
+				},
+				{
+					Name:        "external-oidc-trust-bundle",
+					Variant:     "external-oidc",
+					LabelFilter: "nodepool-trust-bundle",
+				},
+			},
+		},
+		SequentialGroup{
+			Name: "upgrade-and-chaos",
+			Steps: []TestGroup{
+				{
+					Name:        "upgrade",
+					Variant:     "upgrade",
+					LabelFilter: "control-plane-upgrade",
+				},
+				{
+					Name:        "post-upgrade-health",
+					Variant:     "upgrade",
+					LabelFilter: "hosted-cluster-health || control-plane-workloads",
+				},
+				{
+					Name:        "control-plane-tls",
+					Variant:     "upgrade",
+					LabelFilter: "control-plane-pki-operator",
+				},
+				{
+					Name:        "etcd-chaos",
+					Variant:     "upgrade",
+					LabelFilter: "etcd-chaos",
+				},
+			},
+		},
+		SequentialGroup{
+			Name: "etcd-sharding",
+			Steps: []TestGroup{
+				// Shard deployment, kube-apiserver routing, per-kind key
+				// placement, shard member restart and day-2 immutability.
+				{
+					Name:        "etcd-sharding",
+					Variant:     "etcd-sharded",
+					LabelFilter: "etcd-sharding",
+				},
+				// Cluster operations with sharding enabled: runs after the
+				// sharding specs so it also covers recovery from the shard
+				// member restart.
+				{
+					Name:        "post-sharding-health",
+					Variant:     "etcd-sharded",
+					LabelFilter: "hosted-cluster-health || control-plane-workloads",
+				},
+			},
+		},
+	)
+
 	return TestMatrix{
-		Parallel: []TestGroup{
-			{
-				Name:        "managed-dns",
-				Variant:     "managed-dns",
-				LabelFilter: "hosted-cluster-managed-dns",
-			},
-			{
-				Name:        "karpenter",
-				Variant:     "karpenter",
-				LabelFilter: "karpenter",
-			},
-			// TODO: It might be possible to decompose the karpenter upgrade test
-			// into pre and post upgrade specs which communicate with a well defined
-			// IPC protocol, like the pre step serializing observations which the
-			// post step can use. Then we can compose the regular upgrade test here
-			// instead of duplicating upgrade logic inside the karpenter test.
-			{
-				Name:        "karpenter-upgrade",
-				Variant:     "karpenter-upgrade",
-				LabelFilter: "karpenter-upgrade",
-			},
-			{
-				Name:        "kms-reencryption",
-				Variant:     "kms-reencryption",
-				LabelFilter: "etcd-encryption-reencryption",
-			},
-		},
-		Sequential: []SequentialGroup{
-			// The removal step is a day-2 mutation of imageContentSources that is
-			// not restored, so it must stay the last step on the variant.
-			{
-				Name: "image-mirroring",
-				Steps: []TestGroup{
-					{
-						Name:        "image-mirroring",
-						Variant:     "image-mirroring",
-						LabelFilter: "image-mirroring",
-					},
-					{
-						Name:        "image-mirroring-removal",
-						Variant:     "image-mirroring",
-						LabelFilter: "image-mirroring-removal",
-					},
-				},
-			},
-			{
-				Name: "public",
-				Steps: []TestGroup{
-					{
-						Name:    "public",
-						Variant: "public",
-						LabelFilter: "hosted-cluster-aws || hosted-cluster-compliance || hosted-cluster-node-communication || " +
-							"hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || " +
-							"hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress || hosted-cluster-dns || " +
-							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || storage-kms || " +
-							"hosted-cluster-event-ttl || installation-diagnostics",
-					},
-				},
-			},
-			{
-				Name: "public-rollouts",
-				Steps: []TestGroup{
-					{
-						Name:    "public-nodepool-rollouts",
-						Variant: "public-rollouts",
-						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
-							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-osimagestream-upgrade || " +
-							"nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config",
-					},
-				},
-			},
-			{
-				Name: "autoscaling",
-				Steps: []TestGroup{
-					{
-						Name:        "autoscaling-nodepool-machineconfig",
-						Variant:     "autoscaling",
-						LabelFilter: "nodepool-machineconfig-rollout",
-					},
-					{
-						Name:        "autoscaling-balancing",
-						Variant:     "autoscaling",
-						LabelFilter: "nodepool-autoscaling-balancing",
-					},
-				},
-			},
-			{
-				Name: "external-oidc",
-				Steps: []TestGroup{
-					{
-						Name:        "external-oidc",
-						Variant:     "external-oidc",
-						LabelFilter: "external-oidc || global-pull-secret",
-					},
-					{
-						Name:        "external-oidc-autoscaling",
-						Variant:     "external-oidc",
-						LabelFilter: "nodepool-autoscaling-scale-up-down",
-					},
-					{
-						Name:        "external-oidc-trust-bundle",
-						Variant:     "external-oidc",
-						LabelFilter: "nodepool-trust-bundle",
-					},
-				},
-			},
-			{
-				Name: "upgrade-and-chaos",
-				Steps: []TestGroup{
-					{
-						Name:        "upgrade",
-						Variant:     "upgrade",
-						LabelFilter: "control-plane-upgrade",
-					},
-					{
-						Name:        "post-upgrade-health",
-						Variant:     "upgrade",
-						LabelFilter: "hosted-cluster-health || control-plane-workloads",
-					},
-					{
-						Name:        "control-plane-tls",
-						Variant:     "upgrade",
-						LabelFilter: "control-plane-pki-operator",
-					},
-					{
-						Name:        "etcd-chaos",
-						Variant:     "upgrade",
-						LabelFilter: "etcd-chaos",
-					},
-				},
-			},
-			{
-				Name: "etcd-sharding",
-				Steps: []TestGroup{
-					// Shard deployment, kube-apiserver routing, per-kind key
-					// placement, shard member restart and day-2 immutability.
-					{
-						Name:        "etcd-sharding",
-						Variant:     "etcd-sharded",
-						LabelFilter: "etcd-sharding",
-					},
-					// Cluster operations with sharding enabled: runs after the
-					// sharding specs so it also covers recovery from the shard
-					// member restart.
-					{
-						Name:        "post-sharding-health",
-						Variant:     "etcd-sharded",
-						LabelFilter: "hosted-cluster-health || control-plane-workloads",
-					},
-				},
-			},
-		},
+		Parallel:   parallel,
+		Sequential: sequential,
 	}
 }
 
