@@ -1081,11 +1081,14 @@ func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient c
 			}), "no volume named proxy-additional-trust-bundle found in openshift-apiserver pod")
 		}
 
-		// Retry logic to handle timing issues with certificate initialization
+		// Retry logic to handle timing issues with certificate initialization.
+		// The exec goes through the management cluster API server and kubelet;
+		// under CI load these regularly fail transiently ("error dialing
+		// backend: EOF"), so allow plenty of retries before failing.
 		g.Eventually(func() error {
 			_, err := RunCommandInPod(ctx, mgmtClient, "openshift-apiserver", hcpNs, command, "openshift-apiserver", 1*time.Minute)
 			return err
-		}, 5*time.Minute, 30*time.Second).Should(Succeed(), "ca-bundle.crt file should be available in openshift-apiserver pod")
+		}, 10*time.Minute, 30*time.Second).Should(Succeed(), "ca-bundle.crt file should be available in openshift-apiserver pod")
 	})
 }
 
