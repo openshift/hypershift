@@ -27,7 +27,7 @@ import (
 
 func TestSupportedVersions(t *testing.T) {
 	g := NewGomegaWithT(t)
-	g.Expect(Supported()).To(Equal([]string{"5.1", "5.0", "4.23", "4.22", "4.21", "4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
+	g.Expect(Supported()).To(Equal([]string{"5.2", "5.1", "5.0", "4.23", "4.22", "4.21", "4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
 }
 
 func TestString(t *testing.T) {
@@ -74,6 +74,11 @@ func TestGetKubeVersionForSupportedVersion(t *testing.T) {
 		{
 			name:            "When OCP 5.1 is provided it should return Kubernetes 1.37 via direct lookup",
 			ocpVersion:      "5.1.0",
+			expectedKubeVer: "1.37.0",
+		},
+		{
+			name:            "When OCP 5.2 is provided, it should return Kubernetes 1.37 via direct lookup",
+			ocpVersion:      "5.2.0",
 			expectedKubeVer: "1.37.0",
 		},
 		{
@@ -276,6 +281,25 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("5.0.0"),
 			minVersionSupported:    v("4.14.0"),
 			expectError:            false,
+			platform:               hyperv1.AWSPlatform,
+		},
+		{
+			name:                   "When upgrading from 5.1 to a 5.2 nightly with LatestSupportedVersion as max, it should be valid",
+			currentVersion:         v("5.1.0"),
+			nextVersion:            v("5.2.0-0.nightly-2026-11-26-222117"),
+			latestVersionSupported: &LatestSupportedVersion,
+			minVersionSupported:    v("4.14.0"),
+			expectError:            false,
+			platform:               hyperv1.AWSPlatform,
+		},
+		{
+			name:                   "When version is 5.3 and max is above LatestSupportedVersion, it should report 5.2 as the latest supported",
+			currentVersion:         v("5.2.0"),
+			nextVersion:            v("5.3.0"),
+			latestVersionSupported: v("5.3.0"),
+			minVersionSupported:    v("4.14.0"),
+			expectError:            true,
+			expectedMessage:        `the latest version supported is: "5.2"`,
 			platform:               hyperv1.AWSPlatform,
 		},
 		{
@@ -814,6 +838,19 @@ func TestValidateVersionSkew(t *testing.T) {
 			nodePoolVersion:      v("4.20.0"),
 			expectError:          true,
 			expectedErrSubstr:    "is less than 4.21, which is the minimum NodePool version compatible with the 5.1 HostedCluster",
+		},
+		{
+			name:                 "When HC is 5.2 and NP is 4.22 (n-3 boundary with 5.2), it should pass validation",
+			hostedClusterVersion: v("5.2.0"),
+			nodePoolVersion:      v("4.22.0"),
+			expectError:          false,
+		},
+		{
+			name:                 "When HC is 5.2 and NP is 4.21 (exceeds n-3 with 5.2), it should return error",
+			hostedClusterVersion: v("5.2.0"),
+			nodePoolVersion:      v("4.21.0"),
+			expectError:          true,
+			expectedErrSubstr:    "is less than 4.22, which is the minimum NodePool version compatible with the 5.2 HostedCluster",
 		},
 		{
 			name:                 "When HC is 5.0.3 and NP is 4.22.7 (patch-level across major boundary), it should pass validation",
