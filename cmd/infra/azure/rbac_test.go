@@ -15,6 +15,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/config"
 
@@ -27,6 +28,140 @@ import (
 
 	"github.com/go-logr/logr"
 )
+
+func TestDataPlaneRoleAssignments(t *testing.T) {
+	tests := []struct {
+		name                  string
+		imageRegistryClientID string
+		disabledCapabilities  []string
+		expectedAssignments   []dataPlaneRoleAssignment
+		expectedError         string
+	}{
+		{
+			name:                  "When ImageRegistry is enabled with a client ID it should include all data plane assignments",
+			imageRegistryClientID: "registry-client-id",
+			expectedAssignments: []dataPlaneRoleAssignment{
+				{component: config.CIRO + "WI", clientID: "registry-client-id", role: config.ImageRegistryRoleDefinitionID},
+				{component: config.AzureDisk + "WI", clientID: "disk-client-id", role: config.AzureDiskRoleDefinitionID},
+				{component: config.AzureFile + "WI", clientID: "file-client-id", role: config.AzureFileRoleDefinitionID},
+			},
+		},
+		{
+			name:          "When ImageRegistry is enabled without a client ID it should return an error",
+			expectedError: "data plane image registry client ID is required when the ImageRegistry capability is enabled",
+		},
+		{
+			name:                 "When ImageRegistry is disabled without a client ID it should omit its Graph and RBAC assignment",
+			disabledCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
+			expectedAssignments: []dataPlaneRoleAssignment{
+				{component: config.AzureDisk + "WI", clientID: "disk-client-id", role: config.AzureDiskRoleDefinitionID},
+				{component: config.AzureFile + "WI", clientID: "file-client-id", role: config.AzureFileRoleDefinitionID},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			identities := hyperv1.DataPlaneManagedIdentities{
+				ImageRegistryMSIClientID: test.imageRegistryClientID,
+				DiskMSIClientID:          "disk-client-id",
+				FileMSIClientID:          "file-client-id",
+			}
+
+			assignments, err := dataPlaneRoleAssignments(&CreateInfraOptions{DisableClusterCapabilities: test.disabledCapabilities}, identities)
+
+			if test.expectedError != "" {
+				g.Expect(err).To(MatchError(test.expectedError))
+				g.Expect(assignments).To(BeNil())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(assignments).To(Equal(test.expectedAssignments))
+		})
+	}
+}
+
+func TestAssignDataPlaneRoles(t *testing.T) {
+	t.Run("When ImageRegistry is enabled without a client ID it should fail before accessing Azure", func(t *testing.T) {
+		g := NewWithT(t)
+		manager := &RBACManager{}
+
+		err := manager.AssignDataPlaneRoles(t.Context(), &CreateInfraOptions{}, hyperv1.DataPlaneManagedIdentities{}, "data-plane-rg")
+
+		g.Expect(err).To(MatchError("data plane image registry client ID is required when the ImageRegistry capability is enabled"))
+	})
+}
+
+func TestControlPlaneRoleComponents(t *testing.T) {
+	identities := &hyperv1.AzureResourceManagedIdentities{
+		ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+			ControlPlaneOperator: hyperv1.ManagedIdentity{ClientID: "cpo-client-id"},
+			NodePoolManagement:   hyperv1.ManagedIdentity{ClientID: "node-pool-client-id"},
+			CloudProvider:        hyperv1.ManagedIdentity{ClientID: "cloud-provider-client-id"},
+			File:                 hyperv1.ManagedIdentity{ClientID: "file-client-id"},
+			Disk:                 hyperv1.ManagedIdentity{ClientID: "disk-client-id"},
+			Ingress:              hyperv1.ManagedIdentity{ClientID: "ingress-client-id"},
+			Network:              hyperv1.ManagedIdentity{ClientID: "network-client-id"},
+		},
+	}
+
+	t.Run("When ImageRegistry is enabled without an identity it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		components, err := controlPlaneRoleComponents(&CreateInfraOptions{}, identities)
+
+		g.Expect(err).To(MatchError("control plane image registry managed identity is required when the ImageRegistry capability is enabled"))
+		g.Expect(components).To(BeNil())
+	})
+
+	t.Run("When ImageRegistry is disabled without an identity it should retain non-registry assignments", func(t *testing.T) {
+		g := NewWithT(t)
+
+		components, err := controlPlaneRoleComponents(&CreateInfraOptions{
+			DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
+		}, identities)
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(components).To(HaveKeyWithValue(config.CPO, hyperv1.AzureClientID("cpo-client-id")))
+		g.Expect(components).To(HaveKeyWithValue(config.CNCC, hyperv1.AzureClientID("network-client-id")))
+		g.Expect(components).ToNot(HaveKey(config.CIRO))
+	})
+}
+
+func TestWorkloadIdentityRoleComponents(t *testing.T) {
+	identities := &hyperv1.AzureWorkloadIdentities{
+		NodePoolManagement:   hyperv1.WorkloadIdentity{ClientID: "node-pool-client-id"},
+		CloudProvider:        hyperv1.WorkloadIdentity{ClientID: "cloud-provider-client-id"},
+		File:                 hyperv1.WorkloadIdentity{ClientID: "file-client-id"},
+		Disk:                 hyperv1.WorkloadIdentity{ClientID: "disk-client-id"},
+		Ingress:              hyperv1.WorkloadIdentity{ClientID: "ingress-client-id"},
+		Network:              hyperv1.WorkloadIdentity{ClientID: "network-client-id"},
+		ControlPlaneOperator: hyperv1.WorkloadIdentity{ClientID: "cpo-client-id"},
+	}
+
+	t.Run("When ImageRegistry is enabled without an identity it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		components, err := workloadIdentityRoleComponents(&CreateInfraOptions{}, identities)
+
+		g.Expect(err).To(MatchError("image registry workload identity is required when the ImageRegistry capability is enabled"))
+		g.Expect(components).To(BeNil())
+	})
+
+	t.Run("When ImageRegistry is disabled without an identity it should retain non-registry assignments", func(t *testing.T) {
+		g := NewWithT(t)
+
+		components, err := workloadIdentityRoleComponents(&CreateInfraOptions{
+			DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
+		}, identities)
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(components).To(HaveKeyWithValue(config.CPO, hyperv1.AzureClientID("cpo-client-id")))
+		g.Expect(components).To(HaveKeyWithValue(config.CNCC, hyperv1.AzureClientID("network-client-id")))
+		g.Expect(components).ToNot(HaveKey(config.CIRO))
+	})
+}
 
 type httpClientFunc func(*http.Request) (*http.Response, error)
 
