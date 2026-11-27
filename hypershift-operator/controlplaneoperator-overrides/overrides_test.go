@@ -10,41 +10,107 @@ import (
 
 func TestCPOImage(t *testing.T) {
 	tests := []struct {
+		name     string
 		platform string
 		version  string
 		expected string
 	}{
 		{
+			name:     "When the platform has different casing, it should match case-insensitively",
 			platform: "AWS",
 			version:  "4.17.8",
 			expected: "quay.io/hypershift/control-plane-operator-aws:4.17.8",
 		},
 		{
+			name:     "When an exact version override exists, it should return that image",
 			platform: "aws",
 			version:  "4.17.9",
 			expected: "quay.io/hypershift/control-plane-operator-aws:4.17.9",
 		},
 		{
+			name:     "When an azure override exists, it should return the azure image",
 			platform: "Azure",
 			version:  "4.17.9",
 			expected: "quay.io/hypershift/control-plane-operator-azure:4.17.9",
 		},
 		{
+			name:     "When no override exists for the version, it should return an empty image",
 			platform: "aws",
 			version:  "4.13.9",
 			expected: "",
 		},
 		{
+			name:     "When the platform has no overrides, it should return an empty image",
 			platform: "foo",
 			version:  "4.17.9",
 			expected: "",
 		},
+		{
+			name:     "When the version carries a hotfix suffix and a matching glob exists, it should return the glob image",
+			platform: "aws",
+			version:  "4.17.8-hotfix99999999",
+			expected: "quay.io/hypershift/control-plane-operator-aws:4.17.8-suffixed",
+		},
+		{
+			name:     "When the version carries build metadata, it should not match a dash glob",
+			platform: "aws",
+			version:  "4.17.8+build.1234",
+			expected: "",
+		},
+		{
+			name:     "When the version is the plain release and only a suffixed glob exists, it should return an empty image",
+			platform: "aws",
+			version:  "4.18.2",
+			expected: "",
+		},
+		{
+			name:     "When the version carries a suffix and only a suffixed glob exists, it should return the glob image",
+			platform: "aws",
+			version:  "4.18.2-hotfix34123420",
+			expected: "quay.io/hypershift/control-plane-operator-aws:4.18.2-suffixed",
+		},
+		{
+			name:     "When an override exists for the exact suffixed version, it should prefer it over the glob",
+			platform: "aws",
+			version:  "4.17.8-hotfix34123420",
+			expected: "quay.io/hypershift/control-plane-operator-aws:4.17.8-hotfix34123420",
+		},
+		{
+			name:     "When only a plain version override exists, it should not apply to a suffixed version",
+			platform: "azure",
+			version:  "4.16.5-hotfix34123420",
+			expected: "",
+		},
+		{
+			name:     "When several globs match, it should return the first one in file order",
+			platform: "aws",
+			version:  "4.19.0-hotfix34123420",
+			expected: "quay.io/hypershift/control-plane-operator-aws:4.19.0-first",
+		},
+		{
+			name:     "When duplicate exact entries exist, it should return the last one",
+			platform: "aws",
+			version:  "4.20.9",
+			expected: "quay.io/hypershift/control-plane-operator-aws:4.20.9-appended",
+		},
+		{
+			name:     "When the suffixed version has no matching override, it should return an empty image",
+			platform: "aws",
+			version:  "4.13.9-hotfix34123420",
+			expected: "",
+		},
+		{
+			name:     "When the version is a prefix of an overridden version, it should not match",
+			platform: "aws",
+			version:  "4.17",
+			expected: "",
+		},
 	}
 
-	for i, test := range tests {
-		t.Run(fmt.Sprintf("test-%d", i+1), func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			actual := getCPOImage(test.platform, test.version, getOverridesByPlatformAndVersion(fakeOverrides()))
+			actual := getCPOImage(test.platform, test.version, getOverridesByPlatform(fakeOverrides()))
 			g.Expect(actual).To(Equal(test.expected))
 		})
 	}
@@ -73,11 +139,44 @@ func TestLoadOverridesSample(t *testing.T) {
 }
 
 func TestLoadOverrides(t *testing.T) {
-	g := NewWithT(t)
-	o, err := loadOverrides(overridesYAML)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(o).ToNot(BeNil())
-	g.Expect(o.Platforms.AWS.Overrides).ToNot(BeEmpty())
+	tests := []struct {
+		name        string
+		yamlContent []byte
+		expectedErr string
+	}{
+		{
+			name:        "When the embedded overrides are loaded, it should return the configured overrides",
+			yamlContent: overridesYAML,
+		},
+		{
+			name:        "When an override uses a glob pattern, it should load it",
+			yamlContent: []byte("platforms:\n  aws:\n    overrides:\n      - version: \"4.20.15-*\"\n        cpoImage: \"quay.io/hypershift/control-plane-operator-aws:4.20.15\"\n"),
+		},
+		{
+			name:        "When an override has a malformed glob pattern, it should return an error",
+			yamlContent: []byte("platforms:\n  aws:\n    overrides:\n      - version: \"4.20.15-[\"\n        cpoImage: \"quay.io/hypershift/control-plane-operator-aws:4.20.15\"\n"),
+			expectedErr: "invalid version pattern",
+		},
+		{
+			name:        "When a glob is not scoped to a major.minor.patch- prefix, it should return an error",
+			yamlContent: []byte("platforms:\n  aws:\n    overrides:\n      - version: \"4.20.*\"\n        cpoImage: \"quay.io/hypershift/control-plane-operator-aws:4.20.15\"\n"),
+			expectedErr: "must start with a major.minor.patch- prefix",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			o, err := loadOverrides(test.yamlContent)
+			if test.expectedErr != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(test.expectedErr)))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(o).ToNot(BeNil())
+			g.Expect(o.Platforms.AWS.Overrides).ToNot(BeEmpty())
+		})
+	}
 }
 
 func TestExistingOverride(t *testing.T) {
@@ -116,6 +215,40 @@ func fakeOverrides() *CPOOverrides {
 		return result
 	}
 	result.Platforms.AWS.Overrides = generateOverrides("aws")
+	// Glob entries cover every suffixed build of a z-stream without naming the
+	// build; the exact suffixed entry pins one specific build.
+	result.Platforms.AWS.Overrides = append(result.Platforms.AWS.Overrides,
+		CPOOverride{
+			Version:  "4.17.8-*",
+			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.17.8-suffixed",
+		},
+		CPOOverride{
+			Version:  "4.17.8-hotfix34123420",
+			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.17.8-hotfix34123420",
+		},
+		CPOOverride{
+			Version:  "4.18.2-*",
+			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.18.2-suffixed",
+		},
+		CPOOverride{
+			Version:  "4.19.0-h*",
+			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.19.0-first",
+		},
+		CPOOverride{
+			Version:  "4.19.0-*",
+			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.19.0-second",
+		},
+		// A duplicate exact version, as an append-oriented config could produce.
+		// The later entry must win, matching the previous map-based lookup.
+		CPOOverride{
+			Version:  "4.20.9",
+			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.20.9-original",
+		},
+		CPOOverride{
+			Version:  "4.20.9",
+			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.20.9-appended",
+		},
+	)
 	result.Platforms.Azure.Overrides = generateOverrides("azure")
 	return result
 }

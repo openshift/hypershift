@@ -33,10 +33,12 @@ func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
 //
 //  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
 //     HostedCluster resource itself
-//  2. The hypershift image specified in the release payload indicated by the
+//  2. The override configured in overrides.yaml for the HostedCluster's platform
+//     and control plane release version, when CPO overrides are enabled
+//  3. The hypershift image specified in the release payload indicated by the
 //     HostedCluster's release field
-//  3. The hypershift-operator's own image for release versions 4.9 and 4.10
-//  4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
+//  4. The hypershift-operator's own image for release versions 4.9 and 4.10
+//  5. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
 //     version 4.8
 //
 // If no image can be found according to these rules, an error is returned.
@@ -68,6 +70,11 @@ func ResolveControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedClu
 	return image, pullSecret, nil
 }
 
+// cpoImageOverride resolves the control plane operator image configured in
+// overrides.yaml for a platform and payload version. It is a variable so tests
+// can exercise the resolver against a fixed set of overrides.
+var cpoImageOverride = controlplaneoperatoroverrides.CPOImage
+
 // controlPlaneOperatorImage implements GetControlPlaneOperatorImage and reports
 // whether the image was taken from the control plane release payload.
 func controlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (image string, fromPayload bool, err error) {
@@ -82,8 +89,10 @@ func controlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, r
 	if err != nil {
 		return "", false, err
 	}
+	// Look overrides up with the payload's own version string, including any
+	// suffix (for example 4.20.15-hotfix34123420), so glob entries can match it.
 	if controlplaneoperatoroverrides.IsOverridesEnabled() {
-		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String())
+		overrideImage := cpoImageOverride(string(hc.Spec.Platform.Type), releaseInfo.Version())
 		if overrideImage != "" {
 			return overrideImage, false, nil
 		}

@@ -89,26 +89,66 @@ echo ""
 echo "--- Step 2: Extracting override images from diff ---"
 DIFF=$(gh pr diff "$PR" --repo "$GH_REPO")
 
+# An entry is a list item with a version and a cpoImage. The version may be
+# unquoted (4.20.15) or quoted ("4.20.15") and may be a glob pattern
+# ("4.20.15-*"); the branch is the leading major.minor. An entry counts when
+# either of its two lines is added in the diff, taking the unchanged counterpart
+# from the context lines, so image-only and version-only changes are both
+# collected.
 IMAGE_LIST=""
-current_version=""
+pending_branch=""
+pending_image=""
+pending_changed=0
 
-while IFS= read -r line; do
-  version_match=$(echo "$line" | sed -n 's/^[+ ].*version:[[:space:]]*\([0-9]*\.[0-9]*\)\.[0-9]*.*/\1/p')
-  if [[ -n "$version_match" ]]; then
-    current_version="$version_match"
-  fi
-
-  image_match=$(echo "$line" | sed -n 's/^+.*cpoImage:[[:space:]]*\(.*\)/\1/p')
-  image_match="${image_match#"${image_match%%[![:space:]]*}"}"
-  image_match="${image_match%"${image_match##*[![:space:]]}"}"
-  if [[ -n "$image_match" && -n "$current_version" ]]; then
-    entry="${current_version}=${image_match}"
+flush_override_entry() {
+  if [[ -n "$pending_branch" && -n "$pending_image" && $pending_changed -eq 1 ]]; then
+    entry="${pending_branch}=${pending_image}"
     if [[ "$IMAGE_LIST" != *"$entry"* ]]; then
       IMAGE_LIST="${IMAGE_LIST}${entry}
 "
     fi
   fi
+  pending_branch=""
+  pending_image=""
+  pending_changed=0
+}
+
+while IFS= read -r line; do
+  diff_prefix="${line:0:1}"
+  content="${line:1}"
+
+  if [[ "$content" =~ ^[[:space:]]*-[[:space:]]*version:[[:space:]]*\"?([0-9]+\.[0-9]+)(\.[0-9]+)? ]]; then
+    if [[ "$diff_prefix" == "-" ]]; then
+      # Removed version line: the entry is being replaced or deleted.
+      flush_override_entry
+      continue
+    fi
+    flush_override_entry
+    pending_branch="${BASH_REMATCH[1]}"
+    if [[ "$diff_prefix" == "+" ]]; then
+      pending_changed=1
+    fi
+    continue
+  fi
+
+  if [[ "$content" =~ ^[[:space:]]*cpoImage:[[:space:]]*(.*)$ ]]; then
+    if [[ "$diff_prefix" == "-" ]]; then
+      continue
+    fi
+    image="${BASH_REMATCH[1]}"
+    image="${image%\"}"
+    image="${image#\"}"
+    image="$(echo "$image" | xargs)"
+    if [[ -n "$image" ]]; then
+      pending_image="$image"
+      if [[ "$diff_prefix" == "+" ]]; then
+        pending_changed=1
+      fi
+    fi
+    continue
+  fi
 done <<< "$DIFF"
+flush_override_entry
 
 echo "$IMAGE_LIST" | while IFS= read -r entry; do
   if [[ -n "$entry" ]]; then

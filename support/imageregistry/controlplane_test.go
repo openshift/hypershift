@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -86,28 +87,73 @@ func (provider *releaseProviderStub) Lookup(_ context.Context, image string, pul
 
 func TestGetControlPlaneOperatorImage(t *testing.T) {
 	t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "0")
+	const (
+		defaultReleaseImage    = "quay.io/openshift-release-dev/ocp-release:4.21.11-x86_64"
+		payloadHypershiftImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"
+		// Override configured for aws 4.15.53 in overrides.yaml; keep in sync with
+		// TestExistingOverride in the controlplaneoperator-overrides package.
+		aws41553OverrideImage = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/openshift-cert-hotfix-415-multi:ab45f5df65f19c9e4db4977b0d756c8d87baff0a"
+	)
+	// globOverride stands in for a "4.20.15-*" entry in overrides.yaml, which the
+	// shipped config does not carry.
+	globOverride := func(_ string, version string) string {
+		if matched, err := path.Match("4.20.15-*", version); err == nil && matched {
+			return "quay.io/hypershift/control-plane-operator-aws:4.20.15-glob"
+		}
+		return ""
+	}
 	for _, testCase := range []struct {
 		name            string
 		annotation      string
+		platform        hyperv1.PlatformType
+		releaseImage    string
 		provider        releaseProviderStub
+		override        func(platform, version string) string
 		expected        string
 		expectedError   string
 		enableOverrides bool
 	}{
 		{name: "When an annotation is set, it should bypass release lookup", annotation: "quay.io/hypershift/hypershift:latest", expected: "quay.io/hypershift/hypershift:latest"},
-		{name: "When the payload includes hypershift, it should use the payload image", provider: releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
+		{name: "When the payload includes hypershift, it should use the payload image", provider: releaseProviderStub{version: "4.21.0", image: payloadHypershiftImage}, expected: payloadHypershiftImage},
 		{name: "When the payload lacks hypershift, it should use the operator image", provider: releaseProviderStub{version: "4.21.0"}, expected: "quay.io/hypershift/hypershift-operator:latest"},
-		{name: "When enabled overrides do not match the platform, it should use the payload image", enableOverrides: true, provider: releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
+		{name: "When enabled overrides do not match the platform, it should use the payload image", enableOverrides: true, platform: hyperv1.NonePlatform, provider: releaseProviderStub{version: "4.21.0", image: payloadHypershiftImage}, expected: payloadHypershiftImage},
+		{name: "When an enabled override matches the release version, it should use the override image", enableOverrides: true, platform: hyperv1.AWSPlatform, provider: releaseProviderStub{version: "4.15.53", image: payloadHypershiftImage}, expected: aws41553OverrideImage},
+		{
+			// The release image tag says 4.20.15 while the payload reports the
+			// suffixed version; only the glob matches, proving the override is
+			// selected from the payload version and not from the tag.
+			name:            "When a glob matches the suffixed payload version, it should use the override image even when the release image tag differs",
+			enableOverrides: true,
+			platform:        hyperv1.AWSPlatform,
+			releaseImage:    "quay.io/openshift-release-dev/ocp-release:4.20.15-x86_64",
+			provider:        releaseProviderStub{version: "4.20.15-hotfix34123420", image: payloadHypershiftImage},
+			override:        globOverride,
+			expected:        "quay.io/hypershift/control-plane-operator-aws:4.20.15-glob",
+		},
+		{name: "When the release version carries a hotfix suffix, it should use the payload image", provider: releaseProviderStub{version: "4.21.0-hotfix34123420", image: payloadHypershiftImage}, expected: payloadHypershiftImage},
+		{name: "When enabled overrides do not match a suffixed release version, it should use the payload image", enableOverrides: true, platform: hyperv1.AWSPlatform, provider: releaseProviderStub{version: "4.21.0-hotfix34123420", image: payloadHypershiftImage}, expected: payloadHypershiftImage},
 		{name: "When the release lookup fails, it should return an error", provider: releaseProviderStub{err: fmt.Errorf("lookup failed")}, expectedError: "lookup failed"},
 		{name: "When the release version is invalid, it should return an error", provider: releaseProviderStub{version: "invalid"}, expectedError: "No Major.Minor.Patch elements found"},
+		{name: "When enabled overrides do not match an invalid release version, it should return an error", enableOverrides: true, platform: hyperv1.AWSPlatform, provider: releaseProviderStub{version: "invalid"}, expectedError: "No Major.Minor.Patch elements found"},
 		{name: "When the release is unsupported, it should return an error", provider: releaseProviderStub{version: "4.8.0"}, expectedError: "unsupported release image with version 4.8.0"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			g := NewWithT(t)
-			cluster := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{ControlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.21.11-x86_64"}}}
+			releaseImage := testCase.releaseImage
+			if releaseImage == "" {
+				releaseImage = defaultReleaseImage
+			}
+			cluster := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
+				Platform:            hyperv1.PlatformSpec{Type: testCase.platform},
+				ControlPlaneRelease: &hyperv1.Release{Image: releaseImage},
+			}}
 			if testCase.enableOverrides {
 				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "1")
-				cluster.Spec.Platform.Type = hyperv1.NonePlatform
+			}
+			if testCase.override != nil {
+				previousOverride := cpoImageOverride
+				cpoImageOverride = testCase.override
+				t.Cleanup(func() { cpoImageOverride = previousOverride })
 			}
 			if testCase.annotation != "" {
 				cluster.Annotations = map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: testCase.annotation}
@@ -123,7 +169,7 @@ func TestGetControlPlaneOperatorImage(t *testing.T) {
 				g.Expect(errors.Is(err, testCase.provider.err)).To(BeTrue())
 			}
 			if testCase.annotation == "" {
-				g.Expect(testCase.provider.requestedImage).To(Equal("quay.io/openshift-release-dev/ocp-release:4.21.11-x86_64"))
+				g.Expect(testCase.provider.requestedImage).To(Equal(releaseImage))
 			} else {
 				g.Expect(testCase.provider.requestedImage).To(BeEmpty())
 			}
