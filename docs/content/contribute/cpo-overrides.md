@@ -4,6 +4,10 @@
 
 The CPO (Control Plane Operator) overrides mechanism allows you to specify custom Control Plane Operator images for specific OpenShift versions and platforms. This is particularly useful for applying hotfixes and patches before they're officially released.
 
+Override versions can be exact strings or glob patterns, so `4.20.15-*` covers
+every payload built from 4.20.15 with a suffix without naming the (possibly
+private) build string. See [Version Matching](#version-matching).
+
 ## Configuration File Structure
 
 The CPO overrides are configured using a YAML file with the following structure:
@@ -45,7 +49,7 @@ Each platform can contain:
 #### `overrides` (Array)
 A list of version-specific CPO image overrides:
 
-- **`version`** (string): The exact OpenShift version (e.g., "4.17.9", "4.16.17")
+- **`version`** (string): The OpenShift version the override applies to. Either an exact version string (`"4.17.9"`, or a full payload version such as `"4.17.9-hotfix34123420"`), or a glob pattern (`"4.17.9-*"`), which matches every payload whose version matches the pattern. See [Version Matching](#version-matching).
 - **`cpoImage`** (string): The full container image reference to use for this version
 
 #### `testing` (Object, Optional)
@@ -96,7 +100,7 @@ platforms:
 
 1. **Override Check**: When a HostedCluster is created or updated, the system checks if CPO overrides are enabled
 2. **Platform Lookup**: The system looks up overrides for the specific platform (case-insensitive)
-3. **Version Match**: If the platform exists, it searches for an exact version match
+3. **Version Match**: If the platform exists, it searches for a version match (see [Version Matching](#version-matching))
 4. **Fallback**: If no override is found, the default CPO image from the OpenShift release is used
 
 ### Platform Handling
@@ -104,6 +108,71 @@ platforms:
 - Platform names are **case-insensitive** (`AWS`, `aws`, `Aws` all work)
 - Unknown platforms return empty string (graceful degradation)
 - Missing platforms in configuration are handled safely (no panics)
+
+### Version Matching
+
+The version HyperShift compares against is the `metadata.name` of the
+`release-manifests/image-references` file inside the release payload image. That
+is the payload's own version string, so it includes any suffix the payload was
+built with — for example `4.20.15`, `4.20.15-hotfix34123420`, or
+`4.20.15-0.nightly-2026-01-01-123456`.
+
+Override lookup runs in two steps:
+
+1. **Exact match**: if an entry's `version` equals the payload version as a
+   literal string, that entry applies. `version: "4.20.15"` matches only the
+   plain `4.20.15` payload; `version: "4.20.15-hotfix34123420"` matches only
+   that build.
+2. **Glob match**: otherwise, entries whose `version` contains glob wildcards
+   are tried in the order they appear in the file, and the first match applies.
+   Patterns use the syntax accepted by Go's
+   [`path.Match`](https://pkg.go.dev/path#Match): `*` matches any run of
+   characters (except `/`), `?` matches one character, and `[...]` matches a
+   character class.
+
+An exact match always wins over a glob, regardless of where the entries are
+listed.
+
+Use a glob to cover the suffixed builds of a z-stream without disclosing the
+build string, which may be private:
+
+```yaml
+platforms:
+  aws:
+    overrides:
+      # Every suffixed build of 4.20.15, e.g. 4.20.15-hotfix34123420.
+      - version: "4.20.15-*"
+        cpoImage: "quay.io/hypershift/control-plane-operator-aws:4.20.15"
+      # Optional: also override the plain 4.20.15 payload.
+      - version: "4.20.15"
+        cpoImage: "quay.io/hypershift/control-plane-operator-aws:4.20.15"
+      # Optional: pin one specific build, overriding the glob above.
+      - version: "4.20.15-hotfix34123420"
+        cpoImage: "quay.io/hypershift/control-plane-operator-aws:4.20.15-hotfix34123420"
+```
+
+With this configuration:
+
+- `4.20.15` uses the second image; the glob does not apply because the pattern
+  requires the `-` after the version.
+- `4.20.15-hotfix34123420` uses the third image (exact match beats the glob).
+- `4.20.15-hotfix99999999` uses the first image.
+- `4.21.0` and any other version match nothing and keep the image shipped in
+  the payload.
+
+Keep the pattern tight: `4.20.15*` (no dash) would also match `4.20.150` and
+the plain `4.20.15`, so prefer `4.20.15-*` when only suffixed builds should be
+overridden.
+
+Override matching happens before HyperShift parses the version, so a glob also
+matches when the suffix is not valid semver (for example
+`4.20.15-hotfix_34123420`). The rest of the release handling still parses the
+full version string and may reject one it cannot understand, so prefer a
+semver-valid suffix such as `-hotfix34123420`.
+
+Malformed patterns are rejected when the overrides are loaded (the operator
+fails to start with an `invalid version pattern` error), so a typo such as
+`4.20.15-[` cannot silently disable an override.
 
 ## Enabling CPO Overrides
 
@@ -125,7 +194,9 @@ The override configuration files are embedded in the binary at build time:
 ## Best Practices
 
 ### Version Management
-- Use exact version strings (e.g., "4.17.9", not "4.17.x")
+- Use exact `major.minor.patch` strings (e.g., "4.17.9", not "4.17.x") for the plain payload of a release
+- Use a glob such as "4.17.9-*" to cover suffixed builds (hotfix, nightly) of that release without listing the build string
+- Add a full suffixed version string (e.g., "4.17.9-hotfix34123420") only when one specific build must be pinned over the glob
 - Keep override lists sorted by version for maintainability
 
 ### Image References
@@ -190,6 +261,146 @@ To run override tests:
    - All tests will use the configured override test releases
    - `TestCreateCluster` will automatically verify the CPO override image is correctly applied
 
+## Testing With a Payload That Carries a Version Suffix
+
+To validate suffix matching end to end you do not need a real hotfix payload:
+you can publish a copy of any regular release payload under a version that has
+an arbitrary suffix. `oc adm release new --name` rewrites the payload's
+`image-references` name — the value HyperShift reads as the release version —
+while keeping every component image and manifest of the source payload.
+
+The example below uses AWS and `4.20.15` with the suffix `-hotfix34123420`.
+
+### 1. Publish the payload copy
+
+```bash
+# Registry credentials with access to the source payload's component images.
+PULL_SECRET=${PULL_SECRET:-/path/to/pull-secret.json}
+
+SOURCE=quay.io/openshift-release-dev/ocp-release:4.20.15-x86_64
+# Any registry/tag you can push to. Keep the tag version-shaped (see the note below).
+TARGET=quay.io/<your-org>/ocp-release:4.20.15-hotfix34123420
+
+oc adm release new \
+  --registry-config "${PULL_SECRET}" \
+  --from-release "${SOURCE}" \
+  --name 4.20.15-hotfix34123420 \
+  --to-image "${TARGET}"
+```
+
+`--name` accepts any string. Rebuilding pulls the manifests of every operator
+image in the source payload but mirrors no component images — the copy still
+references the originals — so it takes a few minutes and no large pushes.
+
+Confirm the new payload reports the suffixed version:
+
+```bash
+oc adm release info "${TARGET}" | head -3
+# Name:           4.20.15-hotfix34123420
+```
+
+You can also inspect the exact value HyperShift reads:
+
+```bash
+oc adm release extract --from="${TARGET}" --to=/tmp/suffixed-payload
+python3 -c 'import json; print(json.load(open("/tmp/suffixed-payload/image-references"))["metadata"]["name"])'
+# 4.20.15-hotfix34123420
+```
+
+To check the payload without pushing it anywhere, replace `--to-image` with
+`--to-dir /tmp/suffixed-payload`; the resulting `image-references` has the same
+`metadata.name`.
+
+!!! note
+    Override matching only cares about `--name`, not the image tag. Keep the tag
+    version-shaped anyway (`:4.20.15-hotfix34123420`): the `TEST_CPO_OVERRIDE`
+    e2e helpers derive the expected version from the image tag, not from the
+    payload contents.
+
+### 2. Add the override and enable overrides
+
+Add a glob override so it covers the suffixed build without naming it:
+
+```yaml
+platforms:
+  aws:
+    overrides:
+      - version: "4.20.15-*"
+        cpoImage: "quay.io/hypershift/control-plane-operator-aws:4.20.15"
+```
+
+Add a plain `version: "4.20.15"` entry as well if the un-suffixed payload should
+be overridden too; the glob alone does not match it.
+
+Rebuild the HyperShift operator image with the updated `overrides.yaml` and
+install or upgrade it with overrides enabled:
+
+```bash
+bin/hypershift install --enable-cpo-overrides ...
+```
+
+That flag sets `ENABLE_CPO_OVERRIDES=1` on the operator deployment. On an
+existing installation you can instead patch the deployment:
+
+```bash
+oc -n hypershift set env deployment/operator ENABLE_CPO_OVERRIDES=1
+```
+
+### 3. Create or point a HostedCluster at the suffixed payload
+
+For a fresh cluster, pass the rebuilt payload as the release image:
+
+```bash
+hypershift create cluster aws \
+  --name suffix-test \
+  --release-image "${TARGET}" \
+  ...
+```
+
+For an existing cluster, set it as the control plane release so only the
+control plane (where the override is applied) moves to the new payload:
+
+```bash
+oc patch hostedcluster -n clusters <cluster-name> --type merge \
+  -p "{\"spec\":{\"controlPlaneRelease\":{\"image\":\"${TARGET}\"}}}"
+```
+
+### 4. Verify the override was applied
+
+The control-plane-operator pod must run the override image, not the `hypershift`
+image from the payload:
+
+```bash
+oc get pods -n clusters-<cluster-name> -l app=control-plane-operator \
+  -o jsonpath='{.items[*].spec.containers[?(@.name=="control-plane-operator")].image}'
+# quay.io/hypershift/control-plane-operator-aws:4.20.15
+```
+
+Useful negative and precedence checks:
+
+- With only `version: "4.20.15-*"` configured, a HostedCluster pointed at
+  `${TARGET}` must show the override image, while one pointed at
+  `ocp-release:4.20.15-x86_64` must keep the `hypershift` image shipped in the
+  payload: the glob requires the `-` after the version.
+- Add `version: "4.20.15"` as well: the plain payload now uses the override too,
+  and `${TARGET}` still matches the glob.
+- Add `version: "4.20.15-hotfix34123420"`: `${TARGET}` uses that entry's image
+  (exact match wins over the glob), while a payload named
+  `4.20.15-hotfix99999999` keeps the glob image.
+- Point a HostedCluster at a payload with a different base version (e.g.
+  `4.21.0`): it must keep the payload's `hypershift` image.
+
+### 5. Run the unit tests
+
+```bash
+go test ./hypershift-operator/controlplaneoperator-overrides/... \
+  -run 'TestCPOImage|TestBaseVersion' -v
+go test ./support/imageregistry/... -run TestGetControlPlaneOperatorImage -v
+```
+
+The `support/imageregistry` package uses generated mocks; run `make generate`
+first if the package fails to build with missing `NewMock*` symbols.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -197,7 +408,16 @@ To run override tests:
 1. **Override Not Applied**
    - Check if `ENABLE_CPO_OVERRIDES=1` is set
    - Verify platform name matches exactly (case-insensitive)
-   - Confirm version string is exact match
+   - Check which version HyperShift sees for the payload:
+     `oc adm release info <payload-image> | head -3`. If it carries a suffix
+     (e.g., `4.20.15-hotfix34123420`), add a matching glob such as
+     `version: "4.20.15-*"` or the exact suffixed string; a plain `4.20.15`
+     entry does not match suffixed payloads. See
+     [Version Matching](#version-matching)
+   - Among globs, the first matching entry in the file wins; exact entries
+     always win over globs
+   - A malformed pattern makes the operator fail at startup with an
+     `invalid version pattern` error instead of silently ignoring the override
 
 2. **Image Pull Failures**
    - Verify image exists and is accessible

@@ -98,8 +98,11 @@ func TestGetControlPlaneOperatorImage(t *testing.T) {
 		{name: "When the payload includes hypershift, it should use the payload image", provider: releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
 		{name: "When the payload lacks hypershift, it should use the operator image", provider: releaseProviderStub{version: "4.21.0"}, expected: "quay.io/hypershift/hypershift-operator:latest"},
 		{name: "When enabled overrides do not match the platform, it should use the payload image", enableOverrides: true, provider: releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
+		{name: "When the release version carries a hotfix suffix, it should use the payload image", provider: releaseProviderStub{version: "4.21.0-hotfix34123420", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
+		{name: "When enabled overrides do not match a suffixed release version, it should use the payload image", enableOverrides: true, provider: releaseProviderStub{version: "4.21.0-hotfix34123420", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
 		{name: "When the release lookup fails, it should return an error", provider: releaseProviderStub{err: fmt.Errorf("lookup failed")}, expectedError: "lookup failed"},
 		{name: "When the release version is invalid, it should return an error", provider: releaseProviderStub{version: "invalid"}, expectedError: "No Major.Minor.Patch elements found"},
+		{name: "When enabled overrides do not match an invalid release version, it should return an error", enableOverrides: true, provider: releaseProviderStub{version: "invalid"}, expectedError: "No Major.Minor.Patch elements found"},
 		{name: "When the release is unsupported, it should return an error", provider: releaseProviderStub{version: "4.8.0"}, expectedError: "unsupported release image with version 4.8.0"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
