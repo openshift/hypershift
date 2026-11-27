@@ -267,4 +267,10 @@ func init() {
 		"Management cluster public subnet ID used by the deterministic LoadBalancer IP lifecycle variant.",
 		false,
 	)
+	// Registry overrides test environment variables
+	RegisterEnvVar(
+		"E2E_REGISTRY_OVERRIDES",
+		"The --registry-overrides value (source=mirror pairs, comma-separated) the job configured on the HyperShift operator before creating the hosted clusters. The registry overrides tests skip when it is unset or empty.",
+		false,
+	)
 }
