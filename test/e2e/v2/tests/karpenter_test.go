@@ -349,7 +349,7 @@ func KarpenterAMD64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should provision and deprovision AMD64 nodes", Label("karpenter-amd64"), func() {
+		It("[Skipped:Disconnected] should provision and deprovision AMD64 nodes", Label("karpenter-amd64"), func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -382,7 +382,7 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should provision and deprovision ARM64 nodes", Label("karpenter-arm64"), func() {
+		It("[Skipped:Disconnected] should provision and deprovision ARM64 nodes", Label("karpenter-arm64"), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			hc, err := tc.GetHostedCluster()
@@ -1842,7 +1842,7 @@ func KarpenterCPUOptionsNestedVirtualization(getTestCtx internal.TestContextGett
 }
 
 func KarpenterUnderutilizedConsolidationTest(getTestCtx internal.TestContextGetter) {
-	It("[Feature:AutoNode] should move running workloads onto one underutilized node", func() {
+	It("[Feature:AutoNode] [Skipped:Disconnected] should move running workloads onto one underutilized node", func() {
 		tc := getTestCtx()
 		tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 		hc, err := tc.GetHostedCluster()
