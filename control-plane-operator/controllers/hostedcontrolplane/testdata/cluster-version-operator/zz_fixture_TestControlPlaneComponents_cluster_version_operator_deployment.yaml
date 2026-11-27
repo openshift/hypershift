@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: bef87e8b309b78e3e42baaf0753326ea8de6e2d5dc5aef07a9a2a1e1bf7869cd
+    hypershift.openshift.io/desired-state-hash: 5001ba40c69e9546ee25518bbe870e168a3a500b1bfac0b7698bb6f68a6d4922
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator
@@ -377,6 +377,32 @@ spec:
           clusterversion_crds=(/var/payload/manifests/0000_00_cluster-version-operator_01_clusterversions*)
           if [[ ${#clusterversion_crds[@]} -gt 0 ]]; then
             oc apply -f "${clusterversion_crds[@]}"
+          fi
+          # The CPO can be newer than the payload, including within one minor
+          # release. Use the payload's schema at bootstrap; HCCO later reconciles
+          # capabilities against the guest CVO's reported known capabilities.
+          known_capabilities="$(oc get crd clusterversions.config.openshift.io -o jsonpath='{range .spec.versions[?(@.name=="v1")].schema.openAPIV3Schema.properties.spec.properties.capabilities.properties.additionalEnabledCapabilities.items.enum[*]}{@}{"\n"}{end}')"
+          if [[ -z "${known_capabilities}" ]]; then
+            echo "ClusterVersion CRD does not declare supported capabilities" >&2
+            exit 1
+          fi
+          desired_capabilities="$(oc create --dry-run=client --validate=false -f /tmp/clusterversion.json -o jsonpath='{range .spec.capabilities.additionalEnabledCapabilities[*]}{@}{"\n"}{end}')"
+          patch_operations=""
+          index=0
+          while IFS= read -r capability; do
+            if [[ -z "${capability}" ]]; then
+              continue
+            fi
+            if ! grep -Fxq -- "${capability}" <<< "${known_capabilities}"; then
+              printf 'Omitting bootstrap capability unsupported by the payload: %s\n' "${capability}"
+              # Remove later array entries first so indices remain valid.
+              patch_operations="{\"op\":\"remove\",\"path\":\"/spec/capabilities/additionalEnabledCapabilities/${index}\"},${patch_operations}"
+            fi
+            index=$((index + 1))
+          done <<< "${desired_capabilities}"
+          if [[ -n "${patch_operations}" ]]; then
+            oc patch --local -f /tmp/clusterversion.json --type=json -p "[${patch_operations%,}]" -o json > /tmp/clusterversion-filtered.json
+            mv /tmp/clusterversion-filtered.json /tmp/clusterversion.json
           fi
           oc apply -f /tmp/clusterversion.json
           while true; do
