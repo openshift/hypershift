@@ -155,7 +155,11 @@ func Finalize(ctx context.Context, c client.Client, hcpNamespace, nodePoolName s
 	if !sets.New(cr.Finalizers...).Has(consumerFinalizer) {
 		return nil
 	}
-	patch := client.MergeFrom(cr.DeepCopy())
+	// A merge patch replaces the whole finalizers list, so it carries an optimistic lock: without it,
+	// a finalizer added after the read (e.g. the generator's store-cleanup finalizer) would be dropped
+	// and the CR could be deleted before the store is cleaned up. A conflict is returned and the next
+	// reconcile re-reads.
+	patch := client.MergeFromWithOptions(cr.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	cr.Finalizers = sets.List(sets.New(cr.Finalizers...).Delete(consumerFinalizer))
 	if err := c.Patch(ctx, cr, patch); err != nil {
 		return fmt.Errorf("failed to remove consumer finalizer from IgnitionPayload %s/%s: %w", hcpNamespace, nodePoolName, err)

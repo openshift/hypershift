@@ -19,6 +19,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestEnqueueNodePool(t *testing.T) {
@@ -280,25 +281,68 @@ func TestReconcile(t *testing.T) {
 }
 
 func TestFinalize(t *testing.T) {
-	g := NewWithT(t)
 	ctx := context.Background()
 	hcpNS := "clusters-hc"
 
-	cr := &hyperv1.IgnitionPayload{
-		ObjectMeta: metav1.ObjectMeta{Name: "np-1", Namespace: hcpNS, Finalizers: []string{consumerFinalizer, "other/keep"}},
-		Spec:       hyperv1.IgnitionPayloadSpec{ReleaseImage: "img", PullSecret: hyperv1.SecretReference{Name: "ps"}},
-	}
-	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cr).Build()
+	t.Run("removes only the consumer finalizer", func(t *testing.T) {
+		g := NewWithT(t)
+		cr := &hyperv1.IgnitionPayload{
+			ObjectMeta: metav1.ObjectMeta{Name: "np-1", Namespace: hcpNS, Finalizers: []string{consumerFinalizer, "other/keep"}},
+			Spec:       hyperv1.IgnitionPayloadSpec{ReleaseImage: "img", PullSecret: hyperv1.SecretReference{Name: "ps"}},
+		}
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cr).Build()
 
-	g.Expect(Finalize(ctx, c, hcpNS, "np-1")).To(Succeed())
+		g.Expect(Finalize(ctx, c, hcpNS, "np-1")).To(Succeed())
 
-	// The consumer finalizer is removed; other controllers' finalizers are left intact so their own
-	// cleanup can still run.
-	fetched := &hyperv1.IgnitionPayload{}
-	g.Expect(c.Get(ctx, client.ObjectKey{Namespace: hcpNS, Name: "np-1"}, fetched)).To(Succeed())
-	g.Expect(sets.New(fetched.Finalizers...).Has(consumerFinalizer)).To(BeFalse())
-	g.Expect(sets.New(fetched.Finalizers...).Has("other/keep")).To(BeTrue())
+		// The consumer finalizer is removed; other controllers' finalizers are left intact so their own
+		// cleanup can still run.
+		fetched := &hyperv1.IgnitionPayload{}
+		g.Expect(c.Get(ctx, client.ObjectKey{Namespace: hcpNS, Name: "np-1"}, fetched)).To(Succeed())
+		g.Expect(sets.New(fetched.Finalizers...).Has(consumerFinalizer)).To(BeFalse())
+		g.Expect(sets.New(fetched.Finalizers...).Has("other/keep")).To(BeTrue())
 
-	// Absent CR is a no-op.
-	g.Expect(Finalize(ctx, c, hcpNS, "missing")).To(Succeed())
+		// Absent CR is a no-op.
+		g.Expect(Finalize(ctx, c, hcpNS, "missing")).To(Succeed())
+	})
+
+	// A finalizer another controller adds between the consumer's read and its patch must survive: the
+	// patch conflicts instead of overwriting the list.
+	t.Run("keeps a finalizer added concurrently", func(t *testing.T) {
+		g := NewWithT(t)
+		const generatorFinalizer = "hypershift.openshift.io/ignition-payload-store-cleanup"
+		cr := &hyperv1.IgnitionPayload{
+			ObjectMeta: metav1.ObjectMeta{Name: "np-1", Namespace: hcpNS, Finalizers: []string{consumerFinalizer}},
+			Spec:       hyperv1.IgnitionPayloadSpec{ReleaseImage: "img", PullSecret: hyperv1.SecretReference{Name: "ps"}},
+		}
+		raced := false
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cr).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					if !raced {
+						raced = true
+						concurrent := &hyperv1.IgnitionPayload{}
+						if err := cl.Get(ctx, client.ObjectKeyFromObject(obj), concurrent); err != nil {
+							return err
+						}
+						concurrent.Finalizers = append(concurrent.Finalizers, generatorFinalizer)
+						if err := cl.Update(ctx, concurrent); err != nil {
+							return err
+						}
+					}
+					return cl.Patch(ctx, obj, patch, opts...)
+				},
+			}).Build()
+
+		err := Finalize(ctx, c, hcpNS, "np-1")
+		g.Expect(apierrors.IsConflict(err)).To(BeTrue(), "expected a conflict, got %v", err)
+
+		fetched := &hyperv1.IgnitionPayload{}
+		g.Expect(c.Get(ctx, client.ObjectKey{Namespace: hcpNS, Name: "np-1"}, fetched)).To(Succeed())
+		g.Expect(fetched.Finalizers).To(ContainElement(generatorFinalizer))
+
+		// The retry re-reads and removes only the consumer finalizer.
+		g.Expect(Finalize(ctx, c, hcpNS, "np-1")).To(Succeed())
+		g.Expect(c.Get(ctx, client.ObjectKey{Namespace: hcpNS, Name: "np-1"}, fetched)).To(Succeed())
+		g.Expect(fetched.Finalizers).To(Equal([]string{generatorFinalizer}))
+	})
 }
