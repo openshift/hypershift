@@ -160,3 +160,44 @@ For future releases created with the CPO ProjectDevelopmentStreamTemplate, one
 would simply list the desired release:
 
     ❯ oc get release --sort-by=.metadata.creationTimestamp -l "appstudio.openshift.io/application=control-plane-operator-4-20"
+
+## Pull request pipeline provenance
+
+Most pull-request pipelines in `.tekton/` have a paired
+`*-pull-request-from-main.yaml` variant. The pair avoids forcing ordinary PRs to
+rebase whenever the shared build pipeline changes:
+
+- `*-pull-request-from-main.yaml` matches PRs that do **not** change the shared
+  build pipeline (`.tekton/pipelines/common-operator-build.yaml`) or the paired
+  `*-pull-request.yaml` wrapper. Its `pipelineRef` is a git resolver pinned to
+  `revision: main`, so the common pipeline is resolved from `main`.
+- `*-pull-request.yaml` matches PRs that **do** change the shared build pipeline
+  or the paired wrapper. It uses the `pipelinesascode.tekton.dev/pipeline`
+  annotation, which resolves the common pipeline from the PR branch, so pipeline
+  changes can be tested before merge.
+
+The two MCE 5.1 pull-request pipelines,
+`hypershift-cli-mce-51-pull-request.yaml` and
+`hypershift-release-mce-51-pull-request.yaml`, have no `-from-main` pair: their
+`pipelineRef` already resolves an external catalog
+(`stolostron/konflux-build-catalog` at `main`), so there is no in-repo common
+pipeline for a PR to override.
+
+The `-from-main` variant pins only the **referenced common pipeline** to
+`main`. The PipelineRun wrapper itself — its
+`appstudio.openshift.io/application` and
+`appstudio.openshift.io/component` labels, CEL expression, and parameters — is
+still read from the PR head. Pipelines as Code's `pipelinerun_provenance` is a
+Repository-level setting, and the HyperShift Repository
+(`hypershift-manual-merge`) leaves it at the default `source`.
+
+Practical consequences:
+
+- Changing a wrapper label (for example, moving a component to a different
+  application) only affects PRs whose heads contain the new wrapper. PRs opened
+  before the change keep the old label and their Konflux runs stay attributed to
+  the previous application until they are rebased or updated.
+- Setting `pipelinerun_provenance: default_branch` on the Repository CR would
+  read the whole `.tekton/` directory from `main`, but it would also stop PRs
+  that change `.tekton/` from testing their own pipeline definitions. The paired
+  `-from-main` approach is deliberate.
