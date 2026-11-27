@@ -483,6 +483,254 @@ func TestMinTLSVersion(t *testing.T) {
 	}
 }
 
+// intermediateEtcdCipherSuites returns the IANA names of the Intermediate TLS
+// profile ciphers that etcd supports, in profile order.
+func intermediateEtcdCipherSuites() []string {
+	return []string{
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+	}
+}
+
+// tlsProfileConfiguration returns a cluster configuration whose API server
+// uses the given TLS security profile.
+func tlsProfileConfiguration(profile *configv1.TLSSecurityProfile) *hyperv1.ClusterConfiguration {
+	return &hyperv1.ClusterConfiguration{
+		APIServer: &configv1.APIServerSpec{TLSSecurityProfile: profile},
+	}
+}
+
+// customTLSProfile returns a Custom TLS security profile with the given min
+// TLS version and OpenSSL cipher names.
+func customTLSProfile(minVersion configv1.TLSProtocolVersion, ciphers ...string) *configv1.TLSSecurityProfile {
+	return &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: minVersion,
+				Ciphers:       ciphers,
+			},
+		},
+	}
+}
+
+func TestNewEtcdTLSConfig(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name               string
+		configuration      *hyperv1.ClusterConfiguration
+		expectedMinVersion tlsutil.TLSVersion
+		// expectedCipherSuites is empty when no cipher suites should be configured.
+		expectedCipherSuites []string
+		expectedError        string
+	}{
+		{
+			name:                 "When API server config is nil, it should use TLS 1.2 and the Intermediate cipher suites",
+			configuration:        nil,
+			expectedMinVersion:   tlsutil.TLSVersion12,
+			expectedCipherSuites: intermediateEtcdCipherSuites(),
+		},
+		{
+			name:               "When TLS profile is Modern, it should use TLS 1.3 without cipher suites",
+			configuration:      tlsProfileConfiguration(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}),
+			expectedMinVersion: tlsutil.TLSVersion13,
+		},
+		{
+			name: "When TLS profile is Custom with supported and unsupported ciphers, it should keep only the supported ciphers as IANA names in profile order",
+			configuration: tlsProfileConfiguration(customTLSProfile(configv1.VersionTLS12,
+				"ECDHE-RSA-AES128-GCM-SHA256", "UNSUPPORTED-CIPHER", "ECDHE-ECDSA-AES256-GCM-SHA384")),
+			expectedMinVersion:   tlsutil.TLSVersion12,
+			expectedCipherSuites: []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"},
+		},
+		{
+			name: "When TLS profile is Custom with TLS 1.3 and only TLS 1.3 ciphers, it should use TLS 1.3 without cipher suites",
+			configuration: tlsProfileConfiguration(customTLSProfile(configv1.VersionTLS13,
+				"TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384")),
+			expectedMinVersion: tlsutil.TLSVersion13,
+		},
+		{
+			name:          "When TLS profile is Custom with a nil Custom field, it should return an error",
+			configuration: tlsProfileConfiguration(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType}),
+			expectedError: "failed to get min TLS version",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			cpContext := component.WorkloadContext{
+				Context: t.Context(),
+				HCP: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Configuration: tc.configuration,
+					},
+				},
+			}
+
+			result, err := newEtcdTLSConfig(cpContext)
+			if tc.expectedError != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedError)))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result.minVersion).To(Equal(tc.expectedMinVersion))
+			if len(tc.expectedCipherSuites) == 0 {
+				g.Expect(result.cipherSuites).To(BeEmpty())
+			} else {
+				g.Expect(result.cipherSuites).To(Equal(tc.expectedCipherSuites))
+			}
+		})
+	}
+}
+
+func TestEtcdTLSConfig_ApplyToEtcdContainer(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		tlsConfig   etcdTLSConfig
+		existingEnv []corev1.EnvVar
+		expectedEnv []corev1.EnvVar
+	}{
+		{
+			name: "When cipher suites are set, it should append the min TLS version and the cipher suites",
+			tlsConfig: etcdTLSConfig{
+				minVersion:   tlsutil.TLSVersion12,
+				cipherSuites: []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"},
+			},
+			existingEnv: []corev1.EnvVar{{Name: "ETCD_INITIAL_CLUSTER", Value: "etcd-0=https://etcd-0.etcd-discovery.hcp-namespace.svc:2380"}},
+			expectedEnv: []corev1.EnvVar{
+				{Name: "ETCD_INITIAL_CLUSTER", Value: "etcd-0=https://etcd-0.etcd-discovery.hcp-namespace.svc:2380"},
+				{Name: "ETCD_TLS_MIN_VERSION", Value: "TLS1.2"},
+				{Name: "ETCD_CIPHER_SUITES", Value: "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"},
+			},
+		},
+		{
+			name: "When no cipher suites are set, it should only set the min TLS version",
+			tlsConfig: etcdTLSConfig{
+				minVersion:   tlsutil.TLSVersion13,
+				cipherSuites: []string{},
+			},
+			existingEnv: []corev1.EnvVar{{Name: "ETCD_INITIAL_CLUSTER", Value: "etcd-0=https://etcd-0.etcd-discovery.hcp-namespace.svc:2380"}},
+			expectedEnv: []corev1.EnvVar{
+				{Name: "ETCD_INITIAL_CLUSTER", Value: "etcd-0=https://etcd-0.etcd-discovery.hcp-namespace.svc:2380"},
+				{Name: "ETCD_TLS_MIN_VERSION", Value: "TLS1.3"},
+			},
+		},
+		{
+			name: "When the TLS env vars already exist, it should update them in place without duplicates",
+			tlsConfig: etcdTLSConfig{
+				minVersion:   tlsutil.TLSVersion13,
+				cipherSuites: []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"},
+			},
+			existingEnv: []corev1.EnvVar{
+				{Name: "ETCD_TLS_MIN_VERSION", Value: "TLS1.2"},
+				{Name: "ETCD_CIPHER_SUITES", Value: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"},
+				{Name: "ETCD_LOG_LEVEL", Value: "info"},
+			},
+			expectedEnv: []corev1.EnvVar{
+				{Name: "ETCD_TLS_MIN_VERSION", Value: "TLS1.3"},
+				{Name: "ETCD_CIPHER_SUITES", Value: "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"},
+				{Name: "ETCD_LOG_LEVEL", Value: "info"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			c := &corev1.Container{Name: ComponentName, Env: tc.existingEnv}
+			tc.tlsConfig.applyToEtcdContainer(c)
+			g.Expect(c.Env).To(Equal(tc.expectedEnv))
+		})
+	}
+}
+
+func TestEtcdTLSConfig_MetricsArgs(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name      string
+		tlsConfig etcdTLSConfig
+		expected  []string
+	}{
+		{
+			name: "When cipher suites are set, it should return the min TLS version and listen cipher suites flags",
+			tlsConfig: etcdTLSConfig{
+				minVersion:   tlsutil.TLSVersion12,
+				cipherSuites: []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"},
+			},
+			expected: []string{
+				"--tls-min-version=TLS1.2",
+				"--listen-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+			},
+		},
+		{
+			name: "When no cipher suites are set, it should only return the min TLS version flag",
+			tlsConfig: etcdTLSConfig{
+				minVersion:   tlsutil.TLSVersion13,
+				cipherSuites: []string{},
+			},
+			expected: []string{"--tls-min-version=TLS1.3"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(tc.tlsConfig.metricsArgs()).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestEtcdTLSConfig_HealthzArgs(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name      string
+		tlsConfig etcdTLSConfig
+		expected  []string
+	}{
+		{
+			name: "When cipher suites are set, it should return the listen min TLS version and listen cipher suites flags",
+			tlsConfig: etcdTLSConfig{
+				minVersion:   tlsutil.TLSVersion12,
+				cipherSuites: []string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"},
+			},
+			expected: []string{
+				"--listen-tls-min-version=TLS1.2",
+				"--listen-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+			},
+		},
+		{
+			name: "When no cipher suites are set, it should only return the listen min TLS version flag",
+			tlsConfig: etcdTLSConfig{
+				minVersion:   tlsutil.TLSVersion13,
+				cipherSuites: []string{},
+			},
+			expected: []string{"--listen-tls-min-version=TLS1.3"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(tc.tlsConfig.healthzArgs()).To(Equal(tc.expected))
+		})
+	}
+}
+
 func TestAdaptStatefulSet(t *testing.T) {
 	t.Parallel()
 
