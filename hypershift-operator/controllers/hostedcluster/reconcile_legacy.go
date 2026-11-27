@@ -2,6 +2,7 @@ package hostedcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -41,6 +42,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,7 +56,7 @@ import (
 // rollback safety. Activated by setting HYPERSHIFT_RECONCILE_LEGACY=1.
 //
 //nolint:gocyclo
-func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
+func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (_ ctrl.Result, reconcileErr error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
@@ -1752,9 +1754,16 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile SRE metrics config: %w", err)
 	}
 
-	err = r.reconcileOpenShiftTrustedCAs(ctx, hcp)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile OpenShift trusted CAs: %w", err)
+	if trustedCAErr := r.reconcileOpenShiftTrustedCAs(ctx, hcp); trustedCAErr != nil {
+		trustedCAErr = fmt.Errorf("failed to reconcile OpenShift trusted CAs: %w", trustedCAErr)
+		if !errors.Is(trustedCAErr, errTrustedCABundleRefresh) {
+			return ctrl.Result{}, trustedCAErr
+		}
+		// Refreshing the existing ConfigMap failed. Keep reconciling the control plane operator and the remaining
+		// components, and return the refresh error together with any other error when this reconcile returns.
+		defer func() {
+			reconcileErr = utilerrors.NewAggregate([]error{reconcileErr, trustedCAErr})
+		}()
 	}
 
 	imageProvider := imageprovider.New(releaseImage)

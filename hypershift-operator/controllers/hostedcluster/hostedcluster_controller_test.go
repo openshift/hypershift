@@ -11,8 +11,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	homanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hcpmanifests "github.com/openshift/hypershift/pkg/manifests"
@@ -63,6 +67,7 @@ import (
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -2208,12 +2213,19 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		objects = append(objects, testCase.hostedCluster)
 	}
 
-	// create a temp file so that openshift-config-managed-trusted-ca-bundle configmap can be created
+	// create a non-empty temp file so that openshift-config-managed-trusted-ca-bundle configmap can be created;
+	// an empty trust bundle file is treated like a missing one and does not create the configmap
 	tmpCABundleFile, err := os.CreateTemp("/tmp", "tls-ca-bundle.pem")
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
 	defer os.Remove(tmpCABundleFile.Name())
+	if _, err := tmpCABundleFile.WriteString("-----BEGIN CERTIFICATE-----\nMIIDdzCCAl+gAwIBAgIUVGVzdFRydXN0QnVuZGxl\n-----END CERTIFICATE-----\n"); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	if err := tmpCABundleFile.Close(); err != nil {
+		t.Fatalf("failed to close temp file: %v", err)
+	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.platform, func(t *testing.T) {
@@ -12557,6 +12569,719 @@ func TestEffectiveGMPMonitoring(t *testing.T) {
 				g.Expect(logged).To(HaveLen(1))
 			} else {
 				g.Expect(logged).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestHostedClusterReconciler_ReconcileOpenShiftTrustedCAs(t *testing.T) {
+	t.Parallel()
+
+	const (
+		hcpNamespace = "clusters-example"
+		hcpName      = "example"
+		caBundleKey  = "ca-bundle.crt"
+		bundleA      = "-----BEGIN CERTIFICATE-----\nMIIDdzCCAl+gAwIBAgIUQnVuZGxlQUNlcnRpZmljYXRl\n-----END CERTIFICATE-----\n"
+		bundleB      = "-----BEGIN CERTIFICATE-----\nMIIDdzCCAl+gAwIBAgIUQnVuZGxlQkNlcnRpZmljYXRl\n-----END CERTIFICATE-----\n"
+	)
+
+	hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: hcpNamespace, Name: hcpName}}
+	configMapKey := crclient.ObjectKeyFromObject(homanifests.OpenShiftTrustedCABundleForNamespace(hcpNamespace))
+
+	newConfigMap := func(data map[string]string) *corev1.ConfigMap {
+		cm := homanifests.OpenShiftTrustedCABundleForNamespace(hcpNamespace)
+		cm.Data = data
+		return cm
+	}
+
+	// writeCounts records every write the reconciler sends through the client.
+	type writeCounts struct {
+		creates, updates, patches, applies, deletes int
+	}
+
+	// rejectOverlappingKeys emulates the API server validation documented on corev1.ConfigMap: keys stored in Data
+	// must not overlap with keys stored in BinaryData. The fake client does not enforce it on its own.
+	rejectOverlappingKeys := func(obj crclient.Object) error {
+		cm, ok := obj.(*corev1.ConfigMap)
+		if !ok {
+			return nil
+		}
+		for key := range cm.Data {
+			if _, found := cm.BinaryData[key]; found {
+				return errors2.NewInvalid(corev1.SchemeGroupVersion.WithKind("ConfigMap").GroupKind(), cm.Name,
+					field.ErrorList{field.Duplicate(field.NewPath("data").Key(key), key)})
+			}
+		}
+		return nil
+	}
+
+	// newClients returns the client handed to the reconciler, which counts writes, validates ConfigMap keys and can
+	// inject errors, and the underlying fake client, which is used to observe the stored state without interception.
+	newClients := func(objects []crclient.Object, getErr, createErr, updateErr error) (crclient.Client, crclient.Client, *writeCounts) {
+		counts := &writeCounts{}
+		stored := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+		intercepted := interceptor.NewClient(stored, interceptor.Funcs{
+			Get: func(ctx context.Context, c crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+				if getErr != nil {
+					return getErr
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+			Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
+				counts.creates++
+				if createErr != nil {
+					return createErr
+				}
+				if err := rejectOverlappingKeys(obj); err != nil {
+					return err
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+			Update: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.UpdateOption) error {
+				counts.updates++
+				if updateErr != nil {
+					return updateErr
+				}
+				if err := rejectOverlappingKeys(obj); err != nil {
+					return err
+				}
+				return c.Update(ctx, obj, opts...)
+			},
+			Patch: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error {
+				counts.patches++
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+			Apply: func(ctx context.Context, c crclient.WithWatch, obj runtime.ApplyConfiguration, opts ...crclient.ApplyOption) error {
+				counts.applies++
+				return c.Apply(ctx, obj, opts...)
+			},
+			Delete: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.DeleteOption) error {
+				counts.deletes++
+				return c.Delete(ctx, obj, opts...)
+			},
+		})
+		return intercepted, stored, counts
+	}
+
+	writeBundleFile := func(t *testing.T, path, content string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("failed to write trust bundle file: %v", err)
+		}
+	}
+
+	injectedErr := errors.New("injected API server error")
+	ownerRef := metav1.OwnerReference{
+		APIVersion: hyperv1.GroupVersion.String(),
+		Kind:       "HostedControlPlane",
+		Name:       hcpName,
+		UID:        "8a6a4b3e-2f1d-4c5b-9e7a-1b2c3d4e5f60",
+	}
+
+	tests := []struct {
+		name string
+		// existing is the ConfigMap stored before reconciling; nil means it does not exist.
+		existing *corev1.ConfigMap
+		// fileContent is written to the trust bundle file; nil means the file does not exist.
+		fileContent *string
+		// bundlePathIsDirectory makes the trust bundle path a directory so that reading it fails.
+		bundlePathIsDirectory bool
+		getErr                error
+		createErr             error
+		updateErr             error
+
+		expectErr   bool
+		expectErrIs error
+		// expectRefreshErr is whether the error is classified as a failed refresh of an existing ConfigMap.
+		expectRefreshErr        bool
+		expectErrContains       string
+		expectConfigMapNotFound bool
+		expectData              map[string]string
+		// expectBinaryData is the expected BinaryData after reconciling; nil means it is expected to be empty.
+		expectBinaryData        map[string][]byte
+		expectUnchangedRevision bool
+		expectPreservedMetadata bool
+		// expectNoOpOnRepeat reconciles a second time and expects no further writes.
+		expectNoOpOnRepeat bool
+		expectCreates      int
+		expectUpdates      int
+	}{
+		{
+			name:          "When the ConfigMap exists with an outdated bundle, it should update it to the current file content",
+			existing:      newConfigMap(map[string]string{caBundleKey: bundleA}),
+			fileContent:   ptr.To(bundleB),
+			expectData:    map[string]string{caBundleKey: bundleB},
+			expectUpdates: 1,
+		},
+		{
+			name:          "When the ConfigMap does not exist, it should create it with the current file content",
+			fileContent:   ptr.To(bundleB),
+			expectData:    map[string]string{caBundleKey: bundleB},
+			expectCreates: 1,
+		},
+		{
+			name:                    "When the ConfigMap already has the current file content, it should not update it",
+			existing:                newConfigMap(map[string]string{caBundleKey: bundleB}),
+			fileContent:             ptr.To(bundleB),
+			expectData:              map[string]string{caBundleKey: bundleB},
+			expectUnchangedRevision: true,
+		},
+		{
+			name:                    "When the trust bundle file does not exist and the ConfigMap exists, it should leave the ConfigMap unchanged",
+			existing:                newConfigMap(map[string]string{caBundleKey: bundleA}),
+			expectData:              map[string]string{caBundleKey: bundleA},
+			expectUnchangedRevision: true,
+		},
+		{
+			name:                    "When the trust bundle file does not exist and the ConfigMap does not exist, it should not create it",
+			expectConfigMapNotFound: true,
+		},
+		{
+			name:                    "When the trust bundle file is empty and the ConfigMap exists, it should leave the ConfigMap unchanged",
+			existing:                newConfigMap(map[string]string{caBundleKey: bundleA}),
+			fileContent:             ptr.To(""),
+			expectData:              map[string]string{caBundleKey: bundleA},
+			expectUnchangedRevision: true,
+		},
+		{
+			name:                    "When the trust bundle file contains only whitespace and the ConfigMap does not exist, it should not create it",
+			fileContent:             ptr.To("\n  \n"),
+			expectConfigMapNotFound: true,
+		},
+		{
+			name:                    "When the trust bundle file cannot be read, it should return an error without writing the ConfigMap",
+			existing:                newConfigMap(map[string]string{caBundleKey: bundleA}),
+			bundlePathIsDirectory:   true,
+			expectErr:               true,
+			expectErrContains:       "unable to read trust bundle file",
+			expectData:              map[string]string{caBundleKey: bundleA},
+			expectUnchangedRevision: true,
+		},
+		{
+			name:          "When the existing ConfigMap has no data, it should set the current bundle",
+			existing:      newConfigMap(nil),
+			fileContent:   ptr.To(bundleB),
+			expectData:    map[string]string{caBundleKey: bundleB},
+			expectUpdates: 1,
+		},
+		{
+			name: "When the existing ConfigMap has extra metadata and keys, it should preserve them while updating the bundle",
+			existing: func() *corev1.ConfigMap {
+				cm := newConfigMap(map[string]string{caBundleKey: bundleA, "extra.crt": bundleA})
+				cm.Labels = map[string]string{"app.kubernetes.io/managed-by": "external-tool"}
+				cm.Annotations = map[string]string{"example.com/note": "preserve-me"}
+				cm.OwnerReferences = []metav1.OwnerReference{ownerRef}
+				return cm
+			}(),
+			fileContent:             ptr.To(bundleB),
+			expectData:              map[string]string{caBundleKey: bundleB, "extra.crt": bundleA},
+			expectPreservedMetadata: true,
+			expectUpdates:           1,
+		},
+		{
+			name: "When the existing ConfigMap stores the bundle key in BinaryData, it should move the bundle to Data and keep other binary keys",
+			existing: func() *corev1.ConfigMap {
+				cm := newConfigMap(map[string]string{"extra.crt": bundleA})
+				cm.BinaryData = map[string][]byte{caBundleKey: []byte(bundleA), "extra.bin": {0x00, 0xff}}
+				cm.Labels = map[string]string{"app.kubernetes.io/managed-by": "external-tool"}
+				cm.Annotations = map[string]string{"example.com/note": "preserve-me"}
+				return cm
+			}(),
+			fileContent:             ptr.To(bundleB),
+			expectData:              map[string]string{caBundleKey: bundleB, "extra.crt": bundleA},
+			expectBinaryData:        map[string][]byte{"extra.bin": {0x00, 0xff}},
+			expectPreservedMetadata: true,
+			expectNoOpOnRepeat:      true,
+			expectUpdates:           1,
+		},
+		{
+			name:                    "When updating the ConfigMap fails, it should return an error",
+			existing:                newConfigMap(map[string]string{caBundleKey: bundleA}),
+			fileContent:             ptr.To(bundleB),
+			updateErr:               injectedErr,
+			expectErr:               true,
+			expectErrIs:             injectedErr,
+			expectRefreshErr:        true,
+			expectErrContains:       "failed to reconcile ConfigMap " + hcpNamespace + "/openshift-config-managed-trusted-ca-bundle",
+			expectData:              map[string]string{caBundleKey: bundleA},
+			expectUnchangedRevision: true,
+			expectUpdates:           1,
+		},
+		{
+			name:                    "When reading the ConfigMap fails, it should return an error without creating it",
+			fileContent:             ptr.To(bundleB),
+			getErr:                  injectedErr,
+			expectErr:               true,
+			expectErrIs:             injectedErr,
+			expectConfigMapNotFound: true,
+		},
+		{
+			name:                    "When creating the ConfigMap fails, it should return an error that is not classified as a refresh failure",
+			fileContent:             ptr.To(bundleB),
+			createErr:               injectedErr,
+			expectErr:               true,
+			expectErrIs:             injectedErr,
+			expectErrContains:       "failed to reconcile ConfigMap " + hcpNamespace + "/openshift-config-managed-trusted-ca-bundle",
+			expectConfigMapNotFound: true,
+			expectCreates:           1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			bundlePath := filepath.Join(t.TempDir(), "tls-ca-bundle.pem")
+			if tc.fileContent != nil {
+				writeBundleFile(t, bundlePath, *tc.fileContent)
+			}
+			if tc.bundlePathIsDirectory {
+				g.Expect(os.Mkdir(bundlePath, 0o700)).To(Succeed())
+			}
+
+			var objects []crclient.Object
+			if tc.existing != nil {
+				objects = append(objects, tc.existing.DeepCopy())
+			}
+			reconcilerClient, storedClient, counts := newClients(objects, tc.getErr, tc.createErr, tc.updateErr)
+
+			var initialRevision string
+			if tc.existing != nil {
+				initial := &corev1.ConfigMap{}
+				g.Expect(storedClient.Get(t.Context(), configMapKey, initial)).To(Succeed())
+				initialRevision = initial.ResourceVersion
+			}
+
+			r := &HostedClusterReconciler{Client: reconcilerClient, OpenShiftTrustedCAFilePath: bundlePath}
+			err := r.reconcileOpenShiftTrustedCAs(t.Context(), hcp)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectErrIs != nil {
+					g.Expect(errors.Is(err, tc.expectErrIs)).To(BeTrue(), "expected %v to be wrapped, got: %v", tc.expectErrIs, err)
+				}
+				if tc.expectErrContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectErrContains))
+				}
+				g.Expect(errors.Is(err, errTrustedCABundleRefresh)).To(Equal(tc.expectRefreshErr),
+					"unexpected refresh classification for: %v", err)
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			g.Expect(counts.creates).To(Equal(tc.expectCreates), "unexpected number of Create calls")
+			g.Expect(counts.updates).To(Equal(tc.expectUpdates), "unexpected number of Update calls")
+			g.Expect(counts.patches).To(BeZero(), "unexpected Patch calls")
+			g.Expect(counts.applies).To(BeZero(), "unexpected Apply calls")
+			g.Expect(counts.deletes).To(BeZero(), "unexpected Delete calls")
+
+			got := &corev1.ConfigMap{}
+			getErr := storedClient.Get(t.Context(), configMapKey, got)
+			if tc.expectConfigMapNotFound {
+				g.Expect(errors2.IsNotFound(getErr)).To(BeTrue(), "expected the ConfigMap not to exist, got: %v", getErr)
+				return
+			}
+			g.Expect(getErr).ToNot(HaveOccurred())
+			g.Expect(got.Name).To(Equal(configMapKey.Name))
+			g.Expect(got.Namespace).To(Equal(configMapKey.Namespace))
+			g.Expect(got.Data).To(Equal(tc.expectData))
+			if tc.expectBinaryData == nil {
+				g.Expect(got.BinaryData).To(BeEmpty())
+			} else {
+				g.Expect(got.BinaryData).To(Equal(tc.expectBinaryData))
+			}
+			if tc.expectUnchangedRevision {
+				g.Expect(got.ResourceVersion).To(Equal(initialRevision), "expected the stored ConfigMap not to be written")
+			}
+			if tc.expectPreservedMetadata {
+				g.Expect(got.Labels).To(Equal(tc.existing.Labels))
+				g.Expect(got.Annotations).To(Equal(tc.existing.Annotations))
+				g.Expect(got.OwnerReferences).To(Equal(tc.existing.OwnerReferences))
+			}
+			if tc.expectNoOpOnRepeat {
+				countsBefore := *counts
+				g.Expect(r.reconcileOpenShiftTrustedCAs(t.Context(), hcp)).To(Succeed())
+				g.Expect(*counts).To(Equal(countsBefore), "expected no writes on the second reconcile")
+				again := &corev1.ConfigMap{}
+				g.Expect(storedClient.Get(t.Context(), configMapKey, again)).To(Succeed())
+				g.Expect(again.ResourceVersion).To(Equal(got.ResourceVersion))
+				g.Expect(again.Data).To(Equal(got.Data))
+				g.Expect(again.BinaryData).To(Equal(got.BinaryData))
+			}
+		})
+	}
+
+	t.Run("When the trust bundle file changes between reconciles, it should create, update once, and then stop writing", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		bundlePath := filepath.Join(t.TempDir(), "tls-ca-bundle.pem")
+		reconcilerClient, storedClient, counts := newClients(nil, nil, nil, nil)
+		r := &HostedClusterReconciler{Client: reconcilerClient, OpenShiftTrustedCAFilePath: bundlePath}
+
+		// The first reconcile creates the ConfigMap with bundle A.
+		writeBundleFile(t, bundlePath, bundleA)
+		g.Expect(r.reconcileOpenShiftTrustedCAs(t.Context(), hcp)).To(Succeed())
+		got := &corev1.ConfigMap{}
+		g.Expect(storedClient.Get(t.Context(), configMapKey, got)).To(Succeed())
+		g.Expect(got.Data).To(HaveKeyWithValue(caBundleKey, bundleA))
+		g.Expect(counts.creates).To(Equal(1))
+		g.Expect(counts.updates).To(BeZero())
+
+		// After the file changes to bundle B, the next reconcile updates the existing ConfigMap.
+		writeBundleFile(t, bundlePath, bundleB)
+		g.Expect(r.reconcileOpenShiftTrustedCAs(t.Context(), hcp)).To(Succeed())
+		g.Expect(storedClient.Get(t.Context(), configMapKey, got)).To(Succeed())
+		g.Expect(got.Data).To(HaveKeyWithValue(caBundleKey, bundleB))
+		g.Expect(counts.creates).To(Equal(1))
+		g.Expect(counts.updates).To(Equal(1))
+		revisionAfterUpdate := got.ResourceVersion
+
+		// Reconciling again with unchanged content makes no further writes.
+		g.Expect(r.reconcileOpenShiftTrustedCAs(t.Context(), hcp)).To(Succeed())
+		g.Expect(storedClient.Get(t.Context(), configMapKey, got)).To(Succeed())
+		g.Expect(got.Data).To(HaveKeyWithValue(caBundleKey, bundleB))
+		g.Expect(got.ResourceVersion).To(Equal(revisionAfterUpdate))
+		g.Expect(counts.creates).To(Equal(1))
+		g.Expect(counts.updates).To(Equal(1))
+		g.Expect(counts.patches + counts.applies + counts.deletes).To(BeZero())
+	})
+}
+
+func TestHostedClusterReconciler_ReconcileLegacy(t *testing.T) {
+	t.Parallel()
+
+	const (
+		hcNamespace   = "clusters"
+		hcName        = "trusted-ca"
+		releaseImage  = "quay.io/openshift-release-dev/ocp-release:4.15.0"
+		lastKnownGood = "-----BEGIN CERTIFICATE-----\nMIIDdzCCAl+gAwIBAgIUTGFzdEtub3duR29vZEJ1bmRsZQ==\n-----END CERTIFICATE-----\n"
+		currentBundle = "-----BEGIN CERTIFICATE-----\nMIIDdzCCAl+gAwIBAgIUQ3VycmVudFRydXN0QnVuZGxl\n-----END CERTIFICATE-----\n"
+	)
+	hcpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcNamespace, hcName)
+	trustedCAKey := crclient.ObjectKeyFromObject(homanifests.OpenShiftTrustedCABundleForNamespace(hcpNamespace))
+	cpoKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: "control-plane-operator"}
+	// The CAPI manager is reconciled right after the control plane operator on the legacy path, so its Deployment shows
+	// whether the components after the control plane operator were reconciled.
+	capiManagerKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: "cluster-api"}
+
+	bundlePath := filepath.Join(t.TempDir(), "tls-ca-bundle.pem")
+	if err := os.WriteFile(bundlePath, []byte(currentBundle), 0o600); err != nil {
+		t.Fatalf("failed to write trust bundle file: %v", err)
+	}
+
+	deserializeFunc := func([]byte) (*manifestlist.DeserializedManifestList, error) {
+		return &manifestlist.DeserializedManifestList{
+			ManifestList: manifestlist.ManifestList{
+				// Two architectures make the release image multi-arch, so no architecture lookup is needed.
+				Manifests: []manifestlist.ManifestDescriptor{
+					{
+						Descriptor: distribution.Descriptor{
+							MediaType: ManifestListMediaType,
+							Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+						},
+						Platform: manifestlist.PlatformSpec{Architecture: ArchitectureAMD64, OS: LinuxOS},
+					},
+					{
+						Descriptor: distribution.Descriptor{
+							MediaType: ManifestListMediaType,
+							Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+						},
+						Platform: manifestlist.PlatformSpec{Architecture: ArchitecturePPC64LE, OS: LinuxOS},
+					},
+				},
+			},
+		}, nil
+	}
+
+	// newObjects returns a minimal None platform HostedCluster and the management cluster objects it needs.
+	newObjects := func() []crclient.Object {
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform:   hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+				Release:    hyperv1.Release{Image: releaseImage},
+				PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				InfraID:    "infra-id",
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+				},
+				Networking: hyperv1.ClusterNetworking{
+					ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+					MachineNetwork: []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+					ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+				},
+			},
+		}
+		return []crclient.Object{
+			hcluster,
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: hcNamespace},
+				Data:       map[string][]byte{".dockerconfigjson": []byte("{}")},
+			},
+			&configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec:       configv1.NetworkSpec{NetworkType: "OVNKubernetes"},
+			},
+			&configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}},
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+			&corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}},
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "supported-versions",
+					Namespace: "hypershift",
+					Labels:    map[string]string{"hypershift.openshift.io/supported-versions": "true"},
+				},
+				Data: map[string]string{
+					"supported-versions": "{\"versions\":[\"4.22\",\"4.21\",\"4.20\",\"4.19\",\"4.18\",\"4.17\",\"4.16\",\"4.15\",\"4.14\"]}",
+					"server-version":     "some-fake-server-version",
+				},
+			},
+		}
+	}
+
+	trustedCARejection := errors2.NewInvalid(corev1.SchemeGroupVersion.WithKind("ConfigMap").GroupKind(), trustedCAKey.Name,
+		field.ErrorList{field.Forbidden(field.NewPath("data"), "rejected by test")})
+	cpoRejection := errors.New("injected control plane operator deployment write error")
+
+	tests := []struct {
+		name                  string
+		legacy                bool
+		existingConfigMap     bool
+		rejectTrustedCAUpdate bool
+		rejectTrustedCACreate bool
+		rejectCPOWrite        bool
+
+		expectCPOWrite bool
+		// expectLaterComponents is whether components reconciled after the control plane operator, such as the CAPI
+		// manager, are reconciled.
+		expectLaterComponents bool
+		// expectErrIs lists the errors that must be reachable from the returned error; empty means no error.
+		expectErrIs      []error
+		expectRefreshErr bool
+		// expectStoredBundle is the stored trusted CA bundle after reconciling; empty means the ConfigMap must not exist.
+		expectStoredBundle       string
+		expectTrustedCABeforeCPO bool
+		expectNoOpOnRepeat       bool
+	}{
+		{
+			name:                  "When refreshing the existing trusted CA ConfigMap is rejected on the legacy path, it should still reconcile the control plane operator and return the refresh error",
+			legacy:                true,
+			existingConfigMap:     true,
+			rejectTrustedCAUpdate: true,
+			expectCPOWrite:        true,
+			expectLaterComponents: true,
+			expectErrIs:           []error{trustedCARejection},
+			expectRefreshErr:      true,
+			expectStoredBundle:    lastKnownGood,
+		},
+		{
+			name:                     "When the trusted CA bundle changes on the legacy path, it should refresh the ConfigMap before the control plane operator and not update it again",
+			legacy:                   true,
+			existingConfigMap:        true,
+			expectCPOWrite:           true,
+			expectLaterComponents:    true,
+			expectStoredBundle:       currentBundle,
+			expectTrustedCABeforeCPO: true,
+			expectNoOpOnRepeat:       true,
+		},
+		{
+			name:                  "When both the trusted CA refresh and the control plane operator write fail on the legacy path, it should return both errors",
+			legacy:                true,
+			existingConfigMap:     true,
+			rejectTrustedCAUpdate: true,
+			rejectCPOWrite:        true,
+			expectCPOWrite:        true,
+			expectErrIs:           []error{cpoRejection, trustedCARejection},
+			expectRefreshErr:      true,
+			expectStoredBundle:    lastKnownGood,
+		},
+		{
+			name:                  "When creating the trusted CA ConfigMap fails on the legacy path, it should return the error before reconciling the control plane operator",
+			legacy:                true,
+			rejectTrustedCACreate: true,
+			expectErrIs:           []error{trustedCARejection},
+		},
+		{
+			name:                  "When refreshing the existing trusted CA ConfigMap is rejected on the default path, it should still reconcile the control plane operator and return the refresh error",
+			existingConfigMap:     true,
+			rejectTrustedCAUpdate: true,
+			expectCPOWrite:        true,
+			expectLaterComponents: true,
+			expectErrIs:           []error{trustedCARejection},
+			expectRefreshErr:      true,
+			expectStoredBundle:    lastKnownGood,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			objects := newObjects()
+			if tc.existingConfigMap {
+				cm := homanifests.OpenShiftTrustedCABundleForNamespace(hcpNamespace)
+				cm.Data["ca-bundle.crt"] = lastKnownGood
+				objects = append(objects, cm)
+			}
+
+			// writes records the order of trusted CA ConfigMap and control plane operator Deployment writes.
+			var (
+				mu     sync.Mutex
+				writes []string
+			)
+			record := func(obj crclient.Object, verb string) (isTrustedCA, isCPO bool) {
+				mu.Lock()
+				defer mu.Unlock()
+				switch crclient.ObjectKeyFromObject(obj) {
+				case trustedCAKey:
+					if _, ok := obj.(*corev1.ConfigMap); ok {
+						writes = append(writes, "trusted-ca-"+verb)
+						return true, false
+					}
+				case cpoKey:
+					if _, ok := obj.(*appsv1.Deployment); ok {
+						writes = append(writes, "cpo-"+verb)
+						return false, true
+					}
+				}
+				return false, false
+			}
+			writesSnapshot := func() []string {
+				mu.Lock()
+				defer mu.Unlock()
+				return append([]string(nil), writes...)
+			}
+
+			stored := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()
+			c := interceptor.NewClient(stored, interceptor.Funcs{
+				Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
+					isTrustedCA, isCPO := record(obj, "create")
+					if (isTrustedCA && tc.rejectTrustedCACreate) || (isCPO && tc.rejectCPOWrite) {
+						if isCPO {
+							return cpoRejection
+						}
+						return trustedCARejection
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+				Update: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.UpdateOption) error {
+					isTrustedCA, isCPO := record(obj, "update")
+					if (isTrustedCA && tc.rejectTrustedCAUpdate) || (isCPO && tc.rejectCPOWrite) {
+						if isCPO {
+							return cpoRejection
+						}
+						return trustedCARejection
+					}
+					return c.Update(ctx, obj, opts...)
+				},
+			})
+
+			mockCtrl := gomock.NewController(t)
+			releaseProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			releaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+			releaseProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+			releaseProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+
+			r := &HostedClusterReconciler{
+				Client:            c,
+				Clock:             clock.RealClock{},
+				CertRotationScale: 24 * time.Hour,
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(
+					capabilities.CapabilityInfrastructure,
+					capabilities.CapabilityIngress,
+					capabilities.CapabilityProxy,
+				),
+				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: releaseProvider,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result:    &dockerv1client.DockerImageConfig{},
+						Manifest:  fakeimagemetadataprovider.FakeManifest{},
+						MediaType: ManifestListMediaType,
+					},
+				},
+				EnableEtcdRecovery:         true,
+				now:                        metav1.Now,
+				OpenShiftTrustedCAFilePath: bundlePath,
+				HypershiftOperatorImage:    "test-image",
+			}
+			r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(fake.NewClientBuilder().WithScheme(api.Scheme).Build(), "v1.2.0", "1.28.0")
+
+			ctx := context.WithValue(t.Context(), registryclient.DeserializeFuncName, deserializeFunc)
+			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}
+			// reconcileOnce runs the legacy reconcile, or the default reconcile for the parity case, on the stored
+			// HostedCluster, as Reconcile does after fetching it.
+			reconcileOnce := func() error {
+				hcluster := &hyperv1.HostedCluster{}
+				g.Expect(stored.Get(ctx, req.NamespacedName, hcluster)).To(Succeed())
+				var err error
+				if tc.legacy {
+					_, err = r.reconcileLegacy(ctx, req, ctrl.LoggerFrom(ctx), hcluster)
+				} else {
+					_, err = r.reconcile(ctx, req, ctrl.LoggerFrom(ctx), hcluster)
+				}
+				return err
+			}
+			err := reconcileOnce()
+
+			cpoWritten := slices.ContainsFunc(writesSnapshot(), func(w string) bool { return strings.HasPrefix(w, "cpo-") })
+			g.Expect(cpoWritten).To(Equal(tc.expectCPOWrite), "unexpected control plane operator write; writes: %v, error: %v", writesSnapshot(), err)
+			if !tc.expectCPOWrite {
+				cpoGetErr := stored.Get(ctx, cpoKey, &appsv1.Deployment{})
+				g.Expect(errors2.IsNotFound(cpoGetErr)).To(BeTrue(), "expected no control plane operator Deployment, got: %v", cpoGetErr)
+			}
+			capiManagerGetErr := stored.Get(ctx, capiManagerKey, &appsv1.Deployment{})
+			if tc.expectLaterComponents {
+				g.Expect(capiManagerGetErr).ToNot(HaveOccurred(), "expected the CAPI manager to be reconciled after the control plane operator; error: %v", err)
+			} else {
+				g.Expect(errors2.IsNotFound(capiManagerGetErr)).To(BeTrue(), "expected the CAPI manager not to be reconciled, got: %v", capiManagerGetErr)
+			}
+			if len(tc.expectErrIs) == 0 {
+				g.Expect(err).ToNot(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+				for _, expected := range tc.expectErrIs {
+					g.Expect(errors.Is(err, expected)).To(BeTrue(), "expected %q to be reachable from: %v", expected, err)
+				}
+				g.Expect(err.Error()).To(ContainSubstring("failed to reconcile OpenShift trusted CAs"))
+				g.Expect(errors.Is(err, errTrustedCABundleRefresh)).To(Equal(tc.expectRefreshErr), "unexpected refresh classification for: %v", err)
+			}
+
+			got := &corev1.ConfigMap{}
+			getErr := stored.Get(ctx, trustedCAKey, got)
+			if tc.expectStoredBundle == "" {
+				g.Expect(errors2.IsNotFound(getErr)).To(BeTrue(), "expected the trusted CA ConfigMap not to exist, got: %v", getErr)
+			} else {
+				g.Expect(getErr).ToNot(HaveOccurred())
+				g.Expect(got.Data).To(HaveKeyWithValue("ca-bundle.crt", tc.expectStoredBundle))
+			}
+
+			if tc.expectTrustedCABeforeCPO {
+				recorded := writesSnapshot()
+				trustedCAIndex := slices.Index(recorded, "trusted-ca-update")
+				cpoIndex := slices.IndexFunc(recorded, func(w string) bool { return strings.HasPrefix(w, "cpo-") })
+				g.Expect(trustedCAIndex).To(BeNumerically(">=", 0), "expected a trusted CA update; writes: %v", recorded)
+				g.Expect(trustedCAIndex).To(BeNumerically("<", cpoIndex), "expected the trusted CA update before the control plane operator write; writes: %v", recorded)
+			}
+
+			if tc.expectNoOpOnRepeat {
+				countTrustedCAWrites := func() int {
+					n := 0
+					for _, w := range writesSnapshot() {
+						if strings.HasPrefix(w, "trusted-ca-") {
+							n++
+						}
+					}
+					return n
+				}
+				before := countTrustedCAWrites()
+				g.Expect(reconcileOnce()).To(Succeed())
+				g.Expect(countTrustedCAWrites()).To(Equal(before), "expected no trusted CA write on the second reconcile; writes: %v", writesSnapshot())
 			}
 		})
 	}
