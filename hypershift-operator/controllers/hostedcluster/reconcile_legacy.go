@@ -314,6 +314,12 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 
 	createOrUpdate := r.createOrUpdate(req)
 
+	// Reconcile apiServer encryption configuration. Kept in sync with the non-legacy reconcile so
+	// rollback mode also honors spec.configuration.apiServer.encryption.
+	if err := r.reconcileAPIServerEncryptionConfig(ctx, hcluster, createOrUpdate, log); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile platform defaults
 	if err := r.reconcilePlatformDefaultSettings(ctx, hcluster, createOrUpdate, log); err != nil {
 		return ctrl.Result{}, err

@@ -812,6 +812,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	createOrUpdate := r.createOrUpdate(req)
 
+	// Reconcile apiServer encryption configuration. This runs before platform defaults so it is
+	// platform-agnostic; for KubeVirt, if a key is generated here, the platform defaults see
+	// secretEncryption already set and skip.
+	if err := r.reconcileAPIServerEncryptionConfig(ctx, hcluster, createOrUpdate, log); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile platform defaults
 	if err := r.reconcilePlatformDefaultSettings(ctx, hcluster, createOrUpdate, log); err != nil {
 		return ctrl.Result{}, err
@@ -6301,54 +6308,8 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 		}
 	}
 
-	if hc.Spec.SecretEncryption == nil ||
-		len(hc.Spec.SecretEncryption.Type) == 0 ||
-		(hc.Spec.SecretEncryption.Type == hyperv1.AESCBC &&
-			(hc.Spec.SecretEncryption.AESCBC == nil || len(hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name) == 0)) {
-
-		logger.Info("no etcd encryption key configuration found; adding", "hostedCluster name", hc.Name, "hostedCluster namespace", hc.Namespace)
-		etcdEncSec := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: hc.Namespace,
-				Name:      hc.Name + etcdEncKeyPostfix,
-			},
-		}
-
-		_, err := createOrUpdate(ctx, r.Client, etcdEncSec, func() error {
-			// don't override existing key just in case something weird happened
-			_, exists := etcdEncSec.Data[hyperv1.AESCBCKeySecretKey]
-			if exists {
-				return nil
-			}
-
-			generatedKey := make([]byte, 32)
-			_, err := rand.Read(generatedKey)
-			if err != nil {
-				return fmt.Errorf("failed to generate the etcd encryption key; %w", err)
-			}
-
-			if etcdEncSec.Data == nil {
-				etcdEncSec.Data = map[string][]byte{}
-			}
-			etcdEncSec.Data[hyperv1.AESCBCKeySecretKey] = generatedKey
-			etcdEncSec.Type = corev1.SecretTypeOpaque
-
-			ownerRef := config.OwnerRefFrom(hc)
-			ownerRef.ApplyTo(etcdEncSec)
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create ETCD SecretEncryption key for KubeVirt platform HostedCluster: %w", err)
-		}
-
-		hc.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
-			Type: hyperv1.AESCBC,
-			AESCBC: &hyperv1.AESCBCSpec{
-				ActiveKey: corev1.LocalObjectReference{
-					Name: etcdEncSec.Name,
-				},
-			},
-		}
+	if err := r.ensureAESCBCEncryptionKey(ctx, hc, createOrUpdate, logger); err != nil {
+		return fmt.Errorf("KubeVirt platform: %w", err)
 	}
 
 	// Reconcile management infrastructure annotation
@@ -6371,6 +6332,104 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 		}
 	}
 
+	return nil
+}
+
+// reconcileAPIServerEncryptionConfig honors spec.configuration.apiServer.encryption
+// by auto-generating an AESCBC key and populating spec.secretEncryption when the user
+// sets encryption.type to aescbc without configuring secretEncryption directly. Prior to
+// this, the apiServer.encryption field was a silent no-op; only spec.secretEncryption was
+// wired into the KAS deployment. If spec.secretEncryption is already set, it takes
+// precedence (override power).
+//
+// The unsupported encryption type aesgcm is rejected at admission time via a CEL rule on
+// HostedClusterSpec, so this function only needs to handle the aescbc auto-provisioning case.
+// (KMS is not a selectable spec.configuration.apiServer.encryption.type in HyperShift's CRDs;
+// KMS encryption is configured exclusively through spec.secretEncryption.)
+func (r *HostedClusterReconciler) reconcileAPIServerEncryptionConfig(ctx context.Context, hc *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, logger logr.Logger) error {
+	if hc.Spec.Configuration == nil || hc.Spec.Configuration.APIServer == nil {
+		return nil
+	}
+	if hc.Spec.Configuration.APIServer.Encryption.Type != configv1.EncryptionTypeAESCBC {
+		return nil
+	}
+	// secretEncryption takes precedence; if it is already set with a different type (e.g. kms),
+	// log the override so operators have a signal that apiServer.encryption is being ignored.
+	if hc.Spec.SecretEncryption != nil && len(hc.Spec.SecretEncryption.Type) > 0 &&
+		hc.Spec.SecretEncryption.Type != hyperv1.AESCBC {
+		logger.Info("configuration.apiServer.encryption.type is aescbc but secretEncryption is already set with a different type; secretEncryption takes precedence",
+			"apiServerEncryptionType", hc.Spec.Configuration.APIServer.Encryption.Type,
+			"secretEncryptionType", hc.Spec.SecretEncryption.Type,
+		)
+		return nil
+	}
+	if err := r.ensureAESCBCEncryptionKey(ctx, hc, createOrUpdate, logger); err != nil {
+		return fmt.Errorf("apiServer encryption config: %w", err)
+	}
+	return nil
+}
+
+// ensureAESCBCEncryptionKey generates a 32-byte AESCBC etcd encryption key and populates
+// spec.secretEncryption when encryption is unconfigured or only partially configured
+// (type aescbc but with a nil AESCBC block or empty activeKey name). It is idempotent:
+// an existing key is never regenerated. This logic is shared by the apiServer encryption
+// reconciliation and the KubeVirt platform defaults so the two cannot diverge.
+func (r *HostedClusterReconciler) ensureAESCBCEncryptionKey(ctx context.Context, hc *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, logger logr.Logger) error {
+	if hc.Spec.SecretEncryption != nil && len(hc.Spec.SecretEncryption.Type) > 0 &&
+		!(hc.Spec.SecretEncryption.Type == hyperv1.AESCBC &&
+			(hc.Spec.SecretEncryption.AESCBC == nil || len(hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name) == 0)) {
+		return nil
+	}
+
+	logger.Info("no etcd encryption key configuration found; auto-generating", "hostedCluster", client.ObjectKeyFromObject(hc))
+	etcdEncSec := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hc.Namespace,
+			Name:      hc.Name + etcdEncKeyPostfix,
+		},
+	}
+
+	_, err := createOrUpdate(ctx, r.Client, etcdEncSec, func() error {
+		// don't override existing key just in case something weird happened
+		if _, exists := etcdEncSec.Data[hyperv1.AESCBCKeySecretKey]; exists {
+			return nil
+		}
+
+		generatedKey := make([]byte, 32)
+		if _, err := rand.Read(generatedKey); err != nil {
+			return fmt.Errorf("failed to generate the etcd encryption key: %w", err)
+		}
+
+		if etcdEncSec.Data == nil {
+			etcdEncSec.Data = map[string][]byte{}
+		}
+		etcdEncSec.Data[hyperv1.AESCBCKeySecretKey] = generatedKey
+		etcdEncSec.Type = corev1.SecretTypeOpaque
+
+		ownerRef := config.OwnerRefFrom(hc)
+		ownerRef.ApplyTo(etcdEncSec)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create ETCD SecretEncryption key: %w", err)
+	}
+
+	// Preserve any existing AESCBC block (e.g. a configured BackupKey needed to decrypt older
+	// secrets during key rotation) and only fill in the missing active key reference. Only when
+	// there is no AESCBC block to complete do we create a fresh one.
+	if hc.Spec.SecretEncryption != nil && hc.Spec.SecretEncryption.AESCBC != nil {
+		hc.Spec.SecretEncryption.Type = hyperv1.AESCBC
+		hc.Spec.SecretEncryption.AESCBC.ActiveKey = corev1.LocalObjectReference{Name: etcdEncSec.Name}
+	} else {
+		hc.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
+			Type: hyperv1.AESCBC,
+			AESCBC: &hyperv1.AESCBCSpec{
+				ActiveKey: corev1.LocalObjectReference{
+					Name: etcdEncSec.Name,
+				},
+			},
+		}
+	}
 	return nil
 }
 

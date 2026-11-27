@@ -10131,6 +10131,25 @@ spec:
                 || !has(self.platform.aws) || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split('':'').size()
                 < 4 || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split('':'')[3]
                 == self.platform.aws.region'
+            - message: spec.configuration.apiServer.encryption.type aesgcm is not
+                supported; use aescbc, or configure spec.secretEncryption with type
+                kms
+              optionalOldSelf: true
+              rule: (!has(self.configuration) || !has(self.configuration.apiServer)
+                || !has(self.configuration.apiServer.encryption) || !has(self.configuration.apiServer.encryption.type)
+                || self.configuration.apiServer.encryption.type != 'aesgcm') || (oldSelf.hasValue()
+                && has(oldSelf.value().configuration) && has(oldSelf.value().configuration.apiServer)
+                && has(oldSelf.value().configuration.apiServer.encryption) && has(oldSelf.value().configuration.apiServer.encryption.type)
+                && oldSelf.value().configuration.apiServer.encryption.type == 'aesgcm')
+            - message: spec.configuration.apiServer.encryption.type cannot be changed
+                from aescbc to identity; disabling encryption after it has been enabled
+                is not supported
+              rule: '!(has(self.configuration) && has(self.configuration.apiServer)
+                && has(self.configuration.apiServer.encryption) && has(self.configuration.apiServer.encryption.type)
+                && self.configuration.apiServer.encryption.type == ''identity'' &&
+                has(oldSelf.configuration) && has(oldSelf.configuration.apiServer)
+                && has(oldSelf.configuration.apiServer.encryption) && has(oldSelf.configuration.apiServer.encryption.type)
+                && oldSelf.configuration.apiServer.encryption.type == ''aescbc'')'
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:
