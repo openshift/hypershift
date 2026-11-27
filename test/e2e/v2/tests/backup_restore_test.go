@@ -36,6 +36,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
@@ -661,6 +663,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 		targetExternalDNSNeedsRestore bool
 		backupName                    string
 		expectedConditions            []util.Condition
+		sourceHostedCluster           *hyperv1.HostedCluster
+		sourceNodeCount               int32
 	)
 
 	BeforeAll(func() {
@@ -682,8 +686,18 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 
 		hostedCluster, err := sourceCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred(), "source HostedCluster should be available before backup")
-		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			Skip(fmt.Sprintf("Cross-cluster restore is currently supported only on AWS, got %s", hostedCluster.Spec.Platform.Type))
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform && hostedCluster.Spec.Platform.Type != hyperv1.KubevirtPlatform {
+			Skip(fmt.Sprintf("Cross-cluster restore is not supported on platform %s", hostedCluster.Spec.Platform.Type))
+		}
+		sourceHostedCluster = hostedCluster.DeepCopy()
+		if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+			Expect(hostedCluster.Spec.KubeAPIServerDNSName).To(Equal("api."+hostedCluster.Name+"."+hostedCluster.Spec.DNS.BaseDomain),
+				"KubeVirt cross-cluster restore requires a stable guest API name")
+			nodePool, err := getNodePool(sourceCtx)
+			Expect(err).NotTo(HaveOccurred(), "source KubeVirt NodePool should exist")
+			Expect(nodePool.Spec.Replicas).NotTo(BeNil(), "source KubeVirt NodePool needs a fixed worker count")
+			sourceNodeCount = *nodePool.Spec.Replicas
+			Expect(sourceNodeCount).To(BeNumerically(">", 0))
 		}
 		_, err = targetCtx.GetHostedCluster()
 		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "target management cluster should not contain the HostedCluster before restore")
@@ -737,6 +751,10 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 			By("Waiting for backup to complete")
 			err = backuprestore.WaitForBackupCompletion(sourceCtx, backupName)
 			Expect(err).NotTo(HaveOccurred(), "source HostedCluster backup should complete before teardown")
+
+			By("Waiting for the target manager to discover the shared backup")
+			err = backuprestore.WaitForBackupCompletion(targetCtx, backupName)
+			Expect(err).NotTo(HaveOccurred(), "target manager should discover the completed source backup")
 		})
 	})
 
@@ -751,6 +769,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 
 	Context(ContextBreakControlPlane, func() {
 		It("should stop target ExternalDNS", func() {
+			if sourceHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+				Skip("ExternalDNS handoff is specific to AWS")
+			}
 			By("Scaling the target ExternalDNS Deployment to zero")
 			// Scaling can patch replicas and then fail while waiting for pods to stop.
 			targetExternalDNSNeedsRestore = true
@@ -759,6 +780,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 		})
 
 		It("should stop source ExternalDNS", func() {
+			if sourceHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+				Skip("ExternalDNS handoff is specific to AWS")
+			}
 			// CI uses a dedicated source manager and tears it down after this test. Keep its
 			// ExternalDNS stopped even on failure, so it cannot reclaim the target's DNS names.
 			By("Scaling the source ExternalDNS Deployment to zero")
@@ -767,9 +791,20 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 		})
 
 		It("should break the source HostedCluster while preserving machines", func() {
+			if sourceHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+				Skip("Preserving machines is specific to AWS")
+			}
 			By("Breaking the source HostedCluster while preserving machines")
 			err := backuprestore.BreakHostedClusterPreservingMachines(sourceCtx, GinkgoLogr.WithName("cleanup"))
 			Expect(err).NotTo(HaveOccurred(), "source HostedCluster resources should be removed while preserving machines")
+		})
+
+		It("should remove the source KubeVirt HostedCluster and worker VMs", func() {
+			if sourceHostedCluster.Spec.Platform.Type != hyperv1.KubevirtPlatform {
+				Skip("KubeVirt worker VM cleanup is specific to KubeVirt")
+			}
+			err := backuprestore.BreakKubeVirtHostedCluster(sourceCtx)
+			Expect(err).NotTo(HaveOccurred(), "source KubeVirt HostedCluster and worker VMs should be removed before target restore")
 		})
 	})
 
@@ -796,6 +831,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 
 	Context(ContextPostRestoreControlPlane, func() {
 		It("should admit target Routes before starting target ExternalDNS", func() {
+			if sourceHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+				Skip("Route and ExternalDNS handoff is specific to AWS")
+			}
 			hostedCluster, err := targetCtx.GetHostedCluster()
 			if err != nil {
 				Fail(fmt.Sprintf("restored HostedCluster should be available for Route admission checks (API reason: %s; error type: %T)",
@@ -820,9 +858,30 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 			targetExternalDNSNeedsRestore = false
 		})
 
+		It("should retain KubeVirt guest service publishing names on the target", func() {
+			if sourceHostedCluster.Spec.Platform.Type != hyperv1.KubevirtPlatform {
+				Skip("KubeVirt service publishing validation is specific to KubeVirt")
+			}
+			restored, err := targetCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(restored.Spec.Services).To(Equal(sourceHostedCluster.Spec.Services), "restored services should retain their source publishing names")
+		})
+
 		It("should have control plane healthy after restore", func() {
 			validateBeforeEach(targetCtx)
 			validatePostRestoreControlPlane(targetCtx, platformCfg.excludeWorkloads, expectedConditions, false)
+		})
+
+		It("should have new KubeVirt worker VMs on the target", func() {
+			if sourceHostedCluster.Spec.Platform.Type != hyperv1.KubevirtPlatform {
+				Skip("KubeVirt worker validation is specific to KubeVirt")
+			}
+			vms := &unstructured.UnstructuredList{}
+			vms.SetGroupVersionKind(schema.GroupVersionKind{Group: "kubevirt.io", Version: "v1", Kind: "VirtualMachineList"})
+			Eventually(func(g Gomega) {
+				g.Expect(targetCtx.MgmtClient.List(targetCtx.Context, vms, crclient.InNamespace(targetCtx.ControlPlaneNamespace))).To(Succeed())
+				g.Expect(len(vms.Items)).To(BeNumerically(">=", sourceNodeCount))
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
 		})
 	})
 })

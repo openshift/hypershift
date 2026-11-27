@@ -132,6 +132,43 @@ func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger 
 	return nil
 }
 
+// BreakKubeVirtHostedCluster deletes the source guest through normal
+// reconciliation. Worker VMs belong to the source management cluster and must
+// be removed before the same HostedCluster is restored on another manager.
+func BreakKubeVirtHostedCluster(testCtx *internal.TestContext) error {
+	hc, err := testCtx.GetHostedCluster()
+	if err != nil {
+		return fmt.Errorf("failed to get source HostedCluster: %w", err)
+	}
+	if hc.Spec.Platform.Type != hyperv1.KubevirtPlatform {
+		return fmt.Errorf("cannot delete worker VMs for platform %s", hc.Spec.Platform.Type)
+	}
+	if err := testCtx.MgmtClient.Delete(testCtx.Context, hc); err != nil {
+		return fmt.Errorf("failed to delete source HostedCluster: %w", err)
+	}
+	return wait.PollUntilContextTimeout(testCtx.Context, PollInterval, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
+		err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: testCtx.ClusterNamespace,
+			Name:      testCtx.ClusterName,
+		}, &hyperv1.HostedCluster{})
+		if err == nil {
+			return false, nil
+		}
+		if !apierrors.IsNotFound(err) {
+			return false, err
+		}
+		vms := &unstructured.UnstructuredList{}
+		vms.SetGroupVersionKind(schema.GroupVersionKind{Group: "kubevirt.io", Version: "v1", Kind: "VirtualMachineList"})
+		if err := testCtx.MgmtClient.List(ctx, vms, crclient.InNamespace(testCtx.ControlPlaneNamespace)); err != nil {
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return len(vms.Items) == 0, nil
+	})
+}
+
 // removeHCPFinalizers removes all finalizers from the HostedControlPlane to force deletion.
 func removeHCPFinalizers(testCtx *internal.TestContext, hcpName, hcpNamespace string) error {
 	return wait.PollUntilContextTimeout(testCtx.Context, 1*time.Second, 30*time.Second, true,
