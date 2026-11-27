@@ -14,12 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
-	tagtypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
-	"github.com/onsi/ginkgo/v2/reporters"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/pkg/manifests"
@@ -27,6 +21,13 @@ import (
 	"github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	tagtypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -34,9 +35,12 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	watchtools "k8s.io/client-go/tools/watch"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
+	"github.com/onsi/ginkgo/v2/reporters"
 )
 
 type karpenterTeardown struct {
@@ -48,14 +52,14 @@ type karpenterTeardown struct {
 	claimsGone  <-chan error
 }
 
-func destroyAndVerifyKarpenter(hypershiftBin string, entry lifecycle.ClusterEntry, platform lifecycle.PlatformConfig) error {
+func destroyAndVerifyKarpenter(ctx context.Context, hypershiftBin string, entry lifecycle.ClusterEntry, platform lifecycle.PlatformConfig) error {
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 55*time.Minute)
 	defer cancel()
 
 	teardown, snapshotErr := startKarpenterTeardown(ctx, entry)
 	// Always attempt destruction, including when provisioning or snapshot collection failed.
-	destroyErr := destroyCluster(hypershiftBin, entry, platform)
+	destroyErr := destroyCluster(ctx, hypershiftBin, entry, platform)
 	var verifyErr error
 	if snapshotErr == nil && destroyErr == nil {
 		verifyErr = teardown.verify(ctx, entry.InfraID)
@@ -86,7 +90,7 @@ func startKarpenterTeardown(ctx context.Context, entry lifecycle.ClusterEntry) (
 	awsSpec := hc.Spec.Platform.AWS
 	if hc.Spec.InfraID != entry.InfraID || awsSpec == nil || awsSpec.CloudProviderConfig == nil ||
 		awsSpec.CloudProviderConfig.VPC == "" || awsSpec.SharedVPC != nil {
-		return nil, fmt.Errorf("Karpenter cleanup verification requires a dedicated AWS VPC for cluster %s", entry.Name)
+		return nil, fmt.Errorf("cannot verify Karpenter cleanup for cluster %s without matching dedicated AWS infrastructure", entry.Name)
 	}
 	hcpKey := client.ObjectKey{Namespace: manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name), Name: hc.Name}
 	hcp := &hyperv1.HostedControlPlane{}

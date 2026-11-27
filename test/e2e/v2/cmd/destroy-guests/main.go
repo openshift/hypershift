@@ -22,6 +22,8 @@ limitations under the License.
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -71,7 +73,7 @@ func main() {
 			if verifyKarpenterCleanup && entry.Variant == "karpenter" {
 				destroy = destroyAndVerifyKarpenter
 			}
-			if err := destroy(hypershiftBin, entry, platform); err != nil {
+			if err := destroy(context.Background(), hypershiftBin, entry, platform); err != nil {
 				log.Printf("WARNING: Failed to destroy cluster %s (%s): %v", entry.Name, entry.Variant, err)
 				log.Printf("ACTION REQUIRED: cloud resources for cluster %s (infraID=%s) may be orphaned and need manual cleanup", entry.Name, entry.InfraID)
 				mu.Lock()
@@ -89,7 +91,7 @@ func main() {
 	log.Printf("All clusters destroyed successfully")
 }
 
-func destroyCluster(hypershiftBin string, entry lifecycle.ClusterEntry, platform lifecycle.PlatformConfig) error {
+func destroyCluster(ctx context.Context, hypershiftBin string, entry lifecycle.ClusterEntry, platform lifecycle.PlatformConfig) error {
 	log.Printf("Destroying cluster %s (%s, infraID=%s)", entry.Name, entry.Variant, entry.InfraID)
 
 	args := []string{
@@ -103,11 +105,11 @@ func destroyCluster(hypershiftBin string, entry lifecycle.ClusterEntry, platform
 
 	log.Printf("Running: %s %v", hypershiftBin, args)
 
-	cmd := exec.Command(hypershiftBin, args...)
+	cmd := exec.CommandContext(ctx, hypershiftBin, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("hypershift destroy cluster %s failed for %s: %w", platform.Name(), entry.Name, err)
+		return fmt.Errorf("hypershift destroy cluster %s failed for %s: %w", platform.Name(), entry.Name, errors.Join(err, ctx.Err()))
 	}
 
 	log.Printf("Finished destroying cluster: %s", entry.Name)

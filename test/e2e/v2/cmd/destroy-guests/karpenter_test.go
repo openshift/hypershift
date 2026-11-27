@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,11 +11,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/watch"
+
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
+
+func TestDestroyClusterHonorsDeadline(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "hypershift")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexec sleep 2\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+
+	err := destroyCluster(ctx, binary, lifecycle.ClusterEntry{Name: "guest"}, &lifecycle.AWSPlatformConfig{})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected destroy to exceed its deadline, got %v", err)
+	}
+}
 
 func TestWaitForNodeClaimDeletion(t *testing.T) {
 	deleted := func(name string) watch.Event {

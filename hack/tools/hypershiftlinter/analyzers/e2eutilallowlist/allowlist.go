@@ -481,9 +481,6 @@ var allowlist = map[string]map[string][]string{
 		},
 	},
 	"test/e2e/v2/tests/karpenter_test.go": {
-		"KarpenterARM64ProvisioningTest/Context(\"[Feature:AutoNode] ARM64 instance provisioning\")#1/It(\"should provision and deprovision ARM64 nodes\")#1": {
-			"WaitForReadyNodesByLabels",
-		},
 		"KarpenterArbitrarySubnetTest/Context(\"[Feature:AutoNode] Arbitrary subnet propagation\")#1/It(\"should propagate a custom subnet through the VPC endpoint and provision a node in it\")#1": {
 			"CreateTestSubnet",
 			"E2ETagsFromEnvironment",

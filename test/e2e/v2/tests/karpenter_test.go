@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -433,7 +434,7 @@ func verifyKarpenterProvisioningAndDeprovisioning(tc *internal.TestContext, hc *
 	By("Waiting up to ten minutes for the new node and workload to become ready")
 	provisioningCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	nodes := e2eutil.WaitForReadyNodesByLabels(GinkgoTB(), provisioningCtx, hcClient, hc.Spec.Platform.Type, 1, poolLabels)
+	nodes := waitForReadyKarpenterNodes(Default, provisioningCtx, hcClient, poolLabels, 1)
 	Expect(nodes[0].Labels).To(HaveKeyWithValue(corev1.LabelArchStable, arch))
 	Expect(nodes[0].Labels).To(HaveKeyWithValue(corev1.LabelInstanceTypeStable, instanceType))
 	v2util.WaitForReadyKarpenterPods(Default, provisioningCtx, hcClient, nodes, nil, 1, workload.Spec.Selector.MatchLabels)
@@ -466,6 +467,26 @@ func verifyKarpenterProvisioningAndDeprovisioning(tc *internal.TestContext, hc *
 	Expect(ec2.NewInstanceTerminatedWaiter(ec2Client).Wait(ctx, &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceID},
 	}, 5*time.Minute)).To(Succeed(), "EC2 instance %s should be terminated", instanceID)
+}
+
+func waitForReadyKarpenterNodes(g Gomega, ctx context.Context, hcClient crclient.Client, poolLabels crclient.MatchingLabels, count int) []corev1.Node {
+	GinkgoHelper()
+
+	var nodes []corev1.Node
+	g.Eventually(func(pollG Gomega, pollCtx context.Context) {
+		nodeList := &corev1.NodeList{}
+		pollG.Expect(hcClient.List(pollCtx, nodeList, poolLabels)).To(Succeed())
+		pollG.Expect(nodeList.Items).To(HaveLen(count), "nodes matching %v", poolLabels)
+		for _, node := range nodeList.Items {
+			ready := slices.ContainsFunc(node.Status.Conditions, func(condition corev1.NodeCondition) bool {
+				return condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue
+			})
+			pollG.Expect(ready).To(BeTrue(), "node %s must report Ready=True", node.Name)
+		}
+		nodes = nodeList.Items
+	}).WithContext(ctx).WithTimeout(45 * time.Minute).WithPolling(3 * time.Second).Should(Succeed())
+
+	return nodes
 }
 
 func KarpenterInstanceProfileTest(getTestCtx internal.TestContextGetter) {
@@ -610,10 +631,15 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred(), "failed to parse control plane version")
 			GinkgoWriter.Printf("Control plane version: %s\n", cpVersion.String())
 
-			expectedReleaseImage := defaultNodeClassReleaseImage(hc)
+			var expectedReleaseImage string
 			By("Verifying default OpenshiftEC2NodeClass uses the current release image")
 			e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have VersionResolved=True",
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+					currentHC := &hyperv1.HostedCluster{}
+					if err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC); err != nil {
+						return nil, fmt.Errorf("get HostedCluster to determine the current release image: %w", err)
+					}
+					expectedReleaseImage = defaultNodeClassReleaseImage(currentHC)
 					nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
 					return nc, err
@@ -632,6 +658,9 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 					func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (bool, string, error) {
 						if nc.Status.ReleaseImage == "" {
 							return false, "status.releaseImage is empty", nil
+						}
+						if expectedReleaseImage == "" {
+							return false, "HostedCluster rollout history has no release image yet", nil
 						}
 						if nc.Status.ReleaseImage != expectedReleaseImage {
 							return false, fmt.Sprintf("expected status.releaseImage %q to match the current release image %q", nc.Status.ReleaseImage, expectedReleaseImage), nil
@@ -926,18 +955,30 @@ func defaultNodeClassReleaseImage(hc *hyperv1.HostedCluster) string {
 	}
 
 	// The completed rollout can record a digest even when the spec requests a tag.
-	for _, update := range hc.Status.ControlPlaneVersion.History {
-		if update.State == configv1.CompletedUpdate && update.Image != "" {
+	controlPlane := hc.Status.ControlPlaneVersion
+	for _, update := range controlPlane.History {
+		if update.State == configv1.CompletedUpdate {
 			return update.Image
 		}
 	}
+	if len(controlPlane.History) > 0 {
+		return controlPlane.History[0].Image
+	}
+	if controlPlane.Desired.Image != "" {
+		return ""
+	}
+
 	// Older control planes can publish rollout history in status.version only.
-	if hc.Status.Version != nil {
-		for _, update := range hc.Status.Version.History {
-			if update.State == configv1.CompletedUpdate && update.Image != "" {
+	if legacy := hc.Status.Version; legacy != nil {
+		for _, update := range legacy.History {
+			if update.State == configv1.CompletedUpdate {
 				return update.Image
 			}
 		}
+		if len(legacy.History) > 0 {
+			return legacy.History[0].Image
+		}
+		return ""
 	}
 	return hc.Spec.Release.Image
 }
@@ -945,11 +986,13 @@ func defaultNodeClassReleaseImage(hc *hyperv1.HostedCluster) string {
 func TestDefaultNodeClassReleaseImage(t *testing.T) {
 	const (
 		requested = "example.test/release:5.1.0-ec.2-multi"
+		partial   = "example.test/release:partial"
 		completed = "example.test/release@sha256:36cfb9b643459541474e4447a629e2c5983cb810bb7dd7535d51149dc5bc8456"
 	)
 	for _, tt := range []struct {
 		name         string
 		controlPlane *hyperv1.Release
+		desiredImage string
 		history      []hyperv1.ControlPlaneUpdateHistory
 		legacy       *hyperv1.ClusterVersionStatus
 		expected     string
@@ -966,6 +1009,28 @@ func TestDefaultNodeClassReleaseImage(t *testing.T) {
 			name: "When control-plane history is absent, use the legacy completed rollout",
 			legacy: &hyperv1.ClusterVersionStatus{
 				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate, Image: completed}},
+			},
+			expected: completed,
+		},
+		{
+			name:    "When the first control-plane rollout is partial, use its image",
+			history: []hyperv1.ControlPlaneUpdateHistory{{State: configv1.PartialUpdate, Image: partial}},
+			legacy: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate, Image: completed}},
+			},
+			expected: partial,
+		},
+		{
+			name:         "When control-plane status has a desired image, wait for its history",
+			desiredImage: requested,
+			legacy: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate, Image: completed}},
+			},
+		},
+		{
+			name: "When the first legacy rollout is partial, use its image",
+			legacy: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{State: configv1.PartialUpdate, Image: completed}},
 			},
 			expected: completed,
 		},
@@ -987,8 +1052,11 @@ func TestDefaultNodeClassReleaseImage(t *testing.T) {
 					ControlPlaneRelease: tt.controlPlane,
 				},
 				Status: hyperv1.HostedClusterStatus{
-					ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{History: tt.history},
-					Version:             tt.legacy,
+					ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{
+						Desired: configv1.Release{Image: tt.desiredImage},
+						History: tt.history,
+					},
+					Version: tt.legacy,
 				},
 			}
 			if got := defaultNodeClassReleaseImage(hc); got != tt.expected {
@@ -1785,17 +1853,16 @@ func KarpenterUnderutilizedConsolidationTest(getTestCtx internal.TestContextGett
 		hcClient, err := tc.GetHostedClusterClient(hc)
 		Expect(err).NotTo(HaveOccurred())
 		ctx := tc.Context
-		t := GinkgoTB()
 
 		nodePool := v2util.BaseNodePool("underutilized", karpenterassets.EC2NodeClassDefault)
 		nodePool.Spec.Disruption.ConsolidationPolicy = karpenterv1.ConsolidationPolicyWhenEmptyOrUnderutilized
 		consolidateAfter := nodePool.Spec.Disruption.ConsolidateAfter
 		nodePool.Spec.Disruption.ConsolidateAfter = karpenterv1.MustParseNillableDuration("Never")
-		nodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: nodePool.Name}
+		nodeLabels := crclient.MatchingLabels{karpenterv1.NodePoolLabelKey: nodePool.Name}
 
 		first := v2util.TestWorkload("consolidation-first", 1, maps.Clone(nodeLabels))
 		v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, nodePool, first, nodeLabels, false)
-		firstNodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, nodeLabels)
+		firstNodes := waitForReadyKarpenterNodes(Default, ctx, hcClient, nodeLabels, 1)
 		v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, firstNodes, nil, 1, first.Spec.Selector.MatchLabels)
 
 		By("Placing a temporary marker on the first node so the second workload starts elsewhere")
@@ -1817,7 +1884,7 @@ func KarpenterUnderutilizedConsolidationTest(getTestCtx internal.TestContextGett
 		DeferCleanup(func() {
 			Expect(crclient.IgnoreNotFound(hcClient.Delete(ctx, second))).To(Succeed())
 		})
-		nodesBefore := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 2, nodeLabels)
+		nodesBefore := waitForReadyKarpenterNodes(Default, ctx, hcClient, nodeLabels, 2)
 		v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nodesBefore, firstNodes, 1, second.Spec.Selector.MatchLabels)
 
 		ec2Client := v2util.NewEC2Client(ctx, internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE"), hc.Spec.Platform.AWS.Region)
@@ -1830,13 +1897,17 @@ func KarpenterUnderutilizedConsolidationTest(getTestCtx internal.TestContextGett
 		By("Removing the marker and enabling consolidation while both workloads remain deployed")
 		Expect(hcClient.Delete(ctx, marker)).To(Succeed())
 		v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nil, nil, 0, marker.Spec.Selector.MatchLabels)
-		Expect(e2eutil.UpdateObject(t, ctx, hcClient, nodePool, func(pool *karpenterv1.NodePool) {
+		Eventually(func(g Gomega, pollCtx context.Context) {
+			pool := &karpenterv1.NodePool{}
+			g.Expect(hcClient.Get(pollCtx, crclient.ObjectKeyFromObject(nodePool), pool)).To(Succeed())
+			before := pool.DeepCopy()
 			pool.Spec.Disruption.ConsolidateAfter = consolidateAfter
-		})).To(Succeed())
+			g.Expect(hcClient.Patch(pollCtx, pool, crclient.MergeFromWithOptions(before, crclient.MergeFromWithOptimisticLock{}))).To(Succeed())
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(time.Second).Should(Succeed())
 
 		consolidationCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 		defer cancel()
-		nodesAfter := e2eutil.WaitForReadyNodesByLabels(t, consolidationCtx, hcClient, hc.Spec.Platform.Type, 1, nodeLabels)
+		nodesAfter := waitForReadyKarpenterNodes(Default, consolidationCtx, hcClient, nodeLabels, 1)
 		v2util.WaitForReadyKarpenterPods(Default, consolidationCtx, hcClient, nodesAfter, nil, 1, first.Spec.Selector.MatchLabels)
 		v2util.WaitForReadyKarpenterPods(Default, consolidationCtx, hcClient, nodesAfter, nil, 1, second.Spec.Selector.MatchLabels)
 		delete(instanceIDs, nodesAfter[0].Name)
