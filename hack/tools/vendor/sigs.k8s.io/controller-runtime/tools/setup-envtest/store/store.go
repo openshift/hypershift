@@ -1,5 +1,18 @@
-// SPDX-License-Identifier: Apache-2.0
-// Copyright 2021 The Kubernetes Authors
+/*
+Copyright 2021 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package store
 
@@ -12,7 +25,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/afero"
@@ -102,11 +116,12 @@ func (s *Store) List(ctx context.Context, matching Filter) ([]Item, error) {
 		return nil, fmt.Errorf("unable to list version-platform pairs in store: %w", err)
 	}
 
-	sort.Slice(res, func(i, j int) bool {
-		if !res[i].Version.Matches(res[j].Version) {
-			return res[i].Version.NewerThan(res[j].Version)
+	slices.SortStableFunc(res, func(i, j Item) int {
+		if !i.Version.Matches(j.Version) {
+			// sort in inverse order so that the newest one is first
+			return j.Version.Compare(i.Version)
 		}
-		return orderPlatforms(res[i].Platform, res[j].Platform)
+		return orderPlatforms(i.Platform, j.Platform)
 	})
 
 	return res, nil
@@ -187,10 +202,13 @@ func (s *Store) Add(ctx context.Context, item Item, contents io.Reader) (resErr 
 	}
 	log.V(1).Info("unpacked archive")
 
-	log.V(1).Info("switching version-platform directory to read-only")
-	if err := itemPath.Chmod("", 0555); err != nil {
+	// Keep the directory itself writable (0755) so that users can delete it
+	// (e.g. rm -rf, git worktree remove) without chmod. The files inside stay
+	// read-only/executable, which protects the binaries from modification.
+	log.V(1).Info("ensuring version-platform directory is user-writable")
+	if err := itemPath.Chmod("", 0755); err != nil {
 		// don't bail, this isn't fatal
-		log.Error(err, "unable to make version-platform directory read-only")
+		log.Error(err, "unable to set version-platform directory permissions")
 	}
 	return nil
 }
@@ -296,10 +314,10 @@ func (s *Store) removeItem(itemDir afero.Fs) error {
 }
 
 // orderPlatforms orders platforms by OS then arch.
-func orderPlatforms(first, second versions.Platform) bool {
+func orderPlatforms(first, second versions.Platform) int {
 	// sort by OS, then arch
 	if first.OS != second.OS {
-		return first.OS < second.OS
+		return strings.Compare(first.OS, second.OS)
 	}
-	return first.Arch < second.Arch
+	return strings.Compare(first.Arch, second.Arch)
 }
