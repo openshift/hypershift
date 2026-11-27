@@ -400,7 +400,7 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 
 	// When HYPERSHIFT_ETCD_KMS_KEY_ARN is unset (presubmit default) the
 	// kms-reencryption tests skip immediately, so omitting the variant from the
-	// matrix lets FilterClusterSpecs avoid provisioning an unused guest cluster.
+	// matrix lets FilterClusterSpecs avoid provisioning an unused hosted cluster.
 	if os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN") != "" {
 		parallel = append(parallel, TestGroup{
 			Name:        "kms-reencryption",
