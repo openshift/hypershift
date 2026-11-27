@@ -26,9 +26,9 @@ func NewIBMPIJobClient(ctx context.Context, sess *ibmpisession.IBMPISession, clo
 // Get a Job
 func (f *IBMPIJobClient) Get(id string) (*models.Job, error) {
 	params := p_cloud_jobs.NewPcloudCloudinstancesJobsGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithJobID(id)
-	resp, err := f.session.Power.PCloudJobs.PcloudCloudinstancesJobsGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudJobs.PcloudCloudinstancesJobsGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetJobOperationFailed, id, err))
 	}
@@ -41,9 +41,9 @@ func (f *IBMPIJobClient) Get(id string) (*models.Job, error) {
 // Get All Jobs
 func (f *IBMPIJobClient) GetAll() (*models.Jobs, error) {
 	params := p_cloud_jobs.NewPcloudCloudinstancesJobsGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
-	resp, err := f.session.Power.PCloudJobs.PcloudCloudinstancesJobsGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudJobs.PcloudCloudinstancesJobsGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetAllJobsOperationFailed, err))
 	}
@@ -56,9 +56,9 @@ func (f *IBMPIJobClient) GetAll() (*models.Jobs, error) {
 // Delete a Job
 func (f *IBMPIJobClient) Delete(id string) error {
 	params := p_cloud_jobs.NewPcloudCloudinstancesJobsDeleteParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
+		WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithJobID(id)
-	_, err := f.session.Power.PCloudJobs.PcloudCloudinstancesJobsDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudJobs.PcloudCloudinstancesJobsDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf(errors.DeleteJobsOperationFailed, id, err)
 	}

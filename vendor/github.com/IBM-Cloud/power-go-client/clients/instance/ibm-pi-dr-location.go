@@ -26,9 +26,9 @@ func NewIBMPIDisasterRecoveryLocationClient(ctx context.Context, sess *ibmpisess
 // Get the disaster recovery site details for the current location
 func (f *IBMPIDisasterRecoveryLocationClient) Get() (*models.DisasterRecoveryLocation, error) {
 	params := p_cloud_disaster_recovery.NewPcloudLocationsDisasterrecoveryGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
-	resp, err := f.session.Power.PCloudDisasterRecovery.PcloudLocationsDisasterrecoveryGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudDisasterRecovery.PcloudLocationsDisasterrecoveryGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetDisasterRecoveryLocationOperationFailed, f.cloudInstanceID, err))
 	}
@@ -41,8 +41,8 @@ func (f *IBMPIDisasterRecoveryLocationClient) Get() (*models.DisasterRecoveryLoc
 // Get all disaster recovery locations supported by Power Virtual Server
 func (f *IBMPIDisasterRecoveryLocationClient) GetAll() (*models.DisasterRecoveryLocations, error) {
 	params := p_cloud_disaster_recovery.NewPcloudLocationsDisasterrecoveryGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut)
-	resp, err := f.session.Power.PCloudDisasterRecovery.PcloudLocationsDisasterrecoveryGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+		WithTimeout(helpers.PIGetTimeOut)
+	resp, err := f.session.Power.PCloudDisasterRecovery.PcloudLocationsDisasterrecoveryGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetAllDisasterRecoveryLocationOperationFailed, err))
 	}

@@ -27,9 +27,9 @@ func NewIBMPISystemPoolClient(ctx context.Context, sess *ibmpisession.IBMPISessi
 // Deprecated: Use GetSystemPools()
 func (f *IBMPISystemPoolClient) Get(id string) (models.SystemPools, error) {
 	params := p_cloud_system_pools.NewPcloudSystempoolsGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(id)
-	resp, err := f.session.Power.PCloudSystemPools.PcloudSystempoolsGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudSystemPools.PcloudSystempoolsGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetSystemPoolsOperationFailed, id, err))
 	}
@@ -42,9 +42,9 @@ func (f *IBMPISystemPoolClient) Get(id string) (models.SystemPools, error) {
 // Get the System Pools
 func (f *IBMPISystemPoolClient) GetSystemPools() (models.SystemPools, error) {
 	params := p_cloud_system_pools.NewPcloudSystempoolsGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
-	resp, err := f.session.Power.PCloudSystemPools.PcloudSystempoolsGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudSystemPools.PcloudSystempoolsGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetSystemPoolsOperationFailed, f.cloudInstanceID, err))
 	}

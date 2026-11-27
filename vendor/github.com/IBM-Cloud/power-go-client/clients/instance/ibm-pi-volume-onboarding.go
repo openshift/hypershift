@@ -26,9 +26,9 @@ func NewIBMPIVolumeOnboardingClient(ctx context.Context, sess *ibmpisession.IBMP
 // Get the information of volume onboarding operation
 func (f *IBMPIVolumeOnboardingClient) Get(id string) (*models.VolumeOnboarding, error) {
 	params := p_cloud_volume_onboarding.NewPcloudVolumeOnboardingGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVolumeOnboardingID(id)
-	resp, err := f.session.Power.PCloudVolumeOnboarding.PcloudVolumeOnboardingGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumeOnboarding.PcloudVolumeOnboardingGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetVolumeOnboardingOperationFailed, id, f.cloudInstanceID, err))
 	}
@@ -41,9 +41,9 @@ func (f *IBMPIVolumeOnboardingClient) Get(id string) (*models.VolumeOnboarding, 
 // Get All volume onboardings for this cloud instance
 func (f *IBMPIVolumeOnboardingClient) GetAll() (*models.VolumeOnboardings, error) {
 	params := p_cloud_volume_onboarding.NewPcloudVolumeOnboardingGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
-	resp, err := f.session.Power.PCloudVolumeOnboarding.PcloudVolumeOnboardingGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumeOnboarding.PcloudVolumeOnboardingGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetAllVolumeOnboardingsOperationFailed, f.cloudInstanceID, err))
 	}
@@ -56,9 +56,9 @@ func (f *IBMPIVolumeOnboardingClient) GetAll() (*models.VolumeOnboardings, error
 // Onboard auxiliary volumes to target site
 func (f *IBMPIVolumeOnboardingClient) CreateVolumeOnboarding(body *models.VolumeOnboardingCreate) (*models.VolumeOnboardingCreateResponse, error) {
 	params := p_cloud_volume_onboarding.NewPcloudVolumeOnboardingPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
-	resp, err := f.session.Power.PCloudVolumeOnboarding.PcloudVolumeOnboardingPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumeOnboarding.PcloudVolumeOnboardingPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.CreateVolumeOnboardingsOperationFailed, f.cloudInstanceID, err))
 	}
