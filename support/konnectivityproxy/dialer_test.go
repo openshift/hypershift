@@ -509,6 +509,24 @@ func TestIsCloudAPI(t *testing.T) {
 			expected:    true,
 			description: "IBM Cloud API endpoints should be detected",
 		},
+		{
+			name:        "When host is valid GCP API, it should return true",
+			host:        "dns.googleapis.com",
+			expected:    true,
+			description: "GCP API endpoints should be detected",
+		},
+		{
+			name:        "When host is valid GCP API with subdomain, it should return true",
+			host:        "compute.googleapis.com",
+			expected:    true,
+			description: "GCP API endpoints with subdomains should be detected",
+		},
+		{
+			name:        "When host is valid GCP STS API, it should return true",
+			host:        "sts.googleapis.com",
+			expected:    true,
+			description: "GCP STS endpoints should be detected",
+		},
 
 		// Valid AWS ISO cloud API hosts
 		{
@@ -554,6 +572,18 @@ func TestIsCloudAPI(t *testing.T) {
 			host:        "badcloud.ibm.com",
 			expected:    false,
 			description: "Malicious hosts trying to mimic IBM should not be detected as cloud API",
+		},
+		{
+			name:        "When host is GCP lookalike, it should return false",
+			host:        "notgoogleapis.com",
+			expected:    false,
+			description: "False positive: hosts ending with googleapis.com but not actually GCP",
+		},
+		{
+			name:        "When host is malicious GCP lookalike, it should return false",
+			host:        "evilgoogleapis.com",
+			expected:    false,
+			description: "Malicious hosts trying to mimic GCP should not be detected as cloud API",
 		},
 
 		// Edge cases

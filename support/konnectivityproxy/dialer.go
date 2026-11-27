@@ -521,6 +521,10 @@ func (kh *konnectivityHealth) isHealthy() bool {
 // AWS ISO: https://docs.aws.amazon.com/general/latest/gr/aws-iso_region.html
 // AZURE: https://docs.microsoft.com/en-us/rest/api/azure/#how-to-call-azure-rest-apis-with-curl
 // IBMCLOUD: https://cloud.ibm.com/apidocs/iam-identity-token-api#endpoints
+// GCP: https://cloud.google.com/apis-design, e.g. compute/dns/storage/iamcredentials.googleapis.com.
+// Cloud API traffic must not depend on the guest cluster: routing it through Konnectivity
+// makes it fail as soon as the guest agents are gone (NodePool deletion during cluster
+// teardown), which leaves cloud resources behind (see GCP-1532).
 func (p *konnectivityProxy) IsCloudAPI(host string) bool {
 	log := p.log.WithName("konnectivityProxy.IsCloudAPI")
 	if !p.connectDirectlyToCloudAPIs {
@@ -542,7 +546,8 @@ func (p *konnectivityProxy) IsCloudAPI(host string) bool {
 		strings.HasSuffix(host, ".sc2s.sgov.gov") ||
 		strings.HasSuffix(host, ".microsoftonline.com") ||
 		strings.HasSuffix(host, ".azure.com") ||
-		strings.HasSuffix(host, ".cloud.ibm.com") {
+		strings.HasSuffix(host, ".cloud.ibm.com") ||
+		strings.HasSuffix(host, ".googleapis.com") {
 		log.V(1).Info("Host has one of the cloud API suffixes, returning true")
 		return true
 	}
