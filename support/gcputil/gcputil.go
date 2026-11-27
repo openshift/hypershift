@@ -153,10 +153,6 @@ func LBResourceLabelsAnnotationValue(labels map[string]string) string {
 // HyperShift are preserved. It returns the desired annotations and whether they
 // differ from annotations.
 func ReconcileLBResourceLabelAnnotations(annotations map[string]string, desired map[string]string) (map[string]string, bool, error) {
-	existing, annotationPresent, err := ParseLBResourceLabelsAnnotation(annotations)
-	if err != nil {
-		return nil, false, err
-	}
 	managed, err := managedLBResourceLabelKeys(annotations)
 	if err != nil {
 		return nil, false, err
@@ -170,6 +166,11 @@ func ReconcileLBResourceLabelAnnotations(annotations map[string]string, desired 
 	// annotation means that CCM leaves forwarding-rule labels unmanaged.
 	if len(managed) == 0 && len(desired) == 0 {
 		return annotations, false, nil
+	}
+
+	existing, annotationPresent, err := ParseLBResourceLabelsAnnotation(annotations)
+	if err != nil {
+		return nil, false, err
 	}
 
 	merged := maps.Clone(existing)
@@ -208,6 +209,13 @@ func ReconcileLBResourceLabelAnnotations(annotations map[string]string, desired 
 	return result, !reflect.DeepEqual(annotations, result), nil
 }
 
+// LBResourceLabelsValidationError retains the detailed parser error while
+// providing a safe Reason for logs that must not include annotation contents.
+type LBResourceLabelsValidationError struct {
+	error
+	Reason string
+}
+
 // ParseLBResourceLabelsAnnotation parses the native GCP Service annotation.
 // The format and validation intentionally match cloud-provider-gcp's accepted
 // key=value[,key=value] representation.
@@ -222,19 +230,19 @@ func ParseLBResourceLabelsAnnotation(annotations map[string]string) (map[string]
 	}
 	pairs := strings.Split(value, ",")
 	if len(pairs) > MaxResourceLabels {
-		return nil, true, fmt.Errorf("%s permits at most %d labels", LBResourceLabelsAnnotation, MaxResourceLabels)
+		return nil, true, &LBResourceLabelsValidationError{error: fmt.Errorf("%s permits at most %d labels", LBResourceLabelsAnnotation, MaxResourceLabels), Reason: "too many labels"}
 	}
 	for _, pair := range pairs {
 		key, value, found := strings.Cut(pair, "=")
 		if !found {
-			return nil, true, fmt.Errorf("%s label %q must use key=value format", LBResourceLabelsAnnotation, pair)
+			return nil, true, &LBResourceLabelsValidationError{error: fmt.Errorf("%s label %q must use key=value format", LBResourceLabelsAnnotation, pair), Reason: "expected key=value format"}
 		}
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 		if err := validateGCPResourceLabel(key, value); err != nil {
-			return nil, true, fmt.Errorf("invalid %s: %w", LBResourceLabelsAnnotation, err)
+			return nil, true, &LBResourceLabelsValidationError{error: fmt.Errorf("invalid %s: %w", LBResourceLabelsAnnotation, err), Reason: "invalid label key or value"}
 		}
 		if _, exists := labels[key]; exists {
-			return nil, true, fmt.Errorf("invalid %s: duplicate label key %q", LBResourceLabelsAnnotation, key)
+			return nil, true, &LBResourceLabelsValidationError{error: fmt.Errorf("invalid %s: duplicate label key %q", LBResourceLabelsAnnotation, key), Reason: "duplicate label key"}
 		}
 		labels[key] = value
 	}
