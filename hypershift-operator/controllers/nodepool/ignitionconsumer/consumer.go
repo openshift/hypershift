@@ -11,6 +11,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -116,13 +118,26 @@ func Reconcile(ctx context.Context, c client.Client, store payloadstore.PayloadS
 
 	// The generator authors the node-facing userData Secret; the consumer only references it by name.
 	// For InPlace pools the consumer additionally writes the byte-compatible legacy Secret the HCCO
-	// reads directly (no HTTP fetch).
-	if err := reconcileLegacyInPlaceSecret(ctx, c, store, in.MachineSetName,
-		nodePool.Spec.Management.UpgradeType, in.ReleaseVersion, cr.Status.Current, cr); err != nil {
-		return "", err
+	// reads directly (no HTTP fetch). That Secret pairs status.current's payload with the consumer's
+	// ReleaseVersion, so it is written only once the generator has processed the spec just authored:
+	// until then status.current may still be the previous release's payload, and the HCCO would stamp
+	// the new release version onto Machines that completed the old payload. The previous userData
+	// Secret is still returned meanwhile, so machines stay on it until the new generation commits.
+	if payloadGeneratedForSpec(cr) {
+		if err := reconcileLegacyInPlaceSecret(ctx, c, store, in.MachineSetName,
+			nodePool.Spec.Management.UpgradeType, in.ReleaseVersion, cr.Status.Current, cr); err != nil {
+			return "", err
+		}
 	}
 
 	return cr.Status.Current.UserDataSecret.Name, nil
+}
+
+// payloadGeneratedForSpec reports whether the generator has generated status.current from the CR's
+// latest spec: PayloadGenerated is True and its observedGeneration matches metadata.generation.
+func payloadGeneratedForSpec(cr *hyperv1.IgnitionPayload) bool {
+	cond := apimeta.FindStatusCondition(cr.Status.Conditions, hyperv1.IgnitionPayloadPayloadGeneratedCondition)
+	return cond != nil && cond.Status == metav1.ConditionTrue && cond.ObservedGeneration == cr.Generation
 }
 
 // Finalize removes the consumer finalizer from the NodePool's IgnitionPayload

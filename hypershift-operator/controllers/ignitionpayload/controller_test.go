@@ -168,6 +168,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 	t.Run("MissingConfigMapRequeues", scenarioMissingConfigMapRequeues)
 	t.Run("ReleaseVersionNotPullspec", scenarioReleaseVersionNotPullspec)
 	t.Run("FullConfigAndCloudConfigHashes", scenarioFullConfigAndCloudConfigHashes)
+	t.Run("PayloadGeneratedRecordsObservedGeneration", scenarioPayloadGeneratedRecordsObservedGeneration)
 }
 
 func scenarioRolloutThenRefresh(t *testing.T) {
@@ -282,6 +283,58 @@ func scenarioInvalidConfigNoRollout(t *testing.T) {
 	g.Expect(cr.Status.Current.UserDataSecret.Name).To(BeEmpty(), "no userData authored for invalid config")
 	g.Expect(cr.Status.Current.RolloutGeneration).To(Equal(int64(0)), "no rollout for invalid config")
 	g.Expect(fp.calls).To(Equal(0), "no render for invalid config")
+}
+
+// scenarioPayloadGeneratedRecordsObservedGeneration: every PayloadGenerated write records the spec
+// generation it processed — on rollout, on refresh, and on a validation failure — so a consumer can
+// tell whether status.current reflects its latest spec.
+func scenarioPayloadGeneratedRecordsObservedGeneration(t *testing.T) {
+	g := NewWithT(t)
+	cr := testCR()
+	cr.Generation = 3
+	r, c, _ := newTestReconciler(t,
+		cr, pullSecret("ps"),
+		cfgMap(testNS, "user-a", mc("00-user-a")),
+		cfgMap(testNS, "core-fips", mc("00-core-fips")),
+		cfgMap(testNS, "haproxy", mc("00-haproxy")),
+		cfgMap(testNS, "haproxy-extra", mc("00-haproxy-extra")),
+		cfgMap(testNS, "user-bad", "apiVersion: v1\nkind: NotAThing\n"),
+	)
+	ctx := context.Background()
+	observedGeneration := func() int64 {
+		cond := apimeta.FindStatusCondition(getCR(t, c).Status.Conditions, hyperv1.IgnitionPayloadPayloadGeneratedCondition)
+		g.Expect(cond).ToNot(BeNil())
+		return cond.ObservedGeneration
+	}
+	updateSpec := func(generation int64, mutate func(*hyperv1.IgnitionPayloadSpec)) {
+		cur := getCR(t, c)
+		mutate(&cur.Spec)
+		cur.Generation = generation
+		g.Expect(c.Update(ctx, cur)).To(Succeed())
+	}
+
+	// Rollout.
+	reconcileCR(t, r)
+	g.Expect(getCR(t, c).Status.Current.RolloutGeneration).To(Equal(int64(1)))
+	g.Expect(observedGeneration()).To(Equal(int64(3)))
+
+	// Refresh: a management-only spec change does not roll but is still observed.
+	updateSpec(4, func(s *hyperv1.IgnitionPayloadSpec) {
+		s.ManagementConfigMaps = append(s.ManagementConfigMaps, hyperv1.ConfigMapReference{Name: "haproxy-extra"})
+	})
+	reconcileCR(t, r)
+	g.Expect(getCR(t, c).Status.Current.RolloutGeneration).To(Equal(int64(1)))
+	g.Expect(observedGeneration()).To(Equal(int64(4)))
+
+	// Validation failure: PayloadGenerated=False for the new spec, status.current untouched.
+	updateSpec(5, func(s *hyperv1.IgnitionPayloadSpec) {
+		s.RolloutConfigMaps = append(s.RolloutConfigMaps, hyperv1.ConfigMapReference{Name: "user-bad"})
+	})
+	reconcileCR(t, r)
+	got := getCR(t, c)
+	g.Expect(apimeta.IsStatusConditionFalse(got.Status.Conditions, hyperv1.IgnitionPayloadPayloadGeneratedCondition)).To(BeTrue())
+	g.Expect(got.Status.Current.RolloutGeneration).To(Equal(int64(1)))
+	g.Expect(observedGeneration()).To(Equal(int64(5)))
 }
 
 // scenarioReleaseVersionNotPullspec: the hashes key on the resolved release Version(), not the
