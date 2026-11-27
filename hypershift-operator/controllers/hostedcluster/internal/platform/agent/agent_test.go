@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -15,7 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 
 	configv1 "github.com/openshift/api/config/v1"
-	agentcapicore "github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta1"
+	agentcapicore "github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta2"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -369,6 +371,79 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 			}
 		})
 	}
+	for _, endpointCase := range []struct {
+		name     string
+		endpoint hyperv1.APIEndpoint
+		ready    bool
+	}{
+		{"When the API endpoint is empty, it should wait without writing", hyperv1.APIEndpoint{}, false},
+		{"When the API endpoint has only a host, it should wait without writing", hyperv1.APIEndpoint{Host: APIEndpoint.Host}, false},
+		{"When the API endpoint has only a port, it should wait without writing", hyperv1.APIEndpoint{Port: APIEndpoint.Port}, false},
+		{"When the API endpoint is complete, it should reconcile the AgentCluster", APIEndpoint, true},
+	} {
+		for _, existing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/existing=%t", endpointCase.name, existing), func(t *testing.T) {
+				assertions := NewGomegaWithT(t)
+				hosted := newTestHostedCluster(hostedClusterName, "agents")
+				hosted.Namespace = hostedClusterNamespace
+				hosted.Status.IgnitionEndpoint = ignitionEndpoint
+				stored := &agentv1.AgentCluster{
+					ObjectMeta: metav1.ObjectMeta{Name: hostedClusterName, Namespace: controlPlaneNamespace},
+					Spec:       agentv1.AgentClusterSpec{ControlPlaneEndpoint: agentcapicore.APIEndpoint{Host: "api.previous.example.com", Port: 6443}},
+					Status: agentv1.AgentClusterStatus{Ready: true, Conditions: []metav1.Condition{{
+						Type: "Ready", Status: metav1.ConditionTrue, Reason: "Available", LastTransitionTime: metav1.Unix(1794240000, 0),
+					}}},
+				}
+				builder := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithStatusSubresource(&agentv1.AgentCluster{})
+				if existing {
+					builder = builder.WithObjects(stored)
+				}
+				fakeClient := builder.Build()
+				before := stored.DeepCopy()
+				writes := 0
+				createOrUpdate := func(ctx context.Context, c client.Client, object client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+					writes++
+					return controllerutil.CreateOrUpdate(ctx, c, object, mutate)
+				}
+				result, err := New(nil).ReconcileCAPIInfraCR(t.Context(), fakeClient, createOrUpdate, hosted, controlPlaneNamespace, endpointCase.endpoint)
+				assertions.Expect(err).NotTo(HaveOccurred())
+				if endpointCase.ready {
+					assertions.Expect(writes).To(Equal(1))
+					assertions.Expect(result.(*agentv1.AgentCluster).Spec.ControlPlaneEndpoint).To(Equal(agentcapicore.APIEndpoint{Host: APIEndpoint.Host, Port: APIEndpoint.Port}))
+				} else {
+					assertions.Expect(writes).To(BeZero())
+					assertions.Expect(result).To(BeNil())
+				}
+				after := &agentv1.AgentCluster{}
+				err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(stored), after)
+				if existing {
+					assertions.Expect(err).NotTo(HaveOccurred())
+					assertions.Expect(after.Status).To(Equal(before.Status))
+					if endpointCase.ready {
+						assertions.Expect(after.Spec.ControlPlaneEndpoint).To(Equal(agentcapicore.APIEndpoint{Host: APIEndpoint.Host, Port: APIEndpoint.Port}))
+					} else {
+						assertions.Expect(after).To(Equal(before))
+					}
+				} else if !endpointCase.ready {
+					assertions.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				} else {
+					assertions.Expect(err).NotTo(HaveOccurred())
+					assertions.Expect(after.Spec.ControlPlaneEndpoint).To(Equal(agentcapicore.APIEndpoint{Host: APIEndpoint.Host, Port: APIEndpoint.Port}))
+				}
+			})
+		}
+	}
+	t.Run("When a ready endpoint write fails, it should propagate the error", func(t *testing.T) {
+		assertions := NewGomegaWithT(t)
+		hosted := newTestHostedCluster(hostedClusterName, "agents")
+		hosted.Status.IgnitionEndpoint = ignitionEndpoint
+		writeError := errors.New("write failed")
+		createOrUpdate := func(context.Context, client.Client, client.Object, controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+			return controllerutil.OperationResultNone, writeError
+		}
+		_, err := New(nil).ReconcileCAPIInfraCR(t.Context(), nil, createOrUpdate, hosted, controlPlaneNamespace, APIEndpoint)
+		assertions.Expect(err).To(MatchError(writeError))
+	})
 }
 
 func buildHostedCluster(agentNamespace string, annotations map[string]string) *hyperv1.HostedCluster {
