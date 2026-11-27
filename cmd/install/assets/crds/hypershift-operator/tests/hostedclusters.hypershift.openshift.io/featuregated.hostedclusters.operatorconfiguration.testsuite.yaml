@@ -1977,7 +1977,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -2106,7 +2106,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -2235,7 +2235,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -2441,7 +2441,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -2570,7 +2570,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -2699,7 +2699,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -2828,7 +2828,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -2957,7 +2957,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -3086,7 +3086,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -3215,7 +3215,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -3344,7 +3344,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -3473,7 +3473,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -3602,7 +3602,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -3731,7 +3731,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -3860,7 +3860,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -3989,7 +3989,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
