@@ -58,8 +58,18 @@ func NewComponent(deploymentSpec *appsv1.DeploymentSpec, platformPolicyRules []r
 			component.SetHostedClusterAnnotation(),
 		)
 
-	// Inject token minter for GCP platform to support Workload Identity Federation
-	if platformType == hyperv1.GCPPlatform {
+	switch platformType {
+	case hyperv1.AWSPlatform:
+		// Mint the web identity token that the manager's AWS credentials file points to, using the
+		// service network kubeconfig volume from the AWS provider deployment spec.
+		builder = builder.InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.CloudToken,
+			ServiceAccountName:      "capa-controller-manager",
+			ServiceAccountNameSpace: "kube-system",
+			KubeconfingVolumeName:   "svc-kubeconfig",
+		})
+	case hyperv1.GCPPlatform:
+		// Inject token minter for GCP platform to support Workload Identity Federation
 		builder = builder.InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,
 			ServiceAccountName:      "capi-gcp-controller-manager",

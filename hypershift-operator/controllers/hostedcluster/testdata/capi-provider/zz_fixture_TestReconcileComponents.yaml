@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   annotations:
     hypershift.openshift.io/cluster: ""
-    hypershift.openshift.io/desired-state-hash: 9e38a050997547dd945ae5ccec9c38002cd1b1470dda242dc235284a645cf147
+    hypershift.openshift.io/desired-state-hash: a7139f20c0989310c18fc153a1cbd1fa10f48547c5e87b0a7fb399ed107eb4ca
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: capi-provider
@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: token,tmp-dir
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
@@ -101,21 +101,21 @@ spec:
           name: capi-webhooks-tls
           readOnly: true
         - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: token
+          name: cloud-token
         - mountPath: /tmp
           name: tmp-dir
       - args:
+        - --token-audience=openshift
         - --service-account-namespace=kube-system
         - --service-account-name=capa-controller-manager
-        - --token-audience=openshift
         - --token-file=/var/run/secrets/openshift/serviceaccount/token
         - --kubeconfig=/etc/kubernetes/kubeconfig
         command:
         - /usr/bin/control-plane-operator
         - token-minter
-        image: test-image
+        image: token-minter
         imagePullPolicy: IfNotPresent
-        name: token-minter
+        name: cloud-token-minter
         resources:
           requests:
             cpu: 10m
@@ -125,7 +125,7 @@ spec:
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: token
+          name: cloud-token
         - mountPath: /etc/kubernetes
           name: svc-kubeconfig
         - mountPath: /tmp
@@ -168,7 +168,7 @@ spec:
           secretName: service-network-admin-kubeconfig
       - emptyDir:
           medium: Memory
-        name: token
+        name: cloud-token
       - emptyDir: {}
         name: tmp-dir
 status: {}

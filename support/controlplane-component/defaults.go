@@ -683,6 +683,13 @@ func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec) {
 		},
 	})
 	enforceReadOnlyRootFilesystemContainers(podSpec.Containers)
+	// Native sidecars (init containers that restart always) run for the lifetime of the pod like regular containers,
+	// so they get the same hardening. Init containers that run to completion are left unchanged.
+	for i := range podSpec.InitContainers {
+		if restartPolicy := podSpec.InitContainers[i].RestartPolicy; restartPolicy != nil && *restartPolicy == corev1.ContainerRestartPolicyAlways {
+			enforceReadOnlyRootFilesystemContainers(podSpec.InitContainers[i : i+1])
+		}
+	}
 }
 
 func enforceReadOnlyRootFilesystemContainers(containers []corev1.Container) {

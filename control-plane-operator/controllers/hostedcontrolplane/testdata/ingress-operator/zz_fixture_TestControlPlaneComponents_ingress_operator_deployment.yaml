@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: c0039e3e10053aa11f9ef7ce92881e237058f88bdb9aa6f2c3235fe51de4f85a
+    hypershift.openshift.io/desired-state-hash: 26302d19ea35f9bd76da4e4b577f0c79876cc86f0261419ca103da52452df1b3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ingress-operator
@@ -183,6 +183,8 @@ spec:
             cpu: 10m
             memory: 30Mi
         restartPolicy: Always
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           exec:
             command:
@@ -197,6 +199,8 @@ spec:
           name: cloud-token
         - mountPath: /etc/kubernetes
           name: admin-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
