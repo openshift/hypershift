@@ -636,7 +636,7 @@ func TestIsCloudAPI(t *testing.T) {
 	}
 }
 
-func TestDialerForHostHonorsNoProxy(t *testing.T) {
+func TestKonnectivityProxy_DialerForHost(t *testing.T) {
 	tests := []struct {
 		name        string
 		httpsProxy  string
