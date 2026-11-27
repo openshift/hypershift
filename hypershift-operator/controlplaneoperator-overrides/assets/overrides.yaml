@@ -206,6 +206,25 @@ platforms:
       # 4.22.9 does not need an override: PR #8865 merged (2026-08-03)
       # before the 4.22.9 development cutoff (2026-08-05).
       # End of OCPBUGS-94518 overrides 4.22 section
+      # Beginning of NO-JIRA overrides for suffixed payload versions
+      # These payload versions carry a build suffix, so the versions below are
+      # glob patterns. This requires the suffix-aware version matching added in
+      # https://github.com/openshift/hypershift/pull/10444.
+      # Each image is the CPO built from the matching backport merge on the
+      # corresponding release branch.
+      - version: 4.18.61-*
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-18@sha256:fdc4e427235fa5aeacaf8439c56a38b8b758593b561cffb62dfb89ba350a0905
+      - version: 4.19.57-*
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:cbf2f530913c9dba52e32f218cc33fdcdd5fc54171e9934a294c811dddc164ab
+      - version: 4.20.48-*
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:8ad3b7c3c3cfb9c36608450a2ebeb868705e9f06f9e81a4c3c566b78bde491af
+      - version: 4.21.44-*
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-21@sha256:87e72a2a5d88a74b030a50f16ff4c057e84f75ee783d6bfb67a8350ff54b5607
+      - version: 4.22.24-*
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:dd2e0ad35d1e431d4fe2f2b112bfdd58143e0845cac16717235198d5dd8d7ea4
+      - version: 5.0.3-*
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-5-0@sha256:83cbf20f93d536b46cb486a1eeb8efa0536a4341278bc8801fdfb3b5f1be9bf5
+      # End of NO-JIRA overrides for suffixed payload versions
     testing:
       # Update the image refs below to indicate which images should be used for CPO override
       # testing. Currently, we only test one latest/previous combination. In the future, we
@@ -479,6 +498,25 @@ platforms:
       cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-cert-hotfix-416-multi:2d2e6071841bb12ff1f41c457889bb44b6fb1cf7
     # End of OCPBUGS-58837 overrides 4.15 section
     # End of OCPBUGS-58837 overrides
+    # Beginning of NO-JIRA overrides for suffixed payload versions
+    # These payload versions carry a build suffix, so the versions below are
+    # glob patterns. This requires the suffix-aware version matching added in
+    # https://github.com/openshift/hypershift/pull/10444.
+    # Each image is the CPO built from the matching backport merge on the
+    # corresponding release branch.
+    - version: 4.18.61-*
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-18@sha256:fdc4e427235fa5aeacaf8439c56a38b8b758593b561cffb62dfb89ba350a0905
+    - version: 4.19.57-*
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:cbf2f530913c9dba52e32f218cc33fdcdd5fc54171e9934a294c811dddc164ab
+    - version: 4.20.48-*
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:8ad3b7c3c3cfb9c36608450a2ebeb868705e9f06f9e81a4c3c566b78bde491af
+    - version: 4.21.44-*
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-21@sha256:87e72a2a5d88a74b030a50f16ff4c057e84f75ee783d6bfb67a8350ff54b5607
+    - version: 4.22.24-*
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-22@sha256:dd2e0ad35d1e431d4fe2f2b112bfdd58143e0845cac16717235198d5dd8d7ea4
+    - version: 5.0.3-*
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-5-0@sha256:83cbf20f93d536b46cb486a1eeb8efa0536a4341278bc8801fdfb3b5f1be9bf5
+    # End of NO-JIRA overrides for suffixed payload versions
     testing:
     # Update the image refs below to indicate which images should be used for CPO override
     # testing. Currently, we only test one latest/previous combination. In the future, we
