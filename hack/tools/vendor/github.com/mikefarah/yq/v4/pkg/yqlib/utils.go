@@ -9,25 +9,47 @@ import (
 	"os"
 )
 
-func readStream(filename string) (io.Reader, error) {
-	var reader *bufio.Reader
-	if filename == "-" {
-		reader = bufio.NewReader(os.Stdin)
-	} else {
-		// ignore CWE-22 gosec issue - that's more targeted for http based apps that run in a public directory,
-		// and ensuring that it's not possible to give a path to a file outside that directory.
-		file, err := os.Open(filename) // #nosec
-		if err != nil {
-			return nil, err
-		}
-		reader = bufio.NewReader(file)
-	}
-	return reader, nil
+// filenameAliases maps real file paths to display names.
+// Used by front matter handling to preserve original filenames
+// when the actual content is read from temporary files.
+var filenameAliases = map[string]string{}
 
+// SetFilenameAlias registers a display name for a file path so that
+// the filename operator returns the original name instead of a temp path.
+func SetFilenameAlias(realPath string, displayName string) {
+	filenameAliases[realPath] = displayName
+}
+
+// ClearFilenameAliases removes all filename aliases.
+func ClearFilenameAliases() {
+	filenameAliases = map[string]string{}
+}
+
+func resolveFilename(filename string) string {
+	if alias, ok := filenameAliases[filename]; ok {
+		return alias
+	}
+	return filename
+}
+
+// readStream returns a reader for the given file, along with a cleanup function
+// that must be called once the reader is no longer needed. The cleanup is a no-op
+// for stdin.
+func readStream(filename string) (io.Reader, func(), error) {
+	if filename == "-" {
+		return bufio.NewReader(os.Stdin), func() {}, nil
+	}
+	// ignore CWE-22 gosec issue - that's more targeted for http based apps that run in a public directory,
+	// and ensuring that it's not possible to give a path to a file outside that directory.
+	file, err := os.Open(filename) // #nosec
+	if err != nil {
+		return nil, nil, err
+	}
+	return bufio.NewReader(file), func() { safelyCloseFile(file) }, nil
 }
 
 func writeString(writer io.Writer, txt string) error {
-	_, errorWriting := writer.Write([]byte(txt))
+	_, errorWriting := io.WriteString(writer, txt)
 	return errorWriting
 }
 
@@ -36,6 +58,7 @@ func ReadDocuments(reader io.Reader, decoder Decoder) (*list.List, error) {
 }
 
 func readDocuments(reader io.Reader, filename string, fileIndex int, decoder Decoder) (*list.List, error) {
+	filename = resolveFilename(filename)
 	err := decoder.Init(reader)
 	if err != nil {
 		return nil, err

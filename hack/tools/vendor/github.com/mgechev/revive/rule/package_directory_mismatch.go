@@ -17,8 +17,12 @@ type PackageDirectoryMismatchRule struct {
 
 const defaultIgnoredDirs = "testdata"
 
+var _ lint.ConfigurableRule = (*PackageDirectoryMismatchRule)(nil)
+
 // Configure the rule to exclude certain directories.
 func (r *PackageDirectoryMismatchRule) Configure(arguments lint.Arguments) error {
+	r.ignoredDirs = nil
+
 	if len(arguments) < 1 {
 		var err error
 		r.ignoredDirs, err = r.buildIgnoreRegex([]string{defaultIgnoredDirs})

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -34,7 +35,7 @@ var StringsBuilderAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: stringsbuilder,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringbuilder",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stringsbuilder",
 }
 
 // stringsbuilder replaces string += string in a loop by strings.Builder.
@@ -282,7 +283,7 @@ nextcand:
 		)
 		for curUse := range index.Uses(v) {
 			// Strip enclosing parens around Ident.
-			curUse = astutil.UnparenEnclosingCursor(curUse)
+			curUse = cursorutil.UnparenEnclosing(curUse)
 			ek := curUse.ParentEdgeKind()
 
 			// intervening reports whether cur has an ancestor of

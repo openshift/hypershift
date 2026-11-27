@@ -18,10 +18,15 @@ const defaultImportAliasNamingAllowRule = "^[a-z][a-z0-9]{0,}$"
 //nolint:gocritic // regexpSimplify: backward compatibility
 var defaultImportAliasNamingAllowRegexp = regexp.MustCompile(defaultImportAliasNamingAllowRule)
 
+var _ lint.ConfigurableRule = (*ImportAliasNamingRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
 func (r *ImportAliasNamingRule) Configure(arguments lint.Arguments) error {
+	r.allowRegexp = nil
+	r.denyRegexp = nil
+
 	if len(arguments) == 0 {
 		r.allowRegexp = defaultImportAliasNamingAllowRegexp
 		return nil
