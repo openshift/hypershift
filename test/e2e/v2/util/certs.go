@@ -18,7 +18,7 @@ func GenerateCASignedCertificate(dnsNames []string, validity time.Duration) (caP
 	}
 
 	caCfg := &certs.CertCfg{
-		Subject:   pkix.Name{CommonName: "e2e-test-ca", Organization: []string{"hypershift-e2e"}},
+		Subject:   pkix.Name{CommonName: "e2e-test-ca", Organization: []string{"hypershift-e2e"}, OrganizationalUnit: []string{"hypershift-e2e"}},
 		KeyUsages: x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		Validity:  validity,
 		IsCA:      true,
