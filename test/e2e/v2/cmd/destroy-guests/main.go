@@ -55,6 +55,7 @@ func main() {
 	}
 
 	log.Printf("Destroying %d clusters from manifest", len(manifest.Clusters))
+	verifyKarpenterCleanup := platform.Name() == "aws" && os.Getenv("HYPERSHIFT_VERIFY_KARPENTER_CLEANUP") == "true"
 
 	var (
 		mu     sync.Mutex
@@ -66,7 +67,11 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := destroyCluster(hypershiftBin, entry, platform); err != nil {
+			destroy := destroyCluster
+			if verifyKarpenterCleanup && entry.Variant == "karpenter" {
+				destroy = destroyAndVerifyKarpenter
+			}
+			if err := destroy(hypershiftBin, entry, platform); err != nil {
 				log.Printf("WARNING: Failed to destroy cluster %s (%s): %v", entry.Name, entry.Variant, err)
 				log.Printf("ACTION REQUIRED: cloud resources for cluster %s (infraID=%s) may be orphaned and need manual cleanup", entry.Name, entry.InfraID)
 				mu.Lock()
