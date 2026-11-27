@@ -27149,6 +27149,23 @@ key is later removed from the HCP, HyperShift removes it from the Service
 annotation; it does not restore the Service's former value. Labels whose keys
 are not managed by HyperShift are preserved.
 
+If neither HCP resource labels nor previously managed keys are present,
+HyperShift leaves the Service annotation untouched without logging a skip or
+emitting an Event, even if that native annotation is invalid.
+
+When labels need reconciliation and a Service's existing resource-label
+annotation is malformed or invalid,
+HyperShift leaves the Service unchanged, logs a warning identifying the Service
+and a short validation reason without annotation contents, and continues
+reconciling other Services. Failures to list or patch Services remain
+reconciliation errors.
+
+HyperShift also records a Warning Event with reason `InvalidGCPResourceLabels`
+on the affected Service in the hosted cluster. The Event includes the safe
+validation reason and annotation name, without annotation contents. Use
+`oc describe service <name> -n <namespace>` against the hosted cluster to view
+the Event and identify the annotation to correct.
+
 ### Resource Manager Tags
 
 Resource Manager tags are distinct from resource labels. Define the TagKeys and
