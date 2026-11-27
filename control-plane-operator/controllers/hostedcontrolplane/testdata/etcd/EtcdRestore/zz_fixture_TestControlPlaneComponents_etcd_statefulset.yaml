@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 0e1dfadb63c9771e253019b8a4801e3b3e3b1d0a01c8553769537ac2cd08a861
+    hypershift.openshift.io/desired-state-hash: 67fca06f35343daef287ac826ee3d1f38148f8af1eb85d2e58fff4a62e9efca9
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -401,16 +401,16 @@ spec:
             echo "Checking if cluster is functional"
             if etcdctl member list; then
               echo "Cluster is functional"
-              MEMBER_ID=$(etcdctl member list -w simple | grep "${HOSTNAME}" | awk -F, '{ print $1 }')
+              MEMBERS=$(etcdctl member list -w simple)
+              MEMBER_ID=$(grep "${HOSTNAME}" <<< "${MEMBERS}" | awk -F, '{ print $1 }')
               if [[ -n "${MEMBER_ID}" ]]; then
                 echo "A member with this name (${HOSTNAME}) already exists, removing"
                 etcdctl member remove "${MEMBER_ID}"
-                echo "Adding new member"
-                etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380
-                echo "existing" > /etc/etcd/clusterstate/state
-              else
-                echo "A member does not exist with name (${HOSTNAME}), nothing to do"
               fi
+              # A previous attempt may have removed the member but failed to add its replacement.
+              echo "Adding new member"
+              etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380
+              echo "existing" > /etc/etcd/clusterstate/state
             else
               echo "Cannot list members in cluster, so likely not up yet"
             fi
