@@ -80,6 +80,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/ptr"
@@ -138,6 +139,7 @@ exec /bin/azure-cloud-node-manager \
 var disabledServiceAccountPullSecretsController = fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)
 
 type reconciler struct {
+	recorder       events.EventRecorder
 	client         client.Client
 	uncachedClient client.Client
 	clientSet      *clientset.Clientset
@@ -215,6 +217,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	c, err := controller.New(ControllerName, opts.Manager, controller.Options{
 		RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](100*time.Millisecond, 2*time.Minute),
 		Reconciler: &reconciler{
+			recorder:                  opts.Manager.GetEventRecorder(ControllerName),
 			client:                    opts.Manager.GetClient(),
 			uncachedClient:            uncachedClient,
 			clientSet:                 clientset,
@@ -607,7 +610,7 @@ func (r *reconciler) reconcilePlatformSpecificResources(ctx context.Context, log
 	case hyperv1.GCPPlatform:
 		log.Info("reconciling GCP specific resources")
 		errs = append(errs, r.reconcileGCPIdentityWebhook(ctx)...)
-		errs = append(errs, r.reconcileGCPLoadBalancerServiceAnnotations(ctx, hcp)...)
+		errs = append(errs, r.reconcileGCPLoadBalancerServiceAnnotations(ctx, log, hcp)...)
 	}
 	return errs
 }

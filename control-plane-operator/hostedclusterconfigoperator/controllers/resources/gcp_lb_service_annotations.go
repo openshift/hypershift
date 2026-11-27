@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -10,6 +11,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -26,7 +29,7 @@ const (
 // Services managed by the legacy GCP CCM. CCM reconciles the native annotation
 // to the existing forwarding rule, so this also converges Services created
 // before an HCP resource-label change.
-func (r *reconciler) reconcileGCPLoadBalancerServiceAnnotations(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
+func (r *reconciler) reconcileGCPLoadBalancerServiceAnnotations(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane) []error {
 	services := &corev1.ServiceList{}
 	if err := r.client.List(ctx, services); err != nil {
 		return []error{fmt.Errorf("list LoadBalancer Services: %w", err)}
@@ -41,10 +44,22 @@ func (r *reconciler) reconcileGCPLoadBalancerServiceAnnotations(ctx context.Cont
 		}
 
 		annotations, changed, err := gcputil.ReconcileLBResourceLabelAnnotations(service.Annotations, desiredLabels)
-		if err != nil {
+		var validationErr *gcputil.LBResourceLabelsValidationError
+		switch {
+		case errors.As(err, &validationErr):
+			// Invalid user-owned native annotations cannot be repaired safely.
+			// Skip only this Service; other reconciliation errors remain fatal.
+			log.Info("Skipping GCP resource label reconciliation for Service", "service", client.ObjectKeyFromObject(service), "reason", validationErr.Reason)
+			if r.recorder != nil {
+				r.recorder.Eventf(service, nil, corev1.EventTypeWarning, "InvalidGCPResourceLabels", "ReconcileLabels",
+					"Skipping resource-label reconciliation: %s; correct annotation %s", validationErr.Reason, gcputil.LBResourceLabelsAnnotation)
+			}
+			continue
+		case err != nil:
 			errs = append(errs, fmt.Errorf("reconcile GCP resource labels for Service %s/%s: %w", service.Namespace, service.Name, err))
 			continue
 		}
+
 		if !changed {
 			continue
 		}

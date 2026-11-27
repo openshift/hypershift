@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -14,10 +15,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 )
 
 func TestReconcileGCPLoadBalancerServiceAnnotations(t *testing.T) {
@@ -88,13 +93,16 @@ func TestReconcileGCPLoadBalancerServiceAnnotations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.service).Build()
-			r := &reconciler{client: guestClient}
+			recorder := events.NewFakeRecorder(10)
+			recorder.Verbose = true
+			r := &reconciler{client: guestClient, recorder: recorder}
 
-			g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), tt.hcp)).To(BeEmpty())
+			g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), logr.Discard(), tt.hcp)).To(BeEmpty())
 
 			actual := &corev1.Service{}
 			g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(tt.service), actual)).To(Succeed())
 			g.Expect(actual.Annotations).To(Equal(tt.want))
+			g.Expect(recorder.Events).NotTo(Receive())
 		})
 	}
 }
@@ -117,7 +125,7 @@ func TestReconcileGCPLoadBalancerServiceAnnotationsOptimisticLock(t *testing.T) 
 	}}
 	hcp := hcpWithGCPLabels("env", "prod")
 
-	errs := r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), hcp)
+	errs := r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), logr.Discard(), hcp)
 	g.Expect(errs).To(HaveLen(1))
 	g.Expect(apierrors.IsConflict(errs[0])).To(BeTrue())
 
@@ -128,7 +136,7 @@ func TestReconcileGCPLoadBalancerServiceAnnotationsOptimisticLock(t *testing.T) 
 	}))
 
 	r.client = guestClient
-	g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), hcp)).To(BeEmpty())
+	g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), logr.Discard(), hcp)).To(BeEmpty())
 	g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), actual)).To(Succeed())
 	g.Expect(actual.Annotations).To(Equal(map[string]string{
 		gcputil.LBResourceLabelsAnnotation:        "env=prod,team=payments,zone=east",
@@ -185,34 +193,107 @@ func TestIsLegacyGCPLoadBalancerService(t *testing.T) {
 }
 
 func TestReconcileGCPLoadBalancerServiceAnnotationsErrors(t *testing.T) {
-	t.Run("does not modify a Service with a malformed native annotation", func(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		annotation string
+		reason     string
+	}{
+		{name: "When the native annotation is malformed, it should skip it and reconcile other Services", annotation: "not-a-label", reason: "expected key=value format"},
+		{name: "When the native annotation contains an invalid key, it should skip it and reconcile other Services", annotation: "INVALID=value", reason: "invalid label key or value"},
+		{name: "When the native annotation contains duplicate keys, it should skip it and reconcile other Services", annotation: "team=payments,team=other", reason: "duplicate label key"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			var warnings bytes.Buffer
+			log := funcr.New(func(prefix, args string) {
+				warnings.WriteString(prefix + args)
+			}, funcr.Options{}).WithValues("controller", "resources")
+			service := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "a-invalid", Namespace: "test", Annotations: map[string]string{
+					gcputil.LBResourceLabelsAnnotation:        tt.annotation,
+					gcputil.ManagedLBResourceLabelsAnnotation: "env",
+					"unrelated": "preserved",
+				}},
+				Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			}
+			valid := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "z-valid", Namespace: "test"},
+				Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			}
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service, valid).Build()
+			recorder := events.NewFakeRecorder(10)
+			recorder.Verbose = true
+			r := &reconciler{client: guestClient, recorder: recorder}
+			g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), log, hcpWithGCPLabels("env", "prod"))).To(BeEmpty())
+			actual := &corev1.Service{}
+			g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), actual)).To(Succeed())
+			g.Expect(actual).To(Equal(service))
+			g.Expect(warnings.String()).To(ContainSubstring("Skipping GCP resource label reconciliation for Service"))
+			g.Expect(warnings.String()).To(ContainSubstring(`"name"="a-invalid"`))
+			g.Expect(warnings.String()).To(ContainSubstring(`"namespace"="test"`))
+			g.Expect(warnings.String()).To(ContainSubstring(`"controller"="resources"`))
+			g.Expect(warnings.String()).To(ContainSubstring(tt.reason))
+			g.Expect(warnings.String()).NotTo(ContainSubstring(tt.annotation))
+			var event string
+			g.Expect(recorder.Events).To(Receive(&event))
+			g.Expect(event).To(HavePrefix("Warning InvalidGCPResourceLabels ReconcileLabels Skipping resource-label reconciliation: " + tt.reason + "; correct annotation " + gcputil.LBResourceLabelsAnnotation))
+			g.Expect(event).NotTo(ContainSubstring(tt.annotation))
+			g.Expect(recorder.Events).NotTo(Receive())
+			g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(valid), actual)).To(Succeed())
+			g.Expect(actual.Annotations).To(Equal(map[string]string{
+				gcputil.LBResourceLabelsAnnotation:        "env=prod",
+				gcputil.ManagedLBResourceLabelsAnnotation: "env",
+			}))
+		})
+	}
+
+	t.Run("When no labels are managed or desired, it should silently preserve invalid native input", func(t *testing.T) {
 		g := NewWithT(t)
-		legacyClass := legacyRegionalExternalLoadBalancerClass
+		var logs bytes.Buffer
+		log := funcr.New(func(prefix, args string) { logs.WriteString(prefix + args) }, funcr.Options{})
 		service := &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test", Annotations: map[string]string{gcputil.LBResourceLabelsAnnotation: "not-a-label"}},
-			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &legacyClass},
+			ObjectMeta: metav1.ObjectMeta{Name: "unmanaged", Namespace: "test", Annotations: map[string]string{
+				gcputil.LBResourceLabelsAnnotation: "not-a-label",
+			}},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
 		}
 		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
-		r := &reconciler{client: guestClient}
-
-		g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), hcpWithGCPLabels("env", "prod"))).To(HaveLen(1))
+		recorder := events.NewFakeRecorder(10)
+		r := &reconciler{client: guestClient, recorder: recorder}
+		g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), log, hcpWithGCPLabels())).To(BeEmpty())
+		g.Expect(logs.String()).To(BeEmpty())
+		g.Expect(recorder.Events).NotTo(Receive())
 		actual := &corev1.Service{}
 		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), actual)).To(Succeed())
-		g.Expect(actual.Annotations).To(Equal(service.Annotations))
+		g.Expect(actual).To(Equal(service))
 	})
 
-	t.Run("returns a list failure", func(t *testing.T) {
+	t.Run("When managed annotation metadata is invalid, it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test", Annotations: map[string]string{
+				gcputil.ManagedLBResourceLabelsAnnotation: "INVALID",
+			}},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		}
+		r := &reconciler{client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()}
+		errs := r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), logr.Discard(), hcpWithGCPLabels("env", "prod"))
+		g.Expect(errs).To(HaveLen(1))
+		g.Expect(errs[0].Error()).To(ContainSubstring(gcputil.ManagedLBResourceLabelsAnnotation))
+	})
+
+	t.Run("When listing Services fails, it should return the failure", func(t *testing.T) {
 		g := NewWithT(t)
 		r := &reconciler{client: &failingServiceClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(), listErr: errors.New("list failed")}}
-		g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), hcpWithGCPLabels("env", "prod"))).To(HaveLen(1))
+		g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), logr.Discard(), hcpWithGCPLabels("env", "prod"))).To(HaveLen(1))
 	})
 
-	t.Run("returns a patch failure", func(t *testing.T) {
+	t.Run("When patching a Service fails, it should return the failure", func(t *testing.T) {
 		g := NewWithT(t)
 		legacyClass := legacyRegionalExternalLoadBalancerClass
 		service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &legacyClass}}
 		r := &reconciler{client: &failingServiceClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build(), patchErr: errors.New("patch failed")}}
-		g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), hcpWithGCPLabels("env", "prod"))).To(HaveLen(1))
+		g.Expect(r.reconcileGCPLoadBalancerServiceAnnotations(t.Context(), logr.Discard(), hcpWithGCPLabels("env", "prod"))).To(HaveLen(1))
 	})
 }
 
