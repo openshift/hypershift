@@ -31,7 +31,7 @@ const (
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
 var (
-	LatestSupportedVersion      = semver.MustParse("5.1.0")
+	LatestSupportedVersion      = semver.MustParse("5.2.0")
 	MinSupportedVersion         = semver.MustParse("4.14.0")
 	IBMCloudMinSupportedVersion = semver.MustParse("4.14.0")
 	// prevLatestSupportedMajor holds the value of the latest version before we updated to a new major.
@@ -42,6 +42,8 @@ var (
 
 // ocpVersionToKubeVersion maps OCP versions to their corresponding Kubernetes versions.
 // This mapping is used to determine the Kubernetes version for a given OCP version.
+// OCP 5.2 currently ships Kubernetes 1.37 because openshift/kubernetes release-5.2 has
+// not been rebased onto 1.38; update the 5.2 entry and its unit test if that changes.
 var ocpVersionToKubeVersion = map[string]semver.Version{
 	"4.14.0": semver.MustParse("1.27.0"),
 	"4.15.0": semver.MustParse("1.28.0"),
@@ -55,6 +57,7 @@ var ocpVersionToKubeVersion = map[string]semver.Version{
 	"4.23.0": semver.MustParse("1.36.0"),
 	"5.0.0":  semver.MustParse("1.36.0"),
 	"5.1.0":  semver.MustParse("1.37.0"),
+	"5.2.0":  semver.MustParse("1.37.0"),
 }
 
 func GetKubeVersionForSupportedVersion(supportedVersion semver.Version) (*semver.Version, error) {
