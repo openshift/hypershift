@@ -251,6 +251,21 @@ func TestSetOperatorImageReferences(t *testing.T) {
 			},
 		},
 		{
+			// volume-data-source-validator runs in the guest's
+			// openshift-cluster-storage-operator namespace, so a control plane
+			// release image there may not be pullable by guest nodes.
+			name: "When VOLUME_DATA_SOURCE_VALIDATOR_IMAGE is set, it should use userReleaseImageProvider as a data plane ref",
+			releaseImages: map[string]string{
+				"volume-data-source-validator": "release-registry.io/volume-data-source-validator:v1",
+			},
+			userReleaseImages: map[string]string{
+				"volume-data-source-validator": "user-registry.io/volume-data-source-validator:v1",
+			},
+			expectedValues: map[string]string{
+				"VOLUME_DATA_SOURCE_VALIDATOR_IMAGE": "user-registry.io/volume-data-source-validator:v1",
+			},
+		},
+		{
 			name: "When env var ends with _CONTROL_PLANE_IMAGE (GCP_PD_DRIVER_CONTROL_PLANE_IMAGE), it should use releaseImageProvider, not userReleaseImageProvider",
 			releaseImages: map[string]string{
 				"gcp-pd-csi-driver": "release-registry.io/gcp-pd-csi-driver:v1",

@@ -1602,6 +1602,25 @@ spec:
                           type: string
                         type: array
                         x-kubernetes-list-type: atomic
+                      imageStreamImportMode:
+                        description: |-
+                          imageStreamImportMode controls the import mode behaviour of imagestreams.
+                          Allowed values are `Legacy` and `PreserveOriginal`. The empty string is also accepted, for compatibility
+                          with older clients that always serialize this field, and is treated the same as omitting it. If this value
+                          is specified, this setting is applied to all newly created imagestreams which do not have the
+                          value set. `Legacy` indicates that the legacy behaviour should be used.
+                          For manifest lists, the legacy behaviour will discard the manifest list and import a single
+                          sub-manifest. In this case, the platform is chosen in the following order of priority:
+                          1. tag annotations; 2. control plane arch/os; 3. linux/amd64; 4. the first manifest in the list.
+                          `PreserveOriginal` indicates that the original manifest will be preserved. For manifest lists,
+                          the manifest list and all its sub-manifests will be imported. When omitted or empty, the behaviour will be
+                          decided based on the payload type advertised by the ClusterVersion status, i.e single arch payload
+                          implies the import mode is Legacy and multi payload implies PreserveOriginal.
+                        enum:
+                        - ""
+                        - Legacy
+                        - PreserveOriginal
+                        type: string
                       registrySources:
                         description: |-
                           registrySources contains configuration that determines how the container runtime
@@ -1890,6 +1909,7 @@ spec:
                                 type: string
                               minItems: 1
                               type: array
+                              x-kubernetes-list-type: atomic
                             includeSubDomainsPolicy:
                               description: |-
                                 includeSubDomainsPolicy means the HSTS Policy should apply to any subdomains of the host's
@@ -1993,6 +2013,7 @@ spec:
                           - domainPatterns
                           type: object
                         type: array
+                        x-kubernetes-list-type: atomic
                     type: object
                   network:
                     description: |-
@@ -7802,6 +7823,17 @@ spec:
                       desired is the release version that the control plane is reconciling towards.
                       It is derived from the HostedControlPlane release image fields.
                     properties:
+                      architecture:
+                        description: |-
+                          architecture is an optional field that indicates the
+                          value of the cluster architecture. In this context cluster
+                          architecture means either a single architecture or a multi
+                          architecture.
+                          Valid values are 'Multi' and empty.
+                        enum:
+                        - Multi
+                        - ""
+                        type: string
                       channels:
                         description: |-
                           channels is the set of Cincinnati channels to which the release
@@ -7924,6 +7956,58 @@ spec:
                   It exposes the config for instances to become kubernetes nodes.
                 maxLength: 1024
                 type: string
+              installation:
+                description: |-
+                  installation tracks the progress of initial cluster provisioning.
+                  When omitted, the HyperShift operator has not yet computed installation
+                  progress for this cluster (for example, while an older HyperShift operator
+                  that does not populate this field is still running).
+                minProperties: 1
+                properties:
+                  lastTransitionTime:
+                    description: |-
+                      lastTransitionTime is the time at which stage last transitioned
+                      to a new value.
+                      When omitted, stage has not yet been set.
+                      For clusters installed before this field existed, this is the time the field
+                      was first populated after upgrade, not the original installation time.
+                    format: date-time
+                    type: string
+                  stage:
+                    description: |-
+                      stage is the current phase of the installation lifecycle.
+                      When omitted, the HyperShift operator has not yet evaluated the
+                      installation stage for this cluster.
+                      The HyperShift operator only advances this value forward through the stages
+                      listed below; it does not move it backward if a precondition is later lost.
+                      Current health is reported by the HostedCluster conditions, not by this field.
+                      Valid values are Initializing, InfrastructureReady, ControlPlaneProvisioning,
+                      APIServerAvailable, WorkerAvailable, WaitingForOperators and InstallationComplete.
+                      When set to Initializing, the cluster has been created but no control plane
+                      components have started yet.
+                      When set to InfrastructureReady, infrastructure prerequisites (networking, DNS,
+                      load balancers) are available.
+                      When set to ControlPlaneProvisioning, control plane components are being
+                      created and started.
+                      When set to APIServerAvailable, the Kubernetes API server is reachable and
+                      serving requests.
+                      When set to WorkerAvailable, at least one worker node has joined the cluster
+                      and is healthy.
+                      When set to WaitingForOperators, the hosted control plane KubeConfig is
+                      available and the cluster is waiting for the ClusterVersion to report all
+                      operators as available.
+                      When set to InstallationComplete, the cluster installation has completed
+                      successfully.
+                    enum:
+                    - Initializing
+                    - InfrastructureReady
+                    - ControlPlaneProvisioning
+                    - APIServerAvailable
+                    - WorkerAvailable
+                    - WaitingForOperators
+                    - InstallationComplete
+                    type: string
+                type: object
               kubeadminPassword:
                 description: |-
                   kubeadminPassword is a reference to the secret that contains the initial
@@ -8396,6 +8480,17 @@ spec:
                       description: Release represents an OpenShift release image and
                         associated metadata.
                       properties:
+                        architecture:
+                          description: |-
+                            architecture is an optional field that indicates the
+                            value of the cluster architecture. In this context cluster
+                            architecture means either a single architecture or a multi
+                            architecture.
+                            Valid values are 'Multi' and empty.
+                          enum:
+                          - Multi
+                          - ""
+                          type: string
                         channels:
                           description: |-
                             channels is the set of Cincinnati channels to which the release
@@ -8513,6 +8608,17 @@ spec:
                         release:
                           description: release is the target of the update.
                           properties:
+                            architecture:
+                              description: |-
+                                architecture is an optional field that indicates the
+                                value of the cluster architecture. In this context cluster
+                                architecture means either a single architecture or a multi
+                                architecture.
+                                Valid values are 'Multi' and empty.
+                              enum:
+                              - Multi
+                              - ""
+                              type: string
                             channels:
                               description: |-
                                 channels is the set of Cincinnati channels to which the release
@@ -8646,6 +8752,17 @@ spec:
                       If the cluster is not yet fully initialized desired will be set
                       with the information available, which may be an image or a tag.
                     properties:
+                      architecture:
+                        description: |-
+                          architecture is an optional field that indicates the
+                          value of the cluster architecture. In this context cluster
+                          architecture means either a single architecture or a multi
+                          architecture.
+                          Valid values are 'Multi' and empty.
+                        enum:
+                        - Multi
+                        - ""
+                        type: string
                       channels:
                         description: |-
                           channels is the set of Cincinnati channels to which the release

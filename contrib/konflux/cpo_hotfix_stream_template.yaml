@@ -55,7 +55,7 @@ spec:
         visibility: public
       notifications:
         - config:
-            url: 'https://bombino.preprod.api.redhat.com/v1/sbom/quay/push'
+            url: 'https://bombino.api.redhat.com/v1/sbom/quay/push'
           event: repo_push
           method: webhook
           title: SBOM-event-to-Bombino

@@ -36,11 +36,12 @@ import (
 	capicrdmigrator "github.com/openshift/hypershift/support/capi-crdmigrator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
-	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -52,6 +53,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery"
@@ -171,6 +173,7 @@ type Options struct {
 	HCPEgressBlockCIDRs                       []string
 	InstallScope                              string
 	DisableCAPIMigration                      bool
+	ControlPlaneReleasePullSecretName         string
 	ClientProvider                            *util.ClientProvider
 }
 
@@ -423,6 +426,11 @@ func (o *Options) validateMiscConfig() []error {
 			errs = append(errs, fmt.Errorf("not a valid platform type: %s", platform))
 		}
 	}
+	if o.ControlPlaneReleasePullSecretName != "" {
+		if msgs := validation.IsDNS1123Subdomain(o.ControlPlaneReleasePullSecretName); len(msgs) > 0 {
+			errs = append(errs, fmt.Errorf("invalid --control-plane-release-pull-secret-name %q: %s", o.ControlPlaneReleasePullSecretName, strings.Join(msgs, "; ")))
+		}
+	}
 	if len(o.ImagePullPolicy) > 0 {
 		normalized := strings.ToLower(o.ImagePullPolicy)
 		switch normalized {
@@ -532,6 +540,7 @@ func NewCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecret, "scale-from-zero-secret", opts.ScaleFromZeroCredentialsSecret, "Name of existing secret containing scale-from-zero credentials (alternative to --scale-from-zero-creds)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecretKey, "scale-from-zero-secret-key", opts.ScaleFromZeroCredentialsSecretKey, "Key within the scale-from-zero credentials secret (default: credentials)")
+	cmd.PersistentFlags().StringVar(&opts.ControlPlaneReleasePullSecretName, "control-plane-release-pull-secret-name", opts.ControlPlaneReleasePullSecretName, fmt.Sprintf("Name of a Secret of type kubernetes.io/dockerconfigjson, in the HyperShift operator namespace, holding additional credentials for resolving a private control plane release image (HostedCluster spec.controlPlaneRelease). Use it when the Secret is created by another system and its name cannot be chosen. The Secret is watched, so a change to its content is picked up without restarting the operator. (default: %s)", pullsecret.ControlPlaneReleaseSecretName))
 	cmd.PersistentFlags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times.")
 	cmd.PersistentFlags().StringVar(&opts.AWSRoleCredentialSource, "aws-role-credential-source", aws.CredentialSourceWebIdentity, "Credential source for AWS role ARN flags: 'web-identity' (uses projected SA token) or 'ec2-instance-metadata' (uses EC2 instance metadata)")
 	cmd.PersistentFlags().StringVar(&opts.AWSOperatorRolesFile, "aws-operator-roles-file", "", "Path to JSON output file from 'hypershift create operator-roles aws' (sets all three role ARN flags at once)")
@@ -1154,12 +1163,12 @@ type groupVersionDiscoverer interface {
 // cluster knows about the ClusterAPI config type, independent of whether a config
 // instance exists.
 func isClusterAPIRegistered(discoveryClient groupVersionDiscoverer) (bool, error) {
-	apis, err := discoveryClient.ServerResourcesForGroupVersion(operatorv1alpha1.GroupVersion.String())
+	apis, err := discoveryClient.ServerResourcesForGroupVersion(operatorv1.GroupVersion.String())
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to discover API resources for %s: %w", operatorv1alpha1.GroupVersion, err)
+		return false, fmt.Errorf("failed to discover API resources for %s: %w", operatorv1.GroupVersion, err)
 	}
 	if apis != nil {
 		for _, api := range apis.APIResources {
@@ -1191,10 +1200,9 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 	}
 
 	// Build the SSA patch payload as a map so only the fields we intend to own
-	// are included. ApplyConfiguration types for operator/v1alpha1 are not yet
-	// available in openshift/client-go.
+	// are included.
 	patchData, err := json.Marshal(map[string]any{
-		"apiVersion": operatorv1alpha1.GroupVersion.String(),
+		"apiVersion": operatorv1.GroupVersion.String(),
 		"kind":       "ClusterAPI",
 		"metadata": map[string]any{
 			"name": "cluster",
@@ -1207,11 +1215,11 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 		return 0, fmt.Errorf("failed to marshal ClusterAPI config: %w", err)
 	}
 
-	clusterAPI := &operatorv1alpha1.ClusterAPI{
+	clusterAPI := &operatorv1.ClusterAPI{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cluster",
 		},
-		Spec: &operatorv1alpha1.ClusterAPISpec{
+		Spec: &operatorv1.ClusterAPISpec{
 			UnmanagedCustomResourceDefinitions: capiCRDNames.SortedList(),
 		},
 	}
@@ -1237,7 +1245,7 @@ func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Clie
 
 	fmt.Fprintf(out, "Waiting for Cluster CAPI Operator to sync...\n")
 	return wait.PollUntilContextCancel(waitCtx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
-		clusterAPI := &operatorv1alpha1.ClusterAPI{}
+		clusterAPI := &operatorv1.ClusterAPI{}
 		if err := c.Get(ctx, crclient.ObjectKey{Name: "cluster"}, clusterAPI); err != nil {
 			return false, fmt.Errorf("failed to get ClusterAPI config: %w", err)
 		}
@@ -1434,6 +1442,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 		RegistryOverrides:                       opts.RegistryOverrides,
 		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
+		ControlPlaneReleasePullSecretName:       opts.ControlPlaneReleasePullSecretName,
 		ImagePullPolicy:                         opts.ImagePullPolicy,
 		EnableAuditLogPersistence:               opts.EnableAuditLogPersistence,
 		ScaleFromZeroSecret:                     scaleFromZeroSecret,

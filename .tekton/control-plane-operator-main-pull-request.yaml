@@ -16,7 +16,7 @@ metadata:
     pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: control-plane-operator
+    appstudio.openshift.io/application: control-plane-operator-main
     appstudio.openshift.io/component: control-plane-operator-main
     pipelines.appstudio.openshift.io/type: build
   name: control-plane-operator-main-on-pull-request

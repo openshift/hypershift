@@ -27,6 +27,7 @@ import (
 )
 
 func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
+	t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", "")
 	t.Run("When AWS cluster specs are built, it should use public-only networking except for Karpenter and deterministic-lb variants", func(t *testing.T) {
 		t.Setenv("EXTRA_ARGS", "")
 		t.Setenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS", "")
@@ -100,6 +101,29 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 			if s.Variant == "kms-reencryption" {
 				if !slices.Contains(s.CreateArgs, "--kms-key-arn=arn:aws:kms:us-east-1:123456789012:key/test-key") {
 					t.Fatalf("kms-reencryption CreateArgs missing --kms-key-arn: %v", s.CreateArgs)
+				}
+				return
+			}
+		}
+		t.Fatal("kms-reencryption variant not found")
+	})
+
+	t.Run("When HYPERSHIFT_ETCD_KMS_KEY_ARN is an alias, kms-reencryption CreateArgs should use the resolved ARN not the alias", func(t *testing.T) {
+		t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", "alias/hypershift-ci")
+		const resolvedARN = "arn:aws:kms:us-east-1:123456789012:key/resolved-test-key"
+		cfg := &AWSPlatformConfig{
+			resolveKMSKeyARNFn: func(_ context.Context, _ string) (string, error) {
+				return resolvedARN, nil
+			},
+		}
+		specs := cfg.ClusterSpecs(t.Context(), "release-image", "n1-image")
+		for _, s := range specs {
+			if s.Variant == "kms-reencryption" {
+				if !slices.Contains(s.CreateArgs, "--kms-key-arn="+resolvedARN) {
+					t.Fatalf("kms-reencryption CreateArgs should use resolved ARN %q, got: %v", resolvedARN, s.CreateArgs)
+				}
+				if slices.Contains(s.CreateArgs, "--kms-key-arn=alias/hypershift-ci") {
+					t.Fatalf("kms-reencryption CreateArgs must not use the alias: %v", s.CreateArgs)
 				}
 				return
 			}

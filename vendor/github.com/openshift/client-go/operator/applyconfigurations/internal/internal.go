@@ -716,6 +716,129 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: version
       type:
         scalar: string
+- name: com.github.openshift.api.operator.v1.ClusterAPI
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: spec
+      type:
+        namedType: com.github.openshift.api.operator.v1.ClusterAPISpec
+    - name: status
+      type:
+        namedType: com.github.openshift.api.operator.v1.ClusterAPIStatus
+      default: {}
+- name: com.github.openshift.api.operator.v1.ClusterAPIInstallerComponent
+  map:
+    fields:
+    - name: name
+      type:
+        scalar: string
+    - name: source
+      type:
+        namedType: com.github.openshift.api.operator.v1.ClusterAPIInstallerComponentSource
+      default: {}
+- name: com.github.openshift.api.operator.v1.ClusterAPIInstallerComponentImage
+  map:
+    fields:
+    - name: profile
+      type:
+        scalar: string
+    - name: ref
+      type:
+        scalar: string
+- name: com.github.openshift.api.operator.v1.ClusterAPIInstallerComponentSource
+  map:
+    fields:
+    - name: image
+      type:
+        namedType: com.github.openshift.api.operator.v1.ClusterAPIInstallerComponentImage
+      default: {}
+    - name: type
+      type:
+        scalar: string
+    unions:
+    - discriminator: type
+      fields:
+      - fieldName: image
+        discriminatorValue: Image
+- name: com.github.openshift.api.operator.v1.ClusterAPIInstallerRevision
+  map:
+    fields:
+    - name: components
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.operator.v1.ClusterAPIInstallerComponent
+          elementRelationship: atomic
+    - name: contentID
+      type:
+        scalar: string
+    - name: manifestSubstitutions
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.operator.v1.ClusterAPIInstallerRevisionManifestSubstitution
+          elementRelationship: associative
+          keys:
+          - key
+    - name: name
+      type:
+        scalar: string
+    - name: revision
+      type:
+        scalar: numeric
+    - name: unmanagedCustomResourceDefinitions
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: atomic
+    elementRelationship: atomic
+- name: com.github.openshift.api.operator.v1.ClusterAPIInstallerRevisionManifestSubstitution
+  map:
+    fields:
+    - name: key
+      type:
+        scalar: string
+    - name: value
+      type:
+        scalar: string
+- name: com.github.openshift.api.operator.v1.ClusterAPISpec
+  map:
+    fields:
+    - name: unmanagedCustomResourceDefinitions
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
+- name: com.github.openshift.api.operator.v1.ClusterAPIStatus
+  map:
+    fields:
+    - name: currentRevision
+      type:
+        scalar: string
+    - name: desiredRevision
+      type:
+        scalar: string
+    - name: observedRevisionGeneration
+      type:
+        scalar: numeric
+    - name: revisions
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.operator.v1.ClusterAPIInstallerRevision
+          elementRelationship: atomic
 - name: com.github.openshift.api.operator.v1.ClusterBootImageAutomatic
   map:
     fields:
@@ -4366,17 +4489,6 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             scalar: string
           elementRelationship: atomic
-- name: com.github.openshift.api.operator.v1alpha1.BackupJobReference
-  map:
-    fields:
-    - name: name
-      type:
-        scalar: string
-      default: ""
-    - name: namespace
-      type:
-        scalar: string
-      default: ""
 - name: com.github.openshift.api.operator.v1alpha1.ClusterAPI
   map:
     fields:
@@ -4547,19 +4659,110 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupStatus
       default: {}
-- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupSpec
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupFile
   map:
     fields:
-    - name: pvcName
+    - name: assetType
       type:
         scalar: string
-      default: ""
-- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupStatus
+    - name: path
+      type:
+        scalar: string
+    - name: sizeBytes
+      type:
+        scalar: numeric
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicy
   map:
     fields:
-    - name: backupJob
+    - name: apiVersion
       type:
-        namedType: com.github.openshift.api.operator.v1alpha1.BackupJobReference
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: spec
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicySpec
+      default: {}
+    - name: status
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyStatus
+      default: {}
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyRetentionQuantity
+  map:
+    fields:
+    - name: maxQuantity
+      type:
+        scalar: numeric
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyRetentionRule
+  map:
+    fields:
+    - name: quantity
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyRetentionQuantity
+      default: {}
+    - name: size
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyRetentionSize
+      default: {}
+    - name: type
+      type:
+        scalar: string
+    unions:
+    - discriminator: type
+      fields:
+      - fieldName: quantity
+        discriminatorValue: Quantity
+      - fieldName: size
+        discriminatorValue: Size
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyRetentionSize
+  map:
+    fields:
+    - name: maxTotalSizeGiB
+      type:
+        scalar: numeric
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicySpec
+  map:
+    fields:
+    - name: assets
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
+    - name: failedBackupsHistoryLimit
+      type:
+        scalar: numeric
+    - name: nodeSelector
+      type:
+        map:
+          elementType:
+            scalar: string
+    - name: retentionRules
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyRetentionRule
+          elementRelationship: associative
+          keys:
+          - type
+    - name: schedule
+      type:
+        scalar: string
+    - name: storage
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyStorage
+      default: {}
+    - name: timeZone
+      type:
+        scalar: string
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyStatus
+  map:
+    fields:
     - name: conditions
       type:
         list:
@@ -4568,6 +4771,124 @@ var schemaYAML = typed.YAMLObject(`types:
           elementRelationship: associative
           keys:
           - type
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyStorage
+  map:
+    fields:
+    - name: local
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyStorageLocal
+      default: {}
+    - name: pvc
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyStoragePvc
+      default: {}
+    - name: type
+      type:
+        scalar: string
+    unions:
+    - discriminator: type
+      fields:
+      - fieldName: local
+        discriminatorValue: Local
+      - fieldName: pvc
+        discriminatorValue: PVC
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyStorageLocal
+  map:
+    fields:
+    - name: distribution
+      type:
+        scalar: string
+    - name: hostPath
+      type:
+        scalar: string
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupPolicyStoragePvc
+  map:
+    fields:
+    - name: name
+      type:
+        scalar: string
+    - name: path
+      type:
+        scalar: string
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupSpec
+  map:
+    fields:
+    - name: assets
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: associative
+    - name: nodeSelector
+      type:
+        map:
+          elementType:
+            scalar: string
+    - name: storage
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupStorage
+      default: {}
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupStatus
+  map:
+    fields:
+    - name: conditions
+      type:
+        list:
+          elementType:
+            namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Condition
+          elementRelationship: associative
+          keys:
+          - type
+    - name: files
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupFile
+          elementRelationship: associative
+          keys:
+          - path
+    - name: jobName
+      type:
+        scalar: string
+    - name: nodeName
+      type:
+        scalar: string
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupStorage
+  map:
+    fields:
+    - name: local
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupStorageLocal
+      default: {}
+    - name: pvc
+      type:
+        namedType: com.github.openshift.api.operator.v1alpha1.EtcdBackupStoragePvc
+      default: {}
+    - name: type
+      type:
+        scalar: string
+    unions:
+    - discriminator: type
+      fields:
+      - fieldName: local
+        discriminatorValue: Local
+      - fieldName: pvc
+        discriminatorValue: PVC
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupStorageLocal
+  map:
+    fields:
+    - name: hostPath
+      type:
+        scalar: string
+- name: com.github.openshift.api.operator.v1alpha1.EtcdBackupStoragePvc
+  map:
+    fields:
+    - name: name
+      type:
+        scalar: string
+    - name: path
+      type:
+        scalar: string
 - name: com.github.openshift.api.operator.v1alpha1.GatewayAPIIngressConfig
   map:
     fields:

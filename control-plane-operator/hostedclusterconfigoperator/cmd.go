@@ -282,6 +282,25 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		}
 	}
 
+	// The control plane release lookup adds the provider-supplied control plane
+	// release pull secret, so it gets a provider with its own cache, built the same
+	// way as releaseProvider below. CachedProvider is keyed by pull spec only: with
+	// a shared cache, a release image cached by the control plane lookup would be
+	// returned to a data plane lookup of the same pull spec without the registry
+	// ever checking the cluster pull secret.
+	controlPlaneReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.StaticProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+			},
+			RegistryOverrides: nil,
+		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
 	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.StaticProviderDecorator{
@@ -337,6 +356,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		CPCluster:                     cpCluster,
 		Logger:                        ctrl.Log.WithName("hypershift-operator"),
 		ReleaseProvider:               releaseProvider,
+		ControlPlaneReleaseProvider:   controlPlaneReleaseProvider,
 		KonnectivityAddress:           o.KonnectivityAddress,
 		KonnectivityPort:              o.KonnectivityPort,
 		OAuthAddress:                  o.OAuthAddress,

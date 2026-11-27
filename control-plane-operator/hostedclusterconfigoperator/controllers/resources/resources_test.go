@@ -56,6 +56,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -210,6 +211,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 					"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
 				},
 			},
+			cpReleaseProvider:     &fakereleaseprovider.FakeReleaseProvider{Version: "5.1.0"},
 			ImageMetaDataProvider: &imageMetaDataProvider,
 		}
 		_, err := r.Reconcile(ctx, controllerruntime.Request{})
@@ -245,6 +247,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 					"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
 				},
 			},
+			cpReleaseProvider:     &fakereleaseprovider.FakeReleaseProvider{Version: "5.1.0"},
 			ImageMetaDataProvider: &imageMetaDataProvider,
 		}
 		_, err := r.Reconcile(ctx, controllerruntime.Request{})
@@ -259,6 +262,45 @@ func TestReconcileErrorHandling(t *testing.T) {
 			}
 		}
 	}
+}
+
+// releaseProviderFunc adapts a function to releaseinfo.Provider.
+type releaseProviderFunc func(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error)
+
+func (f releaseProviderFunc) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+	return f(ctx, image, pullSecret)
+}
+
+func TestReconciler_ResolveControlPlaneReleaseVersion(t *testing.T) {
+	// The control plane release lookup adds the provider credential, so it must go
+	// through its own provider. Sharing the data plane provider would share its
+	// cache, which is keyed by pull spec only, so a release cached with the provider
+	// credential would be returned to a later data plane lookup without checking the
+	// cluster pull secret.
+	t.Run("When a distinct control plane release is pinned, it should look it up with the control plane release provider", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		cpReleaseImage := "quay.io/openshift-release-dev/ocp-release-private:5.1.0-x86_64"
+		hcp := fakeHCP()
+		hcp.Spec.ControlPlaneReleaseImage = &cpReleaseImage
+
+		var cpLookups []string
+		r := &reconciler{
+			cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp).Build(),
+			releaseProvider: releaseProviderFunc(func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return nil, fmt.Errorf("unexpected data plane provider lookup of %s", image)
+			}),
+			cpReleaseProvider: releaseProviderFunc(func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				cpLookups = append(cpLookups, image)
+				return (&fakereleaseprovider.FakeReleaseProvider{Version: "5.1.0"}).Lookup(context.Background(), image, nil)
+			}),
+		}
+
+		version, err := r.resolveControlPlaneReleaseVersion(t.Context(), hcp, []byte(`{"auths":{}}`), semver.MustParse("5.0.0"))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(version.String()).To(Equal("5.1.0"))
+		g.Expect(cpLookups).To(Equal([]string{cpReleaseImage}))
+	})
 }
 
 func TestReconcileRequeueBehavior(t *testing.T) {

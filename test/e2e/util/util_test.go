@@ -2,6 +2,8 @@ package util
 
 import (
 	"crypto/x509"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -371,4 +373,169 @@ func TestMatchesLeaderElectionFailure(t *testing.T) {
 			g.Expect(MatchesLeaderElectionFailure(tc.line)).To(Equal(tc.match))
 		})
 	}
+}
+
+func TestMatchesControlPlaneUnavailable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		line  string
+		match bool
+	}{
+		{
+			name:  "When a component cannot dial the kube-apiserver service, it should match",
+			line:  `F1111 15:23:29.927335       1 main.go:106] failed to apply cluster TLS profile: failed to create CNO client: Get "https://kube-apiserver:6443/api?timeout=32s": dial tcp 172.30.77.66:6443: connect: connection refused`,
+			match: true,
+		},
+		{
+			name:  "When a sidecar cannot dial the kube-apiserver over localhost, it should match",
+			line:  `{"level":"error","msg":"failed to apply file: failed to get server groups: Get \"https://localhost:6443/api\": dial tcp [::1]:6443: connect: connection refused"}`,
+			match: true,
+		},
+		{
+			name:  "When the kube-apiserver cannot reach etcd, it should match",
+			line:  `E1111 15:23:13.993104       1 run.go:72] "command failed" err="etcd grpc connection not ready: context deadline exceeded"`,
+			match: true,
+		},
+		{
+			name:  "When a client times out dialing etcd, it should match",
+			line:  `W1111 15:22:53.990365       1 logging.go:55] grpc: addrConn.createTransport failed to connect to {Addr: "etcd-client.ns.svc:2379"}. Err: connection error: desc = "transport: Error while dialing: dial tcp 172.30.68.82:2379: connect: connection refused"`,
+			match: true,
+		},
+		{
+			name:  "When a transport failure names no control plane endpoint, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] failed to reach https://registry.example.com/v2/: dial tcp 10.0.0.1:443: connect: connection refused`,
+			match: false,
+		},
+		{
+			name:  "When a control plane endpoint is reached successfully, it should not match",
+			line:  `I1111 15:23:29.927335       1 main.go:106] connected to https://kube-apiserver:6443`,
+			match: false,
+		},
+		{
+			name:  "When the kube-apiserver rejects a request, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] Get "https://kube-apiserver:6443/api": forbidden`,
+			match: false,
+		},
+		{
+			name:  "When log is empty, it should not match",
+			line:  "",
+			match: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(MatchesControlPlaneUnavailable(tc.line)).To(Equal(tc.match))
+		})
+	}
+}
+
+func TestToleratedRestartCauseInLog(t *testing.T) {
+	t.Parallel()
+
+	const (
+		etcdWarning = `W1111 15:22:53.990365       1 logging.go:55] grpc: addrConn.createTransport failed to connect to {Addr: "etcd-client.ns.svc:2379"}. Err: connection error: desc = "transport: Error while dialing: dial tcp 172.30.68.82:2379: connect: connection refused"`
+		kasRefused  = `F1111 15:23:29.927335       1 main.go:106] failed to create client: Get "https://kube-apiserver:6443/api?timeout=32s": dial tcp 172.30.77.66:6443: connect: connection refused`
+		leaderLost  = `E1111 15:23:29.927335       1 leaderelection.go:369] failed to renew lease ns/some-component: timed out waiting for the condition`
+		crash       = "panic: runtime error: invalid memory address or nil pointer dereference"
+		stackFrame  = `goroutine 1 [running]:` + "\n" + `main.run(0xc000123456)` + "\n" + "\t" + `/go/src/main.go:42 +0x1a5`
+		healthy     = `I1111 15:23:29.927335       1 main.go:106] serving metrics on :8080`
+	)
+
+	tests := []struct {
+		name      string
+		log       string
+		cause     string
+		tolerated bool
+	}{
+		{
+			name:      "When the log ends on a control plane endpoint being unreachable, it should be tolerated",
+			log:       strings.Join([]string{healthy, kasRefused}, "\n"),
+			cause:     "Control plane unavailability",
+			tolerated: true,
+		},
+		{
+			name:      "When the log ends on a lost lease, it should be tolerated",
+			log:       strings.Join([]string{healthy, leaderLost}, "\n"),
+			cause:     "Leader election failure",
+			tolerated: true,
+		},
+		{
+			name:      "When a retryable etcd connection warning is followed by an unrelated panic, it should not be tolerated",
+			log:       strings.Join([]string{etcdWarning, crash, stackFrame}, "\n"),
+			tolerated: false,
+		},
+		{
+			name:      "When a retryable etcd connection warning is followed by an unrelated fatal error, it should not be tolerated",
+			log:       strings.Join([]string{etcdWarning, "fatal error: concurrent map writes"}, "\n"),
+			tolerated: false,
+		},
+		{
+			name:      "When a panic is followed by the control plane going away, it should be tolerated",
+			log:       strings.Join([]string{crash, stackFrame, kasRefused}, "\n"),
+			cause:     "Control plane unavailability",
+			tolerated: true,
+		},
+		{
+			name:      "When the component panics on a control plane endpoint being unreachable, it should be tolerated",
+			log:       strings.Join([]string{healthy, `panic: Get "https://kube-apiserver:6443/api": dial tcp 172.30.77.66:6443: connect: connection refused`}, "\n"),
+			cause:     "Control plane unavailability",
+			tolerated: true,
+		},
+		{
+			name:      "When the log records no tolerated cause, it should not be tolerated",
+			log:       strings.Join([]string{healthy, "E1111 15:23:29.927335       1 main.go:106] exiting"}, "\n"),
+			tolerated: false,
+		},
+		{
+			name:      "When the log is empty, it should not be tolerated",
+			log:       "",
+			tolerated: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			cause, tolerated, err := toleratedRestartCauseInLog(strings.NewReader(tc.log))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(tolerated).To(Equal(tc.tolerated))
+			g.Expect(cause).To(Equal(tc.cause))
+		})
+	}
+}
+
+// errAfterReader yields prefix and then fails, standing in for a log stream that breaks
+// part way through.
+type errAfterReader struct {
+	prefix *strings.Reader
+	err    error
+}
+
+func (r *errAfterReader) Read(p []byte) (int, error) {
+	if r.prefix.Len() > 0 {
+		return r.prefix.Read(p)
+	}
+	return 0, r.err
+}
+
+func TestToleratedRestartCauseInLogReadFailure(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	// The part of the log that was read ends on a tolerated cause, so only the error tells
+	// the caller that the end of the log was never seen.
+	log := &errAfterReader{
+		prefix: strings.NewReader(`E1111 15:23:29.927335       1 leaderelection.go:369] failed to renew lease ns/some-component: timed out waiting for the condition` + "\n"),
+		err:    errors.New("unexpected EOF"),
+	}
+
+	_, _, err := toleratedRestartCauseInLog(log)
+	g.Expect(err).To(MatchError(ContainSubstring("unexpected EOF")))
 }

@@ -115,6 +115,7 @@ func newTestReconciler(t *testing.T, objs ...client.Object) (*Reconciler, client
 		Build()
 	r := &Reconciler{
 		Client:                 c,
+		APIReader:              c,
 		Store:                  store,
 		Generator:              &payloadGenerator{store: store, provider: fp},
 		Minter:                 &fakeMinter{},
@@ -161,7 +162,7 @@ func TestReconciler_Reconcile(t *testing.T) {
 	t.Run("AddsFinalizer", scenarioAddsFinalizer)
 	t.Run("DeletionFreesPayloadsAndRemovesFinalizer", scenarioDeletionFreesPayloadsAndRemovesFinalizer)
 	t.Run("RetirementClearsPrevious", scenarioRetirementClearsPrevious)
-	t.Run("OrphanSweep", scenarioOrphanSweep)
+	t.Run("RenderFailureKeepsPrevious", scenarioRenderFailureKeepsPrevious)
 	t.Run("PullSecretHashContract", scenarioPullSecretHashContract)
 	t.Run("TrustBundleRotationMovesIdentity", scenarioTrustBundleRotationMovesIdentity)
 	t.Run("MissingConfigMapRequeues", scenarioMissingConfigMapRequeues)
@@ -227,12 +228,14 @@ func scenarioAToBToCDeleteOnEvict(t *testing.T) {
 	updateCM(t, c, "user-a", mc("00-user-a-v2"))
 	reconcileCR(t, r) // gen 2 (B)
 	updateCM(t, c, "user-a", mc("00-user-a-v3"))
-	reconcileCR(t, r) // gen 3 (C): previous was B; A should have been evicted at gen 2's rollout
+	reconcileCR(t, r) // gen 3 (C): previous = B; A is no longer advertised
 	cr := getCR(t, c)
 
 	g.Expect(cr.Status.Current.RolloutGeneration).To(Equal(int64(3)))
 	g.Expect(cr.Status.Previous.RolloutGeneration).To(Equal(int64(2)))
-	// At most two store-referenced payloads live (current + previous); A (gen 1) is gone.
+	// Reclaim runs at the start of the next reconcile (in production, driven by the commit's own watch
+	// event): then at most two payloads live (current + previous) and A (gen 1) is gone.
+	reconcileCR(t, r)
 	gens, err := r.Store.ListByOwner(ctx, owner)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(gens).To(ConsistOf(int64(2), int64(3)))

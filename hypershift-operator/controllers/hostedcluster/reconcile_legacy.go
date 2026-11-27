@@ -27,6 +27,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/upsert"
@@ -63,6 +64,29 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		} else {
 			hcp = nil
 		}
+	}
+
+	// Whether the control plane release pull secret still applies is decided once,
+	// from the HostedControlPlane as it was observed at the start of the reconcile.
+	controlPlaneReleasePinned := isControlPlaneReleasePinned(hcluster, hcp)
+
+	// Remove a control plane release pull secret copy that no longer applies before
+	// anything below can end the reconcile early (pause, validation, registry
+	// lookups), so the provider credential does not outlive its source.
+	if err := r.removeStaleControlPlaneReleasePullSecret(ctx, controlPlaneReleasePinned, controlPlaneNamespace.Name); err != nil {
+		return ctrl.Result{}, err
+	}
+	// For the same reason, bring the copy up to date with a rotated credential
+	// here, so that a blocked reconcile does not leave the control plane holding
+	// an expired one, or none at all after the provider recreated its Secret.
+	// A failed refresh must not hold up teardown, pause handling or any other
+	// work, so its error does not end the reconcile here. It is dropped while the
+	// HostedCluster is being deleted, returned by a paused reconcile, and
+	// otherwise returned only by a reconcile that ends before the regular sync
+	// writes the copy again, so that the refresh is retried.
+	refreshErr := r.refreshControlPlaneReleasePullSecretCopy(ctx, hcluster, hcp, controlPlaneReleasePinned, controlPlaneNamespace.Name)
+	if refreshErr != nil {
+		log.Error(refreshErr, "Failed to refresh the control plane release pull secret copy")
 	}
 
 	// Bubble up ValidIdentityProvider condition from the hostedControlPlane.
@@ -352,11 +376,20 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	// cpPullSecretBytes additionally carries the provider-supplied credential for a
+	// private control plane release registry. It must only be used for lookups of
+	// the control plane release payload; pullSecretBytes stays unaugmented and is
+	// what the data plane release lookup below uses.
+	cpPullSecretBytes, err := pullsecret.ForHostedCluster(ctx, r.Client, hcluster, r.controlPlaneReleasePullSecretSourceKey(), pullSecretBytes)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
+
+	controlPlaneOperatorImage, cpoImagePullSecret, err := imageregistry.ResolveControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes, cpPullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
-	controlPlaneOperatorImageLabels, err := imageregistry.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
+	controlPlaneOperatorImageLabels, err := imageregistry.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, cpoImagePullSecret, registryClientImageMetadataProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 	}
@@ -554,6 +587,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 
 	// Copy the control plane version status from the hostedcontrolplane
 	propagateControlPlaneVersion(hcluster, hcp)
+	reconcileInstallationStage(ctx, r.Client, hcluster, hcp, controlPlaneNamespace.Name)
 
 	// Set the AutoNodeEnabled condition reflecting both spec intent and actual component rollout progress.
 	autoNodeCondition, autoNodeProgressing := r.reconcileAutoNodeEnabledCondition(ctx, hcluster, controlPlaneNamespace.Name)
@@ -642,6 +676,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			}
 		}
 	}
+
+	// Set ManagementClusterResourcePressure condition based on pod scheduling failures.
+	reconcileManagementClusterResourcePressure(ctx, r.Client, hcluster, controlPlaneNamespace.Name)
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -771,7 +808,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			// We don't return the error here as reconciling won't solve the input problem.
 			// An update event will trigger reconciliation.
 			log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, refreshErr // retry a failed refresh of the control plane release pull secret copy
 		}
 		switch serviceStrategy.Type {
 		case hyperv1.Route:
@@ -793,7 +830,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 				// We don't return the error here as reconciling won't solve the input problem.
 				// An update event will trigger reconciliation.
 				log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
-				return ctrl.Result{}, nil
+				return ctrl.Result{}, refreshErr // retry a failed refresh of the control plane release pull secret copy
 			}
 			ignitionService := ignitionserver.ProxyService(controlPlaneNamespace.GetName())
 			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
@@ -816,7 +853,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			// We don't return the error here as reconciling won't solve the input problem.
 			// An update event will trigger reconciliation.
 			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, refreshErr // retry a failed refresh of the control plane release pull secret copy
 		}
 	}
 
@@ -1003,8 +1040,16 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			return ctrl.Result{}, err
 		}
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
+		if refreshErr != nil {
+			// Retry the refresh: a paused reconcile is otherwise not requeued
+			// before the pause ends.
+			return ctrl.Result{}, refreshErr
+		}
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
+	// From here on the regular sync writes the copy again and reports its own
+	// failure, so a failed refresh is only returned by the gates below that end
+	// the reconcile without an error before that sync runs.
 
 	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
 		return ctrl.Result{}, err
@@ -1029,7 +1074,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
 		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
 			log.Error(fmt.Errorf("not supported by operator configuration"), "reconciliation is blocked", "message", supportedHostedCluster.Message)
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, refreshErr
 		}
 		validReleaseImage := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
 		if validReleaseImage != nil && validReleaseImage.Status == metav1.ConditionFalse {
@@ -1037,13 +1082,13 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 				return ctrl.Result{}, fmt.Errorf("%s", validReleaseImage.Message)
 			}
 			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, refreshErr
 		}
 		upgrading, msg, err := isUpgrading(hcluster, releaseImage)
 		if upgrading {
 			if err != nil {
 				log.Error(err, "reconciliation is blocked", "message", validReleaseImage.Message)
-				return ctrl.Result{}, nil
+				return ctrl.Result{}, refreshErr
 			}
 			if msg != "" {
 				log.Info(msg)
@@ -1135,7 +1180,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
 	}
 
-	p, err := platform.GetPlatform(ctx, hcluster, releaseProvider, utilitiesImage, pullSecretBytes)
+	// GetPlatform resolves CAPI provider images out of the control plane release
+	// payload, so it needs the augmented credentials.
+	p, err := platform.GetPlatform(ctx, hcluster, releaseProvider, utilitiesImage, cpPullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1241,6 +1288,13 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile pull secret: %w", err)
+		}
+
+		// Sync the provider-supplied control plane release pull secret alongside
+		// the cluster pull secret. Stale copies are also removed at the start of
+		// the reconcile, independently of this sync.
+		if err := r.reconcileControlPlaneReleasePullSecretSync(ctx, controlPlaneReleasePinned, createOrUpdate, controlPlaneNamespace.Name); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane release pull secret: %w", err)
 		}
 	}
 
@@ -1487,6 +1541,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			}
 			secretRefs := configrefs.SecretRefs(hcluster.Spec.Configuration)
 			for _, secretRef := range secretRefs {
+				if err := validateReferencedSecretName(secretRef); err != nil {
+					return ctrl.Result{}, err
+				}
 				sourceSecret := &corev1.Secret{}
 				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef}, sourceSecret); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)

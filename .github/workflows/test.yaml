@@ -9,7 +9,10 @@ on:
 
 jobs:
   test:
-    uses: openshift/hypershift/.github/workflows/test-reusable.yaml@main
+    # Local reference on purpose: a reusable workflow called as owner/repo/path@ref
+    # runs the ref, not the pull request commit, so a change to test-reusable.yaml
+    # could never be rehearsed before merging.
+    uses: ./.github/workflows/test-reusable.yaml
     permissions:
       contents: read
     secrets: inherit

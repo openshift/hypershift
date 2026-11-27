@@ -148,22 +148,21 @@ func TestGetBackwardCompatibleCAPIImage(t *testing.T) {
 
 func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 	tests := []struct {
-		name                   string
-		input                  v1beta1.ClusterConfiguration
-		expectedHashedJSONE    string
-		requiresBackwardCompat bool
+		name                string
+		input               v1beta1.ClusterConfiguration
+		expectedHashedJSONE string
 	}{
 		{
-			name: "When config has no image, it should hash correctly",
+			name: "When config has no image, it should preserve the legacy hash",
 			input: v1beta1.ClusterConfiguration{
 				Proxy: &v1.ProxySpec{
 					HTTPProxy: "http://proxy.example.com",
 				},
 			},
-			expectedHashedJSONE: `{"proxy":{"httpProxy":"http://proxy.example.com"}}`,
+			expectedHashedJSONE: `{"proxy":{"httpProxy":"http://proxy.example.com","trustedCA":{"name":""}}}`,
 		},
 		{
-			name: "When config has image but no imageStreamImportMode, it should require backward compatibility",
+			name: "When config has image but no imageStreamImportMode, it should preserve the legacy hash",
 			input: v1beta1.ClusterConfiguration{
 				Proxy: &v1.ProxySpec{
 					HTTPProxy: "http://proxy.example.com",
@@ -174,11 +173,10 @@ func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 					},
 				},
 			},
-			expectedHashedJSONE:    `{"image":{"additionalTrustedCA":{"name":""},"registrySources":{"insecureRegistries":["registry.example.com"]}},"proxy":{"httpProxy":"http://proxy.example.com","trustedCA":{"name":""}}}`,
-			requiresBackwardCompat: true,
+			expectedHashedJSONE: `{"image":{"additionalTrustedCA":{"name":""},"registrySources":{"insecureRegistries":["registry.example.com"]}},"proxy":{"httpProxy":"http://proxy.example.com","trustedCA":{"name":""}}}`,
 		},
 		{
-			name: "When config has image with imageStreamImportMode, it should require backward compatibility",
+			name: "When config has image with empty imageStreamImportMode, it should preserve the legacy hash",
 			input: v1beta1.ClusterConfiguration{
 				Proxy: &v1.ProxySpec{
 					HTTPProxy: "http://proxy.example.com",
@@ -190,37 +188,25 @@ func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 					ImageStreamImportMode: "",
 				},
 			},
-			expectedHashedJSONE:    `{"image":{"additionalTrustedCA":{"name":""},"registrySources":{"insecureRegistries":["registry.example.com"]}},"proxy":{"httpProxy":"http://proxy.example.com","trustedCA":{"name":""}}}`,
-			requiresBackwardCompat: true,
+			expectedHashedJSONE: `{"image":{"additionalTrustedCA":{"name":""},"registrySources":{"insecureRegistries":["registry.example.com"]}},"proxy":{"httpProxy":"http://proxy.example.com","trustedCA":{"name":""}}}`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			withoutBackwardCompat, err := util.HashStructWithJSONMapper(tt.input, nil)
-			if err != nil {
-				t.Errorf("error hashing without backward compatibility: %v", err)
-				return
-			}
 			withBackwardCompat, err := GetBackwardCompatibleConfigHash(&tt.input)
 			if err != nil {
 				t.Errorf("GetBackwardCompatibleConfigHash() error = %v", err)
 				return
 			}
-			if !tt.requiresBackwardCompat && withoutBackwardCompat != withBackwardCompat {
-				t.Errorf("GetBackwardCompatibleConfigHash() = %v, want %v", withBackwardCompat, withoutBackwardCompat)
-			} else if tt.requiresBackwardCompat {
-				if withoutBackwardCompat == withBackwardCompat {
-					t.Errorf("GetBackwardCompatibleConfigHash() = %v, want %v", withBackwardCompat, withoutBackwardCompat)
-				} else {
-					want, err := util.HashBytes([]byte(tt.expectedHashedJSONE))
-					if err != nil {
-						t.Errorf("error hashing wanted config: %v", err)
-						return
-					}
-					if withBackwardCompat != want {
-						t.Errorf("GetBackwardCompatibleConfigHash() = %v, want %v", withBackwardCompat, want)
-					}
-				}
+			// The API now omits an empty imageStreamImportMode itself. Compare
+			// against the legacy JSON instead of requiring the mapper to change it.
+			want, err := util.HashBytes([]byte(tt.expectedHashedJSONE))
+			if err != nil {
+				t.Errorf("error hashing wanted config: %v", err)
+				return
+			}
+			if withBackwardCompat != want {
+				t.Errorf("GetBackwardCompatibleConfigHash() = %v, want %v", withBackwardCompat, want)
 			}
 		})
 	}

@@ -48,14 +48,14 @@ func TestExpectedHCConditions(t *testing.T) {
 			expectedStatus: metav1.ConditionUnknown,
 		},
 		{
-			name: "When Azure KMS KeyVaultAccess is Private on ARO HCP, it should expect ValidAzureKMSConfig Unknown",
+			name: "When Azure KMS KeyVaultAccess is Private on ARO HCP, it should expect ValidAzureKMSConfig True",
 			hc: newAzureHC(true, &hyperv1.KMSSpec{
 				Provider: hyperv1.AZURE,
 				Azure: &hyperv1.AzureKMSSpec{
 					KeyVaultAccess: hyperv1.AzureKeyVaultPrivate,
 				},
 			}),
-			expectedStatus: metav1.ConditionUnknown,
+			expectedStatus: metav1.ConditionTrue,
 		},
 		{
 			name: "When Azure KMS KeyVaultAccess is Public on ARO HCP, it should expect ValidAzureKMSConfig True",
@@ -84,6 +84,74 @@ func TestExpectedHCConditions(t *testing.T) {
 			g := NewWithT(t)
 			got := ExpectedHCConditions(tc.hc)
 			g.Expect(got[hyperv1.ValidAzureKMSConfig]).To(Equal(tc.expectedStatus))
+		})
+	}
+
+	for _, tc := range []struct {
+		name              string
+		managedIdentities bool
+		access            hyperv1.AzureKeyVaultAccessType
+		status            metav1.ConditionStatus
+		reason, message   string
+		expected          metav1.ConditionStatus
+	}{
+		{
+			name:              "When an older ARO CPO explicitly skips private vault validation, it should accept the legacy Unknown condition",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason,
+			message: "Private Key Vault endpoint is not reachable from the management cluster", expected: metav1.ConditionUnknown,
+		},
+		{
+			name:              "When the new validator is waiting for its router, it should accept the pending Unknown condition",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason,
+			message: "Private Key Vault cannot be validated yet: router has no ready endpoints", expected: metav1.ConditionUnknown,
+		},
+		{
+			name:              "When the probe fails, it should require True",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionFalse, reason: hyperv1.AzureErrorReason,
+			message: "failed to encrypt data using KMS", expected: metav1.ConditionTrue,
+		},
+		{
+			name:              "When an Unknown carries an unrecognized reason, it should require True",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionUnknown, reason: hyperv1.AzureErrorReason,
+			message: "Private Key Vault endpoint is not reachable from the management cluster", expected: metav1.ConditionTrue,
+		},
+		{
+			name:              "When a public vault reports the legacy Unknown, it should require True",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPublic,
+			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason,
+			message: "Private Key Vault endpoint is not reachable from the management cluster", expected: metav1.ConditionTrue,
+		},
+		{
+			name:              "When a public vault reports the pending Unknown, it should require True",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPublic,
+			status: metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason,
+			message: "Private Key Vault cannot be validated yet: router has no ready endpoints", expected: metav1.ConditionTrue,
+		},
+		{
+			name:   "When a self-managed cluster has the legacy condition, it should still require True",
+			access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason,
+			message: "Private Key Vault endpoint is not reachable from the management cluster", expected: metav1.ConditionTrue,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hc := newAzureHC(tc.managedIdentities, &hyperv1.KMSSpec{
+				Provider: hyperv1.AZURE,
+				Azure:    &hyperv1.AzureKMSSpec{KeyVaultAccess: tc.access},
+			})
+			hc.Status.Conditions = []metav1.Condition{{
+				Type: string(hyperv1.ValidAzureKMSConfig), Status: tc.status, Reason: tc.reason, Message: tc.message,
+			}}
+			g.Expect(ExpectedHCConditions(hc)[hyperv1.ValidAzureKMSConfig]).To(Equal(tc.expected))
+			// The reason alone decides the expectation: rewording a message in a
+			// backport must not silently change which conditions are tolerated.
+			hc.Status.Conditions[0].Message = "some other wording entirely"
+			g.Expect(ExpectedHCConditions(hc)[hyperv1.ValidAzureKMSConfig]).To(Equal(tc.expected))
 		})
 	}
 
@@ -125,5 +193,74 @@ func TestExpectedHCConditions(t *testing.T) {
 		g.Expect(ExpectedHCConditions(hc)[hyperv1.ValidGCPCredentials]).To(Equal(metav1.ConditionUnknown))
 		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
 		g.Expect(ExpectedHCConditions(hc)[hyperv1.ValidGCPCredentials]).To(Equal(metav1.ConditionTrue))
+	})
+
+	newKubeVirtHC := func(managementPlatform string, networkType hyperv1.NetworkType, credentials *hyperv1.KubevirtPlatformCredentials) *hyperv1.HostedCluster {
+		hc := &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Networking: hyperv1.ClusterNetworking{
+					NetworkType: networkType,
+				},
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.KubevirtPlatform,
+					Kubevirt: &hyperv1.KubevirtPlatformSpec{
+						Credentials: credentials,
+					},
+				},
+			},
+		}
+		if managementPlatform != "" {
+			hc.Annotations = map[string]string{hyperv1.ManagementPlatformAnnotation: managementPlatform}
+		}
+		return hc
+	}
+
+	// hasCondition reports whether the condition is expected at all, which is distinct from
+	// being expected with a False status.
+	hasCondition := func(conditions map[hyperv1.ConditionType]metav1.ConditionStatus, conditionType hyperv1.ConditionType) bool {
+		_, ok := conditions[conditionType]
+		return ok
+	}
+
+	t.Run("When KubeVirt runs on an AWS management cluster, it should expect jumbo frames and non-live-migratable nodes", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AWSPlatform), hyperv1.OVNKubernetes, nil))
+		g.Expect(got[hyperv1.ValidKubeVirtInfraNetworkMTU]).To(Equal(metav1.ConditionTrue))
+		// the CI storage class only offers RWO, so the VMs cannot live migrate
+		g.Expect(got[hyperv1.KubeVirtNodesLiveMigratable]).To(Equal(metav1.ConditionFalse))
+	})
+
+	t.Run("When KubeVirt runs on an Azure management cluster, it should not expect jumbo frames nor the live migratable condition", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AzurePlatform), hyperv1.OVNKubernetes, nil))
+		g.Expect(got[hyperv1.ValidKubeVirtInfraNetworkMTU]).To(Equal(metav1.ConditionFalse))
+		g.Expect(hasCondition(got, hyperv1.KubeVirtNodesLiveMigratable)).To(BeFalse())
+	})
+
+	t.Run("When KubeVirt has no management platform annotation, it should expect neither the MTU nor the live migratable condition", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC("", hyperv1.OVNKubernetes, nil))
+		g.Expect(hasCondition(got, hyperv1.ValidKubeVirtInfraNetworkMTU)).To(BeFalse())
+		g.Expect(hasCondition(got, hyperv1.KubeVirtNodesLiveMigratable)).To(BeFalse())
+	})
+
+	t.Run("When KubeVirt does not use OVNKubernetes on AWS, it should skip the MTU condition but still expect non-live-migratable nodes", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AWSPlatform), hyperv1.Other, nil))
+		g.Expect(hasCondition(got, hyperv1.ValidKubeVirtInfraNetworkMTU)).To(BeFalse())
+		g.Expect(got[hyperv1.KubeVirtNodesLiveMigratable]).To(Equal(metav1.ConditionFalse))
+	})
+
+	t.Run("When KubeVirt external infra credentials are configured, it should expect the network policy RBAC condition", func(t *testing.T) {
+		g := NewWithT(t)
+		credentials := &hyperv1.KubevirtPlatformCredentials{InfraNamespace: "kubevirt-infra"}
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AWSPlatform), hyperv1.OVNKubernetes, credentials))
+		g.Expect(got[hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC]).To(Equal(metav1.ConditionTrue))
+	})
+
+	t.Run("When KubeVirt external infra credentials are absent, it should not expect the network policy RBAC condition", func(t *testing.T) {
+		g := NewWithT(t)
+		got := ExpectedHCConditions(newKubeVirtHC(string(hyperv1.AWSPlatform), hyperv1.OVNKubernetes, nil))
+		g.Expect(hasCondition(got, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)).To(BeFalse())
 	})
 }

@@ -2,7 +2,12 @@ package hostedcontrolplane
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	_ "embed"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,6 +16,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,8 +72,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/smithy-go"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/msi-dataplane/pkg/dataplane"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -2439,7 +2451,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "Waiting for components to be available: kube-apiserver",
+			expectedMsg: "1 component unavailable: kube-apiserver",
 		},
 		{
 			name: "When component Available condition is False, it should list component as not available",
@@ -2461,7 +2473,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "Waiting for components to be available: kube-apiserver",
+			expectedMsg: "1 component unavailable: kube-apiserver. First failure: kube-apiserver — Deploying",
 		},
 		{
 			name: "When multiple components are not available, it should list all unavailable components",
@@ -2505,7 +2517,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "Waiting for components to be available: kube-apiserver, kube-scheduler",
+			expectedMsg: "2 components unavailable: kube-apiserver, kube-scheduler. First failure: kube-apiserver — ",
 		},
 		{
 			name: "When some components are available and others are not, it should list only unavailable components",
@@ -2540,7 +2552,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 				},
 			},
 			expectError: false,
-			expectedMsg: "Waiting for components to be available: oauth-server",
+			expectedMsg: "1 component unavailable: oauth-server. First failure: oauth-server — ",
 		},
 		{
 			name:           "When client fails to list components, it should return error",
@@ -4842,6 +4854,51 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 			expectedCondStatus: metav1.ConditionFalse,
 			expectedCondReason: hyperv1.WaitingOnInfrastructureReadyReason,
 		},
+		{
+			name: "When route is not admitted and hosts are empty, it should set InfrastructureReady with RouteNotAdmitted reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 7,
+				},
+			},
+			infraStatus: infra.InfrastructureStatus{
+				APIHost:             "",
+				APIPort:             0,
+				RouteNotAdmitted:    true,
+				RouteNotAdmittedMsg: "Routes not admitted: kube-apiserver-external",
+			},
+			expectedCondStatus: metav1.ConditionFalse,
+			expectedCondReason: hyperv1.RouteNotAdmittedReason,
+		},
+		{
+			name: "When all hosts are populated, it should set InfrastructureReady to True even if RouteNotAdmitted is set",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 8,
+				},
+			},
+			infraStatus: infra.InfrastructureStatus{
+				APIHost:             "api.example.com",
+				APIPort:             6443,
+				KonnectivityHost:    "konnectivity.example.com",
+				KonnectivityPort:    8091,
+				OAuthEnabled:        true,
+				OAuthHost:           "oauth.example.com",
+				OAuthPort:           443,
+				RouteNotAdmitted:    true,
+				RouteNotAdmittedMsg: "Routes not admitted: oauth",
+			},
+			expectedCondStatus: metav1.ConditionTrue,
+			expectedCondReason: hyperv1.AsExpectedReason,
+			expectedEndpoint: hyperv1.APIEndpoint{
+				Host: "api.example.com",
+				Port: 6443,
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -4868,11 +4925,15 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 				g.Expect(tc.hcp.Status.ControlPlaneEndpoint).To(Equal(tc.expectedEndpoint))
 			}
 
-			if tc.expectedCondStatus == metav1.ConditionFalse && tc.infraStatus.Message == "" {
-				g.Expect(cond.Message).To(Equal("Cluster infrastructure is still provisioning"))
-			}
-			if tc.expectedCondStatus == metav1.ConditionFalse && tc.infraStatus.Message != "" {
-				g.Expect(cond.Message).To(Equal(tc.infraStatus.Message))
+			if tc.expectedCondStatus == metav1.ConditionFalse {
+				switch {
+				case tc.infraStatus.RouteNotAdmitted && tc.infraStatus.RouteNotAdmittedMsg != "":
+					g.Expect(cond.Message).To(ContainSubstring(tc.infraStatus.RouteNotAdmittedMsg))
+				case tc.infraStatus.Message != "":
+					g.Expect(cond.Message).To(Equal(tc.infraStatus.Message))
+				default:
+					g.Expect(cond.Message).To(Equal("Cluster infrastructure is still provisioning"))
+				}
 			}
 		})
 	}
@@ -6684,95 +6745,349 @@ func TestRouterComponentComesAfterRouteCreatingComponents(t *testing.T) {
 	}
 }
 
-func TestValidateAzureKMSConfig(t *testing.T) {
-	tests := []struct {
-		name              string
-		keyVaultAccess    hyperv1.AzureKeyVaultAccessType
-		expectedStatus    metav1.ConditionStatus
-		expectedReason    string
-		expectMsgContains string
-		expectMsgExcludes string
-	}{
-		{
-			name:              "When KeyVaultAccess is Private, it should short-circuit to Unknown",
-			keyVaultAccess:    hyperv1.AzureKeyVaultPrivate,
-			expectedStatus:    metav1.ConditionUnknown,
-			expectedReason:    hyperv1.StatusUnknownReason,
-			expectMsgContains: "not reachable from the management cluster",
-		},
-		{
-			// Public falls through to credential validation, which fails because no client is configured.
-			name:              "When KeyVaultAccess is Public, it should proceed to credential validation",
-			keyVaultAccess:    hyperv1.AzureKeyVaultPublic,
-			expectedStatus:    metav1.ConditionFalse,
-			expectedReason:    hyperv1.InvalidAzureCredentialsReason,
-			expectMsgExcludes: "not reachable from the management cluster",
+const testAzureKeyVaultFQDN = "test-kms-keyvault.vault.azure.net"
+
+func azureKMSHostedControlPlaneForTest() *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "hcp", Namespace: "hcp-namespace", Generation: 1},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					Cloud: "AzurePublicCloud",
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+					},
+				},
+			},
+			SecretEncryption: &hyperv1.SecretEncryptionSpec{
+				Type: hyperv1.KMS,
+				KMS: &hyperv1.KMSSpec{
+					Provider: hyperv1.AZURE,
+					Azure: &hyperv1.AzureKMSSpec{
+						ActiveKey:      hyperv1.AzureKMSKey{KeyVaultName: "test-kms-keyvault", KeyName: "test-key", KeyVersion: "1"},
+						KMS:            hyperv1.ManagedIdentity{CredentialsSecretName: "test-kms-creds"},
+						KeyVaultAccess: hyperv1.AzureKeyVaultPrivate,
+					},
+				},
+			},
 		},
 	}
+}
 
-	for _, tc := range tests {
+func privateRouterObjectsForTest(clusterIP string, port int32, ready bool) (*corev1.Service, *discoveryv1.EndpointSlice) {
+	svc := manifests.PrivateRouterService("hcp-namespace")
+	svc.Spec.ClusterIP = clusterIP
+	svc.Spec.Ports = []corev1.ServicePort{{Name: "https", Port: port, Protocol: corev1.ProtocolTCP}}
+	endpointSlice := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      svc.Name + "-abcde",
+			Namespace: svc.Namespace,
+			Labels:    map[string]string{discoveryv1.LabelServiceName: svc.Name},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints: []discoveryv1.Endpoint{{
+			Addresses:  []string{"10.128.0.10"},
+			Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(ready)},
+		}},
+	}
+	return svc, endpointSlice
+}
+
+// These tests are deliberately sequential: validation clones DefaultTransport,
+// so the local vault's certificate must be trusted there for the duration of a test.
+func trustAzureKMSRelayForTest(t *testing.T, roots *x509.CertPool) {
+	t.Helper()
+	original := http.DefaultTransport
+	transport := original.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: roots}
+	http.DefaultTransport = transport
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+		transport.CloseIdleConnections()
+	})
+}
+
+func azureKMSRelayServerForTest(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *x509.CertPool) {
+	t.Helper()
+	key, cert, err := certs.GenerateSelfSignedCertificate(&certs.CertCfg{
+		Subject:      pkix.Name{CommonName: testAzureKeyVaultFQDN, OrganizationalUnit: []string{"test"}},
+		DNSNames:     []string{testAzureKeyVaultFQDN},
+		ExtKeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		KeyUsages:    x509.KeyUsageDigitalSignature,
+		Validity:     time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewUnstartedServer(handler)
+	server.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{cert.Raw}, PrivateKey: key}}}
+	server.StartTLS()
+	t.Cleanup(server.Close)
+	roots := x509.NewCertPool()
+	roots.AddCert(cert)
+	return server, roots
+}
+
+type azureKMSTestCredential func(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error)
+
+func (f azureKMSTestCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return f(ctx, options)
+}
+
+func TestValidateAzureKMSConfig(t *testing.T) {
+	// ARO is selected by each HCP's authentication type, not the environment.
+	t.Setenv("MANAGED_SERVICE", "")
+	svc, routerEndpoints := privateRouterObjectsForTest("172.30.0.100", 443, true)
+	pendingRouterEndpoints := routerEndpoints.DeepCopy()
+	pendingRouterEndpoints.Endpoints[0].Conditions.Ready = ptr.To(false)
+	pendingService := svc.DeepCopy()
+	pendingService.Spec.ClusterIP = ""
+
+	for _, tc := range []struct {
+		name            string
+		objects         []client.Object
+		mutate          func(*hyperv1.HostedControlPlane)
+		status          metav1.ConditionStatus
+		reason, message string
+	}{
+		{
+			name:   "When Azure KMS is not configured, it should report Unknown",
+			mutate: func(hcp *hyperv1.HostedControlPlane) { hcp.Spec.SecretEncryption = nil },
+			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason, message: "Azure KMS is not configured",
+		},
+		{
+			name:   "When the private router Service is missing, it should report Unknown as pending",
+			status: metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "cannot be validated yet",
+		},
+		{
+			name:    "When the private router has no ClusterIP, it should report Unknown as pending",
+			objects: []client.Object{pendingService, routerEndpoints},
+			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "no ClusterIP",
+		},
+		{
+			name:    "When the private router has no endpoint slices, it should report Unknown as pending",
+			objects: []client.Object{svc},
+			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "no ready endpoints",
+		},
+		{
+			name:    "When no router endpoint is ready, it should report Unknown as pending",
+			objects: []client.Object{svc, pendingRouterEndpoints},
+			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "no ready endpoints",
+		},
+		{
+			name:    "When a router endpoint is ready during rollout, it should attempt credential loading",
+			objects: []client.Object{svc, routerEndpoints},
+			status:  metav1.ConditionFalse, reason: hyperv1.InvalidAzureCredentialsReason, message: "test credential load failure",
+		},
+		{
+			name: "When the vault is public, it should load credentials without a router",
+			mutate: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess = hyperv1.AzureKeyVaultPublic
+			},
+			status: metav1.ConditionFalse, reason: hyperv1.InvalidAzureCredentialsReason, message: "test credential load failure",
+		},
+		{
+			name: "When Azure is self-managed, it should leave runtime validation to the KMS provider",
+			mutate: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Platform.Azure.AzureAuthenticationConfig.AzureAuthenticationConfigType = hyperv1.AzureAuthenticationTypeWorkloadIdentities
+			},
+			status: metav1.ConditionTrue, reason: hyperv1.AsExpectedReason, message: "validated at runtime",
+		},
+		{
+			// A cloud with no Key Vault DNS suffix can never validate, so it
+			// must not hide behind the pending reason, which the health
+			// expectation tolerates for as long as it lasts.
+			name:    "When the vault FQDN cannot be resolved, it should report False rather than pending",
+			objects: []client.Object{svc, routerEndpoints},
+			mutate: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Platform.Azure.Cloud = "AzureStackCloud"
+			},
+			status: metav1.ConditionFalse, reason: hyperv1.InvalidAzureCredentialsReason, message: "failed to resolve Key Vault FQDN",
+		},
+		{
+			name:    "When the vault name is not a bare vault name, it should report False rather than pending",
+			objects: []client.Object{svc, routerEndpoints},
+			mutate: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultName = "redirected.example.com/"
+			},
+			status: metav1.ConditionFalse, reason: hyperv1.InvalidAzureCredentialsReason, message: "invalid Azure Key Vault name",
+		},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			azureutil.SetAsAroHCPTest(t)
-
-			hcp := &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "hcp",
-					Namespace:  "hcp-namespace",
-					Generation: 1,
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AzurePlatform,
-						Azure: &hyperv1.AzurePlatformSpec{
-							Cloud: "AzurePublicCloud",
-							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
-								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
-								ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
-									ControlPlane: hyperv1.ControlPlaneManagedIdentities{
-										ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
-											Name:     "test-keyvault",
-											TenantID: "00000000-0000-0000-0000-000000000000",
-										},
-									},
-								},
-							},
-						},
-					},
-					SecretEncryption: &hyperv1.SecretEncryptionSpec{
-						Type: hyperv1.KMS,
-						KMS: &hyperv1.KMSSpec{
-							Provider: hyperv1.AZURE,
-							Azure: &hyperv1.AzureKMSSpec{
-								ActiveKey: hyperv1.AzureKMSKey{
-									KeyVaultName: "test-kms-keyvault",
-									KeyName:      "test-key",
-									KeyVersion:   "1",
-								},
-								KMS: hyperv1.ManagedIdentity{
-									CredentialsSecretName: "test-kms-creds",
-								},
-								KeyVaultAccess: tc.keyVaultAccess,
-							},
-						},
-					},
+			hcp := azureKMSHostedControlPlaneForTest()
+			if tc.mutate != nil {
+				tc.mutate(hcp)
+			}
+			r := &HostedControlPlaneReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...).Build(),
+				newAzureKMSCredential: func(context.Context, string, ...dataplane.Option) (azcore.TokenCredential, error) {
+					return nil, errors.New("test credential load failure")
 				},
 			}
-
-			r := &HostedControlPlaneReconciler{}
 			r.validateAzureKMSConfig(t.Context(), hcp)
-
 			g := NewWithT(t)
-			cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
-			g.Expect(cond).ToNot(BeNil(), "ValidAzureKMSConfig condition should be set")
-			g.Expect(cond.Status).To(Equal(tc.expectedStatus))
-			if tc.expectedReason != "" {
-				g.Expect(cond.Reason).To(Equal(tc.expectedReason))
+			condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
+			g.Expect(condition).ToNot(BeNil())
+			g.Expect(condition.Status).To(Equal(tc.status))
+			g.Expect(condition.Reason).To(Equal(tc.reason))
+			g.Expect(condition.Message).To(ContainSubstring(tc.message))
+			g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
+		})
+	}
+
+	// The public probe builds its URL from the same vault name but never goes
+	// through the relay, so it needs its own check that a name carrying a URL
+	// delimiter cannot move the host. It fails after the credential loads, so
+	// this cannot share the table above, where loading always fails.
+	t.Run("When a public vault name is not a bare vault name, it should report False", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := azureKMSHostedControlPlaneForTest()
+		hcp.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess = hyperv1.AzureKeyVaultPublic
+		hcp.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultName = "redirected.example.com/"
+		r := &HostedControlPlaneReconciler{
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			newAzureKMSCredential: func(context.Context, string, ...dataplane.Option) (azcore.TokenCredential, error) {
+				return azureKMSTestCredential(func(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+					return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+				}), nil
+			},
+		}
+		r.validateAzureKMSConfig(t.Context(), hcp)
+		condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
+		g.Expect(condition).ToNot(BeNil())
+		g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(condition.Reason).To(Equal(hyperv1.InvalidAzureCredentialsReason))
+		g.Expect(condition.Message).To(ContainSubstring("invalid Azure Key Vault name"))
+	})
+
+	for _, tc := range []struct {
+		name         string
+		responseCode int
+		stall        bool
+	}{
+		{name: "When credentials are first loaded, it should authenticate immediately and reuse them on the next probe", responseCode: http.StatusOK},
+		{name: "When the vault denies access, it should report False and recover after access is restored", responseCode: http.StatusForbidden},
+		{name: "When the key is missing, it should report False and recover after the key is restored", responseCode: http.StatusNotFound},
+		{name: "When the vault stops responding, it should honor the caller deadline", stall: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			var responseCode atomic.Int32
+			responseCode.Store(int32(tc.responseCode))
+			// Closed once the stalling handler has the authenticated encrypt
+			// request in hand. Canceling on this signal rather than on a fixed
+			// timer keeps the test from racing TLS setup and the SDK's
+			// challenge round trip, which would either cancel before GetToken
+			// or cancel before the request lands and never exercise the stall.
+			reachedStall := make(chan struct{})
+			var reachedStallOnce sync.Once
+			server, roots := azureKMSRelayServerForTest(t, func(w http.ResponseWriter, req *http.Request) {
+				if req.TLS.ServerName != testAzureKeyVaultFQDN || req.Host != testAzureKeyVaultFQDN {
+					t.Errorf("vault hostname changed: SNI=%q Host=%q", req.TLS.ServerName, req.Host)
+				}
+				if req.Header.Get("Authorization") == "" {
+					w.Header().Set("WWW-Authenticate", `Bearer authorization="https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000" resource="https://vault.azure.net"`)
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				if req.Header.Get("Authorization") != "Bearer test-token" {
+					t.Errorf("unexpected authorization header")
+				}
+				if req.Method != http.MethodPost || req.URL.Path != "/keys/test-key/1/encrypt" {
+					t.Errorf("unexpected encryption request: %s %s", req.Method, req.URL.Path)
+				}
+				var input map[string]interface{}
+				if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+					t.Errorf("failed to decode encryption request: %v", err)
+				}
+				if input["alg"] != "RSA-OAEP-256" || input["value"] != "dGV4dA" {
+					t.Errorf("unexpected encryption input: %v", input)
+				}
+				if tc.stall {
+					reachedStallOnce.Do(func() { close(reachedStall) })
+					<-req.Context().Done()
+					return
+				}
+				body := `{"value":"b2s"}`
+				if responseCode.Load() != http.StatusOK {
+					body = `{"error":{"code":"TestFailure","message":"test vault failure"}}`
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(int(responseCode.Load()))
+				if _, err := fmt.Fprint(w, body); err != nil {
+					t.Errorf("failed to write the simulated vault response: %v", err)
+				}
+			})
+			trustAzureKMSRelayForTest(t, roots)
+			host, port, err := net.SplitHostPort(server.Listener.Addr().String())
+			g.Expect(err).ToNot(HaveOccurred())
+			portNumber, err := strconv.Atoi(port)
+			g.Expect(err).ToNot(HaveOccurred())
+			svc, routerEndpoints := privateRouterObjectsForTest(host, int32(portNumber), true)
+			hcp := azureKMSHostedControlPlaneForTest()
+			ctx := t.Context()
+			if tc.stall {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				defer cancel()
+				go func() {
+					select {
+					case <-reachedStall:
+					// Watchdog. This has to beat the probe's own deadline,
+					// otherwise azureKMSValidationTimeout is what ends the
+					// test and a request that never arrives is reported as a
+					// probe timeout rather than as a missing request.
+					case <-time.After(azureKMSValidationTimeout / 2):
+					}
+					cancel()
+				}()
 			}
-			if tc.expectMsgContains != "" {
-				g.Expect(cond.Message).To(ContainSubstring(tc.expectMsgContains))
+			var loadCount, tokenCount int
+			r := &HostedControlPlaneReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, routerEndpoints).Build(),
+				newAzureKMSCredential: func(credentialCtx context.Context, path string, _ ...dataplane.Option) (azcore.TokenCredential, error) {
+					loadCount++
+					g.Expect(credentialCtx).To(Equal(ctx), "credential refresh must not use the short-lived probe context")
+					g.Expect(path).To(Equal("/mnt/kms/test-kms-creds"))
+					return azureKMSTestCredential(func(probeCtx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+						tokenCount++
+						deadline, ok := probeCtx.Deadline()
+						g.Expect(ok).To(BeTrue(), "the probe must have an overall deadline")
+						g.Expect(time.Until(deadline)).To(BeNumerically("<=", azureKMSValidationTimeout))
+						g.Expect(options.Scopes).To(ContainElement("https://vault.azure.net/.default"))
+						return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+					}), nil
+				},
 			}
-			if tc.expectMsgExcludes != "" {
-				g.Expect(cond.Message).ToNot(ContainSubstring(tc.expectMsgExcludes))
+			r.validateAzureKMSConfig(ctx, hcp)
+			condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
+			g.Expect(condition).ToNot(BeNil())
+			g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
+			if tc.responseCode == http.StatusOK {
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			} else {
+				g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(condition.Reason).To(Equal(hyperv1.AzureErrorReason))
+				if tc.stall {
+					g.Expect(reachedStall).To(BeClosed(), "the probe must have reached the stalling handler")
+					g.Expect(condition.Message).To(ContainSubstring("context canceled"))
+				} else {
+					g.Expect(condition.Message).To(ContainSubstring(strconv.Itoa(tc.responseCode)))
+				}
+			}
+			g.Expect(loadCount).To(Equal(1))
+			g.Expect(tokenCount).To(Equal(1), "the first probe must use the newly loaded credential")
+			if !tc.stall {
+				g.Expect(ctx.Err()).ToNot(HaveOccurred(), "finishing a probe must not cancel credential refresh")
+				responseCode.Store(http.StatusOK)
+				r.validateAzureKMSConfig(ctx, hcp)
+				g.Expect(meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig)).Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(loadCount).To(Equal(1), "subsequent probes must reuse the cached credential")
+				g.Expect(tokenCount).To(Equal(2), "every reconcile must probe the vault again")
+
+				condition = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
+				g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
 			}
 		})
 	}

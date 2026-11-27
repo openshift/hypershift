@@ -215,8 +215,13 @@ func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlan
 		}
 	}
 
-	c.setAvailableCondition(cpContext, &component.Status.Conditions)
-	rolloutStatus := c.setRolloutCompleteCondition(cpContext, &component.Status.Conditions, unmetPreconditions, unavailableDependencies, reconcilationError)
+	var diagReason, diagMessage string
+	workloadObject := c.workloadProvider.NewObject()
+	if err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: c.name}, workloadObject); err == nil {
+		diagReason, diagMessage = podspec.DiagnoseWorkloadPodFailure(cpContext, cpContext.Client, workloadObject)
+	}
+	c.setAvailableCondition(cpContext, &component.Status.Conditions, diagReason, diagMessage)
+	rolloutStatus := c.setRolloutCompleteCondition(cpContext, &component.Status.Conditions, unmetPreconditions, unavailableDependencies, reconcilationError, diagReason, diagMessage)
 	if rolloutStatus == metav1.ConditionTrue {
 		// set the version only if the rollout is complete
 		component.Status.Version = cpContext.ReleaseImageProvider.Version()
@@ -227,7 +232,7 @@ func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlan
 	return nil
 }
 
-func (c *controlPlaneWorkload[T]) setAvailableCondition(cpContext ControlPlaneContext, conditions *[]metav1.Condition) {
+func (c *controlPlaneWorkload[T]) setAvailableCondition(cpContext ControlPlaneContext, conditions *[]metav1.Condition, diagReason, diagMessage string) {
 	workloadObject := c.workloadProvider.NewObject()
 	if err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: c.name}, workloadObject); err != nil {
 		meta.SetStatusCondition(conditions, metav1.Condition{
@@ -240,6 +245,10 @@ func (c *controlPlaneWorkload[T]) setAvailableCondition(cpContext ControlPlaneCo
 	}
 
 	status, reason, message := c.workloadProvider.IsAvailable(workloadObject)
+	if status == metav1.ConditionFalse && diagReason != "" {
+		reason = diagReason
+		message = fmt.Sprintf("%s; %s", message, diagMessage)
+	}
 	meta.SetStatusCondition(conditions, metav1.Condition{
 		Type:    string(hyperv1.ControlPlaneComponentAvailable),
 		Status:  status,
@@ -248,7 +257,7 @@ func (c *controlPlaneWorkload[T]) setAvailableCondition(cpContext ControlPlaneCo
 	})
 }
 
-func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlPlaneContext, conditions *[]metav1.Condition, unmetPreconditions []hyperv1.ConditionType, unavailableDependencies []string, reconcilationError error) metav1.ConditionStatus {
+func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlPlaneContext, conditions *[]metav1.Condition, unmetPreconditions []hyperv1.ConditionType, unavailableDependencies []string, reconcilationError error, diagReason, diagMessage string) metav1.ConditionStatus {
 	if len(unmetPreconditions) > 0 {
 		preconditionNames := make([]string, 0, len(unmetPreconditions))
 		for _, precondition := range unmetPreconditions {
@@ -300,6 +309,10 @@ func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlP
 	}
 
 	status, reason, message := c.workloadProvider.IsReady(workloadObject)
+	if status == metav1.ConditionFalse && diagReason != "" {
+		reason = diagReason
+		message = fmt.Sprintf("%s; %s", message, diagMessage)
+	}
 
 	operandsReady, err := checkOperandsRolloutStatusFn(cpContext.workloadContext())
 	if !operandsReady && status == metav1.ConditionTrue {

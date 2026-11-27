@@ -43,6 +43,7 @@ import (
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
@@ -66,6 +67,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
@@ -80,6 +82,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -3175,6 +3179,127 @@ func TestValidateReleaseImage(t *testing.T) {
 			expectedResult:       nil,
 			expectedLookupImages: []string{testSourceReleaseDigest2, testMirrorReleaseDigest1},
 		},
+		{
+			// Regression: a cluster that never pinned a control plane release,
+			// upgrading from A to B while the CVO still reports A. The lookup of A
+			// must not be retried with the provider credential.
+			name: "When the CVO still reports the previous release of an unpinned cluster and its lookup fails, it should not retry with the provider credential",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"registry.redhat.io":{"auth":"cmVkaGF0OnB1bGw="}}}`)},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: pullsecret.ControlPlaneReleaseSecretName},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"cHJvdmlkZXI6cHVsbA=="}}}`)},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{NetworkType: hyperv1.OVNKubernetes},
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:    hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.1-x86_64"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64"},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+				if strings.Contains(string(pullSecret), "cHJvdmlkZXI6cHVsbA==") {
+					return nil, fmt.Errorf("unexpected lookup of %s with the provider credential", image)
+				}
+				if image == "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64" {
+					return nil, errors.New("unauthorized")
+				}
+				return testutils.InitReleaseImageOrDie("4.15.1"), nil
+			},
+			expectedResult: errors.New("failed to lookup release image: unauthorized"),
+			expectedLookupImages: []string{
+				"quay.io/openshift-release-dev/ocp-release:4.15.1-x86_64",
+				"quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64",
+			},
+		},
+		{
+			// The same lagging CVO on a cluster that pins a private control plane
+			// release: the CVO reports the previous data plane release.
+			name: "When the CVO still reports the previous release of a pinned cluster and its lookup fails, it should not retry with the provider credential",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"registry.redhat.io":{"auth":"cmVkaGF0OnB1bGw="}}}`)},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: pullsecret.ControlPlaneReleaseSecretName},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io/openshift-release-dev/ocp-release-private":{"auth":"cHJvdmlkZXI6cHVsbA=="}}}`)},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking:          hyperv1.ClusterNetworking{NetworkType: hyperv1.OVNKubernetes},
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:             hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.1-x86_64"},
+					ControlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release-private:4.15.2-x86_64"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64"},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+				if image == "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64" {
+					if strings.Contains(string(pullSecret), "ocp-release-private") {
+						return nil, fmt.Errorf("unexpected lookup of %s with the provider credential", image)
+					}
+					return nil, errors.New("unauthorized")
+				}
+				return testutils.InitReleaseImageOrDie("4.15.2"), nil
+			},
+			expectedResult: errors.New("failed to lookup release image: unauthorized"),
+			expectedLookupImages: []string{
+				"quay.io/openshift-release-dev/ocp-release-private:4.15.2-x86_64",
+				"quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64",
+			},
+		},
+		{
+			name: "When the previous image is the data plane release and its lookup fails, it should not retry with the provider credential",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"registry.redhat.io":{"auth":"cmVkaGF0OnB1bGw="}}}`)},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: pullsecret.ControlPlaneReleaseSecretName},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io/openshift-release-dev/ocp-release-private":{"auth":"cHJvdmlkZXI6cHVsbA=="}}}`)},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking:          hyperv1.ClusterNetworking{NetworkType: hyperv1.OVNKubernetes},
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:             hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64"},
+					ControlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release-private:4.15.2-x86_64"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64"},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				if image == "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64" {
+					return nil, errors.New("unauthorized")
+				}
+				return testutils.InitReleaseImageOrDie("4.15.2"), nil
+			},
+			expectedResult: errors.New("failed to lookup release image: unauthorized"),
+			expectedLookupImages: []string{
+				"quay.io/openshift-release-dev/ocp-release-private:4.15.2-x86_64",
+				"quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -3211,6 +3336,85 @@ func TestValidateReleaseImage(t *testing.T) {
 			if tc.expectedLookupImages != nil {
 				g.Expect(lookedUpImages).To(Equal(tc.expectedLookupImages))
 			}
+		})
+	}
+
+	// A cluster bootstrapped from a private control plane release whose pin
+	// changes, or is cleared, before the guest CVO reports a version: Status.Version
+	// still names the private release. Both reconcile paths recompute
+	// Status.Version before validating, which moves it to the new control plane
+	// release, so the private release is never looked up and the provider
+	// credential is not needed for it.
+	privateRelease := "quay.io/openshift-release-dev/ocp-release-private:4.15.1-x86_64"
+	bootstrapTests := []struct {
+		name                string
+		controlPlaneRelease *hyperv1.Release
+		expectedLookup      string
+	}{
+		{
+			name:                "When the pin changes before the guest reports a version, it should not look up the previous private release",
+			controlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release-private:4.15.2-x86_64"},
+			expectedLookup:      "quay.io/openshift-release-dev/ocp-release-private:4.15.2-x86_64",
+		},
+		{
+			name:           "When the pin is cleared before the guest reports a version, it should not look up the previous private release",
+			expectedLookup: "quay.io/openshift-release-dev/ocp-release:4.15.2-x86_64",
+		},
+	}
+	for _, tc := range bootstrapTests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters", Generation: 2},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking:          hyperv1.ClusterNetworking{NetworkType: hyperv1.OVNKubernetes},
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:             hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.15.2-x86_64"},
+					ControlPlaneRelease: tc.controlPlaneRelease,
+				},
+				Status: hyperv1.HostedClusterStatus{
+					// Seeded by computeClusterVersionStatus from the private
+					// control plane release.
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Image: privateRelease},
+						History: []configv1.UpdateHistory{{State: configv1.PartialUpdate, Image: privateRelease}},
+					},
+				},
+			}
+			// The guest has not reported a version yet.
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: hc.Name, Namespace: "clusters-test-cluster"},
+				Spec:       hyperv1.HostedControlPlaneSpec{ControlPlaneReleaseImage: &privateRelease},
+			}
+
+			var lookedUp []string
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+					lookedUp = append(lookedUp, image)
+					if image == privateRelease {
+						return nil, errors.New("unauthorized")
+					}
+					return testutils.InitReleaseImageOrDie("4.15.2"), nil
+				}).AnyTimes()
+
+			r := &HostedClusterReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+					&corev1.Secret{
+						ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: hc.Namespace},
+						Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"registry.redhat.io":{"auth":"cmVkaGF0OnB1bGw="}}}`)},
+					},
+				).Build(),
+				OperatorNamespace: cprpsOperatorNamespace,
+			}
+
+			// Mirror the order of both reconcile paths: the version status is
+			// recomputed before the release image is validated.
+			hc.Status.Version = computeClusterVersionStatus(clocktesting.NewFakeClock(time.Now()), hc, hcp)
+			g.Expect(r.validateReleaseImage(t.Context(), hc, mockedProvider)).To(Succeed())
+			g.Expect(lookedUp).To(Equal([]string{tc.expectedLookup}))
 		})
 	}
 }
@@ -3510,6 +3714,7 @@ func TestIsUpgradeable(t *testing.T) {
 		releaseImageLoookup func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error)
 		upgrading           bool
 		err                 bool
+		message             string
 	}{
 		{
 			name: "When version is not reported yet it should be upgradeable",
@@ -3656,6 +3861,7 @@ func TestIsUpgradeable(t *testing.T) {
 			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
+			message:   "upgrade is forced by annotation",
 			upgrading: true,
 			err:       false,
 		},
@@ -3689,6 +3895,32 @@ func TestIsUpgradeable(t *testing.T) {
 				releaseImage := testutils.InitReleaseImageOrDie("4.15.0")
 				releaseImage.ObjectMeta.Name = "4.13.1" // patch with z-stream
 				return releaseImage, nil
+			},
+			upgrading: true,
+			err:       false,
+		},
+		{
+			// A pinned cluster takes this branch on every reconcile, because the
+			// guest reports the data plane release, so it must not produce a
+			// message for callers to log.
+			name: "When not upgradeable and a control plane release is pinned, it should be upgradeable without a message",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release:             hyperv1.Release{Image: releaseImageFrom},
+					ControlPlaneRelease: &hyperv1.Release{Image: releaseImageTo},
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Image: releaseImageFrom, Version: "4.13.0"},
+					},
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ClusterVersionUpgradeable), Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.14.0"), nil
 			},
 			upgrading: true,
 			err:       false,
@@ -3890,9 +4122,12 @@ func TestIsUpgradeable(t *testing.T) {
 			if err != nil {
 				t.Errorf("isUpgrading() internal err = %v", err)
 			}
-			upgrading, _, err := isUpgrading(test.hc, releaseImage)
+			upgrading, message, err := isUpgrading(test.hc, releaseImage)
 			if upgrading != test.upgrading {
 				t.Errorf("isUpgrading() upgrading = %v, want %v", upgrading, test.upgrading)
+			}
+			if message != test.message {
+				t.Errorf("isUpgrading() message = %q, want %q", message, test.message)
 			}
 			if (err == nil) == test.err {
 				t.Errorf("isUpgrading() err = %v, want %v", err, test.err)
@@ -10652,6 +10887,1385 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			pullSecret := controlplaneoperator.PullSecret("cp-ns")
 			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
+		})
+	}
+}
+
+// Fixtures shared by the control plane release pull secret tests.
+const cprpsOperatorNamespace = "hypershift"
+
+var cprpsProviderAuths = []byte(`{"auths":{"quay.io/openshift-release-dev/ocp-release-private":{"auth":"dXNlcjpwYXNz"}}}`)
+
+func cprpsProviderSecret(data map[string][]byte) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: pullsecret.ControlPlaneReleaseSecretName, Namespace: cprpsOperatorNamespace},
+		Data:       data,
+	}
+}
+
+func cprpsCopy(namespace string, labels map[string]string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: pullsecret.SyncedControlPlaneReleaseSecretName, Namespace: namespace, Labels: labels},
+		Data:       map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"old.example.com":{}}}`)},
+	}
+}
+
+var cprpsManagedLabels = map[string]string{pullsecret.ManagedByLabel: "true"}
+
+func TestReconcileControlPlaneReleasePullSecretSync(t *testing.T) {
+	t.Parallel()
+
+	pinnedRelease := &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release-private:4.21.10-x86_64"}
+	// A Secret referenced from spec.configuration is copied into the control plane
+	// namespace under its own name, which may be the provider Secret's name.
+	tenantSecretWithSourceName := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: pullsecret.ControlPlaneReleaseSecretName, Namespace: "cp-ns"},
+		Data:       map[string][]byte{"tenant": []byte("data")},
+	}
+
+	// The provider Secret under a name chosen by another system, selected with
+	// ControlPlaneReleasePullSecretName.
+	const configuredName = "generated-by-another-system"
+	configuredProviderSecret := func(data map[string][]byte) *corev1.Secret {
+		secret := cprpsProviderSecret(data)
+		secret.Name = configuredName
+		return secret
+	}
+
+	tests := []struct {
+		name                string
+		controlPlaneRelease *hyperv1.Release
+		configuredName      string
+		existingObjects     []crclient.Object
+		expectErr           bool
+		errContains         string
+		expectSynced        bool
+		expectUnmanagedKept bool
+		expectManagedKept   bool
+	}{
+		{
+			name:                "When the cluster pins a control plane release and the secret exists, it should sync a labeled copy",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects:     []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
+			expectSynced:        true,
+		},
+		{
+			name:                "When a secret name is configured, it should sync that secret under the fixed copy name",
+			controlPlaneRelease: pinnedRelease,
+			configuredName:      configuredName,
+			existingObjects: []crclient.Object{
+				configuredProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				// A Secret under the default name is not the provider credential any more.
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"default.example.com":{}}}`)}),
+			},
+			expectSynced: true,
+		},
+		{
+			name:                "When a secret name is configured and only the default secret exists, it should not sync",
+			controlPlaneRelease: pinnedRelease,
+			configuredName:      configuredName,
+			existingObjects:     []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
+		},
+		{
+			name:                "When the configured secret is deleted, it should remove a stale managed copy",
+			controlPlaneRelease: pinnedRelease,
+			configuredName:      configuredName,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+		},
+		{
+			name:                "When a managed copy is already present, it should update it in place",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectSynced: true,
+		},
+		{
+			name:                "When the provider secret is absent, it should be a no-op",
+			controlPlaneRelease: pinnedRelease,
+		},
+		{
+			name:            "When the cluster pins no control plane release, it should not sync even if the secret exists",
+			existingObjects: []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
+		},
+		{
+			name: "When the cluster stops pinning a control plane release, it should remove a stale managed copy",
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+		},
+		{
+			name:                "When the provider secret is deleted, it should remove a stale managed copy",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects:     []crclient.Object{cprpsCopy("cp-ns", cprpsManagedLabels)},
+		},
+		{
+			name:                "When an unmanaged secret has the copy's name and nothing is pinned, it should leave it alone",
+			existingObjects:     []crclient.Object{cprpsCopy("cp-ns", nil)},
+			expectUnmanagedKept: true,
+		},
+		{
+			name:                "When an unmanaged secret has the copy's name, it should refuse to overwrite it",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", nil),
+			},
+			expectErr:           true,
+			errContains:         "not managed by the hypershift-operator",
+			expectUnmanagedKept: true,
+		},
+		{
+			name:                "When the provider secret lacks .dockerconfigjson, it should return an error",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects:     []crclient.Object{cprpsProviderSecret(map[string][]byte{})},
+			expectErr:           true,
+			errContains:         ".dockerconfigjson",
+		},
+		{
+			// Kubernetes accepts this payload, but the readers of the copy cannot
+			// use it.
+			name:                "When the provider secret payload cannot be parsed, it should return an error and leave the copy unchanged",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": []byte(`{"auths":[]}`)}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectErr:         true,
+			errContains:       "leaving the copy unchanged",
+			expectManagedKept: true,
+		},
+		{
+			// A valid auths object with one entry whose auth the registry clients
+			// cannot decode; one such entry fails every lookup made with the copy.
+			name:                "When one entry of the provider secret payload cannot be decoded, it should return an error and leave the copy unchanged",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"quay.io":{"auth":"dXNlcjpwYXNz"},"registry.example.com":{"auth":42}}}`)}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectErr:         true,
+			errContains:       "invalid auths entry",
+			expectManagedKept: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+					ControlPlaneRelease: tc.controlPlaneRelease,
+				},
+			}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(append([]crclient.Object{tenantSecretWithSourceName.DeepCopy()}, tc.existingObjects...)...).Build()
+
+			r := &HostedClusterReconciler{Client: client, OperatorNamespace: cprpsOperatorNamespace, ControlPlaneReleasePullSecretName: tc.configuredName}
+
+			err := r.reconcileControlPlaneReleasePullSecretSync(t.Context(), isControlPlaneReleasePinned(hcluster, nil), ctrl.CreateOrUpdate, "cp-ns")
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.errContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+				}
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+
+			// The tenant Secret that shares the provider Secret's name is never touched.
+			tenant := &corev1.Secret{}
+			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(tenantSecretWithSourceName), tenant)).To(Succeed())
+			g.Expect(tenant.Data).To(Equal(tenantSecretWithSourceName.Data))
+
+			synced := &corev1.Secret{}
+			getErr := client.Get(t.Context(), crclient.ObjectKey{Namespace: "cp-ns", Name: pullsecret.SyncedControlPlaneReleaseSecretName}, synced)
+			switch {
+			case tc.expectUnmanagedKept:
+				g.Expect(getErr).To(Succeed())
+				g.Expect(pullsecret.IsManagedCopy(synced)).To(BeFalse())
+				g.Expect(synced.Data[".dockerconfigjson"]).ToNot(Equal(cprpsProviderAuths))
+			case tc.expectManagedKept:
+				g.Expect(getErr).To(Succeed())
+				g.Expect(synced.Data[".dockerconfigjson"]).To(Equal(cprpsCopy("cp-ns", nil).Data[".dockerconfigjson"]))
+			case tc.expectSynced:
+				g.Expect(getErr).To(Succeed())
+				g.Expect(synced.Data[".dockerconfigjson"]).To(Equal(cprpsProviderAuths))
+				g.Expect(synced.Type).To(Equal(corev1.SecretTypeDockerConfigJson))
+				g.Expect(synced.Labels).To(HaveKeyWithValue(pullsecret.ManagedByLabel, "true"))
+				g.Expect(synced.Labels).To(HaveKeyWithValue(pullsecret.VeleroExcludeFromBackupLabel, "true"))
+			default:
+				g.Expect(errors2.IsNotFound(getErr)).To(BeTrue(), "expected no synced copy in the control plane namespace")
+			}
+		})
+	}
+
+	// Data plane isolation guard: the credential must land in its own Secret and
+	// must never be merged into the control plane namespace pull-secret, which HCCO
+	// propagates into the guest cluster and onto nodes.
+	t.Run("When the credential is synced, it should not widen the control plane namespace pull-secret", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		clusterPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+			Spec: hyperv1.HostedClusterSpec{
+				PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+				ControlPlaneRelease: pinnedRelease,
+			},
+		}
+
+		client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "cp-ns"},
+				Data:       map[string][]byte{".dockerconfigjson": clusterPullSecret},
+			},
+		).Build()
+
+		r := &HostedClusterReconciler{Client: client, OperatorNamespace: cprpsOperatorNamespace}
+		g.Expect(r.reconcileControlPlaneReleasePullSecretSync(t.Context(), isControlPlaneReleasePinned(hcluster, nil), ctrl.CreateOrUpdate, "cp-ns")).To(Succeed())
+
+		cpNamespacePullSecret := controlplaneoperator.PullSecret("cp-ns")
+		g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(cpNamespacePullSecret), cpNamespacePullSecret)).To(Succeed())
+		g.Expect(cpNamespacePullSecret.Data[".dockerconfigjson"]).To(Equal(clusterPullSecret))
+		g.Expect(string(cpNamespacePullSecret.Data[".dockerconfigjson"])).ToNot(ContainSubstring("ocp-release-private"))
+	})
+}
+
+func TestValidateReferencedSecretName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		secretName string
+		expectErr  bool
+	}{
+		{
+			name:       "When the name is the control plane release pull secret copy, it should return an error",
+			secretName: pullsecret.SyncedControlPlaneReleaseSecretName,
+			expectErr:  true,
+		},
+		{
+			// Only the destination name is reserved: the provider's own Secret
+			// lives in the hypershift-operator namespace under a different name.
+			name:       "When the name is the provider secret's name, it should accept it",
+			secretName: pullsecret.ControlPlaneReleaseSecretName,
+		},
+		{
+			name:       "When the name is an ordinary serving certificate secret, it should accept it",
+			secretName: "api-serving-cert",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			err := validateReferencedSecretName(tc.secretName)
+			if tc.expectErr {
+				g.Expect(err).To(MatchError(ContainSubstring("is reserved")))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestHostedClusterReconciler_ReconcileGlobalConfigSync(t *testing.T) {
+	t.Parallel()
+
+	hclusterReferencing := func(secretName string) *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						ServingCerts: configv1.APIServerServingCerts{
+							NamedCertificates: []configv1.APIServerNamedServingCert{
+								{ServingCertificate: configv1.SecretNameReference{Name: secretName}},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+	tenantSecret := func(name string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-ns"},
+			Type:       corev1.SecretTypeTLS,
+			Data:       map[string][]byte{"tls.crt": []byte("tenant")},
+		}
+	}
+
+	t.Run("When a configuration secret is named like the control plane release pull secret copy, it should fail and leave the copy intact", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		labels := map[string]string{pullsecret.ManagedByLabel: "true", pullsecret.VeleroExcludeFromBackupLabel: "true"}
+		copyBefore := cprpsCopy("cp-ns", labels)
+		client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			tenantSecret(pullsecret.SyncedControlPlaneReleaseSecretName),
+			copyBefore.DeepCopy(),
+		).Build()
+		r := &HostedClusterReconciler{Client: client, OperatorNamespace: cprpsOperatorNamespace}
+
+		err := r.reconcileGlobalConfigSync(t.Context(), hclusterReferencing(pullsecret.SyncedControlPlaneReleaseSecretName), ctrl.CreateOrUpdate, "cp-ns")
+		g.Expect(err).To(MatchError(ContainSubstring("is reserved")))
+
+		copyAfter := &corev1.Secret{}
+		g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(copyBefore), copyAfter)).To(Succeed())
+		g.Expect(copyAfter.Data).To(Equal(copyBefore.Data))
+		g.Expect(copyAfter.Labels).To(Equal(labels))
+	})
+
+	t.Run("When a configuration secret has another name, it should copy it and leave the control plane release pull secret copy intact", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		labels := map[string]string{pullsecret.ManagedByLabel: "true", pullsecret.VeleroExcludeFromBackupLabel: "true"}
+		copyBefore := cprpsCopy("cp-ns", labels)
+		client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			tenantSecret("api-serving-cert"),
+			copyBefore.DeepCopy(),
+		).Build()
+		r := &HostedClusterReconciler{Client: client, OperatorNamespace: cprpsOperatorNamespace}
+
+		g.Expect(r.reconcileGlobalConfigSync(t.Context(), hclusterReferencing("api-serving-cert"), ctrl.CreateOrUpdate, "cp-ns")).To(Succeed())
+
+		synced := &corev1.Secret{}
+		g.Expect(client.Get(t.Context(), crclient.ObjectKey{Namespace: "cp-ns", Name: "api-serving-cert"}, synced)).To(Succeed())
+		g.Expect(synced.Data).To(HaveKeyWithValue("tls.crt", []byte("tenant")))
+
+		copyAfter := &corev1.Secret{}
+		g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(copyBefore), copyAfter)).To(Succeed())
+		g.Expect(copyAfter.Data).To(Equal(copyBefore.Data))
+		g.Expect(copyAfter.Labels).To(Equal(labels))
+	})
+}
+
+func TestIsControlPlaneReleasePinned(t *testing.T) {
+	t.Parallel()
+
+	privateRelease := "quay.io/openshift-release-dev/ocp-release-private:4.21.10-x86_64"
+	hcp := func(image *string) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{ControlPlaneReleaseImage: image}}
+	}
+
+	tests := []struct {
+		name                string
+		controlPlaneRelease *hyperv1.Release
+		hcp                 *hyperv1.HostedControlPlane
+		expected            bool
+	}{
+		{
+			name:                "When the HostedCluster pins a control plane release, it should return true",
+			controlPlaneRelease: &hyperv1.Release{Image: privateRelease},
+			expected:            true,
+		},
+		{
+			name:     "When only the HostedControlPlane still applies a pin, it should return true",
+			hcp:      hcp(&privateRelease),
+			expected: true,
+		},
+		{
+			name: "When neither pins a control plane release, it should return false",
+			hcp:  hcp(nil),
+		},
+		{
+			name: "When there is no HostedControlPlane and no pin, it should return false",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			hcluster := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{ControlPlaneRelease: tc.controlPlaneRelease}}
+			g.Expect(isControlPlaneReleasePinned(hcluster, tc.hcp)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestHostedClusterReconciler_RemoveStaleControlPlaneReleasePullSecret(t *testing.T) {
+	t.Parallel()
+
+	pinnedRelease := &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release-private:4.21.10-x86_64"}
+
+	hcpPinning := func(image *string) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "cp-ns"},
+			Spec:       hyperv1.HostedControlPlaneSpec{ControlPlaneReleaseImage: image},
+		}
+	}
+
+	tests := []struct {
+		name                string
+		controlPlaneRelease *hyperv1.Release
+		hcp                 *hyperv1.HostedControlPlane
+		existingObjects     []crclient.Object
+		expectCopyRemains   bool
+	}{
+		{
+			// A paused or rejected unpin leaves the control plane on the private
+			// release, so the control plane operator still needs the credential.
+			name: "When the cluster stops pinning but the HostedControlPlane still applies the pin, it should keep the copy",
+			hcp:  hcpPinning(&pinnedRelease.Image),
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectCopyRemains: true,
+		},
+		{
+			name: "When the cluster stops pinning and the HostedControlPlane has applied the unpin, it should remove the managed copy",
+			hcp:  hcpPinning(nil),
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+		},
+		{
+			name:            "When the provider secret is deleted while the HostedControlPlane still applies the pin, it should remove the managed copy",
+			hcp:             hcpPinning(&pinnedRelease.Image),
+			existingObjects: []crclient.Object{cprpsCopy("cp-ns", cprpsManagedLabels)},
+		},
+		{
+			name:                "When the provider secret exists and a release is pinned, it should keep the copy",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectCopyRemains: true,
+		},
+		{
+			// The full sync reports a malformed provider Secret; stale-copy
+			// removal only cares whether the Secret still applies.
+			name:                "When the provider secret is malformed, it should keep the copy for the sync to report",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectCopyRemains: true,
+		},
+		{
+			name:                "When the provider secret is deleted, it should remove the managed copy",
+			controlPlaneRelease: pinnedRelease,
+			existingObjects:     []crclient.Object{cprpsCopy("cp-ns", cprpsManagedLabels)},
+		},
+		{
+			name: "When the cluster stops pinning a control plane release, it should remove the managed copy",
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+		},
+		{
+			name:              "When the secret with the copy's name is unmanaged, it should leave it alone",
+			existingObjects:   []crclient.Object{cprpsCopy("cp-ns", nil)},
+			expectCopyRemains: true,
+		},
+		{
+			name: "When there is no copy, it should succeed",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+				Spec:       hyperv1.HostedClusterSpec{ControlPlaneRelease: tc.controlPlaneRelease},
+			}
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existingObjects...).Build()
+			r := &HostedClusterReconciler{Client: client, OperatorNamespace: cprpsOperatorNamespace}
+
+			g.Expect(r.removeStaleControlPlaneReleasePullSecret(t.Context(), isControlPlaneReleasePinned(hcluster, tc.hcp), "cp-ns")).To(Succeed())
+
+			err := client.Get(t.Context(), crclient.ObjectKey{Namespace: "cp-ns", Name: pullsecret.SyncedControlPlaneReleaseSecretName}, &corev1.Secret{})
+			if tc.expectCopyRemains {
+				g.Expect(err).ToNot(HaveOccurred())
+			} else {
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue(), "expected the stale copy to be removed")
+			}
+		})
+	}
+}
+
+//nolint:hypershiftlinter // testfuncstructure: regression test that drives the full Reconcile on both reconcile paths to prove stale control plane release pull secret removal runs before pause, validation and registry lookups can end the reconcile early
+func TestReconcileRemovesStaleControlPlaneReleasePullSecret(t *testing.T) {
+	t.Parallel()
+
+	pinnedRelease := &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release-private:4.21.10-x86_64"}
+
+	// Regression: after the provider deletes its Secret, the registry lookups that
+	// relied on it fail, and pause or validation can end the reconcile early. The
+	// stale copy must be removed regardless, on both reconcile paths.
+	tests := []struct {
+		name   string
+		legacy bool
+		paused bool
+	}{
+		{name: "When the source is deleted and the registry lookup fails, it should remove the copy"},
+		{name: "When the source is deleted and the registry lookup fails on the legacy path, it should remove the copy", legacy: true},
+		{name: "When the source is deleted and reconciliation is paused, it should remove the copy", paused: true},
+		{name: "When the source is deleted and reconciliation is paused on the legacy path, it should remove the copy", legacy: true, paused: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "12345678-1234-1234-1234-123456789abc",
+					InfraID:   "infra-id",
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					},
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:             hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64"},
+					ControlPlaneRelease: pinnedRelease,
+					Etcd:                hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Platform:            hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+				},
+			}
+			if tc.paused {
+				hcluster.Spec.PausedUntil = ptr.To("true")
+			}
+			hcpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+				hcluster,
+				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hcpNamespace}},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: hcluster.Namespace},
+					Data:       map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)},
+				},
+				cprpsCopy(hcpNamespace, cprpsManagedLabels),
+			).WithStatusSubresource(hcluster).Build()
+
+			mockCtrl := gomock.NewController(t)
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			// Without the provider credential the private release cannot be read.
+			mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("unauthorized")).AnyTimes()
+			mockedProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+			mockedProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+			mockedProvider.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
+			r := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				Clock:                         clocktesting.NewFakeClock(time.Now()),
+				CertRotationScale:             24 * time.Hour,
+				OperatorNamespace:             cprpsOperatorNamespace,
+				ReconcileLegacy:               tc.legacy,
+				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProvider,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+				},
+				now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+			}
+
+			// The reconcile itself may fail on the unreadable release; only the
+			// removal of the stale copy matters here.
+			_, _ = r.Reconcile(t.Context(), ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
+
+			err := fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: pullsecret.SyncedControlPlaneReleaseSecretName}, &corev1.Secret{})
+			g.Expect(errors2.IsNotFound(err)).To(BeTrue(), "expected the stale copy to be removed, got %v", err)
+		})
+	}
+}
+
+// cprpsCaptureQueue records the requests an event handler enqueues.
+type cprpsCaptureQueue struct {
+	workqueue.TypedRateLimitingInterface[reconcile.Request]
+	added []reconcile.Request
+}
+
+func (q *cprpsCaptureQueue) Add(item reconcile.Request) {
+	q.added = append(q.added, item)
+}
+
+//nolint:hypershiftlinter // testfuncstructure: regression test that drives the source Secret delete event through the watch's predicate and handler into the full Reconcile on both reconcile paths
+func TestControlPlaneReleasePullSecretDeleteEventRemovesCopyForPendingUnpin(t *testing.T) {
+	t.Parallel()
+
+	pinnedImage := "quay.io/openshift-release-dev/ocp-release-private:4.21.10-x86_64"
+
+	// Regression: a paused HostedCluster whose pin was cleared still has a
+	// HostedControlPlane applying the pin, so it keeps its copy of the provider
+	// credential. When the provider then deletes the source Secret, the watch must
+	// enqueue that cluster, or the copy lingers until an unrelated event.
+	tests := []struct {
+		name   string
+		legacy bool
+	}{
+		{name: "When the source is deleted while a paused unpin is pending, it should enqueue the cluster and remove the copy"},
+		{name: "When the source is deleted while a paused unpin is pending on the legacy path, it should enqueue the cluster and remove the copy", legacy: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "12345678-1234-1234-1234-123456789abc",
+					InfraID:   "infra-id",
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					},
+					PullSecret:  corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:     hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64"},
+					Etcd:        hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Platform:    hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+					PausedUntil: ptr.To("true"),
+				},
+			}
+			hcpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: hcluster.Name, Namespace: hcpNamespace},
+				Spec:       hyperv1.HostedControlPlaneSpec{ControlPlaneReleaseImage: &pinnedImage},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+				hcluster,
+				hcp,
+				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hcpNamespace}},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: hcluster.Namespace},
+					Data:       map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)},
+				},
+				cprpsCopy(hcpNamespace, cprpsManagedLabels),
+			).WithStatusSubresource(hcluster).Build()
+
+			// The provider has deleted its Secret; deliver the delete event the
+			// way the watch does.
+			deleted := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: pullsecret.ControlPlaneReleaseSecretName, Namespace: cprpsOperatorNamespace}}
+			deleteEvent := event.DeleteEvent{Object: deleted}
+			g.Expect(controlPlaneReleasePullSecretPredicate(pullsecret.SourceSecretKey(cprpsOperatorNamespace, "")).Delete(deleteEvent)).To(BeTrue())
+			queue := &cprpsCaptureQueue{}
+			handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersPinningControlPlaneRelease(fakeClient)).Delete(t.Context(), deleteEvent, queue)
+			g.Expect(queue.added).To(ConsistOf(reconcile.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}))
+
+			mockCtrl := gomock.NewController(t)
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("unauthorized")).AnyTimes()
+			mockedProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+			mockedProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+			mockedProvider.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
+			r := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				Clock:                         clocktesting.NewFakeClock(time.Now()),
+				CertRotationScale:             24 * time.Hour,
+				OperatorNamespace:             cprpsOperatorNamespace,
+				ReconcileLegacy:               tc.legacy,
+				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProvider,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+				},
+				now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+			}
+
+			for _, req := range queue.added {
+				_, _ = r.Reconcile(t.Context(), req)
+			}
+
+			err := fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: pullsecret.SyncedControlPlaneReleaseSecretName}, &corev1.Secret{})
+			g.Expect(errors2.IsNotFound(err)).To(BeTrue(), "expected the stale copy to be removed, got %v", err)
+		})
+	}
+}
+
+//nolint:hypershiftlinter // testfuncstructure: regression test that drives the source Secret update event through the watch's predicate and handler into the full Reconcile on both reconcile paths
+func TestControlPlaneReleasePullSecretRotationUpdatesCopy(t *testing.T) {
+	t.Parallel()
+
+	const (
+		configuredName = "generated-by-another-system"
+		oldToken       = "b2xkOnRva2Vu"
+		newToken       = "bmV3OnRva2Vu"
+	)
+	oldAuths := []byte(`{"auths":{"quay.io/openshift-release-dev/ocp-release-private":{"auth":"` + oldToken + `"}}}`)
+	newAuths := []byte(`{"auths":{"quay.io/openshift-release-dev/ocp-release-private":{"auth":"` + newToken + `"}}}`)
+	// A valid auths object with one entry whose auth the registry clients cannot
+	// decode. Kubernetes accepts it in a Docker config Secret.
+	unusableAuths := []byte(`{"auths":{"quay.io/openshift-release-dev/ocp-release-private":{"auth":"` + newToken + `"},"registry.example.com":{"auth":42}}}`)
+
+	// The provider credential is short lived and is rotated by the system that
+	// owns it, as often as hourly, either by rewriting its Secret in place or by
+	// deleting and recreating it. Each rotation must reach the copy that the
+	// control plane operator and HCCO read, with no operator restart, including
+	// while the reconcile is paused or blocked: unless the case is paused, the fake
+	// image metadata provider below reports no CPU architecture, so release image
+	// validation fails and the reconcile never reaches the regular sync phase.
+	tests := []struct {
+		name           string
+		configuredName string
+		legacy         bool
+		paused         bool
+		// recreate rotates by deleting and recreating the source Secret, for a
+		// control plane that already runs the pinned release.
+		recreate bool
+		// guestReports has the HostedControlPlane report that the guest runs the
+		// data plane release, so that release image validation looks it up.
+		guestReports bool
+		// unusable rotates in place to unusableAuths, which must not replace the
+		// working copy.
+		unusable bool
+	}{
+		{name: "When the source content changes and the reconcile is blocked by validation, it should enqueue the cluster and update the copy"},
+		{name: "When the source content changes and the reconcile is blocked by validation on the legacy path, it should enqueue the cluster and update the copy", legacy: true},
+		{name: "When the source content changes and reconciliation is paused, it should enqueue the cluster and update the copy", paused: true},
+		{name: "When the source content changes and reconciliation is paused on the legacy path, it should enqueue the cluster and update the copy", legacy: true, paused: true},
+		{name: "When the source has a configured name and its content changes, it should enqueue the cluster and update the copy", configuredName: configuredName},
+		{name: "When the source has a configured name and its content changes on the legacy path, it should enqueue the cluster and update the copy", configuredName: configuredName, legacy: true},
+		{name: "When the source is deleted and recreated and the reconcile is blocked by validation, it should remove the copy and then restore it", recreate: true},
+		{name: "When the source is deleted and recreated and the reconcile is blocked by validation on the legacy path, it should remove the copy and then restore it", recreate: true, legacy: true},
+		{name: "When the source is deleted and recreated and reconciliation is paused, it should remove the copy and then restore it", recreate: true, paused: true},
+		{name: "When the source is deleted and recreated and reconciliation is paused on the legacy path, it should remove the copy and then restore it", recreate: true, paused: true, legacy: true},
+		{name: "When the source has a configured name and is deleted and recreated, it should remove the copy and then restore it", recreate: true, configuredName: configuredName},
+		{name: "When the guest reports the data plane release and the source content changes, it should update the copy and look up the data plane release without the provider credential", guestReports: true},
+		{name: "When the guest reports the data plane release and the source content changes on the legacy path, it should update the copy and look up the data plane release without the provider credential", guestReports: true, legacy: true},
+		{name: "When the source is rewritten with an entry the registry clients cannot decode and reconciliation is paused, it should keep the working copy", unusable: true, paused: true},
+		{name: "When the source is rewritten with an entry the registry clients cannot decode and reconciliation is paused on the legacy path, it should keep the working copy", unusable: true, paused: true, legacy: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "12345678-1234-1234-1234-123456789abc",
+					InfraID:   "infra-id",
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					},
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:             hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64"},
+					ControlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release-private:4.21.10-x86_64"},
+					Etcd:                hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Platform:            hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+				},
+			}
+			if tc.paused {
+				hcluster.Spec.PausedUntil = ptr.To("true")
+			}
+			hcpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+
+			sourceKey := pullsecret.SourceSecretKey(cprpsOperatorNamespace, tc.configuredName)
+			source := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: sourceKey.Name, Namespace: sourceKey.Namespace},
+				Data:       map[string][]byte{".dockerconfigjson": oldAuths},
+			}
+			copied := cprpsCopy(hcpNamespace, map[string]string{pullsecret.ManagedByLabel: "true", pullsecret.VeleroExcludeFromBackupLabel: "true"})
+			copied.Data = map[string][]byte{".dockerconfigjson": oldAuths}
+
+			objects := []crclient.Object{
+				hcluster,
+				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hcpNamespace}},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: hcluster.Namespace},
+					Data:       map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)},
+				},
+				source,
+				copied,
+			}
+			if tc.recreate || tc.paused || tc.guestReports {
+				// A paused reconcile propagates the pause to this HostedControlPlane,
+				// which shows that it reached the pause check.
+				hcp := &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{Name: hcluster.Name, Namespace: hcpNamespace},
+				}
+				if tc.recreate {
+					// The control plane already runs the pinned release, so its
+					// operators depend on the copy.
+					hcp.Spec.ControlPlaneReleaseImage = ptr.To(hcluster.Spec.ControlPlaneRelease.Image)
+				}
+				if tc.guestReports {
+					hcp.Status.VersionStatus = &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Image: hcluster.Spec.Release.Image},
+						History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate, Image: hcluster.Spec.Release.Image}},
+					}
+				}
+				objects = append(objects, hcp)
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(hcluster).Build()
+
+			// The legacy path detects the payload architecture before its pause check,
+			// so a paused case needs one to get there; a blocked case must not have
+			// one.
+			imageConfig := &dockerv1client.DockerImageConfig{}
+			if tc.paused {
+				imageConfig.Architecture = "amd64"
+			}
+
+			mockCtrl := gomock.NewController(t)
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			// Record the image of each release lookup and the credentials it is
+			// handed.
+			type lookup struct{ image, pullSecret string }
+			var lookups []lookup
+			mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+				func(_ context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+					lookups = append(lookups, lookup{image: image, pullSecret: string(pullSecret)})
+					return testutils.InitReleaseImageOrDie("4.21.10"), nil
+				}).AnyTimes()
+			mockedProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+			mockedProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+			mockedProvider.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
+			r := &HostedClusterReconciler{
+				Client:                            fakeClient,
+				Clock:                             clocktesting.NewFakeClock(time.Now()),
+				CertRotationScale:                 24 * time.Hour,
+				OperatorNamespace:                 cprpsOperatorNamespace,
+				ControlPlaneReleasePullSecretName: tc.configuredName,
+				ReconcileLegacy:                   tc.legacy,
+				createOrUpdate:                    func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ManagementClusterCapabilities:     &fakecapabilities.FakeSupportAllCapabilities{},
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProvider,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: imageConfig,
+					},
+				},
+				now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+			}
+
+			copyKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: pullsecret.SyncedControlPlaneReleaseSecretName}
+			predicate := controlPlaneReleasePullSecretPredicate(sourceKey)
+			mapper := handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersPinningControlPlaneRelease(fakeClient))
+			// reconcileQueued runs the reconcile that the watch asked for. It must
+			// stop where the case says it does, and for no other reason. When
+			// blocked, the legacy path returns the release image validation failure
+			// and the other path reports it in a condition and returns no error. A
+			// paused reconcile returns no error on either path, and must have paused
+			// the HostedControlPlane.
+			reconcileQueued := func(queue *cprpsCaptureQueue) {
+				request := reconcile.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}
+				g.Expect(queue.added).To(ConsistOf(request))
+				_, err := r.Reconcile(t.Context(), request)
+				if tc.legacy && !tc.paused {
+					g.Expect(err).To(MatchError(ContainSubstring("failed to find image CPU architecture")))
+				} else {
+					g.Expect(err).ToNot(HaveOccurred())
+				}
+
+				blockedBy := hyperv1.ValidReleaseImage
+				if tc.paused {
+					blockedBy = hyperv1.ReconciliationActive
+					hcp := &hyperv1.HostedControlPlane{}
+					g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hcluster.Name}, hcp)).To(Succeed())
+					g.Expect(hcp.Spec.PausedUntil).To(Equal(hcluster.Spec.PausedUntil), "expected the reconcile to reach the pause check")
+				}
+				observed := &hyperv1.HostedCluster{}
+				g.Expect(fakeClient.Get(t.Context(), request.NamespacedName, observed)).To(Succeed())
+				condition := meta.FindStatusCondition(observed.Status.Conditions, string(blockedBy))
+				g.Expect(condition).ToNot(BeNil(), "expected the %s condition to be reported", blockedBy)
+				g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			}
+
+			previous := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), sourceKey, previous)).To(Succeed())
+			if tc.recreate {
+				// The provider deletes its Secret; deliver the delete event the way
+				// the watch does. The credential must not outlive its source.
+				g.Expect(fakeClient.Delete(t.Context(), previous.DeepCopy())).To(Succeed())
+				deleteEvent := event.DeleteEvent{Object: previous}
+				g.Expect(predicate.Delete(deleteEvent)).To(BeTrue())
+				queue := &cprpsCaptureQueue{}
+				mapper.Delete(t.Context(), deleteEvent, queue)
+				reconcileQueued(queue)
+				err := fakeClient.Get(t.Context(), copyKey, &corev1.Secret{})
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue(), "expected the copy to be removed with its source, got %v", err)
+
+				// The provider then recreates it with the new credential.
+				recreated := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: sourceKey.Name, Namespace: sourceKey.Namespace},
+					Data:       map[string][]byte{".dockerconfigjson": newAuths},
+				}
+				g.Expect(fakeClient.Create(t.Context(), recreated)).To(Succeed())
+				createEvent := event.CreateEvent{Object: recreated}
+				g.Expect(predicate.Create(createEvent)).To(BeTrue())
+				queue = &cprpsCaptureQueue{}
+				mapper.Create(t.Context(), createEvent, queue)
+				// While the source was gone, the lookups were rightly handed the
+				// cluster pull secret only; check the ones after the recreate.
+				lookups = nil
+				reconcileQueued(queue)
+			} else {
+				// The provider rewrites its Secret in place; deliver the update
+				// event the way the watch does.
+				rotated := previous.DeepCopy()
+				rotated.Data[".dockerconfigjson"] = newAuths
+				if tc.unusable {
+					rotated.Data[".dockerconfigjson"] = unusableAuths
+				}
+				g.Expect(fakeClient.Update(t.Context(), rotated)).To(Succeed())
+				updateEvent := event.UpdateEvent{ObjectOld: previous, ObjectNew: rotated}
+				g.Expect(predicate.Update(updateEvent)).To(BeTrue())
+				queue := &cprpsCaptureQueue{}
+				mapper.Update(t.Context(), updateEvent, queue)
+				reconcileQueued(queue)
+			}
+
+			synced := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), copyKey, synced)).To(Succeed())
+			if tc.recreate {
+				g.Expect(synced.Type).To(Equal(corev1.SecretTypeDockerConfigJson))
+				g.Expect(synced.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, crclient.ObjectKeyFromObject(hcluster).String()))
+			}
+			g.Expect(synced.Labels).To(HaveKeyWithValue(pullsecret.ManagedByLabel, "true"))
+			g.Expect(synced.Labels).To(HaveKeyWithValue(pullsecret.VeleroExcludeFromBackupLabel, "true"))
+			if tc.unusable {
+				// The readers of the copy could not use the rotated payload, so the
+				// working copy is kept.
+				g.Expect(synced.Data[".dockerconfigjson"]).To(Equal(oldAuths))
+				return
+			}
+			g.Expect(synced.Data[".dockerconfigjson"]).To(Equal(newAuths))
+
+			// The operator's own lookups of the pinned control plane release read
+			// the source Secret directly, so they must be handed the rotated
+			// credential and never the previous one. Lookups of the data plane
+			// release must not be handed the provider credential at all.
+			pinnedLookups, dataPlaneLookups := 0, 0
+			for _, l := range lookups {
+				g.Expect(l.pullSecret).ToNot(ContainSubstring(oldToken), "lookup of %s", l.image)
+				switch l.image {
+				case hcluster.Spec.ControlPlaneRelease.Image:
+					pinnedLookups++
+					g.Expect(l.pullSecret).To(ContainSubstring(newToken), "lookup of the control plane release")
+				case hcluster.Spec.Release.Image:
+					dataPlaneLookups++
+					g.Expect(l.pullSecret).ToNot(ContainSubstring(newToken), "lookup of the data plane release")
+				}
+			}
+			g.Expect(pinnedLookups).To(BeNumerically(">", 0), "expected a lookup of the control plane release")
+			if tc.guestReports {
+				g.Expect(dataPlaneLookups).To(BeNumerically(">", 0), "expected a lookup of the data plane release")
+			}
+		})
+	}
+}
+
+//nolint:hypershiftlinter // testfuncstructure: regression test that drives the full Reconcile on both reconcile paths to prove a rejected copy refresh holds up neither teardown, pause handling nor the rest of the reconcile
+func TestControlPlaneReleasePullSecretRefreshFailureDoesNotBlockReconcile(t *testing.T) {
+	t.Parallel()
+
+	newAuths := []byte(`{"auths":{"quay.io/openshift-release-dev/ocp-release-private":{"auth":"bmV3OnRva2Vu"}}}`)
+
+	// The copy rejects every update, for example because it was made immutable,
+	// while the provider has rotated its Secret. The refresh then fails on every
+	// reconcile. That must not keep a HostedCluster from being torn down, a pause
+	// from reaching its HostedControlPlane, or the rest of an active reconcile
+	// from running, and the failure must not go unreported.
+	const (
+		deleting = "deleting"
+		paused   = "paused"
+		active   = "active"
+		// blocked is an active reconcile that release image validation ends
+		// without an error, before the regular sync.
+		blocked = "blocked"
+		// noIgnition is an active reconcile that ends without an error because
+		// the HostedCluster does not say how to publish the Ignition service.
+		noIgnition = "noIgnition"
+	)
+	tests := []struct {
+		name   string
+		legacy bool
+		state  string
+	}{
+		{name: "When the refresh is rejected and the cluster is being deleted, it should complete the teardown", state: deleting},
+		{name: "When the refresh is rejected and the cluster is being deleted on the legacy path, it should complete the teardown", state: deleting, legacy: true},
+		{name: "When the refresh is rejected and reconciliation is paused, it should pause the control plane and return the error", state: paused},
+		{name: "When the refresh is rejected and reconciliation is paused on the legacy path, it should pause the control plane and return the error", state: paused, legacy: true},
+		{name: "When the refresh is rejected and the reconcile is active, it should still reconcile the control plane and report the sync failure", state: active},
+		{name: "When the refresh is rejected and the reconcile is active on the legacy path, it should reach the regular sync and report its failure", state: active, legacy: true},
+		{name: "When the refresh is rejected and release image validation blocks the reconcile, it should return the refresh error", state: blocked},
+		{name: "When the refresh is rejected and the Ignition service has no publishing strategy, it should return the refresh error", state: noIgnition},
+		{name: "When the refresh is rejected and the Ignition service has no publishing strategy on the legacy path, it should return the refresh error", state: noIgnition, legacy: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-cluster",
+					Namespace:  "clusters",
+					Finalizers: []string{HostedClusterFinalizer},
+					Annotations: map[string]string{
+						hyperv1.SkipControlPlaneNamespaceDeletionAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "12345678-1234-1234-1234-123456789abc",
+					InfraID:   "infra-id",
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					},
+					PullSecret:          corev1.LocalObjectReference{Name: "pull-secret"},
+					Release:             hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64"},
+					ControlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release-private:4.21.10-x86_64"},
+					Etcd:                hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Platform:            hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+				},
+			}
+			switch tc.state {
+			case deleting:
+				hcluster.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+			case paused:
+				hcluster.Spec.PausedUntil = ptr.To("true")
+			case noIgnition:
+				hcluster.Spec.Services = nil
+			}
+			hcpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+			copied := cprpsCopy(hcpNamespace, map[string]string{pullsecret.ManagedByLabel: "true", pullsecret.VeleroExcludeFromBackupLabel: "true"})
+			staleData := copied.Data[".dockerconfigjson"]
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: hcluster.Name, Namespace: hcpNamespace},
+				Spec:       hyperv1.HostedControlPlaneSpec{ControlPlaneReleaseImage: ptr.To(hcluster.Spec.ControlPlaneRelease.Image)},
+			}
+
+			var rejectedUpdates int
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(
+					hcluster,
+					&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hcpNamespace}},
+					&corev1.Secret{
+						ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: hcluster.Namespace},
+						Data:       map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)},
+					},
+					cprpsProviderSecret(map[string][]byte{".dockerconfigjson": newAuths}),
+					copied,
+					hcp,
+				).
+				WithStatusSubresource(hcluster).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Update: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.UpdateOption) error {
+						if _, ok := obj.(*corev1.Secret); ok && obj.GetName() == pullsecret.SyncedControlPlaneReleaseSecretName {
+							rejectedUpdates++
+							return errors2.NewBadRequest("field is immutable")
+						}
+						return c.Update(ctx, obj, opts...)
+					},
+				}).
+				Build()
+
+			// Without a CPU architecture in the image metadata, release image
+			// validation fails.
+			imageConfig := &dockerv1client.DockerImageConfig{Architecture: "amd64"}
+			if tc.state == blocked {
+				imageConfig.Architecture = ""
+			}
+
+			mockCtrl := gomock.NewController(t)
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.21.10"), nil).AnyTimes()
+			mockedProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+			mockedProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+			mockedProvider.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
+			r := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				Clock:                         clocktesting.NewFakeClock(time.Now()),
+				CertRotationScale:             24 * time.Hour,
+				OperatorNamespace:             cprpsOperatorNamespace,
+				ReconcileLegacy:               tc.legacy,
+				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProvider,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: imageConfig,
+					},
+				},
+				now: func() metav1.Time { return metav1.NewTime(time.Now()) },
+			}
+
+			request := reconcile.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}
+			copyKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: pullsecret.SyncedControlPlaneReleaseSecretName}
+			expectCopyUnchanged := func() {
+				g.Expect(rejectedUpdates).To(BeNumerically(">", 0), "expected the refresh to try to update the copy")
+				synced := &corev1.Secret{}
+				g.Expect(fakeClient.Get(t.Context(), copyKey, synced)).To(Succeed())
+				g.Expect(synced.Data[".dockerconfigjson"]).To(Equal(staleData))
+			}
+
+			if tc.state == deleting {
+				// The first reconcile deletes the HostedControlPlane and waits for it
+				// to go away, the second one finishes the teardown. Each refresh is
+				// rejected, and neither reconcile may fail on it.
+				for range 2 {
+					rejectedUpdates = 0
+					_, err := r.Reconcile(t.Context(), request)
+					g.Expect(err).ToNot(HaveOccurred())
+					expectCopyUnchanged()
+					// The teardown removes the finalizer once it is done, and the
+					// fake client then deletes the HostedCluster.
+					getErr := fakeClient.Get(t.Context(), request.NamespacedName, &hyperv1.HostedCluster{})
+					if errors2.IsNotFound(getErr) {
+						return
+					}
+					g.Expect(getErr).ToNot(HaveOccurred())
+				}
+				t.Fatal("expected the teardown to complete")
+			}
+
+			_, err := r.Reconcile(t.Context(), request)
+			expectCopyUnchanged()
+			observed := &hyperv1.HostedControlPlane{}
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(hcp), observed)).To(Succeed())
+
+			switch {
+			case tc.state == paused:
+				// The error is returned, so that the refresh is retried while paused,
+				// but only after the pause reached the HostedControlPlane.
+				g.Expect(err).To(MatchError(ContainSubstring("failed to refresh control plane release pull secret copy")))
+				g.Expect(observed.Spec.PausedUntil).To(Equal(hcluster.Spec.PausedUntil))
+			case tc.state == blocked, tc.state == noIgnition:
+				// A gate ends this reconcile without an error before the regular
+				// sync, so the refresh error is returned to have it retried.
+				g.Expect(err).To(MatchError(ContainSubstring("failed to refresh control plane release pull secret copy")))
+			case tc.legacy:
+				// The legacy path stops at the regular sync, which writes the copy
+				// again and reports its own failure, as it did before the refresh.
+				g.Expect(err).To(MatchError(ContainSubstring("failed to reconcile control plane release pull secret")))
+				g.Expect(err).To(MatchError(Not(ContainSubstring("failed to refresh"))))
+			default:
+				// The regular sync reports the failure, and the HostedControlPlane
+				// chain still runs: it sets the HostedCluster annotation on the
+				// HostedControlPlane, which the fixture does not have.
+				g.Expect(err).To(MatchError(ContainSubstring("field is immutable")))
+				g.Expect(err).To(MatchError(Not(ContainSubstring("failed to refresh"))))
+				g.Expect(observed.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, crclient.ObjectKeyFromObject(hcluster).String()))
+			}
+		})
+	}
+}
+
+func TestRefreshControlPlaneReleasePullSecretCopy(t *testing.T) {
+	t.Parallel()
+
+	staleData := cprpsCopy("cp-ns", nil).Data[".dockerconfigjson"]
+
+	pinnedImage := "quay.io/openshift-release-dev/ocp-release-private:4.21.10-x86_64"
+	pinnedHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{ControlPlaneReleaseImage: &pinnedImage}}
+	}
+	deleted := &metav1.Time{Time: time.Now()}
+
+	tests := []struct {
+		name string
+		// hcp is the HostedControlPlane observed at the start of the reconcile.
+		hcp             *hyperv1.HostedControlPlane
+		clusterDeleted  bool
+		pinned          bool
+		existingObjects []crclient.Object
+		expectCopy      bool
+		expectedData    []byte
+		// expectRestored also checks the labels and type of a copy this created.
+		expectRestored bool
+	}{
+		{
+			name:   "When the source content differs from a managed copy, it should rewrite the copy",
+			pinned: true,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectCopy:   true,
+			expectedData: cprpsProviderAuths,
+		},
+		{
+			name:            "When there is no copy and no control plane yet, it should not create one",
+			pinned:          true,
+			existingObjects: []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
+		},
+		{
+			name:            "When there is no copy and the control plane does not run the pinned release yet, it should not create one",
+			hcp:             &hyperv1.HostedControlPlane{},
+			pinned:          true,
+			existingObjects: []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
+		},
+		{
+			name:            "When there is no copy and the control plane runs the pinned release, it should restore the copy",
+			hcp:             pinnedHCP(),
+			pinned:          true,
+			existingObjects: []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
+			expectCopy:      true,
+			expectedData:    cprpsProviderAuths,
+			expectRestored:  true,
+		},
+		{
+			name:            "When there is no copy and the cluster is being deleted, it should not create one",
+			hcp:             pinnedHCP(),
+			clusterDeleted:  true,
+			pinned:          true,
+			existingObjects: []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
+		},
+		{
+			name: "When there is no copy and the control plane is being deleted, it should not create one",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := pinnedHCP()
+				hcp.DeletionTimestamp = deleted
+				return hcp
+			}(),
+			pinned:          true,
+			existingObjects: []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths})},
+		},
+		{
+			name:            "When there is no copy and the source lacks .dockerconfigjson, it should not create one and not fail",
+			hcp:             pinnedHCP(),
+			pinned:          true,
+			existingObjects: []crclient.Object{cprpsProviderSecret(map[string][]byte{})},
+		},
+		{
+			name:   "When the source content differs from a managed copy and the cluster is being deleted, it should still rewrite the copy",
+			hcp:    pinnedHCP(),
+			pinned: true,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			clusterDeleted: true,
+			expectCopy:     true,
+			expectedData:   cprpsProviderAuths,
+		},
+		{
+			name:   "When an unmanaged secret has the copy's name, it should leave it alone",
+			hcp:    pinnedHCP(),
+			pinned: true,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", nil),
+			},
+			expectCopy:   true,
+			expectedData: staleData,
+		},
+		{
+			name:   "When the source lacks .dockerconfigjson, it should leave the copy alone and not fail",
+			pinned: true,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectCopy:   true,
+			expectedData: staleData,
+		},
+		{
+			name:   "When the source payload cannot be parsed, it should leave the copy alone and not fail",
+			pinned: true,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": []byte(`{"auths":[]}`)}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectCopy:   true,
+			expectedData: staleData,
+		},
+		{
+			name:   "When one entry of the source payload cannot be decoded, it should leave the copy alone and not fail",
+			pinned: true,
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"quay.io":{"auth":"dXNlcjpwYXNz"},"registry.example.com":{"auth":42}}}`)}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectCopy:   true,
+			expectedData: staleData,
+		},
+		{
+			name:            "When there is no copy and the source payload cannot be parsed, it should not create one and not fail",
+			hcp:             pinnedHCP(),
+			pinned:          true,
+			existingObjects: []crclient.Object{cprpsProviderSecret(map[string][]byte{".dockerconfigjson": []byte(`{"auths":[]}`)})},
+		},
+		{
+			name:            "When the source is absent, it should leave the copy to the stale removal",
+			pinned:          true,
+			existingObjects: []crclient.Object{cprpsCopy("cp-ns", cprpsManagedLabels)},
+			expectCopy:      true,
+			expectedData:    staleData,
+		},
+		{
+			name: "When no control plane release is pinned, it should leave the copy to the stale removal",
+			existingObjects: []crclient.Object{
+				cprpsProviderSecret(map[string][]byte{".dockerconfigjson": cprpsProviderAuths}),
+				cprpsCopy("cp-ns", cprpsManagedLabels),
+			},
+			expectCopy:   true,
+			expectedData: staleData,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existingObjects...).Build()
+			r := &HostedClusterReconciler{Client: client, OperatorNamespace: cprpsOperatorNamespace}
+
+			hcluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"}}
+			if tc.clusterDeleted {
+				hcluster.DeletionTimestamp = deleted
+			}
+
+			g.Expect(r.refreshControlPlaneReleasePullSecretCopy(t.Context(), hcluster, tc.hcp, tc.pinned, "cp-ns")).To(Succeed())
+
+			synced := &corev1.Secret{}
+			err := client.Get(t.Context(), crclient.ObjectKey{Namespace: "cp-ns", Name: pullsecret.SyncedControlPlaneReleaseSecretName}, synced)
+			if !tc.expectCopy {
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue(), "expected no copy to be created, got %v", err)
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(synced.Data[".dockerconfigjson"]).To(Equal(tc.expectedData))
+			if tc.expectRestored {
+				g.Expect(synced.Type).To(Equal(corev1.SecretTypeDockerConfigJson))
+				g.Expect(synced.Labels).To(HaveKeyWithValue(pullsecret.ManagedByLabel, "true"))
+				g.Expect(synced.Labels).To(HaveKeyWithValue(pullsecret.VeleroExcludeFromBackupLabel, "true"))
+				// Like a copy written by the sync phase, so that deleting it
+				// enqueues the HostedCluster.
+				g.Expect(synced.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, "clusters/test-cluster"))
+			}
 		})
 	}
 }

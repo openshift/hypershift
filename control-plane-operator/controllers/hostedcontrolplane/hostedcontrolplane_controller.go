@@ -92,6 +92,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
@@ -174,6 +175,12 @@ const (
 
 	cpoAzureCredentials = "CPOAzureCredentials"
 	kmsAzureCredentials = "KMSAzureCredentials"
+
+	azureKMSValidationTimeout = 30 * time.Second
+	// azureKMSRouterLookupTimeout bounds the cached reads that resolve the
+	// private router relay. These normally return from the informer cache
+	// immediately; the timeout only caps the first-sync case.
+	azureKMSRouterLookupTimeout = 10 * time.Second
 )
 
 type HostedControlPlaneReconciler struct {
@@ -216,6 +223,7 @@ type HostedControlPlaneReconciler struct {
 	ImageMetadataProvider                   imageregistry.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
+	newAzureKMSCredential                   func(context.Context, string, ...dataplane.Option) (azcore.TokenCredential, error)
 	clock                                   clock.Clock
 	lastDNSReconcile                        sync.Map
 }
@@ -936,10 +944,21 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 		if len(infraStatus.Message) > 0 {
 			message = infraStatus.Message
 		}
+		reason := hyperv1.WaitingOnInfrastructureReadyReason
+		if infraStatus.RouteNotAdmitted {
+			reason = hyperv1.RouteNotAdmittedReason
+			if infraStatus.RouteNotAdmittedMsg != "" {
+				if len(message) > 0 {
+					message = message + "; " + infraStatus.RouteNotAdmittedMsg
+				} else {
+					message = infraStatus.RouteNotAdmittedMsg
+				}
+			}
+		}
 		newCondition = metav1.Condition{
 			Type:    string(hyperv1.InfrastructureReady),
 			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
+			Reason:  reason,
 			Message: message,
 		}
 		r.Log.Info("Infrastructure is not yet ready")
@@ -1032,9 +1051,13 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlaneVersionStatus(ctx co
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret for version reconciliation: %w", err)
 	}
+	pullSecretBytes, err := pullsecret.ForHostedControlPlane(ctx, r.Client, hostedControlPlane, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return fmt.Errorf("failed to resolve control plane release pull secret: %w", err)
+	}
 	// Resolve the release image to its digest so controlPlaneVersion records
 	// the immutable image reference, consistent with how CVO records images.
-	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
+	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to resolve control plane release image digest: %w", err)
 	}
@@ -1268,15 +1291,36 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 	}
 
 	var notAvailable []string
+	var firstFailureName, firstFailureReason, firstFailureMessage string
+	sort.Slice(componentsList.Items, func(i, j int) bool {
+		return componentsList.Items[i].Name < componentsList.Items[j].Name
+	})
 	for _, component := range componentsList.Items {
 		availableCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
 		if availableCondition == nil || availableCondition.Status != metav1.ConditionTrue {
 			notAvailable = append(notAvailable, component.Name)
+			if firstFailureName == "" && availableCondition != nil {
+				firstFailureName = component.Name
+				firstFailureReason = availableCondition.Reason
+				firstFailureMessage = availableCondition.Message
+			}
 		}
 	}
 
 	if len(notAvailable) > 0 {
-		return fmt.Sprintf("Waiting for components to be available: %s", strings.Join(notAvailable, ", ")), nil
+		noun := "components"
+		if len(notAvailable) == 1 {
+			noun = "component"
+		}
+		msg := fmt.Sprintf("%d %s unavailable: %s", len(notAvailable), noun, strings.Join(notAvailable, ", "))
+		if firstFailureName != "" {
+			detail := firstFailureReason
+			if firstFailureMessage != "" {
+				detail += ": " + firstFailureMessage
+			}
+			msg += fmt.Sprintf(". First failure: %s — %s", firstFailureName, detail)
+		}
+		return msg, nil
 	}
 
 	return "", nil
@@ -1309,9 +1353,17 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return nil, err
 	}
+	// The control plane may run a release image held in a private registry that the
+	// cluster pull secret does not cover. Only the control plane release lookup gets
+	// the additional credential; the data plane release is resolved elsewhere with
+	// the unmodified pull secret.
+	pullSecretBytes, err := pullsecret.ForHostedControlPlane(ctx, r.Client, hcp, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return nil, err
+	}
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
-	return r.ReleaseProvider.Lookup(lookupCtx, imageregistry.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+	return r.ReleaseProvider.Lookup(lookupCtx, imageregistry.HCPControlPlaneReleaseImage(hcp), pullSecretBytes)
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
@@ -3784,19 +3836,54 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
+	// keysTransport stays nil on every path except a private Key Vault on ARO
+	// HCP, where the keys client has to reach the vault through the private
+	// router instead of its public FQDN.
+	var keysTransport policy.Transporter
+
 	if hyperazureutil.IsAroHCPByHCP(hcp) {
-		// CPO cannot reach private Key Vault endpoints; KAS pods access them
-		// through the private router (HAProxy TCP passthrough via hostAlias).
-		// Unknown rather than True.
+		// CPO cannot reach private Key Vault endpoints directly. The private
+		// router runs on the customer VNet (via Swift) and already relays Key
+		// Vault traffic for the azure-kms-provider sidecar, which gets there
+		// through a hostAlias. Do the same in-process so the condition
+		// reflects a real probe rather than staying Unknown forever.
 		if hyperazureutil.IsPrivateKeyVault(hcp) {
-			meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidAzureKMSConfig),
-				ObservedGeneration: hcp.Generation,
-				Status:             metav1.ConditionUnknown,
-				Reason:             hyperv1.StatusUnknownReason,
-				Message:            "Private Key Vault endpoint is not reachable from the management cluster",
-			})
-			return
+			// Resolve the vault FQDN here rather than inside the relay lookup.
+			// A vault name or cloud that cannot produce an FQDN is a permanent
+			// configuration error, and the pending reason below is tolerated
+			// indefinitely by the health expectation, so reporting it there
+			// would hide a cluster that can never validate.
+			keyVaultFQDN, err := hyperazureutil.GetKeyVaultFQDN(hcp)
+			if err != nil {
+				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+					fmt.Sprintf("failed to resolve Key Vault FQDN: %v", err))
+				return
+			}
+
+			// Bound the router lookup on its own context. It reads through the
+			// cache, which blocks on an informer sync the first time, and this
+			// runs before the status patch, so an unbounded wait would stall
+			// every condition this reconcile reports. The probe and the
+			// credential reloader keep the caller's context.
+			lookupCtx, lookupCancel := context.WithTimeout(ctx, azureKMSRouterLookupTimeout)
+			keyVaultClient, err := hyperazureutil.PrivateRouterKeyVaultClient(lookupCtx, r.Client, hcp.Namespace, keyVaultFQDN)
+			lookupCancel()
+			if err != nil {
+				// The relay may still be provisioning. Report Unknown and let
+				// the next reconcile retry until the router is available. This
+				// uses its own reason so that consumers can tell a transient
+				// "not yet" apart from a validator that never ran at all.
+				meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+					Type:               string(hyperv1.ValidAzureKMSConfig),
+					ObservedGeneration: hcp.Generation,
+					Status:             metav1.ConditionUnknown,
+					Reason:             hyperv1.PrivateKeyVaultValidationPendingReason,
+					Message:            fmt.Sprintf("Private Key Vault cannot be validated yet: %v", err),
+				})
+				return
+			}
+			defer keyVaultClient.CloseIdleConnections()
+			keysTransport = keyVaultClient
 		}
 
 		key := hcp.Namespace + kmsAzureCredentials
@@ -3812,7 +3899,11 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 					fmt.Sprintf("failed to get Azure cloud configuration: %v", err))
 				return
 			}
-			cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
+			newCredential := r.newAzureKMSCredential
+			if newCredential == nil {
+				newCredential = dataplane.NewUserAssignedIdentityCredential
+			}
+			cred, err = newCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
 			if err != nil {
 				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 					fmt.Sprintf("failed to obtain azure client credentials: %v", err))
@@ -3845,10 +3936,14 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		return
 	}
 
-	azureKeyVaultDNSSuffix, err := hyperazureutil.GetKeyVaultDNSSuffix(hcp.Spec.Platform.Azure.Cloud, azureKmsSpec.KeyVaultType)
+	// Build the probe URL from the resolved FQDN rather than interpolating the
+	// vault name here, so the public probe gets the same name validation as
+	// the private one. The CRD bounds only the name's length, and the keys
+	// client dials whatever host the URL ends up with.
+	keyVaultFQDN, err := hyperazureutil.GetKeyVaultFQDN(hcp)
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
-			fmt.Sprintf("vault dns suffix not available for cloud: %s", hcp.Spec.Platform.Azure.Cloud))
+			fmt.Sprintf("failed to resolve Key Vault FQDN: %v", err))
 		return
 	}
 
@@ -3859,13 +3954,16 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		return
 	}
 
-	vaultURL := fmt.Sprintf("https://%s.%s", azureKmsSpec.ActiveKey.KeyVaultName, azureKeyVaultDNSSuffix)
+	vaultURL := "https://" + keyVaultFQDN
 	keysClient, err := azkeys.NewClient(vaultURL, cred, &azkeys.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Cloud: keysCloudConfig,
 			Telemetry: policy.TelemetryOptions{
 				ApplicationID: hyperazureutil.CPOUserAgent,
 			},
+			// nil for public vaults, which leaves the azcore default transport
+			// in place.
+			Transport: keysTransport,
 		},
 	})
 	if err != nil {
@@ -3886,7 +3984,11 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		Algorithm: ptr.To(azkeys.EncryptionAlgorithmRSAOAEP256),
 		Value:     []byte("text"),
 	}
-	if _, err := keysClient.Encrypt(ctx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
+	// Bound authentication, HTTP requests and retries without canceling the
+	// cached credential's background reloader or the rest of reconciliation.
+	probeCtx, cancel := context.WithTimeout(ctx, azureKMSValidationTimeout)
+	defer cancel()
+	if _, err := keysClient.Encrypt(probeCtx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
 		condition = metav1.Condition{
 			Type:               string(hyperv1.ValidAzureKMSConfig),
 			ObservedGeneration: hcp.Generation,

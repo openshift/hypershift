@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -648,6 +649,52 @@ func TestGetKeyVaultFQDN(t *testing.T) {
 					},
 					SecretEncryption: &hyperv1.SecretEncryptionSpec{
 						KMS: &hyperv1.KMSSpec{},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "When KeyVaultName carries a URL delimiter, it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									// Would otherwise move the host of every URL
+									// built from the returned FQDN.
+									KeyVaultName: "evil.example.com/",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "When KeyVaultName is longer than Azure allows, it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: strings.Repeat("a", 25),
+								},
+							},
+						},
 					},
 				},
 			},

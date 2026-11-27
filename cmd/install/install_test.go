@@ -27,7 +27,7 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
-	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -1243,12 +1243,12 @@ func TestIsClusterAPIRegistered(t *testing.T) {
 		expectedResult bool
 	}{
 		{
-			name: "When ClusterAPI API is registered it should detect CCAPIO presence",
+			name: "When ClusterAPI is registered, it should detect CCAPIO presence",
 			resources: []*metav1.APIResourceList{
 				{
-					GroupVersion: "operator.openshift.io/v1alpha1",
+					GroupVersion: "operator.openshift.io/v1",
 					APIResources: []metav1.APIResource{
-						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
+						{Name: "kubeapiservers", Kind: "KubeAPIServer"},
 						{Name: "clusterapis", Kind: "ClusterAPI"},
 					},
 				},
@@ -1261,12 +1261,12 @@ func TestIsClusterAPIRegistered(t *testing.T) {
 			expectedResult: false,
 		},
 		{
-			name: "When operator.openshift.io/v1alpha1 exists but ClusterAPI kind is not present it should return false",
+			name: "When operator.openshift.io/v1 exists but ClusterAPI kind is not present it should return false",
 			resources: []*metav1.APIResourceList{
 				{
-					GroupVersion: "operator.openshift.io/v1alpha1",
+					GroupVersion: "operator.openshift.io/v1",
 					APIResources: []metav1.APIResource{
-						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
+						{Name: "kubeapiservers", Kind: "KubeAPIServer"},
 					},
 				},
 			},
@@ -1293,29 +1293,9 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "nodepools.hypershift.openshift.io"}},
 	}
 
-	// ssaInterceptor converts SSA Patch calls into Create/Update for the fake client,
-	// which does not support ApplyPatchType natively.
-	ssaInterceptor := interceptor.Funcs{
-		Patch: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error {
-			if patch.Type() != types.ApplyPatchType {
-				return c.Patch(ctx, obj, patch, opts...)
-			}
-			existing := obj.DeepCopyObject().(crclient.Object)
-			err := c.Get(ctx, crclient.ObjectKeyFromObject(obj), existing)
-			if apierrors.IsNotFound(err) {
-				return c.Create(ctx, obj)
-			}
-			if err != nil {
-				return err
-			}
-			obj.SetResourceVersion(existing.GetResourceVersion())
-			return c.Update(ctx, obj)
-		},
-	}
-
 	tests := []struct {
 		name             string
-		existingConfig   *operatorv1alpha1.ClusterAPI
+		existingConfig   *operatorv1.ClusterAPI
 		crds             []crclient.Object
 		expectedCRDNames []string
 		expectNoChange   bool
@@ -1331,11 +1311,11 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 		},
 		{
 			name: "When ClusterAPI config exists it should apply unmanaged CRDs",
-			existingConfig: &operatorv1alpha1.ClusterAPI{
+			existingConfig: &operatorv1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cluster",
 				},
-				Spec: &operatorv1alpha1.ClusterAPISpec{
+				Spec: &operatorv1.ClusterAPISpec{
 					UnmanagedCustomResourceDefinitions: []string{
 						"clusters.cluster.x-k8s.io",
 						"machinesets.cluster.x-k8s.io",
@@ -1353,11 +1333,11 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 		},
 		{
 			name: "When all CRDs already listed it should apply idempotently",
-			existingConfig: &operatorv1alpha1.ClusterAPI{
+			existingConfig: &operatorv1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cluster",
 				},
-				Spec: &operatorv1alpha1.ClusterAPISpec{
+				Spec: &operatorv1.ClusterAPISpec{
 					UnmanagedCustomResourceDefinitions: []string{
 						"clusters.cluster.x-k8s.io",
 						"machines.cluster.x-k8s.io",
@@ -1384,6 +1364,30 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			// ssaInterceptor converts SSA Patch calls into Create/Update for the fake client,
+			// which does not support ApplyPatchType natively.
+			ssaInterceptor := interceptor.Funcs{
+				Patch: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error {
+					if patch.Type() != types.ApplyPatchType {
+						return c.Patch(ctx, obj, patch, opts...)
+					}
+					data, err := patch.Data(obj)
+					require.NoError(t, err)
+					config := &operatorv1.ClusterAPI{}
+					require.NoError(t, json.Unmarshal(data, config))
+					require.Equal(t, "operator.openshift.io/v1", config.APIVersion)
+					existing := &operatorv1.ClusterAPI{}
+					err = c.Get(ctx, crclient.ObjectKeyFromObject(config), existing)
+					if apierrors.IsNotFound(err) {
+						return c.Create(ctx, config)
+					}
+					if err != nil {
+						return err
+					}
+					config.SetResourceVersion(existing.GetResourceVersion())
+					return c.Update(ctx, config)
+				},
+			}
 			builder := fake.NewClientBuilder().
 				WithScheme(hyperapi.Scheme).
 				WithInterceptorFuncs(ssaInterceptor)
@@ -1396,7 +1400,7 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 
 			if tc.expectNoChange {
-				config := &operatorv1alpha1.ClusterAPI{}
+				config := &operatorv1.ClusterAPI{}
 				err := client.Get(t.Context(), crclient.ObjectKey{Name: "cluster"}, config)
 				if tc.existingConfig == nil {
 					g.Expect(err).To(HaveOccurred(), "expected no ClusterAPI config to be created")
@@ -1409,7 +1413,7 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 				return
 			}
 
-			config := &operatorv1alpha1.ClusterAPI{}
+			config := &operatorv1.ClusterAPI{}
 			err = client.Get(t.Context(), crclient.ObjectKey{Name: "cluster"}, config)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(config.Spec).ToNot(BeNil())
@@ -1421,22 +1425,22 @@ func TestEnsureUnmanagedCRDs(t *testing.T) {
 func TestWaitForCAPIOperatorSync(t *testing.T) {
 	tests := []struct {
 		name            string
-		config          *operatorv1alpha1.ClusterAPI
+		config          *operatorv1.ClusterAPI
 		patchGeneration int64
 		expectSuccess   bool
 	}{
 		{
 			name: "When revision controller has observed the patch generation and installer has applied it should succeed",
-			config: &operatorv1alpha1.ClusterAPI{
+			config: &operatorv1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cluster",
 					Generation: 2,
 				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
+				Status: operatorv1.ClusterAPIStatus{
 					ObservedRevisionGeneration: 2,
 					DesiredRevision:            "rev-2",
 					CurrentRevision:            "rev-2",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+					Revisions: []operatorv1.ClusterAPIInstallerRevision{
 						{Name: "rev-2", Revision: 2, ContentID: "content-2"},
 					},
 				},
@@ -1446,16 +1450,16 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 		},
 		{
 			name: "When observedRevisionGeneration is ahead of patch generation it should succeed",
-			config: &operatorv1alpha1.ClusterAPI{
+			config: &operatorv1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cluster",
 					Generation: 3,
 				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
+				Status: operatorv1.ClusterAPIStatus{
 					ObservedRevisionGeneration: 3,
 					DesiredRevision:            "rev-3",
 					CurrentRevision:            "rev-3",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+					Revisions: []operatorv1.ClusterAPIInstallerRevision{
 						{Name: "rev-3", Revision: 3, ContentID: "content-3"},
 					},
 				},
@@ -1465,16 +1469,16 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 		},
 		{
 			name: "When revision controller has not observed the patch generation it should time out",
-			config: &operatorv1alpha1.ClusterAPI{
+			config: &operatorv1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cluster",
 					Generation: 3,
 				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
+				Status: operatorv1.ClusterAPIStatus{
 					ObservedRevisionGeneration: 2,
 					DesiredRevision:            "rev-2",
 					CurrentRevision:            "rev-2",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+					Revisions: []operatorv1.ClusterAPIInstallerRevision{
 						{Name: "rev-2", Revision: 2, ContentID: "content-2"},
 					},
 				},
@@ -1484,16 +1488,16 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 		},
 		{
 			name: "When reading a stale object from before the patch it should time out",
-			config: &operatorv1alpha1.ClusterAPI{
+			config: &operatorv1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cluster",
 					Generation: 1,
 				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
+				Status: operatorv1.ClusterAPIStatus{
 					ObservedRevisionGeneration: 1,
 					DesiredRevision:            "rev-1",
 					CurrentRevision:            "rev-1",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+					Revisions: []operatorv1.ClusterAPIInstallerRevision{
 						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
 					},
 				},
@@ -1503,16 +1507,16 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 		},
 		{
 			name: "When currentRevision does not match desiredRevision it should time out",
-			config: &operatorv1alpha1.ClusterAPI{
+			config: &operatorv1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cluster",
 					Generation: 2,
 				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
+				Status: operatorv1.ClusterAPIStatus{
 					ObservedRevisionGeneration: 2,
 					DesiredRevision:            "rev-2",
 					CurrentRevision:            "rev-1",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+					Revisions: []operatorv1.ClusterAPIInstallerRevision{
 						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
 						{Name: "rev-2", Revision: 2, ContentID: "content-2"},
 					},
@@ -1523,15 +1527,15 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 		},
 		{
 			name: "When currentRevision is empty it should time out",
-			config: &operatorv1alpha1.ClusterAPI{
+			config: &operatorv1.ClusterAPI{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cluster",
 					Generation: 1,
 				},
-				Status: operatorv1alpha1.ClusterAPIStatus{
+				Status: operatorv1.ClusterAPIStatus{
 					ObservedRevisionGeneration: 1,
 					DesiredRevision:            "rev-1",
-					Revisions: []operatorv1alpha1.ClusterAPIInstallerRevision{
+					Revisions: []operatorv1.ClusterAPIInstallerRevision{
 						{Name: "rev-1", Revision: 1, ContentID: "content-1"},
 					},
 				},
@@ -1547,7 +1551,7 @@ func TestWaitForCAPIOperatorSync(t *testing.T) {
 			client := fake.NewClientBuilder().
 				WithScheme(hyperapi.Scheme).
 				WithObjects(tc.config).
-				WithStatusSubresource(&operatorv1alpha1.ClusterAPI{}).
+				WithStatusSubresource(&operatorv1.ClusterAPI{}).
 				Build()
 
 			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
@@ -2076,6 +2080,20 @@ func TestValidateMiscConfig(t *testing.T) {
 				ImagePullPolicy: "Never",
 			},
 			expectError: false,
+		},
+		{
+			name: "When a valid control plane release pull secret name is specified, it should pass",
+			opts: Options{
+				ControlPlaneReleasePullSecretName: "pull-secret.generated-1",
+			},
+			expectError: false,
+		},
+		{
+			name: "When the control plane release pull secret name is not a valid Secret name, it should fail",
+			opts: Options{
+				ControlPlaneReleasePullSecretName: "Not_A_Valid/Name",
+			},
+			expectError: true,
 		},
 		{
 			name: "When IfNotPresent image pull policy is specified, it should pass",
