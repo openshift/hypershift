@@ -376,6 +376,70 @@ func TestMatchesLeaderElectionFailure(t *testing.T) {
 	}
 }
 
+func TestMatchesFatal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		line  string
+		match bool
+	}{
+		{
+			name:  "When the line is a klog fatal, it should match",
+			line:  `F1111 15:23:29.927335       1 main.go:106] failed to apply cluster TLS profile`,
+			match: true,
+		},
+		{
+			name:  "When the line is a klog fatal on a control plane endpoint, it should match",
+			line:  `F1111 15:23:29.927335       1 main.go:106] failed to create client: dial tcp 172.30.77.66:6443: connect: connection refused`,
+			match: true,
+		},
+		{
+			name:  "When the line is shorter than a klog header, it should not match",
+			line:  `F1127`,
+			match: false,
+		},
+		{
+			name:  "When the day field is longer than two digits, it should not match",
+			line:  `F11279 main.go:106] failed to apply cluster TLS profile`,
+			match: false,
+		},
+		{
+			name:  "When the header has a tab instead of a space, it should not match",
+			line:  "F1127\t01:02:54.327335       1 main.go:106] failed to apply cluster TLS profile",
+			match: false,
+		},
+		{
+			name:  "When the line is a klog error, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] failed to apply cluster TLS profile`,
+			match: false,
+		},
+		{
+			name:  "When the line starts with F but is not a klog severity prefix, it should not match",
+			line:  `Failed to apply cluster TLS profile`,
+			match: false,
+		},
+		{
+			name:  "When the line is a zap fatal, it should not match",
+			line:  `{"level":"fatal","msg":"failed to apply cluster TLS profile"}`,
+			match: false,
+		},
+		{
+			name:  "When log is empty, it should not match",
+			line:  "",
+			match: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(MatchesFatal(tc.line)).To(Equal(tc.match))
+		})
+	}
+}
+
 func TestMatchesTokenMinterUnavailable(t *testing.T) {
 	t.Parallel()
 
@@ -671,6 +735,11 @@ func TestToleratedRestartCauseInLog(t *testing.T) {
 			restartCount: 10,
 			cause:        "Leader election failure",
 			tolerated:    true,
+		},
+		{
+			name:      "When the token-minter misses the token and the component then exits fatally, it should not be tolerated",
+			log:       strings.Join([]string{missingCloudToken, `F1127 01:02:55.000000       1 main.go:106] failed to apply storage class: invalid object`}, "\n"),
+			tolerated: false,
 		},
 		{
 			name:      "When the log records no tolerated cause, it should not be tolerated",

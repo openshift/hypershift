@@ -932,6 +932,18 @@ func MatchesCrash(line string) bool {
 	return containsAny(strings.ToLower(line), CrashPatterns)
 }
 
+// klogFatalPrefix matches klog's header for a fatal line: the severity letter followed by the
+// month and day, for example "F1127 01:02:54.057079       1 main.go:106]".
+var klogFatalPrefix = regexp.MustCompile(`^F[0-9]{4} `)
+
+// MatchesFatal reports whether a log line is a klog fatal. klog exits the process after writing
+// one, so such a line ends the container even though CrashPatterns does not cover it. Only
+// klog's text format is recognized: a JSON-logging component that exits fatally logs no
+// format-independent marker, so its restart is not matched here.
+func MatchesFatal(line string) bool {
+	return klogFatalPrefix.MatchString(line)
+}
+
 // toleratedRestartCauses are restart causes that reflect the test environment rather than a
 // defect in the container that restarted.
 var toleratedRestartCauses = []struct {
@@ -989,10 +1001,11 @@ func containerRestartCountMatches(pod *corev1.Pod, containerName string, observe
 // container log, and whether the log is explained by one at all.
 //
 // The whole log is read and the last cause wins, because only the end of the log says why the
-// container exited. A crash logged after a tolerated cause discards it: the tolerated cause was
-// a warning the component logged while retrying, and the component went on to fail for a reason
-// of its own. A line is tested against the tolerated causes first, so a component panicking on a
-// control plane that is unavailable stays tolerated.
+// container exited. A crash or a klog fatal logged after a tolerated cause discards it: the
+// tolerated cause was a warning the component logged while retrying, and the component went on
+// to fail for a reason of its own. A line is tested against the tolerated causes first, so a
+// component panicking or exiting fatally on a control plane that is unavailable stays
+// tolerated.
 func toleratedRestartCauseInLog(log io.Reader, restartCount int32) (string, bool, error) {
 	scanner := bufio.NewScanner(log)
 	const (
@@ -1013,7 +1026,7 @@ func toleratedRestartCauseInLog(log io.Reader, restartCount int32) (string, bool
 			description, tolerated = cause, true
 			continue
 		}
-		if MatchesCrash(line) {
+		if MatchesCrash(line) || MatchesFatal(line) {
 			description, tolerated = "", false
 		}
 	}
