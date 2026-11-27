@@ -119,24 +119,47 @@ func TestCapiResources(t *testing.T) {
 }
 
 func TestGetCustomResourceDefinition(t *testing.T) {
+	t.Run("When loading provider CRDs, it should advertise v1beta2 contracts only for migrated CAPO resources", func(t *testing.T) {
+		for path, resource := range capiResources {
+			t.Run("When loading "+path+", it should advertise the expected contract", func(t *testing.T) {
+				g := NewGomegaWithT(t)
+				crd := getCustomResourceDefinition(CRDS, path, CAPICRDOverrides())
+				contractVersion := "v1beta1"
+				otherContractVersion := "v1beta2"
+				switch crd.Name {
+				case "openstackclusters.infrastructure.cluster.x-k8s.io",
+					"openstackclustertemplates.infrastructure.cluster.x-k8s.io",
+					"openstackmachines.infrastructure.cluster.x-k8s.io",
+					"openstackmachinetemplates.infrastructure.cluster.x-k8s.io":
+					contractVersion, otherContractVersion = otherContractVersion, contractVersion
+				}
+				g.Expect(crd.Labels).To(HaveKeyWithValue("cluster.x-k8s.io/"+contractVersion, resource.apiVersion))
+				g.Expect(crd.Labels).ToNot(HaveKey("cluster.x-k8s.io/" + otherContractVersion))
+			})
+		}
+	})
+
 	tests := []struct {
-		name       string
-		file       string
-		version    string
-		versions   int
-		properties [][]string
+		name            string
+		file            string
+		contractVersion string
+		version         string
+		versions        int
+		properties      [][]string
 	}{
 		{
-			name:     "When loading OpenStackClusterIdentity, it should include the provider version label",
-			file:     "infrastructure.cluster.x-k8s.io_openstackclusteridentities.yaml",
-			version:  "v1alpha1",
-			versions: 1,
+			name:            "When loading OpenStackClusterIdentity, it should include the provider version label",
+			file:            "infrastructure.cluster.x-k8s.io_openstackclusteridentities.yaml",
+			contractVersion: "v1beta1",
+			version:         "v1alpha1",
+			versions:        1,
 		},
 		{
-			name:     "When loading OpenStackCluster, it should preserve identity types and controller status",
-			file:     "infrastructure.cluster.x-k8s.io_openstackclusters.yaml",
-			version:  "v1beta2",
-			versions: 2,
+			name:            "When loading OpenStackCluster, it should preserve identity types and controller status",
+			file:            "infrastructure.cluster.x-k8s.io_openstackclusters.yaml",
+			contractVersion: "v1beta2",
+			version:         "v1beta2",
+			versions:        2,
 			properties: [][]string{
 				{"spec", "identityRef", "type"},
 				{"status", "conditions"},
@@ -144,10 +167,11 @@ func TestGetCustomResourceDefinition(t *testing.T) {
 			},
 		},
 		{
-			name:     "When loading OpenStackMachine, it should preserve identity types and controller initialization",
-			file:     "infrastructure.cluster.x-k8s.io_openstackmachines.yaml",
-			version:  "v1beta2",
-			versions: 2,
+			name:            "When loading OpenStackMachine, it should preserve identity types and controller initialization",
+			file:            "infrastructure.cluster.x-k8s.io_openstackmachines.yaml",
+			contractVersion: "v1beta2",
+			version:         "v1beta2",
+			versions:        2,
 			properties: [][]string{
 				{"spec", "identityRef", "type"},
 				{"status", "initialization", "provisioned"},
@@ -158,7 +182,7 @@ func TestGetCustomResourceDefinition(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			crd := getCustomResourceDefinition(CRDS, "cluster-api-provider-openstack/"+tc.file, CAPICRDOverrides())
-			g.Expect(crd.Labels).To(HaveKeyWithValue(capiLabel, tc.version))
+			g.Expect(crd.Labels).To(HaveKeyWithValue("cluster.x-k8s.io/"+tc.contractVersion, tc.version))
 			g.Expect(crd.Spec.Versions).To(HaveLen(tc.versions))
 			var version *apiextensionsv1.CustomResourceDefinitionVersion
 			for i := range crd.Spec.Versions {

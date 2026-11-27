@@ -89,9 +89,13 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 
 	openStackPlatform := hcluster.Spec.Platform.OpenStack
 
-	openStackClusterSpec.ControlPlaneEndpoint = &ospcapicore.APIEndpoint{
-		Host: apiEndpoint.Host,
-		Port: apiEndpoint.Port,
+	// The HCP endpoint is empty during bootstrap. CAPO v1beta2 rejects an empty
+	// endpoint object, so leave it unset until the HCP has published an endpoint.
+	if apiEndpoint.Host != "" && apiEndpoint.Port > 0 {
+		openStackClusterSpec.ControlPlaneEndpoint = &ospcapicore.APIEndpoint{
+			Host: apiEndpoint.Host,
+			Port: apiEndpoint.Port,
+		}
 	}
 
 	if len(openStackPlatform.Subnets) > 0 {
