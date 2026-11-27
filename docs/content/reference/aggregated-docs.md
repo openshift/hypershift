@@ -66112,12 +66112,44 @@ The table below includes the core CAPI manager (`cluster-capi-controllers`) and 
 
 ### How Environment Variable Overrides Work
 
-The environment variables listed above (e.g. `IMAGE_AZURE_CAPI_PROVIDER`) are set on the HyperShift operator Deployment by the installation tooling. They are populated from the HyperShift operator's own image references file (`support/images/envvars.go`), which maps OCP release payload image names to environment variables.
+The environment variables listed above (e.g. `IMAGE_AZURE_CAPI_PROVIDER`) are set on the HyperShift operator Deployment by the installation tooling. `support/images/envvars.go` defines the tag-to-environment-variable mapping (`TagMapping()`) shared by every installation path: a tag named after a CAPI image (for example `cluster-api-provider-kubevirt`) becomes the corresponding environment variable (`IMAGE_KUBEVIRT_CAPI_PROVIDER`).
 
-In all standard installation methods -- including MCE (Multicluster Engine) and the `hypershift install` CLI -- these env vars are set automatically. When an env var is present, it takes precedence over the payload image. The practical effect is that the CAPI provider version is determined by the **HyperShift operator version**, not the hosted cluster's OCP payload version.
+Both installation paths populate these env vars automatically, but which platforms get one depends on the image references each path supplies. When an env var is present and applies to the platform (see the table above), it takes precedence over the payload image; when it is absent, the platform falls back to the payload image. The practical effect is that, for platforms with an env var, the CAPI provider version is determined by the **HyperShift operator version**, not the hosted cluster's OCP payload version.
 
 !!! note
-    AWS is the only platform where the hosted cluster's OCP payload determines the CAPI provider image (for payloads >= 4.12). For all other platforms, the image is always determined by the HyperShift operator.
+    When the installation sets env vars for every provider (for example, `hypershift install --image-refs` with a full OCP payload), AWS is the only platform where the hosted cluster's OCP payload determines the CAPI provider image (for payloads >= 4.12); for all other platforms the env var always wins. This is not the case on MCE, which sets env vars only for Agent and KubeVirt -- see With MCE.
+
+#### With `hypershift install`
+
+`hypershift install --image-refs <file>` reads an ImageStream (for example, the `image-references` file from an OCP payload) and adds an environment variable to the HyperShift operator Deployment for every tag whose name appears in `TagMapping()`. Tags that are not in the mapping, such as `hypershift-operator`, are ignored by this step.
+
+#### With MCE
+
+MCE does not install the HyperShift operator from an OCP payload. Instead, the MCE release supplies a small ImageStream of its own, and the same `TagMapping()` turns its tags into environment variables:
+
+1. The MCE `ClusterServiceVersion` pins each operand image, for example `OPERAND_IMAGE_CLUSTER_API_PROVIDER_KUBEVIRT`, and lists the same references under `relatedImages`.
+2. The MCE operator (backplane-operator) renders the `hypershift-operator-imagestream` ConfigMap in the MCE namespace. Its ImageStream contains only three tags: `cluster-api-provider-agent`, `cluster-api-provider-kubevirt`, and `hypershift-operator`.
+3. The HyperShift addon manager reads that ImageStream and installs the HyperShift operator with `hypershift install --image-refs`, which sets the environment variables. When the ImageStream changes, for example during an MCE upgrade, the addon manager updates the environment variables on the existing operator Deployment.
+
+Only the Agent and KubeVirt providers are wired this way, because they are the only providers without an image in the hosted cluster's OCP release payload (Agent has a hardcoded fallback; KubeVirt has none). A default MCE installation therefore sets only `IMAGE_AGENT_CAPI_PROVIDER` and `IMAGE_KUBEVIRT_CAPI_PROVIDER`, and those two provider images follow the MCE release. The remaining providers -- AWS, Azure, GCP, OpenStack, and PowerVS -- are **not** set by MCE, so their env vars are absent and they resolve from the hosted cluster's OCP payload, subject to the version gating described above.
+
+For example, MCE 2.17 pins the KubeVirt provider to a `registry.redhat.io/multicluster-engine/cluster-api-provider-kubevirt-rhel9` image by digest, and each 2.17 z-stream can pin a different digest. The Agent provider comes from `registry.redhat.io/multicluster-engine/cluster-api-provider-agent-rhel9` the same way.
+
+To check the effective values on a management cluster:
+
+```bash
+oc get deployment -n hypershift operator \
+  -o jsonpath='{range .spec.template.spec.containers[*].env[?(@.name=="IMAGE_KUBEVIRT_CAPI_PROVIDER")]}{.name}={.value}{"\n"}{end}'
+```
+
+On an MCE-managed cluster with the default configuration, only the Agent and KubeVirt provider env vars are present; `IMAGE_AWS_CAPI_PROVIDER`, `IMAGE_AZURE_CAPI_PROVIDER`, and the other provider env vars are absent.
+
+A per-HostedCluster annotation still takes priority over the value set by the installer. To check whether a hosted cluster overrides the image:
+
+```bash
+oc get hostedcluster -n <namespace> <name> \
+  -o jsonpath='{.metadata.annotations.hypershift\.openshift\.io/capi-provider-kubevirt-image}{"\n"}'
+```
 
 ## Backward Compatibility: CAPI v1beta2 Image Pinning
 
@@ -66216,7 +66248,11 @@ When `hypershift.openshift.io/capi-manager-image` sets any other image and the p
 - `support/backwardcompat/backwardcompat.go` -- backward compatibility image pinning
 - `hypershift-operator/controllers/hostedcluster/internal/platform/platform.go` -- `GetPlatform()` payload image lookup
 - `hypershift-operator/controllers/hostedcluster/internal/platform/{aws,azure,gcp,kubevirt,agent,openstack,powervs}/` -- per-platform `CAPIProviderDeploymentSpec()`
-- `support/images/envvars.go` -- env var to payload image name mapping
+- `support/images/envvars.go` -- env var to payload image name mapping (`TagMapping()`)
+- `cmd/install/install.go` -- `hypershift install --image-refs` ImageStream parsing
+- `cmd/install/assets/hypershift_operator.go` -- adds the CAPI image environment variables to the operator Deployment
+- `stolostron/backplane-operator` `pkg/templates/charts/toggle/hypershift/templates/hypershift-addon-configmap.yaml` -- MCE `hypershift-operator-imagestream` (only the Agent and KubeVirt provider tags)
+- `stolostron/hypershift-addon-operator` `pkg/install/hypershift.go` -- syncs the MCE ImageStream tags to the operator environment variables
 - `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` -- CAPI manager image override
 - `control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager/deployment.go` -- CAPI manager arguments, including the client rate limits
 
