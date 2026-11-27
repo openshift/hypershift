@@ -27,13 +27,14 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/go-logr/logr"
@@ -103,14 +104,16 @@ func (r *WebhookCertReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		},
 	}
 	if _, err := r.createOrUpdate(ctx, r.Client, caSecret, func() error {
-		caSecret.Type = corev1.SecretTypeOpaque
-		return certs.ReconcileSelfSignedCA(caSecret, "hypershift-webhook-ca", "openshift")
+		if len(caSecret.Data[certs.CASignerCertMapKey]) == 0 && len(caSecret.Data[certs.CASignerKeyMapKey]) == 0 {
+			caSecret.Type = corev1.SecretTypeOpaque
+			return certs.ReconcileSelfSignedCA(caSecret, "hypershift-webhook-ca", "openshift")
+		}
+		return nil
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile webhook CA secret: %w", err)
 	}
 
 	// 2. Reconcile the serving cert signed by the CA.
-	dnsNames := webhookDNSNames(r.ServiceName, r.Namespace)
 	servingSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ServingCertSecretName,
@@ -119,18 +122,7 @@ func (r *WebhookCertReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	if _, err := r.createOrUpdate(ctx, r.Client, servingSecret, func() error {
 		servingSecret.Type = corev1.SecretTypeTLS
-		return certs.ReconcileSignedCert(
-			servingSecret,
-			caSecret,
-			"hypershift-operator",
-			[]string{"openshift"},
-			[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-			corev1.TLSCertKey,
-			corev1.TLSPrivateKeyKey,
-			"",
-			dnsNames,
-			nil,
-		)
+		return reconcileWebhookServingCert(servingSecret, caSecret, r.Namespace, r.ServiceName)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile webhook serving cert: %w", err)
 	}
@@ -343,61 +335,48 @@ func GenerateInitialWebhookCerts(namespace, serviceName string) (*corev1.Secret,
 	return caSecret, servingSecret, caBundle, nil
 }
 
-// EnsureWebhookCerts ensures that webhook cert secrets exist so the webhook
-// server can start. If the serving cert secret already exists with valid data,
-// this is a no-op (the volume mount handles file delivery). If the secret is
-// missing or has empty data, new certs are generated and persisted as secrets.
+// EnsureWebhookCerts initializes missing or both-empty CAs and repairs serving certificates before startup projection and trust publication.
+// It preserves nonempty CA material, propagates read errors, and retries creation/update conflicts from fresh reads.
 func EnsureWebhookCerts(ctx context.Context, c client.Client, namespace, serviceName string) error {
-	log := ctrl.LoggerFrom(ctx).WithName("webhook-cert-bootstrap")
-
-	if certsExist(ctx, c, namespace) {
-		log.Info("Webhook cert secrets already exist with valid data, skipping bootstrap")
-		return nil
-	}
-
-	log.Info("Generating webhook certificates")
-	caSecret, servingSecret, _, err := GenerateInitialWebhookCerts(namespace, serviceName)
-	if err != nil {
-		return fmt.Errorf("failed to generate webhook certs: %w", err)
-	}
-
-	caObj := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: namespace}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, c, caObj, func() error {
-		caObj.Type = corev1.SecretTypeOpaque
-		caObj.Data = caSecret.Data
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to create or update CA secret: %w", err)
-	}
-
-	servingObj := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ServingCertSecretName, Namespace: namespace}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, c, servingObj, func() error {
-		servingObj.Type = corev1.SecretTypeTLS
-		servingObj.Data = servingSecret.Data
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to create or update serving cert secret: %w", err)
-	}
-
-	log.Info("Webhook certificates bootstrapped")
-	return nil
-}
-
-// certsExist returns true when both the CA and serving cert secrets exist with non-empty data.
-func certsExist(ctx context.Context, c client.Client, namespace string) bool {
-	ca := &corev1.Secret{}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: CASecretName}, ca); err != nil {
-		return false
-	}
-	if len(ca.Data[certs.CASignerCertMapKey]) == 0 || len(ca.Data[certs.CASignerKeyMapKey]) == 0 {
-		return false
-	}
-
-	serving := &corev1.Secret{}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ServingCertSecretName}, serving); err != nil {
-		return false
-	}
-	return len(serving.Data[corev1.TLSCertKey]) > 0 && len(serving.Data[corev1.TLSPrivateKeyKey]) > 0
+	return retry.OnError(retry.DefaultRetry, func(err error) bool {
+		return apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err)
+	}, func() error {
+		ca := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: namespace}}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(ca), ca); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("read webhook CA: %w", err)
+			}
+		}
+		if len(ca.Data[certs.CASignerCertMapKey]) == 0 && len(ca.Data[certs.CASignerKeyMapKey]) == 0 {
+			if err := certs.ReconcileSelfSignedCA(ca, "hypershift-webhook-ca", "openshift"); err != nil {
+				return err
+			}
+			ca.Type = corev1.SecretTypeOpaque
+			if ca.ResourceVersion == "" {
+				if err := c.Create(ctx, ca); err != nil {
+					return fmt.Errorf("create webhook CA: %w", err)
+				}
+			} else if err := c.Update(ctx, ca); err != nil {
+				return fmt.Errorf("initialize webhook CA: %w", err)
+			}
+		}
+		serving := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ServingCertSecretName, Namespace: namespace}}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(serving), serving); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("read webhook serving certificate: %w", err)
+		}
+		original := serving.DeepCopy()
+		if err := reconcileWebhookServingCert(serving, ca, namespace, serviceName); err != nil {
+			return err
+		}
+		serving.Type = corev1.SecretTypeTLS
+		if serving.ResourceVersion == "" {
+			return c.Create(ctx, serving)
+		}
+		if apiequality.Semantic.DeepEqual(original, serving) {
+			return nil
+		}
+		return c.Update(ctx, serving)
+	})
 }
 
 // EnsureLegacyServiceCAMigration handles the migration from service-ca managed certs to self-managed certs
