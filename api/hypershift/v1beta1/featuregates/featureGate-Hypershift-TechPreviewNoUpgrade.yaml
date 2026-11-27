@@ -17,6 +17,9 @@
                 "disabled": [],
                 "enabled": [
                     {
+                        "name": "AuthenticationComponentProxyExternalOIDC"
+                    },
+                    {
                         "name": "ExternalOIDC"
                     },
                     {

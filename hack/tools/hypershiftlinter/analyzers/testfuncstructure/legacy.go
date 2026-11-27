@@ -606,7 +606,6 @@ var legacyExceptions = sets.Set[string]{
 	"hypershift-operator/controllers/etcdbackup/reconciler_test.go|TestReconcileMonitorsExistingJob":                                                                                                              {},
 	"hypershift-operator/controllers/etcdbackup/reconciler_test.go|TestReconcileRecoversWhenCredentialSecretAppears":                                                                                              {},
 	"hypershift-operator/controllers/etcdbackup/reconciler_test.go|TestReconcileTerminalCleansUpAndEnforcesRetention":                                                                                             {},
-	"hypershift-operator/controllers/hostedcluster/enqueue_secret_test.go|TestEnqueueHostedClustersForReferencedSecret":                                                                                           {},
 	"hypershift-operator/controllers/hostedcluster/gcp_firewall_condition_test.go|TestGCPFirewallRulesReadyCondition":                                                                                             {},
 	"hypershift-operator/controllers/hostedcluster/hostedcluster_controller_test.go|TestDeleteOrcImagesDuringHostedClusterDeletion":                                                                               {},
 	"hypershift-operator/controllers/hostedcluster/hostedcluster_controller_test.go|TestDestroyGracePeriod":                                                                                                       {},

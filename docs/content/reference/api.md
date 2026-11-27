@@ -3594,6 +3594,44 @@ string
 </tr>
 </tbody>
 </table>
+###AuthenticationOperatorSpec { #hypershift.openshift.io/v1beta1.AuthenticationOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>AuthenticationOperatorSpec specifies the configuration for the
+authentication-scoped components. Namely the auth stack http proxy
+configuration.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>proxy,omitempty,omitzero</code></br>
+<em>
+github.com/openshift/api/operator/v1.AuthenticationProxyConfig
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>proxy configures proxy settings for outbound connections made
+by the authentication stack. When set, it replaces the
+cluster-wide proxy (proxy.config.openshift.io/cluster)
+entirely for authentication — individual fields are not
+inherited from the cluster-wide configuration. When omitted,
+the cluster-wide proxy is used if configured; otherwise no
+proxy is used.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AutoNode { #hypershift.openshift.io/v1beta1.AutoNode }
 <p>
 (<em>Appears on:</em>
@@ -17633,6 +17671,20 @@ Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
 The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>authentication,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AuthenticationOperatorSpec">
+AuthenticationOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>authentication configures the authentication scoped components.</p>
 </td>
 </tr>
 <tr>

@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +32,7 @@ func TestAdaptDeployment(t *testing.T) {
 		managementHTTPSProxy string
 		managementNoProxy    string
 		hostedProxy          *configv1.ProxySpec
+		authProxy            *operatorv1.AuthenticationProxyConfig
 		expectedProxyEnv     []corev1.EnvVar
 		expectedError        string
 	}{
@@ -109,6 +111,34 @@ func TestAdaptDeployment(t *testing.T) {
 			name:              "When management NO_PROXY is set without a proxy, it should leave proxy environment variables unset",
 			managementNoProxy: ".mgmt.example.com",
 		},
+		{
+			name: "When the component proxy is set, it should apply it in full with the composed bypass list",
+			authProxy: &operatorv1.AuthenticationProxyConfig{
+				HTTPProxy:  "http://proxy.auth.example.com:3128",
+				HTTPSProxy: "http://proxy.auth.example.com:3129",
+				NoProxy:    []string{"idp.example.com"},
+			},
+			expectedProxyEnv: []corev1.EnvVar{
+				{Name: "HTTP_PROXY", Value: "http://proxy.auth.example.com:3128"},
+				{Name: "HTTPS_PROXY", Value: "http://proxy.auth.example.com:3129"},
+				{Name: "NO_PROXY", Value: ".cluster.local,.cluster.local.,.svc,.svc.,10.132.0.0/14,127.0.0.1,172.30.0.0/16,idp.example.com,kube-apiserver,localhost,localhost."},
+			},
+		},
+		{
+			name:                 "When the component proxy is set, it should not inherit the management cluster proxy",
+			managementHTTPProxy:  "http://proxy.mgmt.example.com:3128",
+			managementHTTPSProxy: "http://proxy.mgmt.example.com:3129",
+			managementNoProxy:    ".mgmt.example.com",
+			authProxy: &operatorv1.AuthenticationProxyConfig{
+				HTTPProxy:  "http://proxy.auth.example.com:3128",
+				HTTPSProxy: "http://proxy.auth.example.com:3129",
+			},
+			expectedProxyEnv: []corev1.EnvVar{
+				{Name: "HTTP_PROXY", Value: "http://proxy.auth.example.com:3128"},
+				{Name: "HTTPS_PROXY", Value: "http://proxy.auth.example.com:3129"},
+				{Name: "NO_PROXY", Value: ".cluster.local,.cluster.local.,.svc,.svc.,10.132.0.0/14,127.0.0.1,172.30.0.0/16,kube-apiserver,localhost,localhost."},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -138,6 +168,13 @@ func TestAdaptDeployment(t *testing.T) {
 						},
 					},
 				},
+			}
+			if tc.authProxy != nil {
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					Authentication: hyperv1.AuthenticationOperatorSpec{
+						Proxy: *tc.authProxy,
+					},
+				}
 			}
 
 			cpContext := component.WorkloadContext{
@@ -192,6 +229,22 @@ func TestDeploymentManifestProxyConfiguration(t *testing.T) {
 		LocalObjectReference: corev1.LocalObjectReference{Name: "openshift-config-managed-trusted-ca-bundle"},
 		DefaultMode:          ptr.To[int32](420),
 		Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
+		Optional:             ptr.To(true),
+	}))
+
+	// The auth proxy trusted CA is a directory mount with no key remapping, so
+	// the webhook reads ca-bundle.crt at the mount path and hot-reloads on
+	// content changes: the ConfigMap is excluded from the pod config hash.
+	g.Expect(podspec.FindVolumeMount("v4-0-config-system-auth-proxy-ca", container.VolumeMounts)).To(Equal(&corev1.VolumeMount{
+		Name:      "v4-0-config-system-auth-proxy-ca",
+		MountPath: "/var/config/system/configmaps/v4-0-config-system-auth-proxy-ca",
+		ReadOnly:  true,
+	}))
+	authProxyCAVolume := podspec.FindVolume("v4-0-config-system-auth-proxy-ca", deployment.Spec.Template.Spec.Volumes)
+	g.Expect(authProxyCAVolume).ToNot(BeNil())
+	g.Expect(authProxyCAVolume.ConfigMap).To(Equal(&corev1.ConfigMapVolumeSource{
+		LocalObjectReference: corev1.LocalObjectReference{Name: "v4-0-config-system-auth-proxy-ca"},
+		DefaultMode:          ptr.To[int32](420),
 		Optional:             ptr.To(true),
 	}))
 }

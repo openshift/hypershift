@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -464,4 +465,120 @@ func generateCertPEMWithNotBefore(t *testing.T, notBefore, notAfter time.Time) s
 	}
 
 	return certPEM.String()
+}
+
+func TestValidateAuthProxyCABundle(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+
+	newHostedCluster := func(operatorConfiguration *hyperv1.OperatorConfiguration) *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cluster",
+				Namespace: "test-namespace",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				OperatorConfiguration: operatorConfiguration,
+			},
+		}
+	}
+
+	tests := []struct {
+		name          string
+		hcluster      *hyperv1.HostedCluster
+		configMap     *corev1.ConfigMap
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:     "When no operator configuration is set, it should succeed",
+			hcluster: newHostedCluster(nil),
+		},
+		{
+			name: "When the auth proxy carries no trusted CA, it should succeed",
+			hcluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						HTTPSProxy: "https://auth.example.com:8443",
+					},
+				},
+			}),
+		},
+		{
+			name: "When the trusted CA bundle is parseable, it should succeed",
+			hcluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "auth-proxy-ca"},
+					},
+				},
+			}),
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "auth-proxy-ca", Namespace: "test-namespace"},
+				Data:       map[string]string{ProxyCAConfigMapKey: generateCertPEM(t, now.Add(24*time.Hour))},
+			},
+		},
+		{
+			name: "When the trusted CA configmap is missing, it should fail naming the configmap",
+			hcluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "auth-proxy-ca"},
+					},
+				},
+			}),
+			expectError:   true,
+			errorContains: "auth-proxy-ca",
+		},
+		{
+			name: "When the trusted CA bundle is unparsable, it should fail naming the configmap",
+			hcluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "auth-proxy-ca"},
+					},
+				},
+			}),
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "auth-proxy-ca", Namespace: "test-namespace"},
+				Data:       map[string]string{ProxyCAConfigMapKey: "not a pem bundle"},
+			},
+			expectError:   true,
+			errorContains: "auth-proxy-ca",
+		},
+		{
+			name: "When the trusted CA bundle is expired, it should still succeed",
+			hcluster: newHostedCluster(&hyperv1.OperatorConfiguration{
+				Authentication: hyperv1.AuthenticationOperatorSpec{
+					Proxy: operatorv1.AuthenticationProxyConfig{
+						TrustedCA: operatorv1.AuthenticationConfigMapReference{Name: "auth-proxy-ca"},
+					},
+				},
+			}),
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "auth-proxy-ca", Namespace: "test-namespace"},
+				Data:       map[string]string{ProxyCAConfigMapKey: generateCertPEM(t, now.Add(-24*time.Hour))},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			if test.configMap != nil {
+				client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.configMap).Build()
+			}
+			err := ValidateAuthProxyCABundle(context.Background(), client, test.hcluster)
+			if test.expectError {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				if !strings.Contains(err.Error(), test.errorContains) {
+					t.Fatalf("expected error to contain %q, got %q", test.errorContains, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+		})
+	}
 }

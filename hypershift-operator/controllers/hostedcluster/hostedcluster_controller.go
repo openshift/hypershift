@@ -49,6 +49,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
@@ -70,6 +71,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/podspec"
+	supportproxy "github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/pullsecret"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -164,12 +166,15 @@ const (
 
 	previouslySyncedRestartDateAnnotation = "hypershift.openshift.io/previous-restart-date"
 	kasServingCertHashAnnotation          = "hypershift.openshift.io/kas-serving-cert-hash"
-	referencedResourceAnnotationPrefix    = "referenced-resource.hypershift.openshift.io/"
 )
 
 var (
 	// NoopReconcile is just a default mutation function that does nothing.
 	NoopReconcile controllerutil.MutateFn = func() error { return nil }
+
+	ErrHostedClusterSpecConfigurationConfigMaps         = errors.New("hosted cluster handling spec.configuration config maps")
+	ErrHostedClusterSpecConfigurationSecrets            = errors.New("hosted cluster handling spec.configuration secrets")
+	ErrHostedClusterSpecOperatorConfigurationConfigMaps = errors.New("hosted cluster handling spec.operatorConfiguration config maps")
 )
 
 // HostedClusterReconciler reconciles a HostedCluster object
@@ -269,6 +274,14 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// so the Secret watch can map a recreated (unannotated) Secret back to its owner.
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &hyperv1.HostedCluster{}, hostedClusterIngressDefaultCertSecretIndex, indexHostedClusterByIngressDefaultCertSecret); err != nil {
 		return fmt.Errorf("failed to set up ingress default certificate secret index: %w", err)
+	}
+
+	// Index HostedClusters by the referenced auth proxy trusted CA ConfigMap name
+	// so the ConfigMap watch can map a missing or recreated source back to its
+	// owner: the auth proxy CA sync withholds on a missing source before any
+	// referenced-resource annotation can exist.
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &hyperv1.HostedCluster{}, hostedClusterAuthProxyTrustedCAConfigMapIndex, indexHostedClusterByAuthProxyTrustedCAConfigMap); err != nil {
+		return fmt.Errorf("failed to set up auth proxy trusted CA configmap index: %w", err)
 	}
 
 	// Set up watches for resource types the controller manages. The list basically
@@ -719,7 +732,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if annotations == nil {
 				return nil
 			}
-			key := referencedResourceAnnotationPrefix + hcluster.Name
+			key := k8sutil.ReferencedResourceAnnotationPrefix + hcluster.Name
 			if _, ok := annotations[key]; !ok {
 				return nil
 			}
@@ -1234,30 +1247,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Set ValidProxyConfiguration condition
-	{
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidProxyConfiguration),
-			ObservedGeneration: hcluster.Generation,
-		}
-		if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil && hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
-			if err := r.validateProxyConfiguration(ctx, hcluster); err != nil {
-				condition.Status = metav1.ConditionFalse
-				condition.Message = fmt.Sprintf("Proxy CA bundle is invalid for HostedCluster %s/%s: %v", hcluster.Namespace, hcluster.Name, err)
-				condition.Reason = hyperv1.ProxyCABundleInvalidReason
-				log.Info("Proxy CA bundle validation failed", "namespace", hcluster.Namespace, "name", hcluster.Name, "error", err)
-			} else {
-				condition.Status = metav1.ConditionTrue
-				condition.Message = "Proxy CA bundle is valid"
-				condition.Reason = hyperv1.AsExpectedReason
-			}
-		} else {
-			// No proxy configured or no CA bundle
-			condition.Status = metav1.ConditionTrue
-			condition.Message = "No proxy CA bundle configured"
-			condition.Reason = hyperv1.AsExpectedReason
-		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, r.validProxyConfigurationCondition(ctx, log, hcluster))
 
 	// Set Ignition Server endpoint
 	{
@@ -1709,6 +1699,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return r.reconcileGlobalConfigSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
 	})
 
+	// Runs before the core HCP chain so the authentication propagation can
+	// require a successful CA synchronization. The step stays nonCritical:
+	// a failed synchronization withholds only the authentication change,
+	// and the rest of the HostedCluster keeps reconciling.
+	authProxyCASynced := true
+	report.execute("AuthProxyTrustedCASync", nonCritical, func() error {
+		synced, err := r.reconcileAuthProxyTrustedCA(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
+		authProxyCASynced = synced
+		return err
+	})
+
 	_, cpoSupportsKASCustomKubeconfig := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsKASCustomKubeconfigLabel]
 	enableGMPMonitoring := r.effectiveGMPMonitoring(log, hcluster.Spec.Platform.Type, controlPlaneOperatorImageLabels, controlPlaneOperatorImageLabelsResolved)
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
@@ -1747,7 +1748,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	report.execute("CoreHCPChain", critical, func() error {
 		var chainErr error
 		hcp, chainErr = r.reconcileCoreHCPChain(ctx, log, hcluster, hcp, createOrUpdate,
-			controlPlaneNamespace.Name, defaultToControlPlaneV2, p)
+			controlPlaneNamespace.Name, defaultToControlPlaneV2, authProxyCASynced, p)
 		if chainErr != nil {
 			return chainErr
 		}
@@ -1913,7 +1914,7 @@ func (r *HostedClusterReconciler) reconcileDeprecatedConfigurationStatus(hcluste
 func (r *HostedClusterReconciler) reconcileCoreHCPChain(
 	ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster,
 	hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN,
-	controlPlaneNamespace string, defaultToControlPlaneV2 bool,
+	controlPlaneNamespace string, defaultToControlPlaneV2 bool, authProxyCASynced bool,
 	p platform.Platform,
 ) (*hyperv1.HostedControlPlane, error) {
 	isAutoscalingNeeded, err := r.isAutoscalingNeeded(ctx, hcluster)
@@ -1928,7 +1929,7 @@ func (r *HostedClusterReconciler) reconcileCoreHCPChain(
 
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, authProxyCASynced,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
@@ -2842,33 +2843,217 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string,
 ) error {
-	if hcluster.Spec.Configuration == nil {
+	if hcluster.Spec.Configuration != nil {
+		configMapRefs := configrefs.ConfigMapRefs(hcluster.Spec.Configuration)
+		err := r.handleConfigMapFromRefs(
+			ctx,
+			configMapRefs,
+			hcluster,
+			controlPlaneNamespace,
+			createOrUpdate,
+		)
+		if err != nil {
+			return errors.Join(ErrHostedClusterSpecConfigurationConfigMaps, err)
+		}
+
+		secretRefs := configrefs.SecretRefs(hcluster.Spec.Configuration)
+		err = r.handleSecretFromRefs(
+			ctx,
+			secretRefs,
+			hcluster,
+			controlPlaneNamespace,
+			createOrUpdate,
+		)
+		if err != nil {
+			return errors.Join(ErrHostedClusterSpecConfigurationSecrets, err)
+		}
+	}
+
+	return nil
+}
+
+// reconcileAuthProxyTrustedCA synchronizes the CA bundle referenced by the
+// auth-scoped proxy override into the control plane namespace under the fixed
+// destination name, and reports whether the bundle the desired authentication
+// configuration requires is in place.
+//
+// It returns true when nothing needs synchronizing: the gate is off, or the
+// override carries no trusted CA. It returns false, without an error, when the
+// source bundle is missing or unparsable: the change is withheld, the
+// previously synchronized copy stays, and the ValidProxyConfiguration
+// condition reports the failure. It returns false with the error when reading
+// or writing fails, so the reconcile retries. The caller withholds the
+// authentication propagation on any false, so a failed synchronization never
+// leaves a new proxy reading a stale CA from the fixed destination.
+//
+// It reads the auth proxy reference directly rather than a generic reference
+// list: the fixed destination name holds exactly this one bundle, and every
+// step below (the PEM validation, the restore, the removal) is specific to it.
+// A list would silently route a second operatorConfiguration reference into
+// the same destination.
+func (r *HostedClusterReconciler) reconcileAuthProxyTrustedCA(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
+	controlPlaneNamespace string,
+) (bool, error) {
+	// The authentication operator configuration (auth-scoped proxy) is only
+	// propagated while the AuthenticationComponentProxyExternalOIDC feature
+	// gate is enabled on the HyperShift operator. Without the gate, the
+	// referenced CA must not be synchronized into the control plane namespace
+	// either. An existing copy stays: a disabled gate is not a user removing
+	// the reference, and re-enabling the gate must not need a resync.
+	if !featuregate.Gate().Enabled(featuregate.AuthenticationComponentProxyExternalOIDC) {
+		return true, nil
+	}
+
+	var ref string
+	if hcluster.Spec.OperatorConfiguration != nil {
+		ref = hcluster.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name
+	}
+	if ref == "" {
+		return true, r.removeUnreferencedAuthProxyTrustedCA(ctx, hcluster, controlPlaneNamespace)
+	}
+
+	// The auth proxy trusted CA is synchronized under a fixed
+	// destination name: the control plane component machinery excludes
+	// that name from the pod config hash, so a CA rotation hot-reloads
+	// in the webhook instead of rolling the pod.
+	//
+	// The source is read exactly once and validated before the copy:
+	// the data written to the destination is the data that was
+	// validated, so a concurrent malformed update to the source can
+	// never replace a valid destination bundle.
+	sourceCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: ref}, sourceCM); err != nil {
+		if !apierrors.IsNotFound(err) {
+			// A transient read failure needs a retry: no watch event
+			// follows it, so only the returned error requeues this
+			// HostedCluster.
+			return false, errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+		}
+		// The bundle is missing: withhold the change, keeping the
+		// previously synchronized copy, and let the ValidProxyConfiguration
+		// condition report the failure. The rest of the HostedCluster keeps
+		// reconciling. The creation of the source is matched by the
+		// spec field index, not by a retry.
+		ctrl.LoggerFrom(ctx).Info("withholding auth proxy trusted CA sync: source not found", "error", err)
+		return false, r.restorePropagatedAuthProxyTrustedCA(ctx, hcluster, ref, createOrUpdate, controlPlaneNamespace)
+	}
+	// The annotation must land before the validation can exit: the
+	// referenced-resource mapper enqueues this HostedCluster only for
+	// annotated objects, so without it the correction of an invalid
+	// bundle would wait for an unrelated reconcile. The sync below
+	// annotates again; the call is idempotent.
+	if annErr := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); annErr != nil {
+		return false, errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, annErr)
+	}
+	if _, err := proxy.LoadCABundle(*sourceCM); err != nil {
+		// The bundle is unparsable: withhold the change, keeping the
+		// previously synchronized copy, and let the ValidProxyConfiguration
+		// condition report the failure. The rest of the HostedCluster keeps
+		// reconciling. An input change, not a retry, clears this path.
+		ctrl.LoggerFrom(ctx).Info("withholding auth proxy trusted CA sync: invalid bundle", "error", err)
+		return false, r.restorePropagatedAuthProxyTrustedCA(ctx, hcluster, ref, createOrUpdate, controlPlaneNamespace)
+	}
+	if err := r.syncConfigMap(ctx, sourceCM, supportproxy.AuthProxyTrustedCAConfigMapName, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
+		return false, errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	return true, nil
+}
+
+// removeUnreferencedAuthProxyTrustedCA deletes the fixed destination bundle
+// once nothing references it: neither the desired HostedCluster spec, which
+// the caller already checked, nor the authentication configuration currently
+// propagated on the HostedControlPlane.
+//
+// The propagated reference is the gating one. This runs before the
+// propagation, so on the reconcile that clears the reference the running
+// webhook still reads the destination through the previous configuration.
+// Deleting it there would drop the webhook to system trust before its proxy
+// changed. The removal waits for the next reconcile, which the propagation
+// itself triggers.
+func (r *HostedClusterReconciler) removeUnreferencedAuthProxyTrustedCA(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string,
+) error {
+	hcp := &hyperv1.HostedControlPlane{}
+	switch err := r.Get(ctx, client.ObjectKey{Namespace: controlPlaneNamespace, Name: hcluster.Name}, hcp); {
+	case err == nil:
+		if hcp.Spec.OperatorConfiguration != nil &&
+			hcp.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name != "" {
+			return nil
+		}
+	case apierrors.IsNotFound(err):
+		// Nothing is propagated, so nothing reads the destination.
+	default:
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+
+	destCM := &corev1.ConfigMap{}
+	destCM.Name = supportproxy.AuthProxyTrustedCAConfigMapName
+	destCM.Namespace = controlPlaneNamespace
+	if err := r.Delete(ctx, destCM); err != nil && !apierrors.IsNotFound(err) {
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	return nil
+}
+
+// restorePropagatedAuthProxyTrustedCA converges the fixed destination back
+// to the CA required by the authentication configuration currently
+// propagated on the HostedControlPlane. A withheld change must never leave
+// the destination holding a newer CA than the propagated pair it serves: the
+// webhook would trust only the new CA while still using the previous proxy.
+// The restore stays quiet when there is nothing to restore: no propagated
+// configuration, the propagated source equal to the withheld one, or a
+// propagated source that is itself missing or unparsable. Operational
+// failures are returned so the reconcile retries them.
+func (r *HostedClusterReconciler) restorePropagatedAuthProxyTrustedCA(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, withheldRef string,
+	createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string,
+) error {
+	hcp := &hyperv1.HostedControlPlane{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: controlPlaneNamespace, Name: hcluster.Name}, hcp); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Nothing is propagated yet, so no pair depends on the destination.
+			return nil
+		}
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	var propagatedRef string
+	if hcp.Spec.OperatorConfiguration != nil {
+		propagatedRef = hcp.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name
+	}
+	if propagatedRef == "" || propagatedRef == withheldRef {
+		// The propagated pair either uses system trust or the same source
+		// the spec wants: the withheld copy already serves it.
 		return nil
 	}
-	configMapRefs := configrefs.ConfigMapRefs(hcluster.Spec.Configuration)
-	for _, configMapRef := range configMapRefs {
-		sourceCM := &corev1.ConfigMap{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
-			return fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
-		}
-		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
-			return fmt.Errorf("failed to set referenced resource annotation: %w", err)
-		}
-		destCM := &corev1.ConfigMap{}
-		destCM.Name = sourceCM.Name
-		destCM.Namespace = controlPlaneNamespace
-		if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
-			destCM.Annotations = sourceCM.Annotations
-			destCM.Labels = sourceCM.Labels
-			destCM.Data = sourceCM.Data
-			destCM.BinaryData = sourceCM.BinaryData
-			destCM.Immutable = sourceCM.Immutable
+	sourceCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: propagatedRef}, sourceCM); err != nil {
+		if apierrors.IsNotFound(err) {
+			// The propagated source is gone too: nothing to restore from.
+			ctrl.LoggerFrom(ctx).Info("cannot restore the propagated auth proxy trusted CA: source not found", "source", propagatedRef)
 			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
 		}
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
 	}
-	secretRefs := configrefs.SecretRefs(hcluster.Spec.Configuration)
+	if _, err := proxy.LoadCABundle(*sourceCM); err != nil {
+		// An unparsable propagated source cannot restore anything: an input
+		// change, not a retry, clears this.
+		ctrl.LoggerFrom(ctx).Info("cannot restore the propagated auth proxy trusted CA: invalid bundle", "source", propagatedRef, "error", err)
+		return nil
+	}
+	if err := r.syncConfigMap(ctx, sourceCM, supportproxy.AuthProxyTrustedCAConfigMapName, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
+		return errors.Join(ErrHostedClusterSpecOperatorConfigurationConfigMaps, err)
+	}
+	return nil
+}
+
+func (r *HostedClusterReconciler) handleSecretFromRefs(
+	ctx context.Context,
+	secretRefs []string,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string,
+	createOrUpdate upsert.CreateOrUpdateFN,
+) error {
 	for _, secretRef := range secretRefs {
 		if err := validateReferencedSecretName(secretRef); err != nil {
 			return err
@@ -2896,6 +3081,75 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile secret %s/%s: %w", destSecret.Namespace, destSecret.Name, err)
 		}
+	}
+	return nil
+}
+
+func (r *HostedClusterReconciler) handleConfigMapFromRefs(
+	ctx context.Context,
+	configMapRefs []string,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string,
+	createOrUpdate upsert.CreateOrUpdateFN,
+) error {
+	for _, configMapRef := range configMapRefs {
+		if err := r.syncReferencedConfigMap(ctx, configMapRef, configMapRef, hcluster, controlPlaneNamespace, createOrUpdate); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// syncReferencedConfigMap copies a ConfigMap referenced by the HostedCluster
+// spec into the control plane namespace under destName. The copy inherits the
+// source's annotations, including the referenced-resource annotation, so the
+// existing watch chains keep firing on content-only updates of the copy.
+func (r *HostedClusterReconciler) syncReferencedConfigMap(
+	ctx context.Context,
+	sourceName, destName string,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string,
+	createOrUpdate upsert.CreateOrUpdateFN,
+) error {
+	sourceCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: sourceName}, sourceCM); err != nil {
+		return fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, sourceName, err)
+	}
+	return r.syncConfigMap(ctx, sourceCM, destName, hcluster, controlPlaneNamespace, createOrUpdate)
+}
+
+// syncConfigMap copies the given source ConfigMap into the control plane
+// namespace under destName. The caller owns the trust decision on sourceCM's
+// data: this function writes it verbatim.
+func (r *HostedClusterReconciler) syncConfigMap(
+	ctx context.Context,
+	sourceCM *corev1.ConfigMap,
+	destName string,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string,
+	createOrUpdate upsert.CreateOrUpdateFN,
+) error {
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
+		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
+	destCM := &corev1.ConfigMap{}
+	destCM.Name = destName
+	destCM.Namespace = controlPlaneNamespace
+	if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
+		destCM.Annotations = sourceCM.Annotations
+		destCM.Labels = sourceCM.Labels
+		destCM.Data = sourceCM.Data
+		destCM.BinaryData = sourceCM.BinaryData
+		// A fixed destination name follows a changing spec reference, so it
+		// must stay mutable: an immutable destination could never adopt the
+		// data of a later source. Only a name-preserving copy, where the
+		// destination is tied to this one source, inherits immutability.
+		if destName == sourceCM.Name {
+			destCM.Immutable = sourceCM.Immutable
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
 	}
 	return nil
 }
@@ -3419,7 +3673,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, isAWSNodeTerminationHandlerNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, isAWSNodeTerminationHandlerNeeded bool, authProxyCASynced bool, certRenewalAnnotations func() (map[string]string, error)) error {
 	if err := reconcileHostedControlPlaneAnnotations(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, certRenewalAnnotations); err != nil {
 		return err
 	}
@@ -3519,7 +3773,31 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.Capabilities = hcluster.Spec.Capabilities
 
 	if hcluster.Spec.OperatorConfiguration != nil {
+		// The authentication operator configuration previously propagated to
+		// the HostedControlPlane, kept when the current desired value is
+		// withheld below.
+		var previouslyPropagatedAuth hyperv1.AuthenticationOperatorSpec
+		if hcp.Spec.OperatorConfiguration != nil {
+			previouslyPropagatedAuth = hcp.Spec.OperatorConfiguration.Authentication
+		}
 		hcp.Spec.OperatorConfiguration = hcluster.Spec.OperatorConfiguration.DeepCopy()
+		// The authentication operator configuration (auth-scoped proxy) is only
+		// propagated while the AuthenticationComponentProxyExternalOIDC feature
+		// gate is enabled on the HyperShift operator. The gate check is
+		// load-bearing while it is preview-scoped: a CRD variant newer than the
+		// operator's registry could otherwise let the field through to the
+		// HostedControlPlane.
+		if !featuregate.Gate().Enabled(featuregate.AuthenticationComponentProxyExternalOIDC) {
+			hcp.Spec.OperatorConfiguration.Authentication = hyperv1.AuthenticationOperatorSpec{}
+		} else if !authProxyCASynced {
+			// The referenced CA bundle did not reach the fixed destination,
+			// because it is missing, unparsable, or the copy failed: withhold
+			// the proxy change only, keeping the HostedControlPlane at its
+			// previously propagated state while the rest of the spec keeps
+			// reconciling. A new proxy must never read a stale CA. The
+			// ValidProxyConfiguration condition reports why.
+			hcp.Spec.OperatorConfiguration.Authentication = previouslyPropagatedAuth
+		}
 	} else {
 		hcp.Spec.OperatorConfiguration = nil
 	}
@@ -4818,6 +5096,55 @@ func hostedControlPlaneMayApplyControlPlaneRelease(ctx context.Context, c client
 	return isControlPlaneReleasePinned(hc, hcp)
 }
 
+// hostedClusterAuthProxyTrustedCAConfigMapIndex indexes HostedClusters by the
+// name of the ConfigMap referenced via
+// spec.operatorConfiguration.authentication.proxy.trustedCA. It lets the
+// ConfigMap watch map a referenced ConfigMap back to its owner with an
+// O(matches) cache lookup, independent of the referenced-resource annotation,
+// which a missing or freshly created source would not carry: the auth proxy
+// CA validation withholds the sync on a missing source before any annotation
+// can exist, so the creation of the source must be matched by the spec
+// reference instead.
+const hostedClusterAuthProxyTrustedCAConfigMapIndex = "spec.operatorConfiguration.authentication.proxy.trustedCA.name"
+
+func indexHostedClusterByAuthProxyTrustedCAConfigMap(o client.Object) []string {
+	hc, ok := o.(*hyperv1.HostedCluster)
+	if !ok {
+		return nil
+	}
+	if hc.Spec.OperatorConfiguration != nil &&
+		hc.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name != "" {
+		return []string{hc.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name}
+	}
+	return nil
+}
+
+// hostedClustersReferencingConfigMap appends reconcile requests for
+// HostedClusters that reference the given ConfigMap by name through spec (via
+// the field index), skipping any already present in requests. Unlike the
+// referenced-resource annotation, a spec reference survives the absence of the
+// object: a source ConfigMap that was missing when the controller last
+// reconciled carries no annotation, so its creation re-enqueues its owner only
+// through the index.
+func hostedClustersReferencingConfigMap(ctx context.Context, c client.Client, configMap *corev1.ConfigMap, requests []reconcile.Request) []reconcile.Request {
+	hcList := &hyperv1.HostedClusterList{}
+	if err := c.List(ctx, hcList,
+		client.InNamespace(configMap.Namespace),
+		client.MatchingFields{hostedClusterAuthProxyTrustedCAConfigMapIndex: configMap.Name},
+	); err != nil {
+		ctrllog.Log.Error(err, "failed to list hosted clusters referencing configmap", "configmap", client.ObjectKeyFromObject(configMap).String())
+		return requests
+	}
+	for i := range hcList.Items {
+		hc := &hcList.Items[i]
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}}
+		if !slices.Contains(requests, req) {
+			requests = append(requests, req)
+		}
+	}
+	return requests
+}
+
 func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) handler.MapFunc {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		log := ctrllog.Log
@@ -4833,10 +5160,10 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 					}
 				}
 				for k := range annotations {
-					if strings.HasPrefix(k, referencedResourceAnnotationPrefix) {
+					if strings.HasPrefix(k, k8sutil.ReferencedResourceAnnotationPrefix) {
 						requests = append(requests, reconcile.Request{
 							NamespacedName: types.NamespacedName{
-								Name:      strings.TrimPrefix(k, referencedResourceAnnotationPrefix),
+								Name:      strings.TrimPrefix(k, k8sutil.ReferencedResourceAnnotationPrefix),
 								Namespace: obj.GetNamespace(),
 							},
 						})
@@ -4863,7 +5190,10 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 				}
 				return requests
 			}
-			return handleDefault(typedObj)
+			// Enqueue via the referenced-resource annotation, and also via the spec
+			// field index so a source ConfigMap that was missing (or recreated)
+			// still re-enqueues its owner.
+			return hostedClustersReferencingConfigMap(ctx, c, typedObj, handleDefault(typedObj))
 		case *appsv1.StatefulSet:
 			if typedObj.Name != "etcd" {
 				return []reconcile.Request{}
@@ -5374,6 +5704,55 @@ func (r *HostedClusterReconciler) validateAgentConfig(ctx context.Context, hc *h
 
 func (r *HostedClusterReconciler) validateProxyConfiguration(ctx context.Context, hc *hyperv1.HostedCluster) error {
 	return proxy.ValidateProxyCAValidity(ctx, r.Client, hc)
+}
+
+func (r *HostedClusterReconciler) validateAuthProxyCA(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	return proxy.ValidateAuthProxyCABundle(ctx, r.Client, hc)
+}
+
+// validProxyConfigurationCondition builds the ValidProxyConfiguration condition
+// from the two CA bundle checks, the cluster-wide proxy and the auth-scoped
+// proxy override, joining their errors.
+//
+// A HostedCluster that references no bundle is a third state, not a valid one:
+// reporting "valid" there would assert something about a bundle that does not
+// exist.
+func (r *HostedClusterReconciler) validProxyConfigurationCondition(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster) metav1.Condition {
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidProxyConfiguration),
+		ObservedGeneration: hcluster.Generation,
+	}
+	var caBundleErrs []error
+	var referenced bool
+	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil && hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+		referenced = true
+		if err := r.validateProxyConfiguration(ctx, hcluster); err != nil {
+			caBundleErrs = append(caBundleErrs, err)
+		}
+	}
+	if hcluster.Spec.OperatorConfiguration != nil && hcluster.Spec.OperatorConfiguration.Authentication.Proxy.TrustedCA.Name != "" {
+		referenced = true
+		if err := r.validateAuthProxyCA(ctx, hcluster); err != nil {
+			caBundleErrs = append(caBundleErrs, err)
+		}
+	}
+	switch {
+	case len(caBundleErrs) > 0:
+		err := errors.Join(caBundleErrs...)
+		condition.Status = metav1.ConditionFalse
+		condition.Message = fmt.Sprintf("Proxy CA bundle is invalid for HostedCluster %s/%s: %v", hcluster.Namespace, hcluster.Name, err)
+		condition.Reason = hyperv1.ProxyCABundleInvalidReason
+		log.Info("Proxy CA bundle validation failed", "namespace", hcluster.Namespace, "name", hcluster.Name, "error", err)
+	case referenced:
+		condition.Status = metav1.ConditionTrue
+		condition.Message = "Proxy CA bundle is valid"
+		condition.Reason = hyperv1.AsExpectedReason
+	default:
+		condition.Status = metav1.ConditionTrue
+		condition.Message = "No proxy CA bundle configured"
+		condition.Reason = hyperv1.AsExpectedReason
+	}
+	return condition
 }
 
 func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster) error {
@@ -6575,7 +6954,7 @@ func ensureReferencedResourceAnnotation(ctx context.Context, client client.Clien
 	if existing == nil {
 		existing = map[string]string{}
 	}
-	key := referencedResourceAnnotationPrefix + hcName
+	key := k8sutil.ReferencedResourceAnnotationPrefix + hcName
 	if _, ok := existing[key]; ok {
 		return nil
 	}

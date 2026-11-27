@@ -3125,6 +3125,11 @@ type OperatorConfiguration struct {
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	OAuthServer OAuthServerOperatorSpec `json:"oauthServer,omitzero"`
 
+	// authentication configures the authentication scoped components.
+	// +optional
+	// +openshift:enable:FeatureGate=AuthenticationComponentProxyExternalOIDC
+	Authentication AuthenticationOperatorSpec `json:"authentication,omitzero"`
+
 	// csiDriverOperator configures the CSI drivers of the hosted cluster.
 	// Settings are grouped by platform.
 	//
