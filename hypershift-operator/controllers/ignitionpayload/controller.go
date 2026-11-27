@@ -160,6 +160,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// committedGen is the status.current generation this reconcile decides on; commitStatus refuses to
 	// apply a mutation against any other.
 	committedGen := cr.Status.Current.RolloutGeneration
+	// observedGen is the spec generation this reconcile processes, recorded as PayloadGenerated's
+	// observedGeneration so consumers can tell whether status.current reflects their latest spec. It
+	// is captured here, not read from cr inside a status commit: PatchStatus re-reads cr, and the
+	// re-read may carry a newer spec this reconcile never rendered.
+	observedGen := cr.Generation
 
 	// Reclaim first, before (and regardless of) the generation inputs.
 	if err := r.sweepOrphans(ctx, owner, cr); err != nil {
@@ -184,10 +189,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		var ve *validationError
 		if errors.As(err, &ve) {
 			return ctrl.Result{}, statuspatching.PatchStatusCondition(ctx, r.Client, cr, &cr.Status.Conditions, metav1.Condition{
-				Type:    hyperv1.IgnitionPayloadPayloadGeneratedCondition,
-				Status:  metav1.ConditionFalse,
-				Reason:  "InvalidConfig",
-				Message: err.Error(),
+				Type:               hyperv1.IgnitionPayloadPayloadGeneratedCondition,
+				Status:             metav1.ConditionFalse,
+				Reason:             "InvalidConfig",
+				Message:            err.Error(),
+				ObservedGeneration: observedGen,
 			})
 		}
 		return ctrl.Result{}, err
@@ -264,9 +270,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if cr.Status.Current.RolloutGeneration == 0 || ro != cr.Status.Current.RolloutHash {
-		return r.rollout(ctx, cr, owner, committedGen, identity, ro, gen)
+		return r.rollout(ctx, cr, owner, committedGen, observedGen, identity, ro, gen)
 	}
-	return r.refresh(ctx, cr, owner, committedGen, identity, gen)
+	return r.refresh(ctx, cr, owner, committedGen, observedGen, identity, gen)
 }
 
 // commitStatus applies mutate through statuspatching.PatchStatus, whose re-read is served from the
@@ -305,7 +311,7 @@ func (r *Reconciler) commitStatus(ctx context.Context, cr *hyperv1.IgnitionPaylo
 //
 // The evicted old previous is no longer advertised once committed (at most two generations are, even
 // when rollouts overtake each other); the next reconcile's sweepOrphans frees it.
-func (r *Reconciler) rollout(ctx context.Context, cr *hyperv1.IgnitionPayload, owner payloadstore.OwnerRef, committedGen int64, identity, ro string, gen genInputs) (ctrl.Result, error) {
+func (r *Reconciler) rollout(ctx context.Context, cr *hyperv1.IgnitionPayload, owner payloadstore.OwnerRef, committedGen, observedGen int64, identity, ro string, gen genInputs) (ctrl.Result, error) {
 	newGen := committedGen + 1
 	// prev is the generation this rollout supersedes; captured by value before the status patch
 	// re-fetches cr, so it survives an optimistic-lock retry (commitStatus guarantees the re-read
@@ -333,7 +339,7 @@ func (r *Reconciler) rollout(ctx context.Context, cr *hyperv1.IgnitionPayload, o
 			Type: hyperv1.IgnitionPayloadIgnitionReachedCondition, Status: metav1.ConditionFalse,
 			Reason: "NewGeneration", Message: "a new payload generation has not yet been reached by a node",
 		})
-		setPayloadGenerated(cr)
+		setPayloadGenerated(cr, observedGen)
 		return nil
 	}); err != nil {
 		return ctrl.Result{}, err
@@ -349,7 +355,7 @@ func (r *Reconciler) rollout(ctx context.Context, cr *hyperv1.IgnitionPayload, o
 // ensurePayload compares against the store's recorded hash, not status.configHash, so it also repairs
 // a store entry that diverged from status (e.g. a late Put from an overlapping leader); when the store
 // already matches it costs one store read and no render.
-func (r *Reconciler) refresh(ctx context.Context, cr *hyperv1.IgnitionPayload, owner payloadstore.OwnerRef, committedGen int64, identity string, gen genInputs) (ctrl.Result, error) {
+func (r *Reconciler) refresh(ctx context.Context, cr *hyperv1.IgnitionPayload, owner payloadstore.OwnerRef, committedGen, observedGen int64, identity string, gen genInputs) (ctrl.Result, error) {
 	if _, err := r.Generator.ensurePayload(ctx, owner, committedGen, identity, gen); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -367,7 +373,7 @@ func (r *Reconciler) refresh(ctx context.Context, cr *hyperv1.IgnitionPayload, o
 	// preserves a concurrent serving-tier IgnitionReached write.
 	if err := r.commitStatus(ctx, cr, committedGen, func() error {
 		cr.Status.Current.ConfigHash = identity
-		setPayloadGenerated(cr)
+		setPayloadGenerated(cr, observedGen)
 		return nil
 	}); err != nil {
 		return ctrl.Result{}, err
@@ -421,10 +427,10 @@ func (r *Reconciler) retirePrevious(ctx context.Context, cr *hyperv1.IgnitionPay
 	})
 }
 
-func setPayloadGenerated(cr *hyperv1.IgnitionPayload) {
+func setPayloadGenerated(cr *hyperv1.IgnitionPayload, observedGen int64) {
 	apimeta.SetStatusCondition(&cr.Status.Conditions, metav1.Condition{
 		Type: hyperv1.IgnitionPayloadPayloadGeneratedCondition, Status: metav1.ConditionTrue, Reason: "AsExpected",
-		Message: "payload generated for the current config",
+		Message: "payload generated for the current config", ObservedGeneration: observedGen,
 	})
 }
 

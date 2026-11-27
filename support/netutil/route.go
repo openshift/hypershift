@@ -48,6 +48,8 @@ func ShortenRouteHostnameIfNeeded(name, namespace string, baseDomain string) str
 // than maxLength: if the suffix is too long, it will truncate the base name and add
 // an 8-character hash of the [base]-[suffix] string.  If the suffix is not too long,
 // it will truncate the base, add the hash of the base and return [base]-[hash]-[suffix]
+// A truncated base never ends in '.', which would make the result an invalid DNS-1123
+// name ("a.-[hash]").
 // Source: openshift/origin v3.9.0 pkg/api/apihelpers/namer.go
 func ShortenName(base, suffix string, maxLength int) string {
 	if maxLength <= 0 {
@@ -62,13 +64,13 @@ func ShortenName(base, suffix string, maxLength int) string {
 
 	// if the suffix is too long, ignore it
 	if baseLength < 0 {
-		prefix := base[0:min(len(base), max(0, maxLength-9))]
+		prefix := strings.TrimRight(base[0:min(len(base), max(0, maxLength-9))], ".")
 		// Calculate hash on initial base-suffix string
 		shortName := fmt.Sprintf("%s-%s", prefix, hash(name))
 		return shortName[:min(maxLength, len(shortName))]
 	}
 
-	prefix := base[0:baseLength]
+	prefix := strings.TrimRight(base[0:baseLength], ".")
 	// Calculate hash on initial base-suffix string
 	return fmt.Sprintf("%s-%s-%s", prefix, hash(base), suffix)
 }
