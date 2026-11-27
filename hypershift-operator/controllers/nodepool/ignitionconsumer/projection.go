@@ -24,10 +24,16 @@ const configDataKey = "config"
 // userConfigCopyName is the deterministic, per-CR name of a copied user ConfigMap
 // in the HCP namespace. It is namespaced by the CR name so copies for different
 // NodePools sharing one HCP namespace never collide, mirroring the NTO mirror
-// naming convention.
+// naming convention. User ConfigMap names are arbitrary, so copies carry the
+// userConfigCopyPrefix, which no generated (HAProxy, rolloutGlobalConfig) or
+// in-place (core, NTO) ConfigMap name starts with: a user ConfigMap named, e.g.,
+// "apiserver-haproxy" can never share a name with a generated one.
 func userConfigCopyName(crName, sourceName string) string {
-	return netutil.ShortenName(sourceName, crName, validation.DNS1123SubdomainMaxLength)
+	return netutil.ShortenName(userConfigCopyPrefix+sourceName, crName, validation.DNS1123SubdomainMaxLength)
 }
+
+// userConfigCopyPrefix reserves the copied-user-ConfigMap naming domain in the HCP namespace.
+const userConfigCopyPrefix = "user-"
 
 // haproxyConfigMapName is the per-CR name of the materialized apiserver-HAProxy
 // ConfigMap in the HCP namespace.

@@ -3,6 +3,7 @@ package ignitionconsumer
 import (
 	"context"
 	"sort"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -12,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -54,6 +56,47 @@ func TestClassifyConfigs(t *testing.T) {
 	g.Expect(refNames(mgmtRefs)).To(Equal([]string{haproxyName}))
 	g.Expect(globalName).To(Equal(rolloutGlobalConfigMapName("np-1")))
 	g.Expect(refNames(rolloutRefs)).ToNot(ContainElement(globalName))
+}
+
+// TestUserConfigCopyName pins that copied user ConfigMaps live in their own naming domain, so a user
+// ConfigMap named like a generated one neither lands in both reference lists (rejected by the API)
+// nor gets overwritten by the generated content, and that every copy name is a valid ConfigMap name,
+// shortened only when it does not fit.
+func TestUserConfigCopyName(t *testing.T) {
+	testCases := []struct {
+		name       string
+		sourceName string
+		// expectedName, when set, is the exact copy name.
+		expectedName string
+	}{
+		{name: "When a user ConfigMap name fits, it should not be shortened", sourceName: "user-mc", expectedName: "user-user-mc-np-1"},
+		{name: "When a user ConfigMap is named apiserver-haproxy, it should not collide with the HAProxy ConfigMap", sourceName: "apiserver-haproxy"},
+		{name: "When a user ConfigMap is named rollout-global-config, it should not collide with the rolloutGlobalConfig ConfigMap", sourceName: "rollout-global-config"},
+		{
+			name:       "When a long dotted user ConfigMap name is shortened right after a dot, it should still be a valid name",
+			sourceName: strings.Repeat("a.", 117) + "bbbbbbbbbb",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			userConfigs := []corev1.ConfigMap{{ObjectMeta: metav1.ObjectMeta{Name: tc.sourceName, Namespace: "clusters"}}}
+
+			copyName := userConfigCopyName("np-1", tc.sourceName)
+			g.Expect(validation.IsDNS1123Subdomain(copyName)).To(BeEmpty(), "copy name %q", copyName)
+			if tc.expectedName != "" {
+				g.Expect(copyName).To(Equal(tc.expectedName))
+			}
+			g.Expect(copyName).ToNot(Equal(haproxyConfigMapName("np-1")))
+			g.Expect(copyName).ToNot(Equal(rolloutGlobalConfigMapName("np-1")))
+
+			rolloutRefs, mgmtRefs, globalName := classifyConfigs("np-1", userConfigs, testCoreConfigs, testNTOConfigs)
+			for _, ref := range mgmtRefs {
+				g.Expect(refNames(rolloutRefs)).ToNot(ContainElement(ref.Name))
+			}
+			g.Expect(refNames(rolloutRefs)).ToNot(ContainElement(globalName))
+		})
+	}
 }
 
 // TestMaterializeConfigs pins the copy-vs-reference-in-place rule (RF#2): user configs,
