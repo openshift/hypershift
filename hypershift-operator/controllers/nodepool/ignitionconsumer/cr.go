@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/support/manifests"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -32,8 +34,12 @@ const consumerFinalizer = "hypershift.openshift.io/ignition-payload-consumer"
 func ignitionPayloadSpec(nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster,
 	rolloutRefs, mgmtRefs []hyperv1.ConfigMapReference, rolloutGlobalConfigName, osStream, additionalRolloutInputs string) hyperv1.IgnitionPayloadSpec {
 	spec := hyperv1.IgnitionPayloadSpec{
-		ReleaseImage:            nodePool.Spec.Release.Image,
-		PullSecret:              hyperv1.SecretReference{Name: hc.Spec.PullSecret.Name},
+		ReleaseImage: nodePool.Spec.Release.Image,
+		// The CR lives in the HCP namespace, and the generator resolves its references there. The
+		// HostedCluster names its pull secret and trust bundle in its own namespace; the control plane
+		// copies them into the HCP namespace under fixed names, so reference those copies. pullSecret is
+		// immutable, so it must be right on first write.
+		PullSecret:              hyperv1.SecretReference{Name: manifests.PullSecret("").Name},
 		RolloutGlobalConfig:     hyperv1.ConfigMapReference{Name: rolloutGlobalConfigName},
 		AdditionalRolloutInputs: additionalRolloutInputs,
 		RolloutConfigMaps:       rolloutRefs,
@@ -45,7 +51,7 @@ func ignitionPayloadSpec(nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster,
 		spec.OSImageStream = hyperv1.OSImageStreamReference{Name: osStream}
 	}
 	if hc.Spec.AdditionalTrustBundle != nil {
-		spec.AdditionalTrustBundle = hyperv1.ConfigMapReference{Name: hc.Spec.AdditionalTrustBundle.Name}
+		spec.AdditionalTrustBundle = hyperv1.ConfigMapReference{Name: controlplaneoperator.UserCABundle("").Name}
 	}
 	return spec
 }

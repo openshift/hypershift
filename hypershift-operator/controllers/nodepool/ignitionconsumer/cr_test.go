@@ -30,8 +30,8 @@ func TestIgnitionPayloadSpec(t *testing.T) {
 	nodePool := testNodePool("np-1")
 	hc := &hyperv1.HostedCluster{
 		Spec: hyperv1.HostedClusterSpec{
-			PullSecret:            corev1.LocalObjectReference{Name: "pull-secret"},
-			AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "trust-bundle"},
+			PullSecret:            corev1.LocalObjectReference{Name: "my-pull-secret"},
+			AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "my-trust-bundle"},
 		},
 	}
 	rolloutRefs := []hyperv1.ConfigMapReference{{Name: "a"}, {Name: "b"}}
@@ -40,8 +40,10 @@ func TestIgnitionPayloadSpec(t *testing.T) {
 	spec := ignitionPayloadSpec(nodePool, hc, rolloutRefs, mgmtRefs, "rollout-global", "rhel-9", "private=false,port=6443")
 
 	g.Expect(spec.ReleaseImage).To(Equal("quay.io/openshift/release:4.23"))
+	// The CR lives in the HCP namespace, so it references the control plane's copies under their
+	// fixed names, not the HostedCluster's own Secret/ConfigMap names.
 	g.Expect(spec.PullSecret.Name).To(Equal("pull-secret"))
-	g.Expect(spec.AdditionalTrustBundle.Name).To(Equal("trust-bundle"))
+	g.Expect(spec.AdditionalTrustBundle.Name).To(Equal("user-ca-bundle"))
 	g.Expect(spec.OSImageStream.Name).To(Equal("rhel-9"))
 	g.Expect(spec.RolloutGlobalConfig.Name).To(Equal("rollout-global"))
 	// The endpoint identity is carried as an opaque rollout input (not in a ConfigMap), so an
