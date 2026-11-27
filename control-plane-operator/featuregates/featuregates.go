@@ -18,7 +18,8 @@ const (
 	// (propagated via HYPERSHIFT_FEATURESET) only to stand its ignition components down: when the gate
 	// is active the HO owns the re-architected ignition system, so the CPO must not also reconcile the
 	// same-named ignition-server / ignition-server-proxy components.
-	IgnitionPayloadSystem featuregate.Feature = "IgnitionPayloadSystem"
+	IgnitionPayloadSystem  featuregate.Feature = "IgnitionPayloadSystem"
+	EtcdPerMemberEndpoints featuregate.Feature = "EtcdPerMemberEndpoints"
 )
 
 // Initialize new features here
@@ -33,7 +34,8 @@ var (
 	// Operator side that takes ownership of ignition is not landing with this change, so enabling the gate
 	// anywhere would make the CPO stand its ignition components down with nothing serving them. A later
 	// change adds it to a feature set once the operator side is merged.
-	ignitionPayloadSystemFeature = featuregates.NewFeature(IgnitionPayloadSystem)
+	ignitionPayloadSystemFeature  = featuregates.NewFeature(IgnitionPayloadSystem)
+	etcdPerMemberEndpointsFeature = featuregates.NewFeature(EtcdPerMemberEndpoints, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -43,6 +45,7 @@ func init() {
 	allFeatures.AddFeature(kubeletHAProxyRoutingFeature)
 	allFeatures.AddFeature(externalOIDCAsWebhook)
 	allFeatures.AddFeature(ignitionPayloadSystemFeature)
+	allFeatures.AddFeature(etcdPerMemberEndpointsFeature)
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
 }
