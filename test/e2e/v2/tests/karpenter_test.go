@@ -10,7 +10,9 @@ import (
 	"io"
 	"maps"
 	"os"
+	"slices"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,6 +22,7 @@ import (
 	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
@@ -70,6 +73,7 @@ func RegisterKarpenterTests(getTestCtx internal.TestContextGetter) {
 	// is preserved to help inform future refactors.
 
 	KarpenterPlumbingTests(getTestCtx)
+	KarpenterAMD64ProvisioningTest(getTestCtx)
 	KarpenterARM64ProvisioningTest(getTestCtx)
 	KarpenterInstanceProfileTest(getTestCtx)
 	KarpenterNodeClassVersionTest(getTestCtx)
@@ -78,6 +82,7 @@ func RegisterKarpenterTests(getTestCtx internal.TestContextGetter) {
 	KarpenterKubeletPropagationTest(getTestCtx)
 	KarpenterAutoNodeLifecycleTest(getTestCtx)
 	KarpenterCPUOptionsNestedVirtualization(getTestCtx)
+	KarpenterUnderutilizedConsolidationTest(getTestCtx)
 	// This test intentionally leaves dangling resources so cluster teardown must
 	// force-terminate nodes despite a blocking PDB. It must run last.
 	KarpenterBillingConsolidationTest(getTestCtx)
@@ -332,6 +337,36 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 	})
 }
 
+func KarpenterAMD64ProvisioningTest(getTestCtx internal.TestContextGetter) {
+	Context("[Feature:AutoNode] AMD64 instance provisioning", func() {
+		BeforeEach(func() {
+			tc := getTestCtx()
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+				Skip("AutoNode not configured on hosted cluster")
+			}
+		})
+
+		It("[Skipped:Disconnected] should provision and deprovision AMD64 nodes", Label("karpenter-amd64"), func() {
+			tc := getTestCtx()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
+
+			nodePool := v2util.BaseNodePool("amd64-nodepool", karpenterassets.EC2NodeClassDefault)
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements,
+				karpenterv1.NodeSelectorRequirementWithMinValues{
+					Key: corev1.LabelArchStable, Operator: corev1.NodeSelectorOpIn, Values: []string{"amd64"},
+				},
+			)
+			verifyKarpenterProvisioningAndDeprovisioning(tc, hc, hcClient, nodePool, "amd64", "t3.xlarge")
+		})
+	})
+}
+
 func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AutoNode] ARM64 instance provisioning", func() {
 		BeforeEach(func() {
@@ -347,10 +382,9 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should provision and deprovision ARM64 nodes", func() {
+		It("[Skipped:Disconnected] should provision and deprovision ARM64 nodes", Label("karpenter-arm64"), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -381,20 +415,78 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 				{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}},
 				{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 			}
-			// quay.io/openshift/origin-pod does not support arm64
-			armWorkLoads := v2util.TestWorkloadWithImage("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name}, "registry.access.redhat.com/ubi10/ubi-minimal:10.1")
-
-			armNodeLabels := map[string]string{
-				karpenterv1.NodePoolLabelKey: armNodePool.Name,
-				"kubernetes.io/arch":         "arm64",
-			}
-
-			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, armNodePool, armWorkLoads, armNodeLabels, false)
-
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, armNodeLabels)
-			v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nodes, nil, 1, map[string]string{"app": "arm-app"})
+			verifyKarpenterProvisioningAndDeprovisioning(tc, hc, hcClient, armNodePool, "arm64", "m6g.xlarge")
 		})
 	})
+}
+
+func verifyKarpenterProvisioningAndDeprovisioning(tc *internal.TestContext, hc *hyperv1.HostedCluster, hcClient crclient.Client, nodePool *karpenterv1.NodePool, arch, instanceType string) {
+	GinkgoHelper()
+
+	ctx := tc.Context
+	poolLabels := crclient.MatchingLabels{karpenterv1.NodePoolLabelKey: nodePool.Name}
+	// Keep the node in place while the workload is running so that the test observes
+	// consolidation only after deleting the workload.
+	nodePool.Spec.Disruption.ConsolidationPolicy = karpenterv1.ConsolidationPolicyWhenEmpty
+	workload := v2util.TestWorkloadWithImage("karpenter-"+arch, 1, poolLabels, "registry.access.redhat.com/ubi10/ubi-minimal:10.1")
+	v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, nodePool, workload, poolLabels, false)
+
+	By("Waiting up to ten minutes for the new node and workload to become ready")
+	provisioningCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	nodes := waitForReadyKarpenterNodes(Default, provisioningCtx, hcClient, poolLabels, 1)
+	Expect(nodes[0].Labels).To(HaveKeyWithValue(corev1.LabelArchStable, arch))
+	Expect(nodes[0].Labels).To(HaveKeyWithValue(corev1.LabelInstanceTypeStable, instanceType))
+	v2util.WaitForReadyKarpenterPods(Default, provisioningCtx, hcClient, nodes, nil, 1, workload.Spec.Selector.MatchLabels)
+	cancel()
+
+	claims := &karpenterv1.NodeClaimList{}
+	Eventually(func(g Gomega, pollCtx context.Context) {
+		g.Expect(hcClient.List(pollCtx, claims, poolLabels)).To(Succeed())
+		g.Expect(claims.Items).To(HaveLen(1), "NodePool %q must own the provisioned NodeClaim", nodePool.Name)
+		g.Expect(claims.Items[0].Status.ProviderID).To(Equal(nodes[0].Spec.ProviderID))
+	}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(3 * time.Second).Should(Succeed())
+
+	ec2Client := v2util.NewEC2Client(ctx, internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE"), hc.Spec.Platform.AWS.Region)
+	instance, instanceID := v2util.DescribeEC2Instance(Default, ctx, ec2Client, nodes[0])
+	Expect(string(instance.InstanceType)).To(Equal(instanceType), "EC2 instance %s", instanceID)
+
+	By("Deleting the workload and leaving its NodePool in place for Karpenter to consolidate")
+	Expect(hcClient.Delete(ctx, workload)).To(Succeed())
+	Eventually(func(g Gomega, pollCtx context.Context) {
+		nodeList := &corev1.NodeList{}
+		g.Expect(hcClient.List(pollCtx, nodeList, poolLabels)).To(Succeed())
+		g.Expect(nodeList.Items).To(BeEmpty(), "nodes for NodePool %q", nodePool.Name)
+
+		claimList := &karpenterv1.NodeClaimList{}
+		g.Expect(hcClient.List(pollCtx, claimList, poolLabels)).To(Succeed())
+		g.Expect(claimList.Items).To(BeEmpty(), "NodeClaims for NodePool %q", nodePool.Name)
+	}).WithContext(ctx).WithTimeout(10 * time.Minute).WithPolling(3 * time.Second).Should(Succeed())
+
+	Expect(hcClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), &karpenterv1.NodePool{})).To(Succeed())
+	Expect(ec2.NewInstanceTerminatedWaiter(ec2Client).Wait(ctx, &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	}, 5*time.Minute)).To(Succeed(), "EC2 instance %s should be terminated", instanceID)
+}
+
+func waitForReadyKarpenterNodes(g Gomega, ctx context.Context, hcClient crclient.Client, poolLabels crclient.MatchingLabels, count int) []corev1.Node {
+	GinkgoHelper()
+
+	var nodes []corev1.Node
+	g.Eventually(func(pollG Gomega, pollCtx context.Context) {
+		nodeList := &corev1.NodeList{}
+		pollG.Expect(hcClient.List(pollCtx, nodeList, poolLabels)).To(Succeed())
+		pollG.Expect(nodeList.Items).To(HaveLen(count), "nodes matching %v", poolLabels)
+		for _, node := range nodeList.Items {
+			ready := slices.ContainsFunc(node.Status.Conditions, func(condition corev1.NodeCondition) bool {
+				return condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue
+			})
+			pollG.Expect(ready).To(BeTrue(), "node %s must report Ready=True", node.Name)
+		}
+		nodes = nodeList.Items
+	}).WithContext(ctx).WithTimeout(45 * time.Minute).WithPolling(3 * time.Second).Should(Succeed())
+
+	return nodes
 }
 
 func KarpenterInstanceProfileTest(getTestCtx internal.TestContextGetter) {
@@ -539,10 +631,15 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred(), "failed to parse control plane version")
 			GinkgoWriter.Printf("Control plane version: %s\n", cpVersion.String())
 
-			// Verify default OpenshiftEC2NodeClass uses control plane release image
-			By("Verifying default OpenshiftEC2NodeClass uses control plane release image")
+			var expectedReleaseImage string
+			By("Verifying default OpenshiftEC2NodeClass uses the current release image")
 			e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have VersionResolved=True",
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+					currentHC := &hyperv1.HostedCluster{}
+					if err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC); err != nil {
+						return nil, fmt.Errorf("get HostedCluster to determine the current release image: %w", err)
+					}
+					expectedReleaseImage = defaultNodeClassReleaseImage(currentHC)
 					nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
 					return nc, err
@@ -562,10 +659,13 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 						if nc.Status.ReleaseImage == "" {
 							return false, "status.releaseImage is empty", nil
 						}
-						if nc.Status.ReleaseImage != hc.Spec.Release.Image {
-							return false, fmt.Sprintf("expected status.releaseImage %q to match hostedCluster.Spec.Release.Image %q", nc.Status.ReleaseImage, hc.Spec.Release.Image), nil
+						if expectedReleaseImage == "" {
+							return false, "HostedCluster rollout history has no release image yet", nil
 						}
-						return true, fmt.Sprintf("status.releaseImage matches control plane: %s", nc.Status.ReleaseImage), nil
+						if nc.Status.ReleaseImage != expectedReleaseImage {
+							return false, fmt.Sprintf("expected status.releaseImage %q to match the current release image %q", nc.Status.ReleaseImage, expectedReleaseImage), nil
+						}
+						return true, fmt.Sprintf("status.releaseImage matches the current release: %s", nc.Status.ReleaseImage), nil
 					},
 				},
 				e2eutil.WithTimeout(2*time.Minute),
@@ -728,11 +828,42 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 			)
 			GinkgoWriter.Printf("Node provisioned with correct kubelet version (v%s) for NodeClass version %s\n", expectedKubeletVersion, nodeClassVersion)
 
-			// Verify MetadataOptions on EC2 instance
-			By("Verifying MetadataOptions on EC2 instance via DescribeInstances")
+			By("Verifying the AMI, security groups, and metadata options on the provisioned EC2 instance")
 			ec2client := v2util.NewEC2Client(ctx, awsCredsFile, awsRegion)
+			resolvedNodeClass := &awskarpenterv1.EC2NodeClass{}
+			Expect(hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, resolvedNodeClass)).To(Succeed())
+			var expectedAMIIDs []string
+			for _, term := range resolvedNodeClass.Spec.AMISelectorTerms {
+				if term.ID != "" {
+					expectedAMIIDs = append(expectedAMIIDs, term.ID)
+				}
+			}
+			Expect(expectedAMIIDs).NotTo(BeEmpty(), "EC2NodeClass %s has no resolved AMI IDs", nc.Name)
+
+			Expect(hc.Spec.Platform.AWS.CloudProviderConfig).NotTo(BeNil())
+			vpcID := hc.Spec.Platform.AWS.CloudProviderConfig.VPC
+			Expect(vpcID).NotTo(BeEmpty())
+			groups, err := ec2client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+				Filters: []ec2types.Filter{
+					{Name: aws.String("vpc-id"), Values: []string{vpcID}},
+					{Name: aws.String("tag:karpenter.sh/discovery"), Values: []string{nc.Spec.SecurityGroupSelectorTerms[0].Tags["karpenter.sh/discovery"]}},
+				},
+			})
+			Expect(err).NotTo(HaveOccurred(), "resolve security group selector for %s", nc.Name)
+			Expect(groups.SecurityGroups).NotTo(BeEmpty(), "no security groups match the NodeClass selector in VPC %s", vpcID)
+			var expectedGroupIDs []string
+			for _, group := range groups.SecurityGroups {
+				expectedGroupIDs = append(expectedGroupIDs, aws.ToString(group.GroupId))
+			}
+
 			for _, node := range nodes {
 				instance, instanceID := v2util.DescribeEC2Instance(Default, ctx, ec2client, node)
+				Expect(expectedAMIIDs).To(ContainElement(aws.ToString(instance.ImageId)), "EC2 instance %s must use an AMI resolved for NodeClass %s", instanceID, nc.Name)
+				var actualGroupIDs []string
+				for _, group := range instance.SecurityGroups {
+					actualGroupIDs = append(actualGroupIDs, aws.ToString(group.GroupId))
+				}
+				Expect(actualGroupIDs).To(ConsistOf(expectedGroupIDs), "EC2 instance %s security groups must match the NodeClass selector", instanceID)
 				GinkgoWriter.Printf("Checking MetadataOptions for node %s (instance %s)\n", node.Name, instanceID)
 				Expect(instance.MetadataOptions).NotTo(BeNil(), "instance should have MetadataOptions")
 				Expect(string(instance.MetadataOptions.HttpEndpoint)).To(Equal("enabled"), "instance %s HttpEndpoint mismatch", instanceID)
@@ -815,6 +946,124 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("OpenshiftEC2NodeClass %q has SupportedVersionSkew=False for version %s (exceeds n-3 skew from CP %s)\n", skewNC.Name, skewVersion, cpVersion)
 		})
 	})
+}
+
+// defaultNodeClassReleaseImage returns the release an unpinned NodeClass should use.
+func defaultNodeClassReleaseImage(hc *hyperv1.HostedCluster) string {
+	if hc.Spec.ControlPlaneRelease != nil {
+		return hc.Spec.Release.Image
+	}
+
+	// The completed rollout can record a digest even when the spec requests a tag.
+	controlPlane := hc.Status.ControlPlaneVersion
+	for _, update := range controlPlane.History {
+		if update.State == configv1.CompletedUpdate {
+			return update.Image
+		}
+	}
+	if len(controlPlane.History) > 0 {
+		return controlPlane.History[0].Image
+	}
+	if controlPlane.Desired.Image != "" {
+		return ""
+	}
+
+	// Older control planes can publish rollout history in status.version only.
+	if legacy := hc.Status.Version; legacy != nil {
+		for _, update := range legacy.History {
+			if update.State == configv1.CompletedUpdate {
+				return update.Image
+			}
+		}
+		if len(legacy.History) > 0 {
+			return legacy.History[0].Image
+		}
+		return ""
+	}
+	return hc.Spec.Release.Image
+}
+
+func TestDefaultNodeClassReleaseImage(t *testing.T) {
+	const (
+		requested = "example.test/release:5.1.0-ec.2-multi"
+		partial   = "example.test/release:partial"
+		completed = "example.test/release@sha256:36cfb9b643459541474e4447a629e2c5983cb810bb7dd7535d51149dc5bc8456"
+	)
+	for _, tt := range []struct {
+		name         string
+		controlPlane *hyperv1.Release
+		desiredImage string
+		history      []hyperv1.ControlPlaneUpdateHistory
+		legacy       *hyperv1.ClusterVersionStatus
+		expected     string
+	}{
+		{
+			name: "When the spec uses a tag, use the completed rollout digest",
+			history: []hyperv1.ControlPlaneUpdateHistory{
+				{State: configv1.PartialUpdate, Image: "example.test/release:in-progress"},
+				{State: configv1.CompletedUpdate, Image: completed},
+			},
+			expected: completed,
+		},
+		{
+			name: "When control-plane history is absent, use the legacy completed rollout",
+			legacy: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate, Image: completed}},
+			},
+			expected: completed,
+		},
+		{
+			name:    "When the first control-plane rollout is partial, use its image",
+			history: []hyperv1.ControlPlaneUpdateHistory{{State: configv1.PartialUpdate, Image: partial}},
+			legacy: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate, Image: completed}},
+			},
+			expected: partial,
+		},
+		{
+			name:         "When control-plane status has a desired image, wait for its history",
+			desiredImage: requested,
+			legacy: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate, Image: completed}},
+			},
+		},
+		{
+			name: "When the first legacy rollout is partial, use its image",
+			legacy: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{State: configv1.PartialUpdate, Image: completed}},
+			},
+			expected: completed,
+		},
+		{
+			name:         "When the control plane is pinned separately, use the worker release",
+			controlPlane: &hyperv1.Release{Image: "example.test/control-plane:pinned"},
+			history:      []hyperv1.ControlPlaneUpdateHistory{{State: configv1.CompletedUpdate, Image: completed}},
+			expected:     requested,
+		},
+		{
+			name:     "When rollout history is absent, use the requested image",
+			expected: requested,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release:             hyperv1.Release{Image: requested},
+					ControlPlaneRelease: tt.controlPlane,
+				},
+				Status: hyperv1.HostedClusterStatus{
+					ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{
+						Desired: configv1.Release{Image: tt.desiredImage},
+						History: tt.history,
+					},
+					Version: tt.legacy,
+				},
+			}
+			if got := defaultNodeClassReleaseImage(hc); got != tt.expected {
+				t.Fatalf("default NodeClass release = %q, want %q", got, tt.expected)
+			}
+		})
+	}
 }
 
 func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
@@ -1592,6 +1841,84 @@ func KarpenterCPUOptionsNestedVirtualization(getTestCtx internal.TestContextGett
 	})
 }
 
+func KarpenterUnderutilizedConsolidationTest(getTestCtx internal.TestContextGetter) {
+	It("[Feature:AutoNode] [Skipped:Disconnected] should move running workloads onto one underutilized node", func() {
+		tc := getTestCtx()
+		tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+		hc, err := tc.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+			Skip("AutoNode not configured on hosted cluster")
+		}
+		hcClient, err := tc.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
+		ctx := tc.Context
+
+		nodePool := v2util.BaseNodePool("underutilized", karpenterassets.EC2NodeClassDefault)
+		nodePool.Spec.Disruption.ConsolidationPolicy = karpenterv1.ConsolidationPolicyWhenEmptyOrUnderutilized
+		consolidateAfter := nodePool.Spec.Disruption.ConsolidateAfter
+		nodePool.Spec.Disruption.ConsolidateAfter = karpenterv1.MustParseNillableDuration("Never")
+		nodeLabels := crclient.MatchingLabels{karpenterv1.NodePoolLabelKey: nodePool.Name}
+
+		first := v2util.TestWorkload("consolidation-first", 1, maps.Clone(nodeLabels))
+		v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, nodePool, first, nodeLabels, false)
+		firstNodes := waitForReadyKarpenterNodes(Default, ctx, hcClient, nodeLabels, 1)
+		v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, firstNodes, nil, 1, first.Spec.Selector.MatchLabels)
+
+		By("Placing a temporary marker on the first node so the second workload starts elsewhere")
+		marker := v2util.TestWorkload("consolidation-marker", 1, maps.Clone(nodeLabels))
+		hostname := firstNodes[0].Labels[corev1.LabelHostname]
+		Expect(hostname).NotTo(BeEmpty())
+		marker.Spec.Template.Spec.NodeSelector[corev1.LabelHostname] = hostname
+		Expect(hcClient.Create(ctx, marker)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(crclient.IgnoreNotFound(hcClient.Delete(ctx, marker))).To(Succeed())
+		})
+		v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, firstNodes, nil, 1, marker.Spec.Selector.MatchLabels)
+
+		second := v2util.TestWorkload("consolidation-second", 1, maps.Clone(nodeLabels))
+		antiAffinity := second.Spec.Template.Spec.Affinity.PodAntiAffinity
+		antiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(antiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
+			corev1.PodAffinityTerm{LabelSelector: marker.Spec.Selector.DeepCopy(), TopologyKey: corev1.LabelHostname})
+		Expect(hcClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(crclient.IgnoreNotFound(hcClient.Delete(ctx, second))).To(Succeed())
+		})
+		nodesBefore := waitForReadyKarpenterNodes(Default, ctx, hcClient, nodeLabels, 2)
+		v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nodesBefore, firstNodes, 1, second.Spec.Selector.MatchLabels)
+
+		ec2Client := v2util.NewEC2Client(ctx, internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE"), hc.Spec.Platform.AWS.Region)
+		instanceIDs := make(map[string]string, len(nodesBefore))
+		for _, node := range nodesBefore {
+			_, instanceID := v2util.DescribeEC2Instance(Default, ctx, ec2Client, node)
+			instanceIDs[node.Name] = instanceID
+		}
+
+		By("Removing the marker and enabling consolidation while both workloads remain deployed")
+		Expect(hcClient.Delete(ctx, marker)).To(Succeed())
+		v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nil, nil, 0, marker.Spec.Selector.MatchLabels)
+		Eventually(func(g Gomega, pollCtx context.Context) {
+			pool := &karpenterv1.NodePool{}
+			g.Expect(hcClient.Get(pollCtx, crclient.ObjectKeyFromObject(nodePool), pool)).To(Succeed())
+			before := pool.DeepCopy()
+			pool.Spec.Disruption.ConsolidateAfter = consolidateAfter
+			g.Expect(hcClient.Patch(pollCtx, pool, crclient.MergeFromWithOptions(before, crclient.MergeFromWithOptimisticLock{}))).To(Succeed())
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(time.Second).Should(Succeed())
+
+		consolidationCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+		defer cancel()
+		nodesAfter := waitForReadyKarpenterNodes(Default, consolidationCtx, hcClient, nodeLabels, 1)
+		v2util.WaitForReadyKarpenterPods(Default, consolidationCtx, hcClient, nodesAfter, nil, 1, first.Spec.Selector.MatchLabels)
+		v2util.WaitForReadyKarpenterPods(Default, consolidationCtx, hcClient, nodesAfter, nil, 1, second.Spec.Selector.MatchLabels)
+		delete(instanceIDs, nodesAfter[0].Name)
+		for _, instanceID := range instanceIDs {
+			Expect(ec2.NewInstanceTerminatedWaiter(ec2Client).Wait(consolidationCtx, &ec2.DescribeInstancesInput{
+				InstanceIds: []string{instanceID},
+			}, 5*time.Minute)).To(Succeed(), "excess EC2 instance %s should be terminated", instanceID)
+		}
+	})
+}
+
 func KarpenterBillingConsolidationTest(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AutoNode] Billing vCPUs and consolidation", func() {
 		BeforeEach(func() {
@@ -1643,7 +1970,8 @@ func KarpenterBillingConsolidationTest(getTestCtx internal.TestContextGetter) {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, nodeLabels)
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, nodeLabels)
+			v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nodes, nil, 1, workLoads.Spec.Selector.MatchLabels)
 			By("Validating billing vCPUs after consolidation")
 
 			// t3.xlarge = 4 vCPUs; 1 node = 4 Karpenter vCPUs on top of baseline
