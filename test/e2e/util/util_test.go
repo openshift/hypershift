@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
 	"github.com/blang/semver"
@@ -375,6 +376,65 @@ func TestMatchesLeaderElectionFailure(t *testing.T) {
 	}
 }
 
+func TestMatchesTokenMinterUnavailable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		line  string
+		match bool
+	}{
+		{
+			name:  "When the cloud token file is missing, it should match",
+			line:  `E1127 01:02:54.057079       1 csi-provisioner.go:236] CSI driver probe failed: rpc error: code = FailedPrecondition desc = Failed health check (verify network connection and IAM credentials): dry-run EC2 API call failed: operation error EC2: DescribeAvailabilityZones, get identity: get credentials: failed to refresh cached credentials, failed to retrieve jwt from provide source, unable to read file at /var/run/secrets/openshift/serviceaccount/token: open /var/run/secrets/openshift/serviceaccount/token: no such file or directory`,
+			match: true,
+		},
+		{
+			name:  "When the kubelet-projected service account token is missing, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] failed to read token: open /var/run/secrets/kubernetes.io/serviceaccount/token: no such file or directory`,
+			match: false,
+		},
+		{
+			name:  "When a sibling file of the token is missing, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] failed to read token: open /var/run/secrets/openshift/serviceaccount/token.bak: no such file or directory`,
+			match: false,
+		},
+		{
+			name:  "When the token path and the missing-file error come from different files, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] open /var/run/secrets/openshift/serviceaccount/token: permission denied; open /etc/driver.conf: no such file or directory`,
+			match: false,
+		},
+		{
+			name:  "When the token file is unreadable for another reason, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] failed to read token: open /var/run/secrets/openshift/serviceaccount/token: permission denied`,
+			match: false,
+		},
+		{
+			name:  "When an unrelated file is missing, it should not match",
+			line:  `E1111 15:23:29.927335       1 main.go:106] failed to read /etc/hosted-kubernetes/kubeconfig: no such file or directory`,
+			match: false,
+		},
+		{
+			name:  "When the log line is unrelated, it should not match",
+			line:  `I1111 15:23:29.927335       1 main.go:106] serving metrics on :8080`,
+			match: false,
+		},
+		{
+			name:  "When log is empty, it should not match",
+			line:  "",
+			match: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(MatchesTokenMinterUnavailable(tc.line)).To(Equal(tc.match))
+		})
+	}
+}
+
 func TestMatchesControlPlaneUnavailable(t *testing.T) {
 	t.Parallel()
 
@@ -434,6 +494,98 @@ func TestMatchesControlPlaneUnavailable(t *testing.T) {
 	}
 }
 
+func TestCauseMaxRestarts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		description string
+		maxRestarts int32
+		capped      bool
+	}{
+		{
+			name:        "When the cause is capped, it should report the cap",
+			description: "Token minter not ready",
+			maxRestarts: 3,
+			capped:      true,
+		},
+		{
+			name:        "When the cause is unbounded, it should report no cap",
+			description: "Leader election failure",
+			capped:      false,
+		},
+		{
+			name:        "When the cause is unknown, it should report no cap",
+			description: "No such cause",
+			capped:      false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			maxRestarts, capped := causeMaxRestarts(tc.description)
+			g.Expect(capped).To(Equal(tc.capped))
+			g.Expect(maxRestarts).To(Equal(tc.maxRestarts))
+		})
+	}
+}
+
+func TestContainerRestartCountMatches(t *testing.T) {
+	t.Parallel()
+
+	podWithRestartCounts := func(counts map[string]int32) *corev1.Pod {
+		pod := &corev1.Pod{}
+		for name, count := range counts {
+			pod.Status.ContainerStatuses = append(pod.Status.ContainerStatuses, corev1.ContainerStatus{
+				Name:         name,
+				RestartCount: count,
+			})
+		}
+		return pod
+	}
+
+	tests := []struct {
+		name      string
+		pod       *corev1.Pod
+		container string
+		observed  int32
+		match     bool
+	}{
+		{
+			name:      "When the restart count is unchanged, it should match",
+			pod:       podWithRestartCounts(map[string]int32{"csi-provisioner": 3}),
+			container: "csi-provisioner",
+			observed:  3,
+			match:     true,
+		},
+		{
+			name:      "When the container restarted after the pod was listed, it should not match",
+			pod:       podWithRestartCounts(map[string]int32{"csi-provisioner": 4}),
+			container: "csi-provisioner",
+			observed:  3,
+			match:     false,
+		},
+		{
+			name:      "When the container is gone, it should not match",
+			pod:       podWithRestartCounts(map[string]int32{"csi-driver": 1}),
+			container: "csi-provisioner",
+			observed:  1,
+			match:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(containerRestartCountMatches(tc.pod, tc.container, tc.observed)).To(Equal(tc.match))
+		})
+	}
+}
+
 func TestToleratedRestartCauseInLog(t *testing.T) {
 	t.Parallel()
 
@@ -444,13 +596,16 @@ func TestToleratedRestartCauseInLog(t *testing.T) {
 		crash       = "panic: runtime error: invalid memory address or nil pointer dereference"
 		stackFrame  = `goroutine 1 [running]:` + "\n" + `main.run(0xc000123456)` + "\n" + "\t" + `/go/src/main.go:42 +0x1a5`
 		healthy     = `I1111 15:23:29.927335       1 main.go:106] serving metrics on :8080`
+
+		missingCloudToken = `E1127 01:02:54.057079       1 csi-provisioner.go:236] CSI driver probe failed: failed to retrieve jwt from provide source, unable to read file at /var/run/secrets/openshift/serviceaccount/token: open /var/run/secrets/openshift/serviceaccount/token: no such file or directory`
 	)
 
 	tests := []struct {
-		name      string
-		log       string
-		cause     string
-		tolerated bool
+		name         string
+		log          string
+		restartCount int32
+		cause        string
+		tolerated    bool
 	}{
 		{
 			name:      "When the log ends on a control plane endpoint being unreachable, it should be tolerated",
@@ -487,6 +642,37 @@ func TestToleratedRestartCauseInLog(t *testing.T) {
 			tolerated: true,
 		},
 		{
+			name:      "When the log ends on the token-minter not having written the token, it should be tolerated",
+			log:       strings.Join([]string{healthy, missingCloudToken}, "\n"),
+			cause:     "Token minter not ready",
+			tolerated: true,
+		},
+		{
+			name:      "When the token-minter misses the token and the component then panics, it should not be tolerated",
+			log:       strings.Join([]string{missingCloudToken, crash, stackFrame}, "\n"),
+			tolerated: false,
+		},
+		{
+			name:         "When the token-minter cause matches at the restart ceiling, it should be tolerated",
+			log:          strings.Join([]string{healthy, missingCloudToken}, "\n"),
+			restartCount: 3,
+			cause:        "Token minter not ready",
+			tolerated:    true,
+		},
+		{
+			name:         "When the token-minter cause matches above the restart ceiling, it should not be tolerated",
+			log:          strings.Join([]string{healthy, missingCloudToken}, "\n"),
+			restartCount: 4,
+			tolerated:    false,
+		},
+		{
+			name:         "When an unbounded cause matches at a high restart count, it should be tolerated",
+			log:          strings.Join([]string{healthy, leaderLost}, "\n"),
+			restartCount: 10,
+			cause:        "Leader election failure",
+			tolerated:    true,
+		},
+		{
 			name:      "When the log records no tolerated cause, it should not be tolerated",
 			log:       strings.Join([]string{healthy, "E1111 15:23:29.927335       1 main.go:106] exiting"}, "\n"),
 			tolerated: false,
@@ -503,7 +689,7 @@ func TestToleratedRestartCauseInLog(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			cause, tolerated, err := toleratedRestartCauseInLog(strings.NewReader(tc.log))
+			cause, tolerated, err := toleratedRestartCauseInLog(strings.NewReader(tc.log), tc.restartCount)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(tolerated).To(Equal(tc.tolerated))
 			g.Expect(cause).To(Equal(tc.cause))
@@ -536,6 +722,6 @@ func TestToleratedRestartCauseInLogReadFailure(t *testing.T) {
 		err:    errors.New("unexpected EOF"),
 	}
 
-	_, _, err := toleratedRestartCauseInLog(log)
+	_, _, err := toleratedRestartCauseInLog(log, 0)
 	g.Expect(err).To(MatchError(ContainSubstring("unexpected EOF")))
 }

@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -134,13 +135,19 @@ var (
 		// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
 		"openstack-manila-csi-controllerplugin": 20,
 		// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
-		"kubevirt-csi":                  20,
+		"kubevirt-csi": 20,
+		// The token-minter sidecar can start after the CSI sidecars it feeds, which then exit
+		// on their first probe. The retry can lose the same race, which
+		// MatchesTokenMinterUnavailable covers. Same race as gcp-cloud-controller-manager
+		// below (GCP-441).
 		"aws-ebs-csi-driver-controller": 1,
 		// Allow 1 restart for network-node-identity webhook startup timing
 		"network-node-identity": 1,
 		// temporary workaround for https://issues.redhat.com/browse/CNV-76520
 		"kubevirt-cloud-controller-manager": 2,
 		// Allow 1 restart for token-minter sidecar race condition: https://issues.redhat.com/browse/GCP-441
+		// The same race is matched from the container log for aws-ebs-csi-driver-controller above,
+		// see MatchesTokenMinterUnavailable.
 		// TODO(GCP-447): Remove this toleration once token-minter is injected as a native sidecar init container.
 		"gcp-cloud-controller-manager": 1,
 		// During minor version upgrades the controlplane-manager rolls out the new dns-operator
@@ -823,7 +830,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 						}
 					}
 
-					if cause, ok := toleratedRestartCause(ctx, k8sClient, &pod, containerStatus.Name, t); ok {
+					if cause, ok := toleratedRestartCause(ctx, k8sClient, &pod, containerStatus.Name, containerStatus.RestartCount, t); ok {
 						t.Logf("%s detected in container %s in pod %s", cause, containerStatus.Name, pod.Name)
 						continue
 					}
@@ -886,6 +893,29 @@ func MatchesControlPlaneUnavailable(line string) bool {
 	return containsAny(lower, ControlPlaneEndpointPatterns) && containsAny(lower, TransportFailurePatterns)
 }
 
+// cloudTokenPath is the file the token-minter sidecar writes the cloud token into. Only this
+// path is matched, not the kubelet-projected /var/run/secrets/kubernetes.io/serviceaccount
+// token: that one is present from container start, so a missing file there is a genuine
+// misconfiguration rather than a startup ordering race.
+const cloudTokenPath = suppconfig.CloudTokenMountPath + "/token"
+
+// cloudTokenMissingRE matches the one error the CSI driver records when the cloud token file is
+// absent: "open <cloudTokenPath>: no such file or directory". Matching a single expression keeps
+// the path and the missing-file error from coming from different files on the same log line, and
+// the file name is anchored so a sibling such as token.bak does not match.
+var cloudTokenMissingRE = regexp.MustCompile(`\bopen ` + regexp.QuoteMeta(cloudTokenPath) + `: no such file or directory`)
+
+// MatchesTokenMinterUnavailable reports whether a log line records a component giving up
+// because its token-minter sidecar had not written the cloud token yet. The token-minter runs
+// as a regular sidecar container in several control plane pods, so kubelet may start it after
+// the containers that consume the token, for instance while pulling the larger utilities image.
+// Those containers then fail their own startup probe of the driver and exit, and succeed on the
+// retry once the token exists. The restart says nothing about the component that restarted, so
+// it is not a crash.
+func MatchesTokenMinterUnavailable(line string) bool {
+	return cloudTokenMissingRE.MatchString(strings.ToLower(line))
+}
+
 // CrashPatterns identify a container ending on a defect of its own: a Go panic or a runtime
 // fault. Most lines a tolerated cause matches are warnings a component logs while it retries,
 // so they do not establish why the container exited; a crash logged after one of them does.
@@ -907,15 +937,25 @@ func MatchesCrash(line string) bool {
 var toleratedRestartCauses = []struct {
 	description string
 	matches     func(line string) bool
+	// maxRestarts caps how many restarts this cause excuses. Zero means unbounded, for causes
+	// where the count carries no information about the container, such as a control plane that
+	// stays unavailable for minutes.
+	maxRestarts int32
 }{
 	{description: "Leader election failure", matches: MatchesLeaderElectionFailure},
 	{description: "Control plane unavailability", matches: MatchesControlPlaneUnavailable},
+	// The token-minter race resolves once the token exists, so a higher count means the
+	// token-minter itself is broken and the restart is not excused.
+	{description: "Token minter not ready", matches: MatchesTokenMinterUnavailable, maxRestarts: 3},
 }
 
-// matchToleratedRestartCause returns the description of the first tolerated restart cause the
-// line matches, and whether it matched one at all.
-func matchToleratedRestartCause(line string) (string, bool) {
+// matchToleratedRestartCause returns the description of the first tolerated restart cause that
+// matches the line and excuses this restart count, and whether one matched at all.
+func matchToleratedRestartCause(line string, restartCount int32) (string, bool) {
 	for _, cause := range toleratedRestartCauses {
+		if cause.maxRestarts > 0 && restartCount > cause.maxRestarts {
+			continue
+		}
 		if cause.matches(line) {
 			return cause.description, true
 		}
@@ -923,15 +963,37 @@ func matchToleratedRestartCause(line string) (string, bool) {
 	return "", false
 }
 
+// causeMaxRestarts returns the restart cap of the named tolerated restart cause, and whether the
+// cause is capped at all.
+func causeMaxRestarts(description string) (int32, bool) {
+	for _, cause := range toleratedRestartCauses {
+		if cause.description == description {
+			return cause.maxRestarts, cause.maxRestarts > 0
+		}
+	}
+	return 0, false
+}
+
+// containerRestartCountMatches reports whether the container still has the restart count that
+// was observed when the pod was listed.
+func containerRestartCountMatches(pod *corev1.Pod, containerName string, observed int32) bool {
+	for _, containerStatus := range pod.Status.ContainerStatuses {
+		if containerStatus.Name == containerName {
+			return containerStatus.RestartCount == observed
+		}
+	}
+	return false
+}
+
 // toleratedRestartCauseInLog returns the tolerated cause that explains the end of the given
 // container log, and whether the log is explained by one at all.
 //
 // The whole log is read and the last cause wins, because only the end of the log says why the
-// container exited. A crash logged after a tolerated cause discards it: the tolerated cause
-// was a warning the component logged while retrying, and the component went on to fail for a
-// reason of its own. A line is tested against the tolerated causes first, so a component
-// panicking on a control plane that is unavailable stays tolerated.
-func toleratedRestartCauseInLog(log io.Reader) (string, bool, error) {
+// container exited. A crash logged after a tolerated cause discards it: the tolerated cause was
+// a warning the component logged while retrying, and the component went on to fail for a reason
+// of its own. A line is tested against the tolerated causes first, so a component panicking on a
+// control plane that is unavailable stays tolerated.
+func toleratedRestartCauseInLog(log io.Reader, restartCount int32) (string, bool, error) {
 	scanner := bufio.NewScanner(log)
 	const (
 		bufSize          = 256 * 1024
@@ -947,7 +1009,7 @@ func toleratedRestartCauseInLog(log io.Reader) (string, bool, error) {
 	)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if cause, ok := matchToleratedRestartCause(line); ok {
+		if cause, ok := matchToleratedRestartCause(line, restartCount); ok {
 			description, tolerated = cause, true
 			continue
 		}
@@ -961,7 +1023,7 @@ func toleratedRestartCauseInLog(log io.Reader) (string, bool, error) {
 
 // toleratedRestartCause returns the description of the tolerated restart cause that explains
 // the container's previous log, and whether one explains it at all.
-func toleratedRestartCause(ctx context.Context, client kubeclient.Interface, pod *corev1.Pod, containerName string, t *testing.T) (string, bool) {
+func toleratedRestartCause(ctx context.Context, client kubeclient.Interface, pod *corev1.Pod, containerName string, restartCount int32, t *testing.T) (string, bool) {
 	podLogOpts := corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
@@ -975,15 +1037,34 @@ func toleratedRestartCause(ctx context.Context, client kubeclient.Interface, pod
 	}
 	defer podLogs.Close()
 
-	description, tolerated, err := toleratedRestartCauseInLog(podLogs)
+	description, tolerated, err := toleratedRestartCauseInLog(podLogs, restartCount)
 	if err != nil {
 		// The log was only read in part, so its end is unknown and no match in what was
 		// read establishes why the container exited.
 		t.Logf("failed to read pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
 		return "", false
 	}
+	if !tolerated {
+		return "", false
+	}
+	if _, capped := causeMaxRestarts(description); !capped {
+		return description, true
+	}
 
-	return description, tolerated
+	// The kubelet resolves the previous log when it handles the request, so a restart between the
+	// pod list and the log read means the log can describe a later attempt than restartCount.
+	// Only excuse the attempt whose restart count was observed, so the cap still holds.
+	latest, err := client.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Logf("failed to re-read pod; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
+		return "", false
+	}
+	if !containerRestartCountMatches(latest, containerName, restartCount) {
+		t.Logf("restart count of container %s in pod %s changed while reading its previous log", containerName, pod.Name)
+		return "", false
+	}
+
+	return description, true
 }
 
 func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
