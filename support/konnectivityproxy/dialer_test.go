@@ -284,7 +284,12 @@ func TestKonnectivityHealthEndRetryPreventsStubbornFlag(t *testing.T) {
 // All accepted connections inherit a deadline so io.Copy never blocks indefinitely.
 func startTCPEchoServer(t *testing.T) net.Listener {
 	t.Helper()
-	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	return startCountedTCPEchoServer(t, "127.0.0.1:0", nil)
+}
+
+func startCountedTCPEchoServer(t *testing.T, address string, count *atomic.Int32) net.Listener {
+	t.Helper()
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", address)
 	if err != nil {
 		t.Fatalf("failed to start echo server: %v", err)
 	}
@@ -295,6 +300,9 @@ func startTCPEchoServer(t *testing.T) net.Listener {
 			conn, err := ln.Accept()
 			if err != nil {
 				return
+			}
+			if count != nil {
+				count.Add(1)
 			}
 			go func() {
 				defer conn.Close()
@@ -313,7 +321,7 @@ func startTCPEchoServer(t *testing.T) net.Listener {
 // startConnectProxy starts an HTTP CONNECT proxy that increments connectCount
 // for every successful tunnel. Relay goroutines are bounded by per-connection
 // deadlines so they cannot outlive the test.
-func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
+func startConnectProxy(t *testing.T, connectCount *atomic.Int32, forwardAddress ...string) net.Listener {
 	t.Helper()
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -329,7 +337,11 @@ func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
 			}
 			connectCount.Add(1)
 
-			target, err := (&net.Dialer{Timeout: 30 * time.Second}).DialContext(r.Context(), "tcp", r.Host)
+			targetAddress := r.Host
+			if len(forwardAddress) > 0 {
+				targetAddress = forwardAddress[0]
+			}
+			target, err := (&net.Dialer{Timeout: 30 * time.Second}).DialContext(r.Context(), "tcp", targetAddress)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadGateway)
 				return
@@ -424,13 +436,16 @@ func TestBuildAddressList(t *testing.T) {
 
 func TestDialDirectWithProxy(t *testing.T) {
 	const testTimeout = 5 * time.Second
+	t.Run("When management bypass rules are configured, it should select each socket route", testManagementProxyRoutes)
+	t.Run("When bypass matching forms vary, it should use the cached management selector", testManagementProxySelector)
+	t.Run("When proxy configuration is invalid, it should fall back without exposing credentials", testManagementProxyInvalidConfig)
 
 	t.Run("When HTTPS_PROXY is set it should route through the proxy", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		t.Setenv("HTTP_PROXY", "")
 		t.Setenv("HTTPS_PROXY", "")
 		t.Setenv("NO_PROXY", "")
-		echo := startTCPEchoServer(t)
+		echo := startCountedTCPEchoServer(t, net.JoinHostPort(managementTestIP(t), "0"), nil)
 		var connectCount atomic.Int32
 		proxyLn := startConnectProxy(t, &connectCount)
 		t.Setenv("HTTPS_PROXY", fmt.Sprintf("http://%s", proxyLn.Addr().String()))
