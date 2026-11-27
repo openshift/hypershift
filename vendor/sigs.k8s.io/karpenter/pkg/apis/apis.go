@@ -24,8 +24,7 @@ import (
 )
 
 const (
-	Group              = "karpenter.sh"
-	CompatibilityGroup = "compatibility." + Group
+	Group = "karpenter.sh"
 )
 
 //go:generate go tool -modfile=../../go.tools.mod controller-gen crd object:headerFile="../../hack/boilerplate.go.txt" paths="./..." output:crd:artifacts:config=crds
@@ -36,9 +35,12 @@ var (
 	NodeClaimCRD []byte
 	//go:embed crds/karpenter.sh_nodeoverlays.yaml
 	NodeOverlayCRD []byte
-	CRDs           = []*apiextensionsv1.CustomResourceDefinition{
+	//go:embed crds/autoscaling.x-k8s.io_capacitybuffers.yaml
+	CapacityBufferCRD []byte
+	CRDs              = []*apiextensionsv1.CustomResourceDefinition{
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodePoolCRD),
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodeClaimCRD),
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodeOverlayCRD),
+		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](CapacityBufferCRD),
 	}
 )

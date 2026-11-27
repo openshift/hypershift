@@ -59,14 +59,57 @@ var (
 
 type DriftReason string
 
+// RepairAction identifies the operation requested by a repair policy.
+type RepairAction string
+
+const (
+	// RebootNode requests recovery of the existing Node through the provider reboot lifecycle.
+	RebootNode RepairAction = "RebootNode"
+	// ReplaceNode requests replacement of the unhealthy Node.
+	ReplaceNode RepairAction = "ReplaceNode"
+)
+
+// IsMoreDisruptiveThan returns whether the repair action is more disruptive than another action.
+// It panics if either action is unsupported.
+func (a RepairAction) IsMoreDisruptiveThan(other RepairAction) bool {
+	return repairActionRank(a) > repairActionRank(other)
+}
+
+func repairActionRank(action RepairAction) int {
+	switch action {
+	case ReplaceNode:
+		return 1
+	case RebootNode:
+		return 0
+	default:
+		panic(fmt.Sprintf("unsupported repair action %q", action))
+	}
+}
+
+// RepairPolicy defines when and how Karpenter repairs a provider-supported unhealthy condition.
 type RepairPolicy struct {
-	// ConditionType of unhealthy state that is found on the node
+	// ConditionType identifies the NodeCondition to evaluate.
 	ConditionType corev1.NodeConditionType
-	// ConditionStatus condition when a node is unhealthy
+	// ConditionStatus identifies the unhealthy condition state.
 	ConditionStatus corev1.ConditionStatus
-	// TolerationDuration is the duration the controller will wait
-	// before force terminating nodes that are unhealthy.
+	// ReasonRegex is a Go regular expression matched against the current NodeCondition reason using regexp.MatchString.
+	// An empty value defines the policy set's default fallback. Exactly one default fallback is required; it applies to
+	// any supported condition type and status when no reason-specific policy for that pair matches the current reason.
+	ReasonRegex string
+	// TolerationDuration is added to the NodeCondition LastTransitionTime to determine when this policy becomes eligible.
 	TolerationDuration time.Duration
+	// TerminationGracePeriod is the Axis-2 drain bound for repair of this condition:
+	//   nil      -> inherit the NodePool/NodeClaim TerminationGracePeriod
+	//   non-zero -> min(this, nodeclaim.TerminationGracePeriod) — bound the drain even on a pool that set none,
+	//               so repair cannot wait indefinitely on eviction.
+	//   0        -> forceful: skip the drain for conditions the kubelet can't evict through (wedged kernel,
+	//               lost heartbeat).
+	TerminationGracePeriod *time.Duration
+	// Priority is an ordering weight (0-100) for repair. Higher repairs first. Only relative ordering matters; values
+	// are compressed to dense ranks, with earlier eligibility breaking equal-priority ties across conditions.
+	Priority int
+	// Action is the repair operation requested by this policy.
+	Action RepairAction
 }
 
 // CloudProvider interface is implemented by cloud providers to support provisioning.
@@ -90,8 +133,14 @@ type CloudProvider interface {
 	// IsDrifted returns whether a NodeClaim has drifted from the provisioning requirements
 	// it is tied to.
 	IsDrifted(context.Context, *v1.NodeClaim) (DriftReason, error)
-	// RepairPolicy is for CloudProviders to define a set Unhealthy condition for Karpenter
-	// to monitor on the node.
+	// Reboot restarts the instance backing the NodeClaim in place without terminating it.
+	// operationID identifies a logical reboot operation; providers with native idempotency should
+	// use it to make repeated calls for the same operation replay-safe. Reboot returns once the
+	// provider accepts the request; recovery is observed by the reboot controller. Providers that
+	// do not support in-place reboot must return a *NodeRebootNotImplementedError, and a reboot that retrying can't
+	// make succeed (e.g. a missing permission) must return a *NodeRebootFailedError.
+	Reboot(ctx context.Context, nodeClaim *v1.NodeClaim, operationID string) error
+	// RepairPolicies returns the complete static set of provider-supported unhealthy-condition repair policies.
 	RepairPolicies() []RepairPolicy
 	// Name returns the CloudProvider implementation name.
 	Name() string
@@ -130,11 +179,18 @@ type InstanceType struct {
 	Offerings Offerings
 	// Resources are the full resource capacities for this instance type
 	Capacity corev1.ResourceList
+	// VolumeAttachmentLimits is the expected number of volumes that can be attached to nodes of this instance type, keyed by
+	// CSI driver name. Cloud providers that do not know a driver's limit ahead of time may omit it; limits reported
+	// by a node's CSINode take precedence once the node registers.
+	VolumeAttachmentLimits map[string]int
+	// DynamicResources contains DRA device metadata for this instance type.
+	// Cloud providers that do not support DRA may leave this as the zero value.
+	DynamicResources DynamicResources
 	// Overhead is the amount of resource overhead expected to be used by kubelet and any other system daemons outside
 	// of Kubernetes.
 	Overhead               *InstanceTypeOverhead
 	once                   sync.Once
-	allocatable            corev1.ResourceList
+	allocatableOfferings   []AllocatableOfferings
 	capacityOverlayApplied bool
 }
 
@@ -180,40 +236,132 @@ func (in *InstanceType) DeepCopyInto(out *InstanceType) {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
+	if in.VolumeAttachmentLimits != nil {
+		in, out := &in.VolumeAttachmentLimits, &out.VolumeAttachmentLimits
+		*out = make(map[string]int, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	in.DynamicResources.DeepCopyInto(&out.DynamicResources)
 	if in.Overhead != nil {
 		in, out := &in.Overhead, &out.Overhead
 		*out = new(InstanceTypeOverhead)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.allocatable != nil {
-		in, out := &in.allocatable, &out.allocatable
-		*out = make(corev1.ResourceList, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val.DeepCopy()
-		}
-	}
 }
 
-// precompute is used to ensure we only compute the allocatable resources onces as its called many times
+// AllocatableOfferings pairs an allocatable resource set with the offerings that produce it.
+type AllocatableOfferings struct {
+	Allocatable corev1.ResourceList
+	Offerings   Offerings
+}
+
+// precompute is used to ensure we only compute the allocatable resources once as it's called many times
 // and the operation is fairly expensive.
 func (i *InstanceType) precompute() {
-	i.allocatable = resources.Subtract(i.Capacity, i.Overhead.Total())
+	// Fast path: most instance types have no override offerings.
+	// Skip map/order/fmt.Sprintf machinery when not needed.
+	hasOverrides := false
+	for _, o := range i.Offerings {
+		if len(o.CapacityOverride) > 0 || o.OverheadOverride != nil {
+			hasOverrides = true
+			break
+		}
+	}
+	if !hasOverrides {
+		i.allocatableOfferings = []AllocatableOfferings{
+			{Allocatable: i.computeAllocatable(nil, nil), Offerings: i.Offerings.Available()},
+		}
+		return
+	}
 
-	// Adjust allocatable memory to account for hugepage reservations. Hugepages are a
-	// special memory resource that is reserved directly from the system, reducing the
-	// amount of memory available for general application use. Since hugepages are a
-	// Kubernetes well-known resource, we implement first-class accounting for their
-	// allocation impact.
-	for name, quantity := range i.Capacity {
+	i.allocatableOfferings = i.groupOfferingsByOverride()
+}
+
+// groupOfferingsByOverride groups available offerings by their (CapacityOverride, OverheadOverride) tuple,
+// computing an allocatable for each group. The first group is always the base (no overrides).
+func (i *InstanceType) groupOfferingsByOverride() []AllocatableOfferings {
+	type overrideKey struct {
+		capacity string
+		overhead string
+	}
+	groups := map[overrideKey]*AllocatableOfferings{}
+	baseKey := overrideKey{}
+	groups[baseKey] = &AllocatableOfferings{}
+	order := []overrideKey{baseKey}
+
+	for _, o := range i.Offerings {
+		if !o.Available {
+			continue
+		}
+		if len(o.CapacityOverride) == 0 && o.OverheadOverride == nil {
+			groups[baseKey].Offerings = append(groups[baseKey].Offerings, o)
+			continue
+		}
+		key := overrideKey{
+			capacity: fmt.Sprintf("%v", o.CapacityOverride),
+			overhead: fmt.Sprintf("%v", o.OverheadOverride),
+		}
+		if _, exists := groups[key]; !exists {
+			groups[key] = &AllocatableOfferings{}
+			order = append(order, key)
+		}
+		groups[key].Offerings = append(groups[key].Offerings, o)
+	}
+
+	// Build allocatable for each group
+	result := make([]AllocatableOfferings, 0, len(order))
+	for idx, key := range order {
+		group := groups[key]
+		if idx == 0 {
+			group.Allocatable = i.computeAllocatable(nil, nil)
+		} else {
+			// Use the first offering in the group to get the override values
+			o := group.Offerings[0]
+			group.Allocatable = i.computeAllocatable(o.CapacityOverride, o.OverheadOverride)
+		}
+		result = append(result, *group)
+	}
+	return result
+}
+
+// computeAllocatable computes the allocatable resources for a given capacity/overhead override.
+// If both are nil, it computes the base allocatable.
+func (i *InstanceType) computeAllocatable(capacityOverride corev1.ResourceList, overheadOverride *InstanceTypeOverhead) corev1.ResourceList {
+	capacity := i.Capacity
+	if len(capacityOverride) > 0 {
+		capacity = lo.Assign(i.Capacity, capacityOverride)
+	}
+	overhead := i.Overhead.Total()
+	if overheadOverride != nil {
+		overhead = lo.Assign(overhead, overheadOverride.Total())
+	}
+	allocatable := resources.Subtract(capacity, overhead)
+
+	// Adjust allocatable memory to account for hugepage reservations.
+	for name, quantity := range capacity {
 		if strings.HasPrefix(string(name), corev1.ResourceHugePagesPrefix) {
-			current := i.allocatable.Memory()
+			current := allocatable.Memory()
 			current.Sub(quantity)
 			if current.Sign() == -1 {
 				current.Set(0)
 			}
-			i.allocatable[corev1.ResourceMemory] = lo.FromPtr(current)
+			allocatable[corev1.ResourceMemory] = lo.FromPtr(current)
 		}
 	}
+	return allocatable
+}
+
+// OfferingPrice returns the price for the offering matching the given zone and
+// capacity type. Returns 0, false if no matching offering exists.
+func (i *InstanceType) OfferingPrice(zone, capacityType string) (float64, bool) {
+	for _, o := range i.Offerings {
+		if o.Zone() == zone && o.CapacityType() == capacityType {
+			return o.Price, true
+		}
+	}
+	return 0, false
 }
 
 func (i *InstanceType) IsPricingOverlayApplied() bool {
@@ -231,9 +379,18 @@ func (i *InstanceType) IsCapacityOverlayApplied() bool {
 	return i.capacityOverlayApplied
 }
 
+// AllocatableOfferingsList returns all allocatable groups for this instance type.
+// Each group pairs an allocatable resource set with the offerings that produce it.
+// The first entry is always the base allocatable (no overrides).
+func (i *InstanceType) AllocatableOfferingsList() []AllocatableOfferings {
+	i.once.Do(i.precompute)
+	return i.allocatableOfferings
+}
+
+// Allocatable returns the base allocatable resources (no offering overrides applied).
 func (i *InstanceType) Allocatable() corev1.ResourceList {
 	i.once.Do(i.precompute)
-	return i.allocatable
+	return i.allocatableOfferings[0].Allocatable
 }
 
 func (its InstanceTypes) OrderByPrice(reqs scheduling.Requirements) InstanceTypes {
@@ -243,12 +400,12 @@ func (its InstanceTypes) OrderByPrice(reqs scheduling.Requirements) InstanceType
 		jPrice := math.MaxFloat64
 
 		for _, of := range its[i].Offerings {
-			if of.Available && reqs.IsCompatible(of.Requirements, scheduling.AllowUndefinedWellKnownLabels) && of.Price < iPrice {
+			if of.Launchable() && reqs.IsCompatible(of.Requirements, scheduling.AllowUndefinedWellKnownLabels) && of.Price < iPrice {
 				iPrice = of.Price
 			}
 		}
 		for _, of := range its[j].Offerings {
-			if of.Available && reqs.IsCompatible(of.Requirements, scheduling.AllowUndefinedWellKnownLabels) && of.Price < jPrice {
+			if of.Launchable() && reqs.IsCompatible(of.Requirements, scheduling.AllowUndefinedWellKnownLabels) && of.Price < jPrice {
 				jPrice = of.Price
 			}
 		}
@@ -309,16 +466,21 @@ func (its InstanceTypes) SatisfiesMinValues(requirements scheduling.Requirements
 	// If minValue requirement fails, we return an error that indicates the first requirement key that couldn't be satisfied.
 	for i, it := range its {
 		for _, req := range requirements {
-			if req.MinValues != nil {
+			if req.MinValues() != nil {
 				if _, ok := valuesForKey[req.Key]; !ok {
 					valuesForKey[req.Key] = sets.New[string]()
 				}
-				valuesForKey[req.Key] = valuesForKey[req.Key].Insert(it.Requirements.Get(req.Key).Values()...)
+				// Only count values that the requirement allows. The instance type may offer values (e.g. zones)
+				// that the requirements exclude after being narrowed by pod constraints such as volume topology
+				// or topology spread, and those values can't be satisfied by the resulting NodeClaim.
+				valuesForKey[req.Key] = valuesForKey[req.Key].Insert(lo.Filter(it.Requirements.Get(req.Key).Values(), func(value string, _ int) bool {
+					return req.Has(value)
+				})...)
 			}
 		}
 		for k, v := range valuesForKey {
 			// Collect all the min values that are violated
-			if len(v) < lo.FromPtr(requirements.Get(k).MinValues) {
+			if len(v) < lo.FromPtr(requirements.Get(k).MinValues()) {
 				incompatibleKeys[k] = len(v)
 			} else {
 				// If the key now satisfies min values, remove it from the map.
@@ -375,6 +537,15 @@ type Offering struct {
 	Price               float64
 	Available           bool
 	ReservationCapacity int
+
+	// CapacityOverride specifies resource overrides for this offering's capacity.
+	// Values are merged with the instance type's base capacity — new keys are added,
+	// existing keys are replaced. If nil, the offering uses the base capacity as-is.
+	CapacityOverride corev1.ResourceList
+	// OverheadOverride specifies overhead overrides for this offering.
+	// Values are merged with the instance type's base overhead — new keys are added,
+	// existing keys are replaced. If nil, the offering uses the base overhead as-is.
+	OverheadOverride *InstanceTypeOverhead
 
 	priceOverlayApplied bool
 }
@@ -441,6 +612,32 @@ type Offerings []*Offering
 func (ofs Offerings) Available() Offerings {
 	return lo.Filter(ofs, func(o *Offering, _ int) bool {
 		return o.Available
+	})
+}
+
+// Launchable reports whether a new node can actually be launched into this offering right now. It requires the offering
+// to be healthy (Available) and, for a reserved offering, to have remaining reservation capacity. Availability alone is
+// insufficient because capacity and health are independent axes: a full-but-healthy reservation is Available with a
+// ReservationCapacity of 0, and launching into it would fail. Non-reserved offerings are never reservation-constrained,
+// so for them Launchable is equivalent to Available.
+func (o *Offering) Launchable() bool {
+	if !o.Available {
+		return false
+	}
+	// Being out of reservation capacity disqualifies only reserved offerings. Index the requirement map directly and use
+	// the allocation-free Requirement.Has, avoiding Offering.CapacityType() (which calls Requirement.Any() ->
+	// UnsortedList() and allocates on every call). An offering with no capacity-type requirement isn't
+	// reservation-constrained, so it stays launchable.
+	req, ok := o.Requirements[v1.CapacityTypeLabelKey]
+	return !ok || !req.Has(v1.CapacityTypeReserved) || o.ReservationCapacity > 0
+}
+
+// Launchable returns the offerings that can currently be launched into (see Offering.Launchable). Use this rather than
+// Available anywhere availability is a proxy for "can launch/price this now" (pricing, ordering, capacity-type
+// selection); use Available only where the pure health signal is intended.
+func (ofs Offerings) Launchable() Offerings {
+	return lo.Filter(ofs, func(o *Offering, _ int) bool {
+		return o.Launchable()
 	})
 }
 
@@ -523,6 +720,49 @@ func IgnoreNodeClaimNotFoundError(err error) error {
 		return nil
 	}
 	return err
+}
+
+// NodeRebootNotImplementedError is returned by CloudProviders that do not support in-place reboot.
+// The reboot controller treats it as a terminal, non-retryable signal that reboot is unavailable
+// for this provider (so a reboot policy that requires it is rejected at startup validation).
+type NodeRebootNotImplementedError struct{}
+
+func NewNodeRebootNotImplementedError() *NodeRebootNotImplementedError {
+	return &NodeRebootNotImplementedError{}
+}
+
+func (e *NodeRebootNotImplementedError) Error() string {
+	return "reboot is not implemented by this cloud provider"
+}
+
+func IsNodeRebootNotImplementedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var rebootErr *NodeRebootNotImplementedError
+	return errors.As(err, &rebootErr)
+}
+
+// NodeRebootFailedError is returned by CloudProviders when the provider rejects a reboot in a way retrying can't fix,
+// e.g. a missing permission. The reboot controller fails the reboot immediately instead of retrying until it times out.
+type NodeRebootFailedError struct {
+	error
+}
+
+func NewNodeRebootFailedError(err error) *NodeRebootFailedError {
+	return &NodeRebootFailedError{error: err}
+}
+
+func (e *NodeRebootFailedError) Unwrap() error {
+	return e.error
+}
+
+func IsNodeRebootFailedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var rebootErr *NodeRebootFailedError
+	return errors.As(err, &rebootErr)
 }
 
 // InsufficientCapacityError is an error type returned by CloudProviders when a launch fails due to a lack of capacity from NodeClaim requirements
