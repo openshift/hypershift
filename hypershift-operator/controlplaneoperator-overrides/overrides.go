@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -42,6 +43,11 @@ type CPOOverrideTestReleases struct {
 //go:embed assets/overrides.yaml
 var overridesYAML []byte
 
+// scopedVersionPattern matches the literal major.minor.patch- prefix a glob
+// version must start with. Scoping patterns to one release keeps them from
+// matching the plain release or another version by accident.
+var scopedVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+-`)
+
 var (
 	overrides           = mustLoadOverrides()
 	overridesByPlatform map[string][]CPOOverride
@@ -61,11 +67,13 @@ func IsOverridesEnabled() bool {
 //
 // The version is the string carried by the release payload, including any
 // suffix (for example 4.20.15-hotfix34123420). An override whose version equals
-// it exactly applies. Otherwise, override versions containing glob wildcards are
-// tried in the order they appear in the file, matched with path.Match: an entry
-// for "4.20.15-*" covers every suffixed build of 4.20.15 without naming the
-// build, while an entry for "4.20.15" covers the plain release only. An exact
-// match always wins over a glob.
+// it exactly applies; if several do, the last entry wins. Otherwise, override
+// versions containing glob wildcards are tried in the order they appear in the
+// file and the first match applies, matched with path.Match: an entry for
+// "4.20.15-*" covers every suffixed build of 4.20.15 without naming the build,
+// while an entry for "4.20.15" covers the plain release only. Globs must start
+// with a literal major.minor.patch- prefix, and an exact match always wins over
+// a glob.
 func CPOImage(rawPlatform, version string) string {
 	return getCPOImage(rawPlatform, version, overridesByPlatform)
 }
@@ -78,12 +86,15 @@ func getCPOImage(rawPlatform string, version string, mapOverrides map[string][]C
 	}
 	// An exact match wins over any glob so that a payload can be pinned to one
 	// specific entry (for example 4.20.15-hotfix34123420) no matter where that
-	// entry sits relative to the patterns.
-	for _, override := range platformOverrides {
-		if override.Version == version {
-			return override.CPOImage
+	// entry sits relative to the patterns. Iterate backwards so a duplicate entry
+	// still supersedes the earlier one, as the previous map-based lookup did.
+	for i := len(platformOverrides) - 1; i >= 0; i-- {
+		if platformOverrides[i].Version == version {
+			return platformOverrides[i].CPOImage
 		}
 	}
+	// Globs are matched in file order, so a more specific pattern must be listed
+	// before a more general one.
 	for _, override := range platformOverrides {
 		if !strings.ContainsAny(override.Version, "*?[") {
 			continue
@@ -151,6 +162,9 @@ func loadOverrides(yamlContent []byte) (*CPOOverrides, error) {
 			continue
 		}
 		for _, override := range platform.Overrides {
+			if strings.ContainsAny(override.Version, "*?[") && !scopedVersionPattern.MatchString(override.Version) {
+				return nil, fmt.Errorf("invalid version pattern %q: glob patterns must start with a major.minor.patch- prefix, for example 4.20.15-*", override.Version)
+			}
 			// Version entries may be glob patterns; catch malformed ones when the
 			// overrides are loaded instead of silently ignoring them at match time.
 			if _, err := path.Match(override.Version, ""); err != nil {

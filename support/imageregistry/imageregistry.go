@@ -70,6 +70,11 @@ func ResolveControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedClu
 	return image, pullSecret, nil
 }
 
+// cpoImageOverride resolves the control plane operator image configured in
+// overrides.yaml for a platform and payload version. It is a variable so tests
+// can exercise the resolver against a fixed set of overrides.
+var cpoImageOverride = controlplaneoperatoroverrides.CPOImage
+
 // controlPlaneOperatorImage implements GetControlPlaneOperatorImage and reports
 // whether the image was taken from the control plane release payload.
 func controlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (image string, fromPayload bool, err error) {
@@ -80,19 +85,17 @@ func controlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, r
 	if err != nil {
 		return "", false, err
 	}
-	// Overrides are resolved against the payload's own version string, before
-	// semver parsing: release payloads can carry an arbitrary suffix after the
-	// version (for example 4.20.15-hotfix34123420), and an explicitly configured
-	// override must apply even when that suffix makes the version unparseable.
-	if controlplaneoperatoroverrides.IsOverridesEnabled() {
-		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), releaseInfo.Version())
-		if overrideImage != "" {
-			return overrideImage, false, nil
-		}
-	}
 	version, err := semver.Parse(releaseInfo.Version())
 	if err != nil {
 		return "", false, err
+	}
+	// Look overrides up with the payload's own version string, including any
+	// suffix (for example 4.20.15-hotfix34123420), so glob entries can match it.
+	if controlplaneoperatoroverrides.IsOverridesEnabled() {
+		overrideImage := cpoImageOverride(string(hc.Spec.Platform.Type), releaseInfo.Version())
+		if overrideImage != "" {
+			return overrideImage, false, nil
+		}
 	}
 
 	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {

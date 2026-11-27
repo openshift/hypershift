@@ -534,10 +534,15 @@ Override lookup runs in two steps:
    Patterns use the syntax accepted by Go's
    `path.Match`: `*` matches any run of
    characters (except `/`), `?` matches one character, and `[...]` matches a
-   character class.
+   character class. A glob must start with a literal `major.minor.patch-`
+   prefix, so it can only cover build suffixes of one release and never the
+   plain release or another version.
 
 An exact match always wins over a glob, regardless of where the entries are
-listed.
+listed. If several entries repeat the same exact version, the last one wins, so
+appending a corrected entry at the end of the file still supersedes the earlier
+one. Globs resolve to the first match, so list a more specific pattern before a
+less specific one (`4.20.15-hotfix*` before `4.20.15-*`).
 
 Use a glob to cover the suffixed builds of a z-stream without disclosing the
 build string, which may be private:
@@ -566,19 +571,16 @@ With this configuration:
 - `4.21.0` and any other version match nothing and keep the image shipped in
   the payload.
 
-Keep the pattern tight: `4.20.15*` (no dash) would also match `4.20.150` and
-the plain `4.20.15`, so prefer `4.20.15-*` when only suffixed builds should be
-overridden.
+The payload version must be a valid semantic version. HyperShift parses it
+while reconciling the HostedCluster and blocks reconciliation when it cannot, so
+a suffix such as `-hotfix34123420` or `-0.nightly-2026-01-01-123456` works, but
+one with characters semver does not allow (for example `4.20.15-hotfix_1`) does
+not make the cluster usable. `oc adm release new --name` enforces the same rule.
 
-Override matching happens before HyperShift parses the version, so a glob also
-matches when the suffix is not valid semver (for example
-`4.20.15-hotfix_34123420`). The rest of the release handling still parses the
-full version string and may reject one it cannot understand, so prefer a
-semver-valid suffix such as `-hotfix34123420`.
-
-Malformed patterns are rejected when the overrides are loaded (the operator
-fails to start with an `invalid version pattern` error), so a typo such as
-`4.20.15-[` cannot silently disable an override.
+Malformed or unscoped patterns are rejected when the overrides are loaded (the
+operator fails to start with an `invalid version pattern` error), so a typo such
+as `4.20.15-[` cannot silently disable an override, and a pattern such as
+`4.20.*` or `4.20.15*` cannot widen the match by accident.
 
 ## Enabling CPO Overrides
 
@@ -694,9 +696,11 @@ oc adm release new \
   --to-image "${TARGET}"
 ```
 
-`--name` accepts any string. Rebuilding pulls the manifests of every operator
-image in the source payload but mirrors no component images — the copy still
-references the originals — so it takes a few minutes and no large pushes.
+`--name` must be a valid semantic version, so use a semver-valid suffix such as
+`-hotfix34123420`; `oc adm release new` rejects names it cannot parse.
+Rebuilding pulls the manifests of every operator image in the source payload but
+mirrors no component images — the copy still references the originals — so it
+takes a few minutes and no large pushes.
 
 Confirm the new payload reports the suffixed version:
 
@@ -822,7 +826,8 @@ first if the package fails to build with missing `NewMock*` symbols.
      Version Matching
    - Among globs, the first matching entry in the file wins; exact entries
      always win over globs
-   - A malformed pattern makes the operator fail at startup with an
+   - A malformed pattern, or one not scoped to a `major.minor.patch-` prefix
+     (e.g. `4.20.*`), makes the operator fail at startup with an
      `invalid version pattern` error instead of silently ignoring the override
 
 2. **Image Pull Failures**

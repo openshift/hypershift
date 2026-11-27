@@ -88,6 +88,12 @@ func TestCPOImage(t *testing.T) {
 			expected: "quay.io/hypershift/control-plane-operator-aws:4.19.0-first",
 		},
 		{
+			name:     "When duplicate exact entries exist, it should return the last one",
+			platform: "aws",
+			version:  "4.20.9",
+			expected: "quay.io/hypershift/control-plane-operator-aws:4.20.9-appended",
+		},
+		{
 			name:     "When the suffixed version has no matching override, it should return an empty image",
 			platform: "aws",
 			version:  "4.13.9-hotfix34123420",
@@ -150,6 +156,11 @@ func TestLoadOverrides(t *testing.T) {
 			name:        "When an override has a malformed glob pattern, it should return an error",
 			yamlContent: []byte("platforms:\n  aws:\n    overrides:\n      - version: \"4.20.15-[\"\n        cpoImage: \"quay.io/hypershift/control-plane-operator-aws:4.20.15\"\n"),
 			expectedErr: "invalid version pattern",
+		},
+		{
+			name:        "When a glob is not scoped to a major.minor.patch- prefix, it should return an error",
+			yamlContent: []byte("platforms:\n  aws:\n    overrides:\n      - version: \"4.20.*\"\n        cpoImage: \"quay.io/hypershift/control-plane-operator-aws:4.20.15\"\n"),
+			expectedErr: "must start with a major.minor.patch- prefix",
 		},
 	}
 
@@ -220,12 +231,22 @@ func fakeOverrides() *CPOOverrides {
 			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.18.2-suffixed",
 		},
 		CPOOverride{
-			Version:  "4.19.0-*",
+			Version:  "4.19.0-h*",
 			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.19.0-first",
 		},
 		CPOOverride{
-			Version:  "4.19.*",
+			Version:  "4.19.0-*",
 			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.19.0-second",
+		},
+		// A duplicate exact version, as an append-oriented config could produce.
+		// The later entry must win, matching the previous map-based lookup.
+		CPOOverride{
+			Version:  "4.20.9",
+			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.20.9-original",
+		},
+		CPOOverride{
+			Version:  "4.20.9",
+			CPOImage: "quay.io/hypershift/control-plane-operator-aws:4.20.9-appended",
 		},
 	)
 	result.Platforms.Azure.Overrides = generateOverrides("azure")
