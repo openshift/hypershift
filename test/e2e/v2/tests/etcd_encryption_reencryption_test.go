@@ -18,7 +18,11 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -309,6 +313,70 @@ type rotationCase struct {
 	verifyProviderField func(hc *hyperv1.HostedCluster, alternate string)
 }
 
+// dumpKMSProviderLogs captures current and previous logs from all KMS provider sidecar
+// containers in the control plane namespace and writes them to ${ARTIFACT_DIR}. It is
+// called from a DeferCleanup registered after the rotation-revert cleanup so that it
+// fires first (LIFO order) while the crashing container still exists. If ARTIFACT_DIR
+// is unset (local runs) the function is a no-op.
+func dumpKMSProviderLogs(ctx context.Context, kubeClient kubernetes.Interface, controlPlaneNamespace string) {
+	artifactDir := os.Getenv("ARTIFACT_DIR")
+	if artifactDir == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	pods, err := kubeClient.CoreV1().Pods(controlPlaneNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "app=kube-apiserver",
+	})
+	if err != nil {
+		GinkgoWriter.Printf("WARNING: dumpKMSProviderLogs: failed to list KAS pods: %v\n", err)
+		return
+	}
+
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		for _, cs := range pod.Status.ContainerStatuses {
+			if !strings.HasPrefix(cs.Name, "azure-kms-provider") && cs.Name != "aws-kms-active" && cs.Name != "aws-kms-backup" {
+				continue
+			}
+			for _, previous := range []bool{false, true} {
+				suffix := "current"
+				if previous {
+					suffix = "previous"
+				}
+				req := kubeClient.CoreV1().Pods(controlPlaneNamespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+					Container: cs.Name,
+					Previous:  previous,
+				})
+				logStream, err := req.Stream(ctx)
+				if err != nil {
+					if !previous {
+						GinkgoWriter.Printf("WARNING: dumpKMSProviderLogs: failed to stream %s/%s logs: %v\n", pod.Name, cs.Name, err)
+					}
+					continue
+				}
+				logBytes, err := io.ReadAll(logStream)
+				if closeErr := logStream.Close(); closeErr != nil {
+					GinkgoWriter.Printf("WARNING: dumpKMSProviderLogs: failed to close log stream for %s/%s: %v\n", pod.Name, cs.Name, closeErr)
+				}
+				if err != nil {
+					GinkgoWriter.Printf("WARNING: dumpKMSProviderLogs: failed to read %s logs for %s/%s: %v\n", suffix, pod.Name, cs.Name, err)
+					continue
+				}
+				if len(logBytes) == 0 {
+					continue
+				}
+				fileName := filepath.Join(artifactDir, fmt.Sprintf("kms-provider-%s-%s-%s.log", pod.Name, cs.Name, suffix))
+				if writeErr := os.WriteFile(fileName, logBytes, 0644); writeErr != nil {
+					GinkgoWriter.Printf("WARNING: dumpKMSProviderLogs: failed to write %s: %v\n", fileName, writeErr)
+				}
+			}
+		}
+	}
+}
+
 // runRotationTest executes the shared rotation lifecycle body for the given rotationCase.
 // It handles: baseline wait, alternate-key precondition, rotate patch, restore cleanup,
 // started/complete waits, status verification, KAS health/logs, and condition bubble-up.
@@ -340,6 +408,13 @@ func runRotationTest(g Gomega, tc *internal.TestContext, rc rotationCase) {
 
 	mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
+
+	// Capture KMS provider sidecar logs before the rotation revert replaces the pod.
+	// Registered after the revert DeferCleanup so it fires first (LIFO order), while
+	// any crash-looping container still exists and its logs are still retrievable.
+	DeferCleanup(func() {
+		dumpKMSProviderLogs(tc.Context, mgmtKubeClient, tc.ControlPlaneNamespace)
+	})
 
 	kasBaseline := captureKASRestartCounts(g, ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 	rotateAndWait(g, ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
@@ -563,6 +638,12 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 
 			mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
+
+			// Log capture fires before the revert cleanup (LIFO) so KMS provider
+			// sidecar containers still exist when logs are retrieved.
+			DeferCleanup(func() {
+				dumpKMSProviderLogs(tc.Context, mgmtKubeClient, tc.ControlPlaneNamespace)
+			})
 
 			By("Performing first key rotation: original -> alternate")
 			kas1Baseline := captureKASRestartCounts(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
