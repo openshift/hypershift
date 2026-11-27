@@ -38,6 +38,8 @@ spec:
     value: Containerfile.operator
   - name: path-context
     value: .
+  - name: prefetch-input
+    value: '[{"type": "gomod", "path": "."}]'
   pipelineRef:
     name: hypershift-common-operator-build
   taskRunTemplate:
