@@ -582,6 +582,7 @@ type HyperShiftOperatorDeployment struct {
 	AROHCPKeyVaultUsersClientID             string
 	TechPreviewNoUpgrade                    bool
 	RegistryOverrides                       string
+	UserReleaseRegistryOverrides            string
 	PlatformsInstalled                      string
 	ControlPlaneReleasePullSecretName       string
 	ImagePullPolicy                         string
@@ -830,6 +831,9 @@ func (o HyperShiftOperatorDeployment) buildArgs() []string {
 	}
 	if o.RegistryOverrides != "" {
 		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
+	}
+	if o.UserReleaseRegistryOverrides != "" {
+		args = append(args, fmt.Sprintf("--user-release-registry-overrides=%s", o.UserReleaseRegistryOverrides))
 	}
 	if o.EnableGMPMonitoring {
 		args = append(args, "--enable-gmp-monitoring")

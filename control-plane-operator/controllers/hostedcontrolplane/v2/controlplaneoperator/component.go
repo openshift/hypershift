@@ -22,10 +22,11 @@ type ControlPlaneOperatorOptions struct {
 	UtilitiesImage string
 	HasUtilities   bool
 
-	CertRotationScale           time.Duration
-	RegistryOverrideCommandLine string
-	OpenShiftRegistryOverrides  string
-	DefaultIngressDomain        string
+	CertRotationScale                      time.Duration
+	RegistryOverrideCommandLine            string
+	OpenShiftRegistryOverrides             string
+	UserReleaseRegistryOverrideCommandLine string
+	DefaultIngressDomain                   string
 
 	FeatureSet configv1.FeatureSet
 }

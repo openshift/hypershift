@@ -204,6 +204,7 @@ type HostedControlPlaneReconciler struct {
 	Log                                     logr.Logger
 	ReleaseProvider                         releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 	UserReleaseProvider                     releaseinfo.Provider
+	UserReleaseRegistryOverrides            map[string]string
 	createOrUpdate                          func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN
 	EnableCIDebugOutput                     bool
 	OperateOnReleaseImage                   string
@@ -1360,13 +1361,18 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return ctrl.Result{}, err
 	}
-	// UserReleaseProvider doesn't include registry overrides as they should not get propagated to the data plane.
+	// UserReleaseProvider doesn't include registry overrides as they should not get propagated to the data plane
+	// automatically. Registry substitution for user release images is an explicit opt-in via
+	// UserReleaseRegistryOverrides (--user-release-registry-overrides), which is intentionally separate from the
+	// control-plane --registry-overrides. On non-OpenShift (EKS) management clusters the OPENSHIFT_IMG_OVERRIDES
+	// path is unavailable (no IDMS/ICSP CRDs), so this flag provides an explicit redirect for MC-side pod specs
+	// (e.g. kube-rbac-proxy sidecars) without coupling it to the control-plane override configuration.
 	userReleaseImage, err := r.UserReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get lookup release image: %w", err)
 	}
 
-	userReleaseImageProvider := imageprovider.New(userReleaseImage)
+	userReleaseImageProvider := imageprovider.NewWithRegistryOverrides(userReleaseImage, r.UserReleaseRegistryOverrides)
 	releaseImageProvider := imageprovider.NewWithRegistryOverrides(releaseImage, r.ReleaseProvider.GetRegistryOverrides())
 
 	var errs []error

@@ -889,6 +889,21 @@ func TestBuildArgs(t *testing.T) {
 			expectNotContains: []string{"--registry-overrides"},
 		},
 		{
+			name: "When user release registry overrides is set, it should include the flag in args",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				UserReleaseRegistryOverrides: "quay.io/openshift-release-dev/ocp-v5.0-art-dev=235494791733.dkr.ecr.us-east-1.amazonaws.com/openshift-release-dev/ocp-v5.0-art-dev",
+			},
+			expectContains: []string{"--user-release-registry-overrides=quay.io/openshift-release-dev/ocp-v5.0-art-dev=235494791733.dkr.ecr.us-east-1.amazonaws.com/openshift-release-dev/ocp-v5.0-art-dev"},
+		},
+		{
+			name: "When user release registry overrides is empty, it should not include the flag",
+			deployment: HyperShiftOperatorDeployment{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectNotContains: []string{"--user-release-registry-overrides"},
+		},
+		{
 			name: "When GMP monitoring is enabled, it should include the flag in args",
 			deployment: HyperShiftOperatorDeployment{
 				PrivatePlatform:     string(hyperv1.NonePlatform),

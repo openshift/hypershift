@@ -68,6 +68,7 @@ var openshiftTemplateParams = TemplateParams{
 	ExternalDNSInterval:              "EXTERNAL_DNS_INTERVAL",
 	ExternalDNSAWSZonesCacheDuration: "EXTERNAL_DNS_AWS_ZONES_CACHE_DURATION",
 	RegistryOverrides:                "REGISTRY_OVERRIDES",
+	UserReleaseRegistryOverrides:     "USER_RELEASE_REGISTRY_OVERRIDES",
 	AROHCPKeyVaultUsersClientID:      "AZURE_KEYVAULT_CLIENT_ID",
 	TemplateNamespace:                true,
 	TemplateParamWrapper: func(name string) string {

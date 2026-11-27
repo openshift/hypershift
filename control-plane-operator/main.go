@@ -348,6 +348,7 @@ func NewStartCommand() *cobra.Command {
 		enableCIDebugOutput              bool
 		enableGMPMonitoring              bool
 		registryOverrides                map[string]string
+		userReleaseRegistryOverrides     map[string]string
 		imageOverridesStr                string
 		featureSet                       string
 	)
@@ -366,6 +367,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().BoolVar(&enableGMPMonitoring, "enable-gmp-monitoring", false, "If true, emit Google Managed Prometheus (monitoring.googleapis.com) monitoring resources instead of monitoring.coreos.com resources")
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().StringToStringVar(&userReleaseRegistryOverrides, "user-release-registry-overrides", map[string]string{}, "user-release-registry-overrides applies registry substitution to images resolved from the user (data-plane) release image, i.e. spec.releaseImage. When set, component images stamped into HCP pod specs from the user release (e.g. kube-rbac-proxy sidecars) are redirected to the specified registry. Does not inherit from --registry-overrides. Format is: sr1=dr1,sr2=dr2")
 	cmd.Flags().StringVar(&imageOverridesStr, "image-overrides", "",
 		"List of images that should be used for a hosted cluster control plane instead of images from OpenShift release specified in HostedCluster. "+
 			"Format is: name1=image1,name2=image2. \"nameX\" is name of an image in OpenShift release (e.g. \"cluster-network-operator\"). "+
@@ -546,6 +548,7 @@ func NewStartCommand() *cobra.Command {
 			ManagementClusterCapabilities:           mgmtClusterCaps,
 			ReleaseProvider:                         cpReleaseProvider,
 			UserReleaseProvider:                     userReleaseProvider,
+			UserReleaseRegistryOverrides:            userReleaseRegistryOverrides,
 			EnableCIDebugOutput:                     enableCIDebugOutput,
 			OperateOnReleaseImage:                   os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:                    defaultIngressDomain,

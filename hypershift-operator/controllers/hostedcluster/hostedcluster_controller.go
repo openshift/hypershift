@@ -185,6 +185,11 @@ type HostedClusterReconciler struct {
 
 	RegistryOverrides map[string]string
 
+	// UserReleaseRegistryOverrides applies registry substitution to images resolved from the user (data-plane)
+	// release image. When set, component images stamped into HCP pod specs from spec.releaseImage are redirected
+	// to the specified registry. Independent of RegistryOverrides.
+	UserReleaseRegistryOverrides map[string]string
+
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
 
@@ -3635,15 +3640,16 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 
 	// Reconcile ControlPlaneOperator deployment and resources.
 	cpo := cpov2.NewComponent(&cpov2.ControlPlaneOperatorOptions{
-		HostedCluster:               hcluster,
-		Image:                       controlPlaneOperatorImage,
-		UtilitiesImage:              utilitiesImage,
-		HasUtilities:                cpoHasUtilities,
-		CertRotationScale:           certRotationScale,
-		RegistryOverrideCommandLine: imageregistry.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
-		OpenShiftRegistryOverrides:  imageregistry.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
-		DefaultIngressDomain:        defaultIngressDomain,
-		FeatureSet:                  r.FeatureSet,
+		HostedCluster:                          hcluster,
+		Image:                                  controlPlaneOperatorImage,
+		UtilitiesImage:                         utilitiesImage,
+		HasUtilities:                           cpoHasUtilities,
+		CertRotationScale:                      certRotationScale,
+		RegistryOverrideCommandLine:            imageregistry.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
+		OpenShiftRegistryOverrides:             imageregistry.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
+		UserReleaseRegistryOverrideCommandLine: imageregistry.ConvertRegistryOverridesToCommandLineFlag(r.UserReleaseRegistryOverrides),
+		DefaultIngressDomain:                   defaultIngressDomain,
+		FeatureSet:                             r.FeatureSet,
 	})
 
 	if err := cpo.Reconcile(cpContext); err != nil {
