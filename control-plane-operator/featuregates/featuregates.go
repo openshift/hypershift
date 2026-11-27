@@ -28,7 +28,7 @@ var (
 	externalOIDCWithUIDAndExtraClaimMappingsFeature = featuregates.NewFeature(ExternalOIDCWithUIDAndExtraClaimMappings, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	externalOIDCWithUpstreamParityFeature           = featuregates.NewFeature(ExternalOIDCWithUpstreamParity, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	kubeletHAProxyRoutingFeature                    = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	externalOIDCAsWebhook                           = featuregates.NewFeature(ExternalOIDCAsWebhook, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	externalOIDCAsWebhook                           = featuregates.NewFeature(ExternalOIDCAsWebhook, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	// ignitionPayloadSystemFeature is intentionally NOT enabled in any feature set yet: the HyperShift
 	// Operator side that takes ownership of ignition is not landing with this change, so enabling the gate
 	// anywhere would make the CPO stand its ignition components down with nothing serving them. A later
