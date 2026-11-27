@@ -35,6 +35,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
+	ingressoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ingressoperator"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	metricsproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/metrics_proxy"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
@@ -47,10 +48,12 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageprovider"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
@@ -2079,6 +2082,15 @@ func TestControlPlaneComponents(t *testing.T) {
 		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
 
 		for _, component := range reconciler.components {
+			cpContext.UserReleaseImageProvider = testutil.FakeImageProvider()
+			if component.Name() == ingressoperatorv2.ComponentName {
+				images := map[string]string{
+					"haproxy-router":           "haproxy-router",
+					"haproxy-router-haproxy32": "haproxy-router-haproxy32",
+					"cluster-ingress-operator": "cluster-ingress-operator",
+				}
+				cpContext.UserReleaseImageProvider = testutil.FakeImageProvider(testutil.WithImages(images))
+			}
 			fakeObjects, err := componentsFakeObjects(hcp.Namespace, tt.featureSet)
 			if err != nil {
 				t.Fatalf("failed to generate fake objects: %v", err)
@@ -2147,6 +2159,110 @@ func TestControlPlaneComponents(t *testing.T) {
 		if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
 			t.Fatalf("update loop detected: %v", err)
 		}
+	}
+}
+
+func TestIngressOperatorReconciliation(t *testing.T) {
+	t.Parallel()
+	assertions := NewWithT(t)
+	const image34 = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "hcp", Namespace: "hcp-namespace"},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ReleaseImage:  "quay.io/openshift-release-dev/ocp-release:5.1.0-x86_64",
+			Configuration: &hyperv1.ClusterConfiguration{FeatureGate: &configv1.FeatureGateSpec{}},
+		},
+	}
+	fakeObjects, err := componentsFakeObjects(hcp.Namespace, configv1.Default)
+	assertions.Expect(err).ToNot(HaveOccurred())
+	fakeDependencies := componentsFakeDependencies(ingressoperatorv2.ComponentName, hcp.Namespace)
+	for _, dependency := range fakeDependencies {
+		if dependencyComponent, ok := dependency.(*hyperv1.ControlPlaneComponent); ok {
+			dependencyComponent.Status.Version = "5.1.0"
+		}
+	}
+	deploymentCreates := 0
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+		WithObjects(fakeObjects...).WithObjects(fakeDependencies...).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, inner client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*appsv1.Deployment); ok {
+					deploymentCreates++
+				}
+				return inner.Create(ctx, obj, opts...)
+			},
+		}).Build()
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:              t.Context(),
+		Client:               fakeClient,
+		HCP:                  hcp,
+		ReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion("5.1.0")),
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result:   &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{}},
+			Manifest: fakeimagemetadataprovider.FakeManifest{},
+		},
+		SkipCertificateSigning:         true,
+		NativeSidecarContainersEnabled: true,
+		ApplyProvider:                  upsert.NewApplyProvider(false),
+	}
+	ingressComponent := ingressoperatorv2.NewComponent()
+	transitions := []struct {
+		name         string
+		imagePresent bool
+	}{
+		{name: "When the guest tag is absent, it should retain only the existing mapping"},
+		{name: "When the guest tag appears, it should add exactly one environment and mapping", imagePresent: true},
+		{name: "When the guest tag disappears, it should remove the environment and mapping from the existing deployment"},
+	}
+	for _, transition := range transitions {
+		t.Run(transition.name, func(t *testing.T) {
+			assertions := NewWithT(t)
+			images := map[string]string{
+				"haproxy-router":           "haproxy-router",
+				"haproxy-router-haproxy32": "haproxy-router-haproxy32",
+				"cluster-ingress-operator": "cluster-ingress-operator",
+			}
+			if transition.imagePresent {
+				images["haproxy-router-haproxy34"] = image34
+			}
+			guestProvider := imageprovider.NewFromImages(images)
+			guestProvider.ReleaseImage = testutils.InitReleaseImageOrDie("5.1.0")
+			cpContext.UserReleaseImageProvider = guestProvider
+			for range 2 {
+				assertions.Expect(ingressComponent.Reconcile(cpContext)).To(Succeed())
+				deployment := &appsv1.Deployment{}
+				assertions.Expect(fakeClient.Get(t.Context(), client.ObjectKey{Namespace: hcp.Namespace, Name: ingressoperatorv2.ComponentName}, deployment)).To(Succeed())
+				assertions.Expect(deploymentCreates).To(Equal(1), "reconciliation must update the same persisted Deployment")
+				container := podspec.FindContainer(ingressoperatorv2.ComponentName, deployment.Spec.Template.Spec.Containers)
+				assertions.Expect(container).ToNot(BeNil())
+				assertions.Expect(container.Env).To(ContainElements(
+					corev1.EnvVar{Name: "HAPROXY_32_IMAGE", Value: images["haproxy-router-haproxy32"]},
+					corev1.EnvVar{Name: "DEFAULT_HAPROXY_VERSION", Value: "3.2"},
+				))
+				expectedMappings := []string{"3.2=$(HAPROXY_32_IMAGE)"}
+				expectedImage34Env := []corev1.EnvVar{}
+				if transition.imagePresent {
+					expectedMappings = append(expectedMappings, "3.4=$(HAPROXY_34_IMAGE)")
+					expectedImage34Env = append(expectedImage34Env, corev1.EnvVar{Name: "HAPROXY_34_IMAGE", Value: image34})
+				}
+				image34Env := []corev1.EnvVar{}
+				for _, env := range container.Env {
+					if env.Name == "HAPROXY_34_IMAGE" {
+						image34Env = append(image34Env, env)
+					}
+				}
+				assertions.Expect(image34Env).To(Equal(expectedImage34Env))
+				mappings := []string{}
+				for index, arg := range container.Command {
+					if arg == "--haproxy-image" {
+						assertions.Expect(index + 1).To(BeNumerically("<", len(container.Command)))
+						mappings = append(mappings, container.Command[index+1])
+					}
+				}
+				assertions.Expect(mappings).To(Equal(expectedMappings))
+				assertions.Expect(guestProvider.GetMissingImages()).To(BeEmpty())
+			}
+		})
 	}
 }
 
