@@ -11,7 +11,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -27,6 +29,7 @@ import (
 	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -289,7 +292,7 @@ func TestNewToken(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.fakeObjects...).Build()
 			if tc.configGenerator != nil {
 				tc.configGenerator.Client = fakeClient
 			}
@@ -499,7 +502,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.fakeObjects...).Build()
 			tc.token.Client = fakeClient
 
 			logCore, logs := observer.New(zap.InfoLevel)
@@ -538,6 +541,252 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			g.Expect(got.Annotations).To(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation))
 		})
 	}
+
+	t.Run("Deletion reference guard", func(t *testing.T) {
+		controlplaneNamespace := "test-namespace"
+		nodePoolName := "test-nodepool"
+		outdatedHash := "outdated-hash"
+		outdatedUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, outdatedHash)
+		outdatedTokenName := fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, nodePoolName, outdatedHash)
+
+		userDataSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: controlplaneNamespace,
+				Name:      outdatedUserDataName,
+			},
+		}
+		tokenSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: controlplaneNamespace,
+				Name:      outdatedTokenName,
+			},
+		}
+
+		nodePool := func(platformType hyperv1.PlatformType) *hyperv1.NodePool {
+			return &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      nodePoolName,
+					Namespace: controlplaneNamespace,
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfigVersion: outdatedHash,
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: platformType,
+					},
+				},
+			}
+		}
+
+		t.Run("When nothing references the outdated user data Secret and platform is Azure, it should be deleted", func(t *testing.T) {
+			g := NewWithT(t)
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), tokenSecret.DeepCopy()).Build()
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					Client:                fakeClient,
+					nodePool:              nodePool(hyperv1.AzurePlatform),
+					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
+				},
+			}
+			g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup of unreferenced outdated Secrets should succeed")
+			got := &corev1.Secret{}
+			err := fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)
+			g.Expect(err).To(HaveOccurred(), "unreferenced outdated user data Secret should be gone")
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected NotFound for deleted unreferenced user data Secret, got: %v", err)
+			// The unreferenced token Secret does get its expiration timestamp.
+			gotToken := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedTokenName}, gotToken)).To(Succeed(), "unreferenced token Secret should still exist, only annotated")
+			g.Expect(gotToken.Annotations).To(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation), "unreferenced token Secret should be annotated to expire")
+		})
+
+		t.Run("When a Machine references the outdated user data Secret, it should be kept even on Azure", func(t *testing.T) {
+			g := NewWithT(t)
+			machine := &capiv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machine",
+					Namespace: controlplaneNamespace,
+					Annotations: map[string]string{
+						nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, nodePoolName),
+					},
+				},
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{
+						DataSecretName: &outdatedUserDataName,
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), tokenSecret.DeepCopy(), machine).Build()
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					Client:                fakeClient,
+					nodePool:              nodePool(hyperv1.AzurePlatform),
+					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
+				},
+			}
+			g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup should succeed when the outdated Secret is referenced")
+			got := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)).To(Succeed(), "Machine-referenced outdated user data Secret should be kept")
+			g.Expect(got.Name).To(Equal(outdatedUserDataName), "kept Secret should be the referenced one")
+			// The paired token Secret must not be expired either: Machines that
+			// have not booted yet still present its token to fetch ignition.
+			gotToken := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedTokenName}, gotToken)).To(Succeed(), "paired token Secret should be kept")
+			g.Expect(gotToken.Annotations).ToNot(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation), "token Secret paired with a referenced user data Secret must not be expired")
+		})
+
+		t.Run("When a referenced token Secret was already annotated to expire, it should have the annotation cleared", func(t *testing.T) {
+			g := NewWithT(t)
+			machine := &capiv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machine",
+					Namespace: controlplaneNamespace,
+					Annotations: map[string]string{
+						nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, nodePoolName),
+					},
+				},
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{
+						DataSecretName: &outdatedUserDataName,
+					},
+				},
+			}
+			// An earlier pass expired the token while nothing referenced the pair yet.
+			expiringToken := tokenSecret.DeepCopy()
+			expiringToken.Annotations = map[string]string{
+				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(time.Hour).Format(time.RFC3339),
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), expiringToken, machine).Build()
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					Client:                fakeClient,
+					nodePool:              nodePool(hyperv1.AzurePlatform),
+					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
+				},
+			}
+			g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup should succeed for a referenced but previously expired token")
+			gotToken := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedTokenName}, gotToken)).To(Succeed(), "referenced token Secret should be kept")
+			g.Expect(gotToken.Annotations).ToNot(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation),
+				"a stale expiry must be cleared so the ignition server's token controller does not delete a still-referenced token")
+		})
+
+		t.Run("When the MachineDeployment references the outdated user data Secret, it should be kept", func(t *testing.T) {
+			g := NewWithT(t)
+			machineDeployment := &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      nodePoolName,
+					Namespace: controlplaneNamespace,
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							Bootstrap: capiv1.Bootstrap{
+								DataSecretName: &outdatedUserDataName,
+							},
+						},
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), tokenSecret.DeepCopy(), machineDeployment).Build()
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					Client:                fakeClient,
+					nodePool:              nodePool(hyperv1.AzurePlatform),
+					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
+				},
+			}
+			g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup should succeed when the outdated Secret is referenced")
+			got := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)).To(Succeed(), "MachineDeployment-referenced outdated user data Secret should be kept")
+		})
+
+		t.Run("When a rollout MachineSet with no Machines references the outdated user data Secret, it should be kept", func(t *testing.T) {
+			g := NewWithT(t)
+			// MachineDeployments generate rollout MachineSets named
+			// <np>-<hash>-<suffix> that carry the NodePool annotation; one that has
+			// scaled down to zero Machines must still keep its referenced Secret
+			// alive, since Machines created from it afterwards would never
+			// provision without it.
+			rolloutMachineSet := &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%s-rollouthash-abcde", nodePoolName),
+					Namespace: controlplaneNamespace,
+					Annotations: map[string]string{
+						nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, nodePoolName),
+					},
+				},
+				Spec: capiv1.MachineSetSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							Bootstrap: capiv1.Bootstrap{
+								DataSecretName: &outdatedUserDataName,
+							},
+						},
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), tokenSecret.DeepCopy(), rolloutMachineSet).Build()
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					Client:                fakeClient,
+					nodePool:              nodePool(hyperv1.AzurePlatform),
+					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
+				},
+			}
+			g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup should succeed when the outdated Secret is referenced by a rollout MachineSet")
+			got := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)).To(Succeed(), "rollout MachineSet-referenced outdated user data Secret should be kept")
+		})
+
+		t.Run("When a NodePool Machine references a different user data Secret, the outdated Secret should be deleted", func(t *testing.T) {
+			g := NewWithT(t)
+			currentUserDataName := fmt.Sprintf("%s-%s-currenthash", UserDataSecrePrefix, nodePoolName)
+			currentUserDataSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlplaneNamespace,
+					Name:      currentUserDataName,
+				},
+			}
+			machine := &capiv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machine",
+					Namespace: controlplaneNamespace,
+					Annotations: map[string]string{
+						nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, nodePoolName),
+					},
+				},
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{
+						DataSecretName: &currentUserDataName,
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), tokenSecret.DeepCopy(), currentUserDataSecret, machine).Build()
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					Client:                fakeClient,
+					nodePool:              nodePool(hyperv1.AzurePlatform),
+					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
+				},
+			}
+			g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup should succeed when a Machine references a different Secret")
+			got := &corev1.Secret{}
+			err := fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "unreferenced outdated user data Secret should be deleted, got: %v", err)
+			// The Machine keeps the pair of the generation it references; the
+			// outdated pair is expired as in the no-reference case.
+			gotToken := &corev1.Secret{}
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedTokenName}, gotToken)).To(Succeed(), "unreferenced token Secret should still exist, only annotated")
+			g.Expect(gotToken.Annotations).To(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation), "token Secret whose pair is unreferenced should be annotated to expire")
+		})
+	})
 }
 
 func TestSetExpirationTimestampOnToken(t *testing.T) {
@@ -780,7 +1029,7 @@ func TestTokenReconcile(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.fakeObjects...).Build()
 			tc.configGenerator.Client = fakeClient
 
 			token, err := NewToken(t.Context(), tc.configGenerator, tc.cpoCapabilities)
@@ -1095,6 +1344,159 @@ func TestOutdatedTokenSecret(t *testing.T) {
 	}
 }
 
+func TestPairedUserDataSecretName(t *testing.T) {
+	testCases := []struct {
+		name               string
+		tokenSecretName    string
+		expectedPairedName string
+	}{
+		{
+			name:               "When given a token Secret name, it should return the user data Secret name of the same generation",
+			tokenSecretName:    "token-test-nodepool-confighash",
+			expectedPairedName: "user-data-test-nodepool-confighash",
+		},
+		{
+			name:               "When given a name without the token prefix, it should only replace the prefix",
+			tokenSecretName:    "token-something-else",
+			expectedPairedName: "user-data-something-else",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(pairedUserDataSecretName(tc.tokenSecretName)).To(Equal(tc.expectedPairedName),
+				"input %q: expected paired user data Secret name %q", tc.tokenSecretName, tc.expectedPairedName)
+		})
+	}
+}
+
+func TestPairedTokenSecretName(t *testing.T) {
+	testCases := []struct {
+		name               string
+		userDataSecretName string
+		expectedPairedName string
+	}{
+		{
+			name:               "When given a user data Secret name, it should return the token Secret name of the same generation",
+			userDataSecretName: "user-data-test-nodepool-confighash",
+			expectedPairedName: "token-test-nodepool-confighash",
+		},
+		{
+			name:               "When given a name without the user data prefix, it should only replace the prefix",
+			userDataSecretName: "user-data-something-else",
+			expectedPairedName: "token-something-else",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(pairedTokenSecretName(tc.userDataSecretName)).To(Equal(tc.expectedPairedName),
+				"input %q: expected paired token Secret name %q", tc.userDataSecretName, tc.expectedPairedName)
+		})
+	}
+}
+
+func TestIsNodePoolUserDataSecretName(t *testing.T) {
+	testCases := []struct {
+		name          string
+		secretName    string
+		nodePoolName  string
+		expectedMatch bool
+	}{
+		{
+			name:          "When the name is the exact generated shape, it should match",
+			secretName:    "user-data-test-nodepool-01d4c0de",
+			nodePoolName:  "test-nodepool",
+			expectedMatch: true,
+		},
+		{
+			name:          "When the NodePool name contains hyphens, it should still match",
+			secretName:    "user-data-a-b-c-01d4c0de",
+			nodePoolName:  "a-b-c",
+			expectedMatch: true,
+		},
+		{
+			name:          "When the name belongs to another NodePool, it should not match",
+			secretName:    "user-data-other-nodepool-01d4c0de",
+			nodePoolName:  "test-nodepool",
+			expectedMatch: false,
+		},
+		{
+			name:          "When the name belongs to a NodePool whose name extends this one's, it should not match",
+			secretName:    "user-data-test-nodepool-extra-01d4c0de",
+			nodePoolName:  "test-nodepool",
+			expectedMatch: false,
+		},
+		{
+			name:          "When the hash is not eight characters, it should not match",
+			secretName:    "user-data-test-nodepool-01d4c0",
+			nodePoolName:  "test-nodepool",
+			expectedMatch: false,
+		},
+		{
+			name:          "When the hash is not lowercase hexadecimal, it should not match",
+			secretName:    "user-data-test-nodepool-notahex1",
+			nodePoolName:  "test-nodepool",
+			expectedMatch: false,
+		},
+		{
+			name:          "When the name has an arbitrary shape, it should not match",
+			secretName:    "custom-bootstrap-secret",
+			nodePoolName:  "test-nodepool",
+			expectedMatch: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isNodePoolUserDataSecretName(tc.secretName, tc.nodePoolName)).To(Equal(tc.expectedMatch),
+				"input %q for NodePool %q: expected match %t", tc.secretName, tc.nodePoolName, tc.expectedMatch)
+		})
+	}
+}
+
+func TestEmbeddedBootstrapToken(t *testing.T) {
+	token := "an-ignition-token"
+	encoded := base64.StdEncoding.EncodeToString([]byte(token))
+	userDataSecret := func(value string) *corev1.Secret {
+		return &corev1.Secret{Data: map[string][]byte{"value": []byte(value)}}
+	}
+
+	t.Run("When the ignition config carries an Authorization header, it should return the embedded token", func(t *testing.T) {
+		g := NewWithT(t)
+		config := fmt.Sprintf(`{"ignition":{"version":"3.2.0","config":{"merge":[{"httpHeaders":[{"name":"Authorization","value":"Bearer %s"}]}]}}}`, encoded)
+		got, err := embeddedBootstrapToken(userDataSecret(config))
+		g.Expect(err).ToNot(HaveOccurred(), "a well-formed ignition config should parse")
+		g.Expect(got).To(Equal(token), "the embedded token should be extracted and decoded")
+	})
+
+	t.Run("When the Authorization header lacks the Bearer prefix, it should error", func(t *testing.T) {
+		g := NewWithT(t)
+		// The ignition server rejects an Authorization value without the exact
+		// "Bearer " prefix with HTTP 401. Accepting the bare base64 token here
+		// would hide that from repair: the embedded token would look valid and
+		// the Secret would be left unservable.
+		config := fmt.Sprintf(`{"ignition":{"version":"3.2.0","config":{"merge":[{"httpHeaders":[{"name":"Authorization","value":"%s"}]}]}}}`, encoded)
+		_, err := embeddedBootstrapToken(userDataSecret(config))
+		g.Expect(err).To(HaveOccurred(), "an Authorization value without the Bearer prefix cannot be served")
+	})
+
+	t.Run("When the payload is not an ignition config, it should error", func(t *testing.T) {
+		g := NewWithT(t)
+		_, err := embeddedBootstrapToken(userDataSecret("not-an-ignition-config"))
+		g.Expect(err).To(HaveOccurred(), "unparsable content should be reported as an error")
+	})
+
+	t.Run("When the ignition config carries no Authorization header, it should error", func(t *testing.T) {
+		g := NewWithT(t)
+		_, err := embeddedBootstrapToken(userDataSecret(`{"ignition":{"version":"3.2.0","config":{"merge":[{"httpHeaders":[{"name":"NodePool","value":"ns/np"}]}]}}}`))
+		g.Expect(err).To(HaveOccurred(), "a config without an Authorization header cannot yield a token")
+	})
+}
+
 func TestGetIgnitionCACert(t *testing.T) {
 	controlplaneNamespace := "controlplane-namespace"
 	testCases := []struct {
@@ -1143,7 +1545,7 @@ func TestGetIgnitionCACert(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			fakeClient := fake.NewClientBuilder().WithObjects(tc.secret).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.secret).Build()
 			token := &Token{
 				ConfigGenerator: &ConfigGenerator{
 					Client:                fakeClient,
@@ -1450,7 +1852,7 @@ func TestTokenReconcileAfterTokenRotation(t *testing.T) {
 	}
 	cpoCapabilities := &CPOCapabilities{DecompressAndDecodeConfig: true}
 
-	fakeClient := fake.NewClientBuilder().WithObjects(pullSecret, ignitionServerCACert).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(pullSecret, ignitionServerCACert).Build()
 	configGenerator.Client = fakeClient
 
 	token, err := NewToken(t.Context(), configGenerator, cpoCapabilities)
@@ -1810,7 +2212,7 @@ func TestTokenReconcileManagementSideDrift(t *testing.T) {
 	}
 	cpoCapabilities := &CPOCapabilities{DecompressAndDecodeConfig: true}
 
-	fakeClient := fake.NewClientBuilder().WithObjects(pullSecret, ignitionServerCACert).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(pullSecret, ignitionServerCACert).Build()
 	configGenerator.Client = fakeClient
 
 	token, err := NewToken(t.Context(), configGenerator, cpoCapabilities)
@@ -1882,4 +2284,587 @@ func TestTokenReconcileManagementSideDrift(t *testing.T) {
 	g.Expect(string(gotUserData.Data["value"])).To(ContainSubstring(
 		base64.StdEncoding.EncodeToString([]byte(originalTokenUUID)),
 	), "deployed user data secret should still reference the original token UUID")
+}
+
+func TestTokenRepairMissingReferencedSecrets(t *testing.T) {
+	controlplaneNamespace := "test-namespace"
+	nodePoolName := "test-nodepool"
+	hcName := "test-hostedcluster"
+	hcNamespace := "test-hc-namespace"
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pull-secret", Namespace: hcNamespace},
+		Data:       map[string][]byte{".dockerconfigjson": []byte("test-pull-secret")},
+	}
+	additionalTrustBundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-trust-bundle", Namespace: hcNamespace},
+		Data:       map[string]string{"ca-bundle.crt": "test-ca-bundle"},
+	}
+	ignitionServerCACert := ignitionserver.IgnitionCACertSecret(controlplaneNamespace)
+	ignitionServerCACert.Data = map[string][]byte{
+		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
+	}
+
+	// staleToken stands in for a token of an older config generation that the
+	// ignition server may no longer serve.
+	staleToken := "stale-ignition-token"
+	staleBearer := "Bearer " + base64.StdEncoding.EncodeToString([]byte(staleToken))
+
+	// A user data Secret of an older config generation, as written by a
+	// previous reconciliation of the given NodePool.
+	staleUserDataSecret := func(poolName, hash string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: controlplaneNamespace,
+				Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, poolName, hash),
+			},
+			Data: map[string][]byte{
+				"value": []byte(fmt.Sprintf(`{"ignition":{"version":"3.2.0","config":{"merge":[{"httpHeaders":[{"name":"Authorization","value":"%s"}]}]}}}`, staleBearer)),
+			},
+		}
+	}
+
+	// The token Secret paired with a user data Secret of the same generation,
+	// carrying the given token value.
+	pairedTokenSecret := func(hash, token string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: controlplaneNamespace,
+				Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, nodePoolName, hash),
+			},
+			Data: map[string][]byte{TokenSecretTokenKey: []byte(token)},
+		}
+	}
+
+	// A MachineDeployment written by a previous generation pointing at a user
+	// data Secret of that generation, as happens on management-side-only
+	// config changes where no rollout moves the reference.
+	machineDeploymentFor := func(userDataName string) *capiv1.MachineDeployment {
+		return &capiv1.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{Name: nodePoolName, Namespace: controlplaneNamespace},
+			Spec: capiv1.MachineDeploymentSpec{
+				Template: capiv1.MachineTemplateSpec{
+					Spec: capiv1.MachineSpec{
+						Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(userDataName)},
+					},
+				},
+			},
+		}
+	}
+
+	setup := func(t *testing.T, referencedName string, extraObjects ...crclient.Object) (*Token, crclient.Client) {
+		objects := append([]crclient.Object{
+			pullSecret,
+			additionalTrustBundle,
+			ignitionServerCACert,
+			machineDeploymentFor(referencedName),
+		}, extraObjects...)
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+
+		configGenerator := &ConfigGenerator{
+			Client: fakeClient,
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret:            corev1.LocalObjectReference{Name: pullSecret.GetName()},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: additionalTrustBundle.GetName()},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					IgnitionEndpoint: "https://example.com",
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: nodePoolName, Namespace: controlplaneNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+					Release:    hyperv1.Release{Image: "image:4.17"},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			controlplaneNamespace: controlplaneNamespace,
+			rolloutConfig: &rolloutConfig{
+				releaseImage: &releaseinfo.ReleaseImage{
+					ImageStream: &imageapi.ImageStream{
+						ObjectMeta: metav1.ObjectMeta{Name: "4.17"},
+						Status: imageapi.ImageStreamStatus{
+							Tags: []imageapi.NamedTagEventList{{
+								Tag: "4.17",
+								Items: []imageapi.TagEvent{{
+									DockerImageReference: "image:4.17",
+								}},
+							}},
+						},
+					},
+				},
+				globalConfig: "test-global-config",
+				mcoRawConfig: "raw-config",
+			},
+		}
+		token, err := NewToken(t.Context(), configGenerator, &CPOCapabilities{DecompressAndDecodeConfig: true})
+		if err != nil {
+			t.Fatalf("failed to create token: %v", err)
+		}
+		return token, fakeClient
+	}
+
+	currentEncodedToken := func(t *testing.T, c crclient.Client, token *Token) string {
+		gotTokenSecret := &corev1.Secret{}
+		if err := c.Get(t.Context(), crclient.ObjectKeyFromObject(token.TokenSecret()), gotTokenSecret); err != nil {
+			t.Fatalf("failed to get current token Secret: %v", err)
+		}
+		return base64.StdEncoding.EncodeToString(gotTokenSecret.Data[TokenSecretTokenKey])
+	}
+
+	t.Run("When a referenced user data Secret is missing, it should be re-created with the current token", func(t *testing.T) {
+		g := NewWithT(t)
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "01d4c0de")
+		token, fakeClient := setup(t, staleUserDataName)
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should repair the missing referenced Secret")
+
+		// The referenced user data Secret must have been re-created, carrying the
+		// current token so a Machine that has not booted yet can still fetch its
+		// ignition payload.
+		repaired := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, repaired)).
+			To(Succeed(), "missing referenced user data Secret should be re-created")
+		g.Expect(repaired.Annotations[nodePoolAnnotation]).To(Equal(fmt.Sprintf("%s/%s", controlplaneNamespace, nodePoolName)),
+			"repaired Secret should be annotated with its NodePool")
+		g.Expect(string(repaired.Data["value"])).To(ContainSubstring("Bearer "+currentEncodedToken(t, fakeClient, token)),
+			"repaired Secret should embed the current token")
+
+		// Repair must not invent user data Secrets that are not referenced.
+		unreferencedName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "feedface")
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: unreferencedName}, &corev1.Secret{})).
+			To(HaveOccurred(), "repair must not invent unreferenced user data Secrets")
+	})
+
+	t.Run("When a Machine references an arbitrarily named Secret that does not exist, it should not be created", func(t *testing.T) {
+		g := NewWithT(t)
+		// A Bootstrap.DataSecretName can point at any name; repair must only
+		// manage Secrets named by this controller (user-data-<np>-<hash>), not
+		// hijack an arbitrary name by filling it with ignition data.
+		customName := "custom-bootstrap-secret"
+		token, fakeClient := setup(t, customName)
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should skip an arbitrarily named reference without error")
+
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: customName}, &corev1.Secret{})).
+			ToNot(Succeed(), "repair must not create a Secret under an arbitrary referenced name")
+	})
+
+	t.Run("When a Machine references a missing user data Secret named for a different NodePool, it should not be created", func(t *testing.T) {
+		g := NewWithT(t)
+		// A drifted reference: the name carries another NodePool's prefix.
+		// Repair must only manage Secrets named for this NodePool, so it must
+		// not create another NodePool's Secret.
+		driftedName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, "other-nodepool", "abcdef01")
+		token, fakeClient := setup(t, driftedName)
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should skip a drifted reference without error")
+
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: driftedName}, &corev1.Secret{})).
+			ToNot(Succeed(), "repair must not create a Secret named for another NodePool")
+	})
+
+	t.Run("When a Machine references a missing Secret of a NodePool whose name extends this one's, it should not be created", func(t *testing.T) {
+		g := NewWithT(t)
+		// "test-nodepool-extra" is a different NodePool whose name extends this
+		// one's: a prefix match on user-data-<np>- would accept its Secret, so
+		// the complete generated name shape must be validated.
+		extendingName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName+"-extra", "abcdef01")
+		token, fakeClient := setup(t, extendingName)
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should skip a reference to an extending NodePool's Secret without error")
+
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: extendingName}, &corev1.Secret{})).
+			ToNot(Succeed(), "repair must not create a Secret named for a NodePool whose name extends this one's")
+	})
+
+	t.Run("When a Machine references an existing Secret of a NodePool whose name extends this one's, it should not be rewritten", func(t *testing.T) {
+		g := NewWithT(t)
+		extendingName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName+"-extra", "abcdef01")
+		token, fakeClient := setup(t, extendingName, staleUserDataSecret(nodePoolName+"-extra", "abcdef01"))
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should skip an extending NodePool's Secret without error")
+
+		kept := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: extendingName}, kept)).
+			To(Succeed(), "the extending NodePool's Secret should still exist")
+		g.Expect(string(kept.Data["value"])).To(ContainSubstring(staleBearer),
+			"a Secret named for a NodePool whose name extends this one's must not be rewritten")
+	})
+
+	t.Run("When a Machine references an existing user data Secret named for a different NodePool, it should not be rewritten", func(t *testing.T) {
+		g := NewWithT(t)
+		// The drifted Secret exists and its paired token Secret is missing,
+		// which would trigger a refresh for one of this NodePool's own
+		// Secrets: the refresh must not reach a Secret owned by another
+		// NodePool.
+		driftedName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, "other-nodepool", "abcdef01")
+		token, fakeClient := setup(t, driftedName, staleUserDataSecret("other-nodepool", "abcdef01"))
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should skip a drifted reference without error")
+
+		kept := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: driftedName}, kept)).
+			To(Succeed(), "the drifted Secret should still exist")
+		g.Expect(string(kept.Data["value"])).To(ContainSubstring(staleBearer),
+			"a Secret named for another NodePool must not be rewritten by this NodePool")
+	})
+
+	t.Run("When a referenced user data Secret exists but its paired token Secret is missing, it should be refreshed with the current token", func(t *testing.T) {
+		g := NewWithT(t)
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "01d4c0de")
+		token, fakeClient := setup(t, staleUserDataName, staleUserDataSecret(nodePoolName, "01d4c0de"))
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should refresh the referenced Secret whose paired token Secret is missing")
+
+		refreshed := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, refreshed)).
+			To(Succeed(), "referenced user data Secret should still exist")
+		g.Expect(string(refreshed.Data["value"])).To(ContainSubstring("Bearer "+currentEncodedToken(t, fakeClient, token)),
+			"referenced Secret should be refreshed with the current token when its paired token Secret is missing")
+		g.Expect(string(refreshed.Data["value"])).ToNot(ContainSubstring(staleBearer),
+			"stale token should be replaced by the refresh")
+	})
+
+	t.Run("When a referenced user data Secret and its paired token Secret both exist, it should be left unchanged", func(t *testing.T) {
+		g := NewWithT(t)
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "01d4c0de")
+		token, fakeClient := setup(t, staleUserDataName, staleUserDataSecret(nodePoolName, "01d4c0de"), pairedTokenSecret("01d4c0de", staleToken))
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should succeed when the referenced pair is healthy")
+
+		kept := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, kept)).
+			To(Succeed(), "healthy referenced user data Secret should be kept")
+		g.Expect(string(kept.Data["value"])).To(ContainSubstring(staleBearer),
+			"user data Secret with a live paired token Secret must not be rewritten")
+	})
+
+	t.Run("When a referenced user data Secret's paired token Secret is marked to expire, it should clear the expiration annotation", func(t *testing.T) {
+		g := NewWithT(t)
+		// A token Secret can be marked to expire by an earlier pass while its
+		// pair is not yet referenced. Once a Machine references the user data
+		// Secret, the ignition server's token controller would delete the token
+		// Secret at the deadline and leave that Machine with "Token not found".
+		// The repair loop finds a healthy pair and must still clear the mark.
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "01d4c0de")
+		markedToken := pairedTokenSecret("01d4c0de", staleToken)
+		markedToken.Annotations = map[string]string{
+			hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(time.Hour).Format(time.RFC3339),
+		}
+		token, fakeClient := setup(t, staleUserDataName, staleUserDataSecret(nodePoolName, "01d4c0de"), markedToken)
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should keep a referenced pair usable")
+
+		keptToken := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(markedToken), keptToken)).
+			To(Succeed(), "paired token Secret should still exist")
+		g.Expect(keptToken.Annotations).ToNot(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation),
+			"a token Secret paired with a referenced user data Secret must not stay marked to expire")
+
+		kept := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, kept)).
+			To(Succeed(), "referenced user data Secret should still exist")
+		g.Expect(string(kept.Data["value"])).To(ContainSubstring(staleBearer),
+			"a healthy user data Secret must not be rewritten just to clear its paired token's expiration")
+	})
+
+	t.Run("When the paired token Secret exists but the ignition server rotated its token, it should be refreshed with the current token", func(t *testing.T) {
+		g := NewWithT(t)
+		// The paired token Secret still exists, but the ignition server rotated
+		// the token value inside it: the token embedded in the user data Secret
+		// is no longer served, so Machines booting from it keep receiving
+		// "Token not found" and never join the cluster.
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "01d4c0de")
+		token, fakeClient := setup(t, staleUserDataName, staleUserDataSecret(nodePoolName, "01d4c0de"), pairedTokenSecret("01d4c0de", "rotated-ignition-token"))
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should refresh the referenced Secret whose embedded token was rotated out")
+
+		refreshed := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, refreshed)).
+			To(Succeed(), "referenced user data Secret should still exist")
+		g.Expect(string(refreshed.Data["value"])).To(ContainSubstring("Bearer "+currentEncodedToken(t, fakeClient, token)),
+			"referenced Secret should be refreshed with the current token when its embedded token is no longer served")
+		g.Expect(string(refreshed.Data["value"])).ToNot(ContainSubstring(staleBearer),
+			"rotated-out token should be replaced by the refresh")
+	})
+
+	t.Run("When a referenced user data Secret's ignition config cannot be parsed, it should be refreshed", func(t *testing.T) {
+		g := NewWithT(t)
+		// Content that cannot be parsed as an ignition config cannot be served
+		// to a Machine either: repair rewrites it with a servable config.
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "01d4c0de")
+		unparsable := staleUserDataSecret(nodePoolName, "01d4c0de")
+		unparsable.Data["value"] = []byte("not-an-ignition-config")
+		token, fakeClient := setup(t, staleUserDataName, unparsable, pairedTokenSecret("01d4c0de", staleToken))
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should refresh a referenced Secret with unparsable content")
+
+		refreshed := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, refreshed)).
+			To(Succeed(), "referenced user data Secret should still exist")
+		g.Expect(string(refreshed.Data["value"])).To(ContainSubstring("Bearer "+currentEncodedToken(t, fakeClient, token)),
+			"unparsable Secret should be rewritten with a servable ignition config")
+	})
+}
+
+// TestTokenReconcileKarpenterInMemoryNodePool exercises the Token lifecycle as
+// driven by the karpenter-operator's KarpenterIgnitionReconciler: it builds an
+// in-memory NodePool named <openshiftEC2NodeClass>-karpenter (see
+// karpenterutil.KarpenterNodePoolName) with no NodePool object behind it, then
+// calls NewToken/Token.Reconcile directly. There is no MachineDeployment named
+// after that pool and no MachineSet or Machine carries its NodePool annotation
+// (Karpenter-managed Machines belong to autoNode MachineDeployments named for
+// the HostedControlPlane, carrying a different NodePool annotation). The
+// bootstrap data Secret reference collection added to the Secret cleanup and
+// repair paths must tolerate that absence without error, or OpenshiftEC2NodeClass
+// reconciliation stalls before it can publish its annotations, conditions, and
+// AMI/subnet propagation.
+// nolint comment per TESTING.md: this is a package-level behavioral test that
+// exercises Token.Reconcile end to end for the karpenter-operator's in-memory
+// NodePool caller — a distinct scenario from TestTokenReconcile, which it must
+// not be merged into.
+//
+//nolint:hypershiftlinter // testfuncstructure: exercises Token.Reconcile for the karpenter-operator's in-memory NodePool caller, a distinct scenario from TestTokenReconcile
+func TestTokenReconcileKarpenterInMemoryNodePool(t *testing.T) {
+	controlplaneNamespace := "test-namespace"
+	hcName := "test-hostedcluster"
+	hcNamespace := "test-hc-namespace"
+
+	// The autoNode CAPI machinery of a real Karpenter cluster: a
+	// MachineDeployment, MachineSet and Machine named for the
+	// HostedControlPlane, all annotated for a NodePool that is not the
+	// in-memory Karpenter pool, with the MachineDeployment and Machine
+	// referencing the autoNode pool's bootstrap Secret.
+	foreignPoolName := "karpenter-8r2fj-us-east-1b"
+	foreignUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, foreignPoolName, "feedface")
+	foreignMachineDeployment := &capiv1.MachineDeployment{
+		ObjectMeta: metav1.ObjectMeta{Name: foreignPoolName, Namespace: controlplaneNamespace},
+		Spec: capiv1.MachineDeploymentSpec{
+			Template: capiv1.MachineTemplateSpec{
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(foreignUserDataName)},
+				},
+			},
+		},
+	}
+	foreignMachineSet := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        foreignPoolName + "-h9mnb",
+			Namespace:   controlplaneNamespace,
+			Annotations: map[string]string{nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, foreignPoolName)},
+		},
+		Spec: capiv1.MachineSetSpec{
+			Template: capiv1.MachineTemplateSpec{
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(foreignUserDataName)},
+				},
+			},
+		},
+	}
+	foreignMachine := &capiv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        foreignPoolName + "-w7kcr",
+			Namespace:   controlplaneNamespace,
+			Annotations: map[string]string{nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, foreignPoolName)},
+		},
+		Spec: capiv1.MachineSpec{
+			Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(foreignUserDataName)},
+		},
+	}
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pull-secret", Namespace: hcNamespace},
+		Data:       map[string][]byte{".dockerconfigjson": []byte("test-pull-secret")},
+	}
+	additionalTrustBundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-trust-bundle", Namespace: hcNamespace},
+		Data:       map[string]string{"ca-bundle.crt": "test-ca-bundle"},
+	}
+	ignitionServerCACert := ignitionserver.IgnitionCACertSecret(controlplaneNamespace)
+	ignitionServerCACert.Data = map[string][]byte{
+		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
+	}
+
+	// A Karpenter-enabled HostedCluster on AWS, as the karpenter-operator sees it.
+	karpenterEnabledHostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{Name: pullSecret.GetName()},
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{Region: "us-east-1"},
+			},
+			AutoNode: hyperv1.AutoNode{
+				Provisioner: hyperv1.ProvisionerConfig{
+					Name:      hyperv1.ProvisionerKarpenter,
+					Karpenter: hyperv1.KarpenterConfig{Platform: hyperv1.AWSPlatform},
+				},
+			},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			IgnitionEndpoint: "https://example.com",
+		},
+	}
+
+	// The in-memory NodePool, mirroring karpenterignition.createInMemoryNodePool:
+	// zero replicas, the Karpenter management label, and no annotations on the
+	// first reconciliation.
+	karpenterNodePool := func(name string) *hyperv1.NodePool {
+		return &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Namespace:   controlplaneNamespace,
+				Annotations: map[string]string{},
+				Labels: map[string]string{
+					karpenterutil.ManagedByKarpenterLabel: "true",
+				},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: hcName,
+				Replicas:    ptr.To[int32](0),
+				Release:     hyperv1.Release{Image: "image:4.17"},
+				Config: []corev1.LocalObjectReference{
+					{Name: karpenterutil.KarpenterTaintConfigMapName},
+				},
+				Arch: hyperv1.ArchitectureAMD64,
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AWSPlatform,
+				},
+			},
+		}
+	}
+
+	setup := func(t *testing.T, pool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, extraObjects ...crclient.Object) (*Token, crclient.Client) {
+		objects := append([]crclient.Object{
+			pullSecret,
+			additionalTrustBundle,
+			ignitionServerCACert,
+			foreignMachineDeployment,
+			foreignMachineSet,
+			foreignMachine,
+		}, extraObjects...)
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+
+		configGenerator := &ConfigGenerator{
+			Client:                fakeClient,
+			hostedCluster:         hostedCluster,
+			nodePool:              pool,
+			controlplaneNamespace: controlplaneNamespace,
+			rolloutConfig: &rolloutConfig{
+				releaseImage: &releaseinfo.ReleaseImage{
+					ImageStream: &imageapi.ImageStream{
+						ObjectMeta: metav1.ObjectMeta{Name: "4.17"},
+						Status: imageapi.ImageStreamStatus{
+							Tags: []imageapi.NamedTagEventList{{
+								Tag: "4.17",
+								Items: []imageapi.TagEvent{{
+									DockerImageReference: "image:4.17",
+								}},
+							}},
+						},
+					},
+					StreamMetadata: testAWSStream("x86_64", "us-east-1", "ami-default-amd64"),
+				},
+				globalConfig: "test-global-config",
+				mcoRawConfig: "raw-config",
+			},
+		}
+		token, err := NewToken(t.Context(), configGenerator, &CPOCapabilities{DecompressAndDecodeConfig: true})
+		if err != nil {
+			t.Fatalf("failed to create token: %v", err)
+		}
+		return token, fakeClient
+	}
+
+	t.Run("When the in-memory Karpenter NodePool reconciles with no MachineDeployment of its name and no Machines carrying its annotation, Reconcile should succeed", func(t *testing.T) {
+		g := NewWithT(t)
+		poolName := karpenterutil.KarpenterNodePoolName(&hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "default", Namespace: controlplaneNamespace},
+		})
+		token, fakeClient := setup(t, karpenterNodePool(poolName), karpenterEnabledHostedCluster)
+
+		// First reconcile: no annotations at all, so isOutdated() is true and
+		// cleanupOutdated runs the reference collection before creating the
+		// initial secrets. This must not fail on the absent CAPI machinery.
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "first reconcile of the in-memory Karpenter NodePool should succeed")
+
+		tokenSecret := token.TokenSecret()
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(tokenSecret), &corev1.Secret{})).
+			To(Succeed(), "the Karpenter pool's token Secret should be created")
+		userDataSecret := token.UserDataSecret()
+		gotUserData := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(userDataSecret), gotUserData)).
+			To(Succeed(), "the Karpenter pool's user data Secret should be created")
+		g.Expect(gotUserData.Annotations[nodePoolAnnotation]).To(Equal(fmt.Sprintf("%s/%s", controlplaneNamespace, poolName)),
+			"the Karpenter pool's user data Secret should carry its in-memory NodePool annotation")
+		g.Expect(gotUserData.Labels[karpenterutil.ManagedByKarpenterLabel]).To(Equal("true"),
+			"the Karpenter pool's user data Secret should carry the Karpenter management label")
+		g.Expect(gotUserData.Labels).To(HaveKeyWithValue(karpenterutil.ArchToImageMetadataKey(hyperv1.ArchitectureAMD64, hyperkarpenterv1.UserDataAMILabel), "ami-default-amd64"),
+			"the Karpenter pool's user data Secret should carry the AMI label Karpenter selects it by")
+
+		// Repair must not invent Secrets for other NodePools' references it
+		// sees in the controlplane namespace.
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: foreignUserDataName}, &corev1.Secret{})).
+			ToNot(Succeed(), "repair must not create the autoNode MachineDeployment's referenced Secret")
+
+		// A steady-state reconcile (no changes) must succeed as well.
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "second reconcile of the in-memory Karpenter NodePool should succeed")
+	})
+
+	t.Run("When there is no MachineDeployment for the in-memory Karpenter pool, cleanupOutdated should not error and should clean up unreferenced Secrets", func(t *testing.T) {
+		g := NewWithT(t)
+		poolName := karpenterutil.KarpenterNodePoolName(&hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "default", Namespace: controlplaneNamespace},
+		})
+		// Azure keeps the deletion guard exercised (AWS and KubeVirt always
+		// retain outdated Secrets): the pool shape, not the platform, is what
+		// is under test here.
+		pool := karpenterNodePool(poolName)
+		pool.Spec.Platform.Type = hyperv1.AzurePlatform
+		completedHash := "01d4c0de"
+		pool.Annotations[nodePoolAnnotationCurrentConfigVersion] = completedHash
+		// No Karpenter AutoNode on the cluster: only the cleanup path is under
+		// test, and Karpenter userData reconciliation is AWS-only.
+		hostedCluster := karpenterEnabledHostedCluster.DeepCopy()
+		hostedCluster.Spec.AutoNode = hyperv1.AutoNode{}
+
+		token, fakeClient := setup(t, pool, hostedCluster)
+
+		referenced, err := token.referencedBootstrapDataSecretNames(t.Context())
+		g.Expect(err).ToNot(HaveOccurred(), "reference collection must tolerate the absent MachineDeployment, MachineSets, and Machines")
+		g.Expect(referenced).To(BeEmpty(), "no bootstrap data Secret may be attributed to the in-memory Karpenter pool")
+
+		outdatedUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, poolName, completedHash)
+		outdatedUserData := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: controlplaneNamespace, Name: outdatedUserDataName},
+			Data:       map[string][]byte{"value": []byte("stale-ignition-config")},
+		}
+		outdatedTokenName := fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, poolName, completedHash)
+		outdatedToken := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: controlplaneNamespace, Name: outdatedTokenName},
+			Data:       map[string][]byte{TokenSecretTokenKey: []byte("stale-ignition-token")},
+		}
+		g.Expect(fakeClient.Create(t.Context(), outdatedUserData)).To(Succeed())
+		g.Expect(fakeClient.Create(t.Context(), outdatedToken)).To(Succeed())
+
+		g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup must not error on the absent MachineDeployment")
+
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, &corev1.Secret{})).
+			ToNot(Succeed(), "an unreferenced outdated user data Secret should be deleted")
+		gotOutdatedToken := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedTokenName}, gotOutdatedToken)).
+			To(Succeed(), "an unreferenced outdated token Secret should be kept until it expires")
+		g.Expect(gotOutdatedToken.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation]).
+			ToNot(BeEmpty(), "an unreferenced outdated token Secret should be annotated to expire")
+
+		// The autoNode machinery of the real Karpenter pool is untouched.
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: foreignMachineDeployment.GetName()}, foreignMachineDeployment.DeepCopy())).
+			To(Succeed(), "the autoNode MachineDeployment must be untouched")
+	})
 }

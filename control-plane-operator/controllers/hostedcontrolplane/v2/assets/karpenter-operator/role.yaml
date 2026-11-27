@@ -91,6 +91,22 @@ rules:
       - "get"
       - "list"
       - "watch"
+  # The karpenterignition controller reconciles token and user data Secrets via
+  # the shared nodepool Token controller, which collects the bootstrap data
+  # Secret references of the NodePool from the CAPI machinery
+  # (Token.referencedBootstrapDataSecretNames): it fetches the NodePool's
+  # MachineDeployment and lists the MachineSets and Machines annotated for the
+  # NodePool in the control plane namespace.
+  - apiGroups:
+      - "cluster.x-k8s.io"
+    resources:
+      - "machines"
+      - "machinesets"
+      - "machinedeployments"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
   - apiGroups:
       - ""
     resources:
