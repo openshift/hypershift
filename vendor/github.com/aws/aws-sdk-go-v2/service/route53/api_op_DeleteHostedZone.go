@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Deletes a hosted zone.
@@ -44,6 +43,10 @@ import (
 // before deletion. Attempting to delete a hosted zone with additional records or
 // DNSSEC enabled returns a HostedZoneNotEmpty error. For information about
 // deleting records, see [ChangeResourceRecordSets].
+//
+// You also can't delete a hosted zone that has resource record set protections.
+// To see the protections in a hosted zone, use ListResourceRecordSetProtections .
+// To delete them, use DeleteResourceRecordSetProtections .
 //
 // To verify that the hosted zone has been deleted, do one of the following:
 //
@@ -106,12 +109,6 @@ func (c *Client) addOperationDeleteHostedZoneMiddlewares(stack *middleware.Stack
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -121,19 +118,10 @@ func (c *Client) addOperationDeleteHostedZoneMiddlewares(stack *middleware.Stack
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDeleteHostedZoneValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DeleteHostedZone"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

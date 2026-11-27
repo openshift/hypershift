@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a report that shows how your image is used across other Amazon Web
 // Services accounts. The report provides visibility into which accounts are using
-// the specified image, and how many resources (EC2 instances or launch templates)
-// are referencing it.
+// the specified image, and how many resources (EC2 instances, EC2 launch
+// templates, Image Builder image recipes, or Image Builder container recipes) are
+// referencing it.
 //
 // For more information, see [View your AMI usage] in the Amazon EC2 User Guide.
 //
@@ -91,12 +91,6 @@ func (c *Client) addOperationCreateImageUsageReportMiddlewares(stack *middleware
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -106,12 +100,6 @@ func (c *Client) addOperationCreateImageUsageReportMiddlewares(stack *middleware
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
@@ -119,9 +107,6 @@ func (c *Client) addOperationCreateImageUsageReportMiddlewares(stack *middleware
 		return err
 	}
 	if err = addOpCreateImageUsageReportValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateImageUsageReport"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

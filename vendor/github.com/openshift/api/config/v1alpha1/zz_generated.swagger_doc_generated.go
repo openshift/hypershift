@@ -81,6 +81,25 @@ func (BasicAuth) SwaggerDoc() map[string]string {
 	return map_BasicAuth
 }
 
+var map_BodySizeEnforcement = map[string]string{
+	"":       "BodySizeEnforcement configures the maximum size of the response body accepted from a scraped target. When mode is Custom, the custom field must be set, and it is forbidden otherwise.",
+	"mode":   "mode selects how the scrape response size limit is determined. This field is required. Valid values are Automatic, Custom and None. When set to Automatic, the Cluster Monitoring Operator calculates an appropriate limit based on cluster pod capacity. When set to Custom, the limit is taken from the custom field. When set to None, no limit is configured.",
+	"custom": "custom defines a fixed scrape response size limit. Required when mode is Custom, and forbidden otherwise.",
+}
+
+func (BodySizeEnforcement) SwaggerDoc() map[string]string {
+	return map_BodySizeEnforcement
+}
+
+var map_BodySizeEnforcementCustomConfig = map[string]string{
+	"":             "BodySizeEnforcementCustomConfig defines a fixed scrape response size limit.",
+	"maxSizeBytes": "maxSizeBytes defines the maximum size in bytes of the response body accepted from a scraped target. If a scraped target's body response is larger than the limit, the scrape will fail. This helps protect Prometheus from targets that return excessively large responses. The value is specified in bytes (e.g., 4194304 for 4MB, 1073741824 for 1GB). Minimum value is 1048576 (1MiB). Maximum value is 1073741824 (1GB). This field is required.",
+}
+
+func (BodySizeEnforcementCustomConfig) SwaggerDoc() map[string]string {
+	return map_BodySizeEnforcementCustomConfig
+}
+
 var map_ClusterMonitoring = map[string]string{
 	"":         "ClusterMonitoring is the Custom Resource object which holds the current status of Cluster Monitoring Operator. CMO is a central component of the monitoring stack.\n\nCompatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support. ClusterMonitoring is the Schema for the Cluster Monitoring Operators API",
 	"metadata": "metadata is the standard object metadata.",
@@ -503,7 +522,7 @@ func (OpenShiftStateMetricsConfig) SwaggerDoc() map[string]string {
 var map_PrometheusConfig = map[string]string{
 	"":                              "PrometheusConfig provides configuration options for the Prometheus instance. Use this configuration to control Prometheus deployment, pod scheduling, resource allocation, retention policies, and external integrations.",
 	"additionalAlertmanagerConfigs": "additionalAlertmanagerConfigs configures additional Alertmanager instances that receive alerts from the Prometheus component. This is useful for organizations that need to:\n  - Send alerts to external monitoring systems (like PagerDuty, Slack, or custom webhooks)\n  - Route different types of alerts to different teams or systems\n  - Integrate with existing enterprise alerting infrastructure\n  - Maintain separate alert routing for compliance or organizational requirements\nWhen omitted, no additional Alertmanager instances are configured (default behavior). When provided, at least one configuration must be specified (minimum 1, maximum 10 items). Entries must have unique names (name is the list key).",
-	"enforcedBodySizeLimitBytes":    "enforcedBodySizeLimitBytes enforces a body size limit (in bytes) for Prometheus scraped metrics. If a scraped target's body response is larger than the limit, the scrape will fail. This helps protect Prometheus from targets that return excessively large responses. The value is specified in bytes (e.g., 4194304 for 4MB, 1073741824 for 1GB). When omitted, the Cluster Monitoring Operator automatically calculates an appropriate limit based on cluster capacity. Set an explicit value to override the automatic calculation. Minimum value is 10240 (10kB). Maximum value is 1073741824 (1GB).",
+	"bodySizeEnforcement":           "bodySizeEnforcement configures the maximum size of the response body accepted from a scraped target. If a scraped target's body response is larger than the limit, the scrape will fail. This helps protect Prometheus from targets that return excessively large responses. When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. The current default is to calculate the limit automatically based on cluster capacity. An existing prometheusK8s section in the ConfigMap takes precedence over this setting.",
 	"externalLabels":                "externalLabels defines labels to be attached to time series and alerts when communicating with external systems such as federation, remote storage, and Alertmanager. These labels are not stored with metrics on disk; they are only added when data leaves Prometheus (e.g., during federation queries, remote write, or alert notifications). At least 1 label must be specified when set, with a maximum of 50 labels allowed. Each label key must be unique within this list. When omitted, no external labels are applied.",
 	"logLevel":                      "logLevel defines the verbosity of logs emitted by Prometheus. This field allows users to control the amount and severity of logs generated, which can be useful for debugging issues or reducing noise in production environments. Allowed values are Error, Warn, Info, and Debug. When set to Error, only errors will be logged. When set to Warn, both warnings and errors will be logged. When set to Info, general information, warnings, and errors will all be logged. When set to Debug, detailed debugging information will be logged. When omitted, this means no opinion and the platform is left to choose a reasonable default, that is subject to change over time. The current default value is `Info`.",
 	"nodeSelector":                  "nodeSelector defines the nodes on which the Pods are scheduled. nodeSelector is optional.\n\nWhen omitted, this means the user has no opinion and the platform is left to choose reasonable defaults. These defaults are subject to change over time. The current default value is `kubernetes.io/os: linux`. When specified, nodeSelector must contain at least one key-value pair (minimum of 1) and must not contain more than 10 entries.",

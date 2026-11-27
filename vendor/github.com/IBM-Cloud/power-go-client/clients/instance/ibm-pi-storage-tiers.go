@@ -26,9 +26,9 @@ func NewIBMPIStorageTierClient(ctx context.Context, sess *ibmpisession.IBMPISess
 // Gets all the storage tiers associated to the cloud instance.
 func (f *IBMPIStorageTierClient) GetAll() (models.RegionStorageTiers, error) {
 	params := p_cloud_storage_tiers.NewPcloudCloudinstancesStoragetiersGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
-	resp, err := f.session.Power.PCloudStorageTiers.PcloudCloudinstancesStoragetiersGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudStorageTiers.PcloudCloudinstancesStoragetiersGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetAllStorageTiersOperationFailed, f.cloudInstanceID, err))
 	}

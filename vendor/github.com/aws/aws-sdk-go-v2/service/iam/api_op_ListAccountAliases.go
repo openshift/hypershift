@@ -5,8 +5,9 @@ package iam
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Lists the account alias associated with the Amazon Web Services account (Note:
@@ -51,6 +52,21 @@ type ListAccountAliasesInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListAccountAliasesInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListAccountAliasesRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListAccountAliasesInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Marker != nil {
+		s.WriteString(schemas.ListAccountAliasesRequest_Marker, *v.Marker)
+	}
+	if v.MaxItems != nil {
+		s.WriteInt32(schemas.ListAccountAliasesRequest_MaxItems, *v.MaxItems)
+	}
+}
+
 // Contains the response to a successful [ListAccountAliases] request.
 //
 // [ListAccountAliases]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListAccountAliases.html
@@ -80,22 +96,45 @@ type ListAccountAliasesOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListAccountAliasesOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListAccountAliasesResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListAccountAliasesOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AccountAliases != nil {
+		serializeaccountAliasListType(s, schemas.ListAccountAliasesResponse_AccountAliases, v.AccountAliases)
+	}
+	if v.IsTruncated != false {
+		s.WriteBool(schemas.ListAccountAliasesResponse_IsTruncated, v.IsTruncated)
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.ListAccountAliasesResponse_Marker, *v.Marker)
+	}
+}
+func (v *ListAccountAliasesOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ListAccountAliasesResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ListAccountAliasesResponse_AccountAliases:
+			return deserializeaccountAliasListType(d, schemas.ListAccountAliasesResponse_AccountAliases, &v.AccountAliases)
+		case schemas.ListAccountAliasesResponse_IsTruncated:
+			return d.ReadBool(schemas.ListAccountAliasesResponse_IsTruncated, &v.IsTruncated)
+		case schemas.ListAccountAliasesResponse_Marker:
+			v.Marker = new(string)
+			return d.ReadString(schemas.ListAccountAliasesResponse_Marker, v.Marker)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationListAccountAliasesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpListAccountAliases{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListAccountAliases, schemas.ListAccountAliasesRequest, schemas.ListAccountAliasesResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListAccountAliases{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListAccountAliases, schemas.ListAccountAliasesRequest, schemas.ListAccountAliasesResponse), output: &ListAccountAliasesOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -105,16 +144,7 @@ func (c *Client) addOperationListAccountAliasesMiddlewares(stack *middleware.Sta
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ListAccountAliases"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

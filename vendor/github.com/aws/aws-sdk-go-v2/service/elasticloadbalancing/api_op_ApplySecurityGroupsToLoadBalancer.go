@@ -4,8 +4,9 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Associates one or more security groups with your load balancer in a virtual
@@ -47,6 +48,21 @@ type ApplySecurityGroupsToLoadBalancerInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ApplySecurityGroupsToLoadBalancerInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ApplySecurityGroupsToLoadBalancerInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ApplySecurityGroupsToLoadBalancerInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.ApplySecurityGroupsToLoadBalancerInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+	if v.SecurityGroups != nil {
+		serializeSecurityGroups(s, schemas.ApplySecurityGroupsToLoadBalancerInput_SecurityGroups, v.SecurityGroups)
+	}
+}
+
 // Contains the output of ApplySecurityGroupsToLoadBalancer.
 type ApplySecurityGroupsToLoadBalancerOutput struct {
 
@@ -59,22 +75,34 @@ type ApplySecurityGroupsToLoadBalancerOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ApplySecurityGroupsToLoadBalancerOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ApplySecurityGroupsToLoadBalancerOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ApplySecurityGroupsToLoadBalancerOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.SecurityGroups != nil {
+		serializeSecurityGroups(s, schemas.ApplySecurityGroupsToLoadBalancerOutput_SecurityGroups, v.SecurityGroups)
+	}
+}
+func (v *ApplySecurityGroupsToLoadBalancerOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ApplySecurityGroupsToLoadBalancerOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ApplySecurityGroupsToLoadBalancerOutput_SecurityGroups:
+			return deserializeSecurityGroups(d, schemas.ApplySecurityGroupsToLoadBalancerOutput_SecurityGroups, &v.SecurityGroups)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationApplySecurityGroupsToLoadBalancerMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpApplySecurityGroupsToLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ApplySecurityGroupsToLoadBalancer, schemas.ApplySecurityGroupsToLoadBalancerInput, schemas.ApplySecurityGroupsToLoadBalancerOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpApplySecurityGroupsToLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ApplySecurityGroupsToLoadBalancer, schemas.ApplySecurityGroupsToLoadBalancerInput, schemas.ApplySecurityGroupsToLoadBalancerOutput), output: &ApplySecurityGroupsToLoadBalancerOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -84,19 +112,10 @@ func (c *Client) addOperationApplySecurityGroupsToLoadBalancerMiddlewares(stack 
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpApplySecurityGroupsToLoadBalancerValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ApplySecurityGroupsToLoadBalancer"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

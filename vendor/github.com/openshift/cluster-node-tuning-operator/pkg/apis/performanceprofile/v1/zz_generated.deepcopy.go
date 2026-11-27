@@ -48,6 +48,16 @@ func (in *CPU) DeepCopyInto(out *CPU) {
 		*out = new(CPUSet)
 		**out = **in
 	}
+	if in.Shared != nil {
+		in, out := &in.Shared, &out.Shared
+		*out = new(CPUSet)
+		**out = **in
+	}
+	if in.OvsDpdk != nil {
+		in, out := &in.OvsDpdk, &out.OvsDpdk
+		*out = new(CPUSet)
+		**out = **in
+	}
 	return
 }
 
@@ -321,6 +331,11 @@ func (in *PerformanceProfileSpec) DeepCopyInto(out *PerformanceProfileSpec) {
 		*out = new(RealTimeKernel)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.KernelPageSize != nil {
+		in, out := &in.KernelPageSize, &out.KernelPageSize
+		*out = new(KernelPageSize)
+		**out = **in
+	}
 	if in.AdditionalKernelArgs != nil {
 		in, out := &in.AdditionalKernelArgs, &out.AdditionalKernelArgs
 		*out = make([]string, len(*in))
@@ -428,6 +443,11 @@ func (in *WorkloadHints) DeepCopyInto(out *WorkloadHints) {
 	}
 	if in.PerPodPowerManagement != nil {
 		in, out := &in.PerPodPowerManagement, &out.PerPodPowerManagement
+		*out = new(bool)
+		**out = **in
+	}
+	if in.MixedCpus != nil {
+		in, out := &in.MixedCpus, &out.MixedCpus
 		*out = new(bool)
 		**out = **in
 	}

@@ -1394,6 +1394,55 @@ type PrometheusOperatorAdmissionWebhookConfig struct {
 	TopologySpreadConstraints []v1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
 }
 
+// BodySizeEnforcementMode selects how the scrape response size limit is determined.
+// +kubebuilder:validation:Enum=Automatic;Custom;None
+type BodySizeEnforcementMode string
+
+const (
+	// BodySizeEnforcementModeAutomatic calculates the limit from cluster pod capacity.
+	BodySizeEnforcementModeAutomatic BodySizeEnforcementMode = "Automatic"
+	// BodySizeEnforcementModeCustom uses the limit configured in the custom field.
+	BodySizeEnforcementModeCustom BodySizeEnforcementMode = "Custom"
+	// BodySizeEnforcementModeNone configures no limit.
+	BodySizeEnforcementModeNone BodySizeEnforcementMode = "None"
+)
+
+// BodySizeEnforcement configures the maximum size of the response body accepted from a scraped target.
+// When mode is Custom, the custom field must be set, and it is forbidden otherwise.
+// +kubebuilder:validation:XValidation:rule="self.mode == 'Custom' ? has(self.custom) : !has(self.custom)",message="custom is required when mode is Custom, and forbidden otherwise"
+// +union
+type BodySizeEnforcement struct {
+	// mode selects how the scrape response size limit is determined.
+	// This field is required.
+	// Valid values are Automatic, Custom and None.
+	// When set to Automatic, the Cluster Monitoring Operator calculates an appropriate limit based on cluster pod capacity.
+	// When set to Custom, the limit is taken from the custom field.
+	// When set to None, no limit is configured.
+	// +unionDiscriminator
+	// +required
+	Mode BodySizeEnforcementMode `json:"mode,omitempty"`
+	// custom defines a fixed scrape response size limit.
+	// Required when mode is Custom, and forbidden otherwise.
+	// +unionMember
+	// +optional
+	Custom BodySizeEnforcementCustomConfig `json:"custom,omitzero,omitempty"`
+}
+
+// BodySizeEnforcementCustomConfig defines a fixed scrape response size limit.
+type BodySizeEnforcementCustomConfig struct {
+	// maxSizeBytes defines the maximum size in bytes of the response body accepted from a scraped target.
+	// If a scraped target's body response is larger than the limit, the scrape will fail.
+	// This helps protect Prometheus from targets that return excessively large responses.
+	// The value is specified in bytes (e.g., 4194304 for 4MB, 1073741824 for 1GB).
+	// Minimum value is 1048576 (1MiB).
+	// Maximum value is 1073741824 (1GB).
+	// This field is required.
+	// +kubebuilder:validation:Minimum=1048576
+	// +kubebuilder:validation:Maximum=1073741824
+	// +required
+	MaxSizeBytes int64 `json:"maxSizeBytes,omitempty"`
+}
+
 // PrometheusConfig provides configuration options for the Prometheus instance.
 // Use this configuration to control
 // Prometheus deployment, pod scheduling, resource allocation, retention policies, and external integrations.
@@ -1414,6 +1463,8 @@ type PrometheusConfig struct {
 	// +listType=map
 	// +listMapKey=name
 	AdditionalAlertmanagerConfigs []AdditionalAlertmanagerConfig `json:"additionalAlertmanagerConfigs,omitempty"`
+	// TOMBSTONE: This field has been tombstoned in favor of the `bodySizeEnforcement` field. This tombstone will be dropped when promoting this API to v1.
+	// ---
 	// enforcedBodySizeLimitBytes enforces a body size limit (in bytes) for Prometheus scraped metrics.
 	// If a scraped target's body response is larger than the limit, the scrape will fail.
 	// This helps protect Prometheus from targets that return excessively large responses.
@@ -1422,10 +1473,20 @@ type PrometheusConfig struct {
 	// limit based on cluster capacity. Set an explicit value to override the automatic calculation.
 	// Minimum value is 10240 (10kB).
 	// Maximum value is 1073741824 (1GB).
-	// +kubebuilder:validation:Minimum=10240
-	// +kubebuilder:validation:Maximum=1073741824
+	// Former marker: kubebuilder:validation:Minimum=10240
+	// Former marker: kubebuilder:validation:Maximum=1073741824
+	// Former marker: optional
+	// EnforcedBodySizeLimitBytes int64 `json:"enforcedBodySizeLimitBytes,omitempty"`
+
+	// bodySizeEnforcement configures the maximum size of the response body accepted from a scraped target.
+	// If a scraped target's body response is larger than the limit, the scrape will fail.
+	// This helps protect Prometheus from targets that return excessively large responses.
+	// When omitted, this means no opinion and the platform is left to choose a reasonable default,
+	// which is subject to change over time. The current default is to calculate the limit automatically
+	// based on cluster capacity.
+	// An existing prometheusK8s section in the ConfigMap takes precedence over this setting.
 	// +optional
-	EnforcedBodySizeLimitBytes int64 `json:"enforcedBodySizeLimitBytes,omitempty"`
+	BodySizeEnforcement BodySizeEnforcement `json:"bodySizeEnforcement,omitempty,omitzero"`
 	// externalLabels defines labels to be attached to time series and alerts
 	// when communicating with external systems such as federation, remote storage,
 	// and Alertmanager. These labels are not stored with metrics on disk; they are

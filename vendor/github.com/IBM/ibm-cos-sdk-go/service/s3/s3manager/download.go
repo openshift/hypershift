@@ -282,6 +282,34 @@ func (d Downloader) DownloadWithIterator(ctx aws.Context, iter BatchDownloadIter
 	return nil
 }
 
+// DownloadWithPipe downloads an S3 object to a named pipe with ordered part
+// delivery. Parts are downloaded in parallel but written to the pipe in
+// sequential order to maintain data integrity.
+//
+// The method leverages all existing Downloader configuration including PartSize,
+// Concurrency, BufferProvider, RequestOptions, etc.
+//
+// Additional functional options can be provided to configure the individual
+// download. These options are copies of the Downloader instance DownloadWithPipe
+// is called from. Modifying the options will not impact the original Downloader
+// instance.
+//
+// Example:
+//
+//	sess := session.Must(session.NewSession())
+//	downloader := s3manager.NewDownloader(sess)
+//
+//	n, err := downloader.DownloadWithPipe(aws.BackgroundContext(), &s3manager.DownloadPipeInput{
+//	    PipePath: aws.String("/tmp/restore.pipe"),
+//	    GetObjectInput: &s3.GetObjectInput{
+//	        Bucket: aws.String("my-bucket"),
+//	        Key:    aws.String("backup.tar.gz"),
+//	    },
+//	})
+func (d *Downloader) DownloadWithPipe(ctx aws.Context, input *DownloadPipeInput, options ...func(*Downloader)) (n int64, err error) {
+	return downloadWithPipe(ctx, d, input, options...)
+}
+
 // downloader is the implementation structure used internally by Downloader.
 type downloader struct {
 	ctx aws.Context

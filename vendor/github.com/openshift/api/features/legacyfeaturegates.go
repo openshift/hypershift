@@ -9,8 +9,6 @@ var legacyFeatureGates = sets.New(
 	// never add to this list, if you think you have an exception ask @deads2k
 	"AlibabaPlatform",
 	// never add to this list, if you think you have an exception ask @deads2k
-	"AutomatedEtcdBackup",
-	// never add to this list, if you think you have an exception ask @deads2k
 	"BootcNodeManagement",
 	// never add to this list, if you think you have an exception ask @deads2k
 	"BuildCSIVolumes",

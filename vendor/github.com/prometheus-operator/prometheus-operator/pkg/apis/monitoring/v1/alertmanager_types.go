@@ -41,6 +41,7 @@ const (
 // +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.selector
 // +genclient:method=GetScale,verb=get,subresource=scale,result=k8s.io/api/autoscaling/v1.Scale
 // +genclient:method=UpdateScale,verb=update,subresource=scale,input=k8s.io/api/autoscaling/v1.Scale,result=k8s.io/api/autoscaling/v1.Scale
+// +metrics:conditions:path=.status.conditions,resourceType=alertmanager
 
 // The `Alertmanager` custom resource definition (CRD) defines a desired [Alertmanager](https://prometheus.io/docs/alerting) setup to run in a Kubernetes cluster. It allows to specify many options such as the number of replicas, persistent storage and many more.
 //
@@ -335,6 +336,20 @@ type AlertmanagerSpec struct {
 	// clusterPeerTimeout defines the timeout for cluster peering.
 	// +optional
 	ClusterPeerTimeout GoDuration `json:"clusterPeerTimeout,omitempty"`
+	// clusterPeerName defines the name that this Alertmanager instance uses to
+	// advertise itself to other cluster peers (the `--cluster.peer-name` flag,
+	// available since Alertmanager v0.30.0).
+	//
+	// If not set, the operator defaults to the pod's name (`$(POD_NAME)`),
+	// which is injected via the Kubernetes downward API. Setting this field
+	// lets you override that default with either a literal value or a string
+	// referencing environment variables that are already available in the
+	// Alertmanager container (for example `$(POD_NAME).$(NAMESPACE)`).
+	//
+	/// It requires Alertmanager >= 0.30.0.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	ClusterPeerName *string `json:"clusterPeerName,omitempty"`
 	// portName defines the port's name for the pods and governing service.
 	// Defaults to `web`.
 	// +kubebuilder:default:="web"
@@ -356,6 +371,27 @@ type AlertmanagerSpec struct {
 	// process incoming alerts.
 	// +optional
 	AlertmanagerConfigMatcherStrategy AlertmanagerConfigMatcherStrategy `json:"alertmanagerConfigMatcherStrategy,omitempty"`
+
+	// alertmanagerConfigFileSystemMode defines how the operator handles
+	// AlertmanagerConfig resources which have references to the Alertmanager
+	// container's filesystem (as opposed to secret key references). Users
+	// controlling the receiver's service may create an AlertmanagerConfig
+	// resource with a reference to a container's file (for instance using
+	// `botTokenFile` for the Telegram receiver) and exfiltrate sensitive
+	// content from files located in the Alertmanager container.
+	//
+	// Supported values are:
+	// - "DenyAll" denies any AlertmanagerConfig resource referencing files from the container's filesystem, non-compliant resources are rejected.
+	// - "FromAlertmanagerConfigMatcherStrategy" uses the `alertmanagerConfigNamespaceSelector` field to make a decision
+	//   - When `alertmanagerConfigNamespaceSelector` is "None", it is equivalent to "AllowAll"
+	//   - When `alertmanagerConfigNamespaceSelector` is "OnNamespaceExceptForAlertmanagerNamespace", it is equivalent to "AllowAll" for the AlertmanagerConfig resources located in the Alertmanager's namespace and "DenyAll" for all other resources.
+	//   - When `alertmanagerConfigNamespaceSelector` is "OnNamespace", it is equivalent to "AllowAll" for the main AlertmanagerConfig resource (defined in `.spec.alertmanagerConfig.name`) and "DenyAll" for all other resources.
+	// - "AllowAll" allows any AlertmanagerConfig resource to reference files from the container's filesystem (use with caution).
+	//
+	// By default, the operator uses the "FromAlertmanagerConfigMatcherStrategy" mode.
+	//
+	// +optional
+	AlertmanagerConfigFileSystemMode *AlertmanagerConfigFileSystemMode `json:"alertmanagerConfigFileSystemMode,omitempty"`
 
 	// minReadySeconds defines the minimum number of seconds for which a newly
 	// created pod should be ready without any of its container crashing for it
@@ -482,6 +518,28 @@ const (
 	// With `None`, the route and inhibition rules of an AlertmanagerConfig
 	// object process all incoming alerts.
 	NoneConfigMatcherStrategyType AlertmanagerConfigMatcherStrategyType = "None"
+)
+
+// +kubebuilder:validation:Enum="AllowAll";"FromAlertmanagerConfigMatcherStrategy";"DenyAll"
+type AlertmanagerConfigFileSystemMode string
+
+const (
+	// DenyAllAlertmanagerConfigFileSystemMode ("DenyAll") denies any
+	// AlertmanagerConfig resource which references files from the Alertmanager
+	// container's filesystem.
+	DenyAllAlertmanagerConfigFileSystemMode AlertmanagerConfigFileSystemMode = "DenyAll"
+
+	// AllowAllAlertmanagerConfigFileSystemMode ("AllowAll") allows any
+	// AlertmanagerConfig resource to reference files from the Alertmanager
+	// container's filesystem.
+	AllowAllAlertmanagerConfigFileSystemMode AlertmanagerConfigFileSystemMode = "AllowAll"
+
+	// FromAlertmanagerConfigMatcherStrategyAlertmanagerConfigFileSystemMode
+	// ("FromAlertmanagerConfigMatcherStrategy") uses the
+	// `alertmanagerConfigNamespaceSelector` field to make a decision on
+	// denying/allowing AlertmanagerConfig resources which reference files from
+	// the Alertmanager container's filesystem.
+	FromAlertmanagerConfigMatcherStrategyAlertmanagerConfigFileSystemMode AlertmanagerConfigFileSystemMode = "FromAlertmanagerConfigMatcherStrategy"
 )
 
 // AlertmanagerConfiguration defines the Alertmanager configuration.
@@ -619,10 +677,12 @@ type AlertmanagerWebSpec struct {
 	WebConfigFileFields `json:",inline"`
 	// getConcurrency defines the maximum number of GET requests processed concurrently. This corresponds to the
 	// Alertmanager's `--web.get-concurrency` flag.
+	// +kubebuilder:validation:Minimum:=0
 	// +optional
 	GetConcurrency *uint32 `json:"getConcurrency,omitempty"`
 	// timeout for HTTP requests. This corresponds to the Alertmanager's
 	// `--web.timeout` flag.
+	// +kubebuilder:validation:Minimum:=0
 	// +optional
 	Timeout *uint32 `json:"timeout,omitempty"`
 }
@@ -695,12 +755,26 @@ type GlobalSMTPConfig struct {
 }
 
 // GlobalTelegramConfig configures global Telegram parameters.
+// +kubebuilder:validation:XValidation:rule="!has(self.botToken) || !has(self.botTokenFile)",message="botToken and botTokenFile are mutually exclusive."
 type GlobalTelegramConfig struct {
 	// apiURL defines he default Telegram API URL.
 	//
 	// It requires Alertmanager >= v0.24.0.
 	// +optional
 	APIURL *URL `json:"apiURL,omitempty"`
+
+	// botToken represents the bot token configuration for Telegram.
+	// It is mutually exclusive with `botTokenFile`.
+	// It requires Alertmanager >= v0.31.0.
+	// +optional
+	BotToken *v1.SecretKeySelector `json:"botToken,omitempty"`
+
+	// botTokenFile defines the file to read the Telegram bot token from.
+	// It is mutually exclusive with `botToken`.
+	// It requires Alertmanager >= v0.31.0.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	BotTokenFile *string `json:"botTokenFile,omitempty"`
 }
 
 // GlobalJiraConfig configures global Jira parameters.

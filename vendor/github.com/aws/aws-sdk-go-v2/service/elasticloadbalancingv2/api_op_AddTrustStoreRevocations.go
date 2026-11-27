@@ -4,9 +4,10 @@ package elasticloadbalancingv2
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Adds the specified revocation file to the specified trust store.
@@ -38,6 +39,21 @@ type AddTrustStoreRevocationsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *AddTrustStoreRevocationsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.AddTrustStoreRevocationsInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *AddTrustStoreRevocationsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.RevocationContents != nil {
+		serializeRevocationContents(s, schemas.AddTrustStoreRevocationsInput_RevocationContents, v.RevocationContents)
+	}
+	if v.TrustStoreArn != nil {
+		s.WriteString(schemas.AddTrustStoreRevocationsInput_TrustStoreArn, *v.TrustStoreArn)
+	}
+}
+
 type AddTrustStoreRevocationsOutput struct {
 
 	// Information about the revocation file added to the trust store.
@@ -49,22 +65,34 @@ type AddTrustStoreRevocationsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *AddTrustStoreRevocationsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.AddTrustStoreRevocationsOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *AddTrustStoreRevocationsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.TrustStoreRevocations != nil {
+		serializeTrustStoreRevocations(s, schemas.AddTrustStoreRevocationsOutput_TrustStoreRevocations, v.TrustStoreRevocations)
+	}
+}
+func (v *AddTrustStoreRevocationsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.AddTrustStoreRevocationsOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.AddTrustStoreRevocationsOutput_TrustStoreRevocations:
+			return deserializeTrustStoreRevocations(d, schemas.AddTrustStoreRevocationsOutput_TrustStoreRevocations, &v.TrustStoreRevocations)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationAddTrustStoreRevocationsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpAddTrustStoreRevocations{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.AddTrustStoreRevocations, schemas.AddTrustStoreRevocationsInput, schemas.AddTrustStoreRevocationsOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpAddTrustStoreRevocations{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.AddTrustStoreRevocations, schemas.AddTrustStoreRevocationsInput, schemas.AddTrustStoreRevocationsOutput), output: &AddTrustStoreRevocationsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -74,19 +102,10 @@ func (c *Client) addOperationAddTrustStoreRevocationsMiddlewares(stack *middlewa
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpAddTrustStoreRevocationsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "AddTrustStoreRevocations"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

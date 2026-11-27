@@ -5,9 +5,10 @@ package iam
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Lists the instance profiles that have the specified associated IAM role. If
@@ -65,6 +66,24 @@ type ListInstanceProfilesForRoleInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListInstanceProfilesForRoleInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListInstanceProfilesForRoleRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListInstanceProfilesForRoleInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Marker != nil {
+		s.WriteString(schemas.ListInstanceProfilesForRoleRequest_Marker, *v.Marker)
+	}
+	if v.MaxItems != nil {
+		s.WriteInt32(schemas.ListInstanceProfilesForRoleRequest_MaxItems, *v.MaxItems)
+	}
+	if v.RoleName != nil {
+		s.WriteString(schemas.ListInstanceProfilesForRoleRequest_RoleName, *v.RoleName)
+	}
+}
+
 // Contains the response to a successful [ListInstanceProfilesForRole] request.
 //
 // [ListInstanceProfilesForRole]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListInstanceProfilesForRole.html
@@ -93,22 +112,45 @@ type ListInstanceProfilesForRoleOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListInstanceProfilesForRoleOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListInstanceProfilesForRoleResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListInstanceProfilesForRoleOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.InstanceProfiles != nil {
+		serializeinstanceProfileListType(s, schemas.ListInstanceProfilesForRoleResponse_InstanceProfiles, v.InstanceProfiles)
+	}
+	if v.IsTruncated != false {
+		s.WriteBool(schemas.ListInstanceProfilesForRoleResponse_IsTruncated, v.IsTruncated)
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.ListInstanceProfilesForRoleResponse_Marker, *v.Marker)
+	}
+}
+func (v *ListInstanceProfilesForRoleOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ListInstanceProfilesForRoleResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ListInstanceProfilesForRoleResponse_InstanceProfiles:
+			return deserializeinstanceProfileListType(d, schemas.ListInstanceProfilesForRoleResponse_InstanceProfiles, &v.InstanceProfiles)
+		case schemas.ListInstanceProfilesForRoleResponse_IsTruncated:
+			return d.ReadBool(schemas.ListInstanceProfilesForRoleResponse_IsTruncated, &v.IsTruncated)
+		case schemas.ListInstanceProfilesForRoleResponse_Marker:
+			v.Marker = new(string)
+			return d.ReadString(schemas.ListInstanceProfilesForRoleResponse_Marker, v.Marker)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationListInstanceProfilesForRoleMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpListInstanceProfilesForRole{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListInstanceProfilesForRole, schemas.ListInstanceProfilesForRoleRequest, schemas.ListInstanceProfilesForRoleResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListInstanceProfilesForRole{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListInstanceProfilesForRole, schemas.ListInstanceProfilesForRoleRequest, schemas.ListInstanceProfilesForRoleResponse), output: &ListInstanceProfilesForRoleOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -118,19 +160,10 @@ func (c *Client) addOperationListInstanceProfilesForRoleMiddlewares(stack *middl
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpListInstanceProfilesForRoleValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ListInstanceProfilesForRole"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

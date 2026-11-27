@@ -4,9 +4,10 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a Classic Load Balancer.
@@ -96,6 +97,36 @@ type CreateLoadBalancerInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateLoadBalancerInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateAccessPointInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateLoadBalancerInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AvailabilityZones != nil {
+		serializeAvailabilityZones(s, schemas.CreateAccessPointInput_AvailabilityZones, v.AvailabilityZones)
+	}
+	if v.Listeners != nil {
+		serializeListeners(s, schemas.CreateAccessPointInput_Listeners, v.Listeners)
+	}
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.CreateAccessPointInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+	if v.Scheme != nil {
+		s.WriteString(schemas.CreateAccessPointInput_Scheme, *v.Scheme)
+	}
+	if v.SecurityGroups != nil {
+		serializeSecurityGroups(s, schemas.CreateAccessPointInput_SecurityGroups, v.SecurityGroups)
+	}
+	if v.Subnets != nil {
+		serializeSubnets(s, schemas.CreateAccessPointInput_Subnets, v.Subnets)
+	}
+	if v.Tags != nil {
+		serializeTagList(s, schemas.CreateAccessPointInput_Tags, v.Tags)
+	}
+}
+
 // Contains the output for CreateLoadBalancer.
 type CreateLoadBalancerOutput struct {
 
@@ -108,22 +139,35 @@ type CreateLoadBalancerOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateLoadBalancerOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateAccessPointOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateLoadBalancerOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.DNSName != nil {
+		s.WriteString(schemas.CreateAccessPointOutput_DNSName, *v.DNSName)
+	}
+}
+func (v *CreateLoadBalancerOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreateAccessPointOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreateAccessPointOutput_DNSName:
+			v.DNSName = new(string)
+			return d.ReadString(schemas.CreateAccessPointOutput_DNSName, v.DNSName)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreateLoadBalancerMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpCreateLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateLoadBalancer, schemas.CreateAccessPointInput, schemas.CreateAccessPointOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpCreateLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateLoadBalancer, schemas.CreateAccessPointInput, schemas.CreateAccessPointOutput), output: &CreateLoadBalancerOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -133,19 +177,10 @@ func (c *Client) addOperationCreateLoadBalancerMiddlewares(stack *middleware.Sta
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateLoadBalancerValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateLoadBalancer"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

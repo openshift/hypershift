@@ -4,11 +4,14 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Updates the description or maximum session duration setting of a role.
+// Updates the description, maximum session duration, or maximum sign-in session
+// duration of a role. You cannot change the maximum sign-in session duration of a
+// service-linked role.
 func (c *Client) UpdateRole(ctx context.Context, params *UpdateRoleInput, optFns ...func(*Options)) (*UpdateRoleOutput, error) {
 	if params == nil {
 		params = &UpdateRoleInput{}
@@ -55,7 +58,59 @@ type UpdateRoleInput struct {
 	// [Using IAM roles]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use.html
 	MaxSessionDuration *int32
 
+	// The maximum duration (in seconds) of an Amazon Web Services Sign-In session for
+	// users who sign in with the specified role. This setting can have a value from 1
+	// hour (3600 seconds) to 90 days (7776000 seconds), inclusive, and replaces any
+	// value currently configured for the role. This setting is independent of
+	// MaxSessionDuration .
+	//
+	// If you omit both this parameter and ResetMaxSigninSessionDuration , the current
+	// setting is unchanged. You cannot specify this parameter and set
+	// ResetMaxSigninSessionDuration to true in the same request.
+	//
+	// Changes to this setting apply to new sign-in sessions. Sessions that are
+	// already established are not affected.
+	//
+	// You cannot set this value on a service-linked role.
+	MaxSigninSessionDuration *int32
+
+	// Specifies whether to clear the role's maximum sign-in session duration. Set
+	// this value to true to return the setting to its unset state, so that the
+	// existing sign-in session behavior applies. When the setting is unset, the role's
+	// MaxSigninSessionDuration is omitted from responses.
+	//
+	// If you set this value to false or omit it, the current setting is not cleared.
+	// You cannot set this value to true and specify MaxSigninSessionDuration in the
+	// same request. Clearing a setting that is already unset has no effect.
+	//
+	// You cannot reset this value on a service-linked role.
+	ResetMaxSigninSessionDuration *bool
+
 	noSmithyDocumentSerde
+}
+
+func (v *UpdateRoleInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.UpdateRoleRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateRoleInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Description != nil {
+		s.WriteString(schemas.UpdateRoleRequest_Description, *v.Description)
+	}
+	if v.MaxSessionDuration != nil {
+		s.WriteInt32(schemas.UpdateRoleRequest_MaxSessionDuration, *v.MaxSessionDuration)
+	}
+	if v.MaxSigninSessionDuration != nil {
+		s.WriteInt32(schemas.UpdateRoleRequest_MaxSigninSessionDuration, *v.MaxSigninSessionDuration)
+	}
+	if v.ResetMaxSigninSessionDuration != nil {
+		s.WriteBool(schemas.UpdateRoleRequest_ResetMaxSigninSessionDuration, *v.ResetMaxSigninSessionDuration)
+	}
+	if v.RoleName != nil {
+		s.WriteString(schemas.UpdateRoleRequest_RoleName, *v.RoleName)
+	}
 }
 
 type UpdateRoleOutput struct {
@@ -65,22 +120,29 @@ type UpdateRoleOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *UpdateRoleOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.UpdateRoleResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateRoleOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *UpdateRoleOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.UpdateRoleResponse, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationUpdateRoleMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpUpdateRole{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateRole, schemas.UpdateRoleRequest, schemas.UpdateRoleResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpUpdateRole{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateRole, schemas.UpdateRoleRequest, schemas.UpdateRoleResponse), output: &UpdateRoleOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -90,19 +152,10 @@ func (c *Client) addOperationUpdateRoleMiddlewares(stack *middleware.Stack, opti
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpUpdateRoleValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "UpdateRole"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

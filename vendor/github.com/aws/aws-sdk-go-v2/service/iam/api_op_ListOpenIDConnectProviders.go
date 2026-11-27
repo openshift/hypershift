@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Lists information about the IAM OpenID Connect (OIDC) provider resource objects
@@ -37,6 +38,15 @@ type ListOpenIDConnectProvidersInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListOpenIDConnectProvidersInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListOpenIDConnectProvidersRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListOpenIDConnectProvidersInput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+
 // Contains the response to a successful [ListOpenIDConnectProviders] request.
 //
 // [ListOpenIDConnectProviders]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListOpenIDConnectProviders.html
@@ -52,22 +62,34 @@ type ListOpenIDConnectProvidersOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListOpenIDConnectProvidersOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListOpenIDConnectProvidersResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListOpenIDConnectProvidersOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.OpenIDConnectProviderList != nil {
+		serializeOpenIDConnectProviderListType(s, schemas.ListOpenIDConnectProvidersResponse_OpenIDConnectProviderList, v.OpenIDConnectProviderList)
+	}
+}
+func (v *ListOpenIDConnectProvidersOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ListOpenIDConnectProvidersResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ListOpenIDConnectProvidersResponse_OpenIDConnectProviderList:
+			return deserializeOpenIDConnectProviderListType(d, schemas.ListOpenIDConnectProvidersResponse_OpenIDConnectProviderList, &v.OpenIDConnectProviderList)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationListOpenIDConnectProvidersMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpListOpenIDConnectProviders{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListOpenIDConnectProviders, schemas.ListOpenIDConnectProvidersRequest, schemas.ListOpenIDConnectProvidersResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListOpenIDConnectProviders{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListOpenIDConnectProviders, schemas.ListOpenIDConnectProvidersRequest, schemas.ListOpenIDConnectProvidersResponse), output: &ListOpenIDConnectProvidersOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -77,16 +99,7 @@ func (c *Client) addOperationListOpenIDConnectProvidersMiddlewares(stack *middle
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ListOpenIDConnectProviders"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

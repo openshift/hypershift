@@ -4,8 +4,9 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Replaces the current set of policies for the specified load balancer port with
@@ -57,6 +58,22 @@ type SetLoadBalancerPoliciesOfListenerInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *SetLoadBalancerPoliciesOfListenerInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.SetLoadBalancerPoliciesOfListenerInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *SetLoadBalancerPoliciesOfListenerInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.SetLoadBalancerPoliciesOfListenerInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+	s.WriteInt32(schemas.SetLoadBalancerPoliciesOfListenerInput_LoadBalancerPort, v.LoadBalancerPort)
+	if v.PolicyNames != nil {
+		serializePolicyNames(s, schemas.SetLoadBalancerPoliciesOfListenerInput_PolicyNames, v.PolicyNames)
+	}
+}
+
 // Contains the output of SetLoadBalancePoliciesOfListener.
 type SetLoadBalancerPoliciesOfListenerOutput struct {
 	// Metadata pertaining to the operation's result.
@@ -65,22 +82,29 @@ type SetLoadBalancerPoliciesOfListenerOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *SetLoadBalancerPoliciesOfListenerOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.SetLoadBalancerPoliciesOfListenerOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *SetLoadBalancerPoliciesOfListenerOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *SetLoadBalancerPoliciesOfListenerOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.SetLoadBalancerPoliciesOfListenerOutput, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationSetLoadBalancerPoliciesOfListenerMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpSetLoadBalancerPoliciesOfListener{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.SetLoadBalancerPoliciesOfListener, schemas.SetLoadBalancerPoliciesOfListenerInput, schemas.SetLoadBalancerPoliciesOfListenerOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpSetLoadBalancerPoliciesOfListener{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.SetLoadBalancerPoliciesOfListener, schemas.SetLoadBalancerPoliciesOfListenerInput, schemas.SetLoadBalancerPoliciesOfListenerOutput), output: &SetLoadBalancerPoliciesOfListenerOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -90,19 +114,10 @@ func (c *Client) addOperationSetLoadBalancerPoliciesOfListenerMiddlewares(stack 
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpSetLoadBalancerPoliciesOfListenerValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "SetLoadBalancerPoliciesOfListener"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

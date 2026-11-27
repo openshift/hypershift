@@ -83,6 +83,8 @@ type TunedSpec struct {
 type TunedProfile struct {
 	// Name of the Tuned profile to be used in the recommend section.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`
 	Name *string `json:"name"`
 	// Specification of the Tuned profile to be consumed by the Tuned daemon.
 	Data *string `json:"data"`
@@ -92,6 +94,8 @@ type TunedProfile struct {
 type TunedRecommend struct {
 	// Name of the Tuned profile to recommend.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`
 	Profile *string `json:"profile"`
 
 	// Tuned profile priority. Highest priority is 0.
@@ -191,6 +195,9 @@ type ProfileSpec struct {
 
 type ProfileConfig struct {
 	// TuneD profile to apply
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`
 	TunedProfile string `json:"tunedProfile"`
 	// option to debug TuneD daemon execution
 	// +optional

@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Use [UpdateRole] instead.
@@ -45,6 +46,21 @@ type UpdateRoleDescriptionInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *UpdateRoleDescriptionInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.UpdateRoleDescriptionRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateRoleDescriptionInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Description != nil {
+		s.WriteString(schemas.UpdateRoleDescriptionRequest_Description, *v.Description)
+	}
+	if v.RoleName != nil {
+		s.WriteString(schemas.UpdateRoleDescriptionRequest_RoleName, *v.RoleName)
+	}
+}
+
 type UpdateRoleDescriptionOutput struct {
 
 	// A structure that contains details about the modified role.
@@ -56,22 +72,37 @@ type UpdateRoleDescriptionOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *UpdateRoleDescriptionOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.UpdateRoleDescriptionResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateRoleDescriptionOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Role != nil {
+		s.WriteStruct(schemas.UpdateRoleDescriptionResponse_Role)
+		v.Role.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *UpdateRoleDescriptionOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.UpdateRoleDescriptionResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.UpdateRoleDescriptionResponse_Role:
+			v.Role = &types.Role{}
+			return v.Role.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationUpdateRoleDescriptionMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpUpdateRoleDescription{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateRoleDescription, schemas.UpdateRoleDescriptionRequest, schemas.UpdateRoleDescriptionResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpUpdateRoleDescription{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateRoleDescription, schemas.UpdateRoleDescriptionRequest, schemas.UpdateRoleDescriptionResponse), output: &UpdateRoleDescriptionOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -81,19 +112,10 @@ func (c *Client) addOperationUpdateRoleDescriptionMiddlewares(stack *middleware.
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpUpdateRoleDescriptionValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "UpdateRoleDescription"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

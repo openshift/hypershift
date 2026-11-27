@@ -4,9 +4,10 @@ package elasticloadbalancingv2
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Describes the attributes for the specified Application Load Balancer, Network
@@ -49,6 +50,18 @@ type DescribeLoadBalancerAttributesInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeLoadBalancerAttributesInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeLoadBalancerAttributesInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeLoadBalancerAttributesInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancerArn != nil {
+		s.WriteString(schemas.DescribeLoadBalancerAttributesInput_LoadBalancerArn, *v.LoadBalancerArn)
+	}
+}
+
 type DescribeLoadBalancerAttributesOutput struct {
 
 	// Information about the load balancer attributes.
@@ -60,22 +73,34 @@ type DescribeLoadBalancerAttributesOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeLoadBalancerAttributesOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeLoadBalancerAttributesOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeLoadBalancerAttributesOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Attributes != nil {
+		serializeLoadBalancerAttributes(s, schemas.DescribeLoadBalancerAttributesOutput_Attributes, v.Attributes)
+	}
+}
+func (v *DescribeLoadBalancerAttributesOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DescribeLoadBalancerAttributesOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.DescribeLoadBalancerAttributesOutput_Attributes:
+			return deserializeLoadBalancerAttributes(d, schemas.DescribeLoadBalancerAttributesOutput_Attributes, &v.Attributes)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDescribeLoadBalancerAttributesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDescribeLoadBalancerAttributes{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeLoadBalancerAttributes, schemas.DescribeLoadBalancerAttributesInput, schemas.DescribeLoadBalancerAttributesOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDescribeLoadBalancerAttributes{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeLoadBalancerAttributes, schemas.DescribeLoadBalancerAttributesInput, schemas.DescribeLoadBalancerAttributesOutput), output: &DescribeLoadBalancerAttributesOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -85,19 +110,10 @@ func (c *Client) addOperationDescribeLoadBalancerAttributesMiddlewares(stack *mi
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDescribeLoadBalancerAttributesValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeLoadBalancerAttributes"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -4,9 +4,10 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Adds the specified instances to the specified load balancer.
@@ -63,6 +64,21 @@ type RegisterInstancesWithLoadBalancerInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *RegisterInstancesWithLoadBalancerInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.RegisterEndPointsInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *RegisterInstancesWithLoadBalancerInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Instances != nil {
+		serializeInstances(s, schemas.RegisterEndPointsInput_Instances, v.Instances)
+	}
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.RegisterEndPointsInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+}
+
 // Contains the output of RegisterInstancesWithLoadBalancer.
 type RegisterInstancesWithLoadBalancerOutput struct {
 
@@ -75,22 +91,34 @@ type RegisterInstancesWithLoadBalancerOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *RegisterInstancesWithLoadBalancerOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.RegisterEndPointsOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *RegisterInstancesWithLoadBalancerOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Instances != nil {
+		serializeInstances(s, schemas.RegisterEndPointsOutput_Instances, v.Instances)
+	}
+}
+func (v *RegisterInstancesWithLoadBalancerOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.RegisterEndPointsOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.RegisterEndPointsOutput_Instances:
+			return deserializeInstances(d, schemas.RegisterEndPointsOutput_Instances, &v.Instances)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationRegisterInstancesWithLoadBalancerMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpRegisterInstancesWithLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.RegisterInstancesWithLoadBalancer, schemas.RegisterEndPointsInput, schemas.RegisterEndPointsOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpRegisterInstancesWithLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.RegisterInstancesWithLoadBalancer, schemas.RegisterEndPointsInput, schemas.RegisterEndPointsOutput), output: &RegisterInstancesWithLoadBalancerOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -100,19 +128,10 @@ func (c *Client) addOperationRegisterInstancesWithLoadBalancerMiddlewares(stack 
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpRegisterInstancesWithLoadBalancerValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "RegisterInstancesWithLoadBalancer"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

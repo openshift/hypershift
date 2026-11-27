@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates an IAM entity to describe an identity provider (IdP) that supports [OpenID Connect (OIDC)].
@@ -32,8 +33,17 @@ import (
 //
 //   - A list of thumbprints of one or more server certificates that the IdP uses
 //
-// You get all of this information from the OIDC IdP you want to use to access
-// Amazon Web Services.
+//   - A trusted identity propagation context provider that defines how the
+//     subject is derived and how keys from the provider's token are mapped into
+//     trusted context keys. Specifying a context provider enables trusted identity
+//     propagation for the provider. For more information, see [ContextProvider].
+//
+//   - The ARN of an IAM Identity Center instance to associate with the OIDC
+//     provider. If you specify an IAM Identity Center instance, you must also specify
+//     a context provider.
+//
+// You get the URL, client IDs, and thumbprints from the OIDC IdP you want to use
+// to access Amazon Web Services.
 //
 // Amazon Web Services secures communication with OIDC identity providers (IdPs)
 // using our library of trusted root certificate authorities (CAs) to verify the
@@ -45,9 +55,21 @@ import (
 // operation creates. Therefore, it is best to limit access to the [CreateOpenIDConnectProvider]operation to
 // highly privileged users.
 //
+// To control who can configure trusted identity propagation on an OIDC provider,
+// use the [iam:EnableIdentityPropagation], [iam:EnableIdentityCenterAssociation], [iam:RequestIdentityProviderIssuers], [iam:ResourceIdentityProviderIssuers], [iam:RequestIdentityCenterInstanceArn], and [iam:ResourceIdentityCenterInstanceArn] condition keys in IAM policies. The Request keys contain
+// the values in the request. The Resource keys contain the values stored on the
+// provider.
+//
 // [OpenID Connect (OIDC)]: http://openid.net/connect/
+// [iam:ResourceIdentityCenterInstanceArn]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_ResourceIdentityCenterInstanceArn
+// [iam:RequestIdentityCenterInstanceArn]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_RequestIdentityCenterInstanceArn
 // [Creating a role for web identity or OpenID connect federation]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-idp_oidc.html
+// [iam:EnableIdentityPropagation]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_EnableIdentityPropagation
+// [iam:EnableIdentityCenterAssociation]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_EnableIdentityCenterAssociation
+// [iam:ResourceIdentityProviderIssuers]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_ResourceIdentityProviderIssuers
 // [CreateOpenIDConnectProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateOpenIDConnectProvider.html
+// [iam:RequestIdentityProviderIssuers]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_RequestIdentityProviderIssuers
+// [ContextProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_ContextProvider.html
 func (c *Client) CreateOpenIDConnectProvider(ctx context.Context, params *CreateOpenIDConnectProviderInput, optFns ...func(*Options)) (*CreateOpenIDConnectProviderOutput, error) {
 	if params == nil {
 		params = &CreateOpenIDConnectProviderInput{}
@@ -93,6 +115,24 @@ type CreateOpenIDConnectProviderInput struct {
 	// characters long.
 	ClientIDList []string
 
+	// The trusted identity propagation context provider configuration to associate
+	// with the OpenID Connect (OIDC) provider. The context provider defines how the
+	// subject is derived and how keys from the provider's token are mapped into
+	// trusted context keys. Specifying a context provider enables trusted identity
+	// propagation for the provider. For more information, see [ContextProvider].
+	//
+	// [ContextProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_ContextProvider.html
+	ContextProvider *types.ContextProvider
+
+	// The Amazon Resource Name (ARN) of the IAM Identity Center instance to associate
+	// with the OpenID Connect (OIDC) provider. If you specify this parameter, you must
+	// also specify ContextProvider .
+	//
+	// For the format, see [InstanceMetadata] in the IAM Identity Center API Reference.
+	//
+	// [InstanceMetadata]: https://docs.aws.amazon.com/singlesignon/latest/APIReference/API_InstanceMetadata.html
+	IdentityCenterInstanceArn *string
+
 	// A list of tags that you want to attach to the new IAM OpenID Connect (OIDC)
 	// provider. Each tag consists of a key name and an associated value. For more
 	// information about tagging, see [Tagging IAM resources]in the IAM User Guide.
@@ -135,6 +175,35 @@ type CreateOpenIDConnectProviderInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateOpenIDConnectProviderInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateOpenIDConnectProviderRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateOpenIDConnectProviderInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientIDList != nil {
+		serializeclientIDListType(s, schemas.CreateOpenIDConnectProviderRequest_ClientIDList, v.ClientIDList)
+	}
+	if v.ContextProvider != nil {
+		s.WriteStruct(schemas.CreateOpenIDConnectProviderRequest_ContextProvider)
+		v.ContextProvider.SerializeMembers(s)
+		s.CloseStruct()
+	}
+	if v.IdentityCenterInstanceArn != nil {
+		s.WriteString(schemas.CreateOpenIDConnectProviderRequest_IdentityCenterInstanceArn, *v.IdentityCenterInstanceArn)
+	}
+	if v.Tags != nil {
+		serializetagListType(s, schemas.CreateOpenIDConnectProviderRequest_Tags, v.Tags)
+	}
+	if v.ThumbprintList != nil {
+		serializethumbprintListType(s, schemas.CreateOpenIDConnectProviderRequest_ThumbprintList, v.ThumbprintList)
+	}
+	if v.Url != nil {
+		s.WriteString(schemas.CreateOpenIDConnectProviderRequest_Url, *v.Url)
+	}
+}
+
 // Contains the response to a successful [CreateOpenIDConnectProvider] request.
 //
 // [CreateOpenIDConnectProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateOpenIDConnectProvider.html
@@ -159,22 +228,40 @@ type CreateOpenIDConnectProviderOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateOpenIDConnectProviderOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateOpenIDConnectProviderResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateOpenIDConnectProviderOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.OpenIDConnectProviderArn != nil {
+		s.WriteString(schemas.CreateOpenIDConnectProviderResponse_OpenIDConnectProviderArn, *v.OpenIDConnectProviderArn)
+	}
+	if v.Tags != nil {
+		serializetagListType(s, schemas.CreateOpenIDConnectProviderResponse_Tags, v.Tags)
+	}
+}
+func (v *CreateOpenIDConnectProviderOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreateOpenIDConnectProviderResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreateOpenIDConnectProviderResponse_OpenIDConnectProviderArn:
+			v.OpenIDConnectProviderArn = new(string)
+			return d.ReadString(schemas.CreateOpenIDConnectProviderResponse_OpenIDConnectProviderArn, v.OpenIDConnectProviderArn)
+		case schemas.CreateOpenIDConnectProviderResponse_Tags:
+			return deserializetagListType(d, schemas.CreateOpenIDConnectProviderResponse_Tags, &v.Tags)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreateOpenIDConnectProviderMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpCreateOpenIDConnectProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateOpenIDConnectProvider, schemas.CreateOpenIDConnectProviderRequest, schemas.CreateOpenIDConnectProviderResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpCreateOpenIDConnectProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateOpenIDConnectProvider, schemas.CreateOpenIDConnectProviderRequest, schemas.CreateOpenIDConnectProviderResponse), output: &CreateOpenIDConnectProviderOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -184,19 +271,10 @@ func (c *Client) addOperationCreateOpenIDConnectProviderMiddlewares(stack *middl
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateOpenIDConnectProviderValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateOpenIDConnectProvider"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

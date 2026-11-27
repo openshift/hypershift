@@ -25,9 +25,9 @@ func NewIBMPIInstanceClient(ctx context.Context, sess *ibmpisession.IBMPISession
 // Get an Instance
 func (f *IBMPIInstanceClient) Get(id string) (*models.PVMInstance, error) {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id)
-	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get PVM Instance %s :%w", id, err))
 	}
@@ -40,9 +40,9 @@ func (f *IBMPIInstanceClient) Get(id string) (*models.PVMInstance, error) {
 // Get All Instances
 func (f *IBMPIInstanceClient) GetAll() (*models.PVMInstances, error) {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
-	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get all PVM Instances of Power Instance %s :%w", f.cloudInstanceID, err))
 	}
@@ -59,9 +59,9 @@ func (f *IBMPIInstanceClient) Create(body *models.PVMInstanceCreate) (*models.PV
 		return nil, fmt.Errorf("deployment target and deployment type parameters are not supported in on-prem location")
 	}
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
-	postok, postcreated, postAccepted, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	postok, postcreated, postAccepted, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Create PVM Instance :%w", err))
 	}
@@ -80,9 +80,9 @@ func (f *IBMPIInstanceClient) Create(body *models.PVMInstanceCreate) (*models.PV
 // Delete an Instance
 func (f *IBMPIInstanceClient) Delete(id string) error {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesDeleteParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
+		WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id)
-	_, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf("failed to Delete PVM Instance %s :%w", id, err)
 	}
@@ -92,9 +92,9 @@ func (f *IBMPIInstanceClient) Delete(id string) error {
 // Delete an Instance with body
 func (f *IBMPIInstanceClient) DeleteWithBody(id string, body *models.PVMInstanceDelete) error {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesDeleteParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
+		WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).WithBody(body)
-	_, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf("failed to Delete PVM Instance %s :%w", id, err)
 	}
@@ -108,9 +108,9 @@ func (f *IBMPIInstanceClient) Update(id string, body *models.PVMInstanceUpdate) 
 		return nil, fmt.Errorf("sap profile id parameter is not supported in on-prem location")
 	}
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesPutParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).WithBody(body)
-	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesPut(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesPutContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Update PVM Instance %s :%w", id, err))
 	}
@@ -123,10 +123,10 @@ func (f *IBMPIInstanceClient) Update(id string, body *models.PVMInstanceUpdate) 
 // Action Operation for an Instance
 func (f *IBMPIInstanceClient) Action(id string, body *models.PVMInstanceAction) error {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesActionPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithBody(body)
-	_, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesActionPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesActionPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf("failed to perform Action on PVM Instance %s :%w", id, err)
 	}
@@ -137,9 +137,9 @@ func (f *IBMPIInstanceClient) Action(id string, body *models.PVMInstanceAction) 
 // Generate the Console URL for an Instance
 func (f *IBMPIInstanceClient) PostConsoleURL(id string) (*models.PVMInstanceConsole, error) {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesConsolePostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id)
-	postok, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesConsolePost(params, f.session.AuthInfo(f.cloudInstanceID))
+	postok, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesConsolePostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Generate the Console URL PVM Instance %s :%w", id, err))
 	}
@@ -155,9 +155,9 @@ func (f *IBMPIInstanceClient) GetConsoleLanguages(id string) (*models.ConsoleLan
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesConsoleGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id)
-	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesConsoleGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesConsoleGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get Console Languages for PVM Instance %s :%w", id, err))
 	}
@@ -173,10 +173,10 @@ func (f *IBMPIInstanceClient) UpdateConsoleLanguage(id string, body *models.Cons
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesConsolePutParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
+		WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithBody(body)
-	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesConsolePut(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesConsolePutContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Update Console Language for PVM Instance %s :%w", id, err))
 	}
@@ -193,10 +193,10 @@ func (f *IBMPIInstanceClient) CaptureInstanceToImageCatalog(id string, body *mod
 		return fmt.Errorf("checksum parameter is not supported in off-prem location")
 	}
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesCapturePostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithBody(body)
-	_, _, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesCapturePost(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, _, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesCapturePostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf("failed to Capture the PVM Instance %s: %w", id, err)
 	}
@@ -207,10 +207,10 @@ func (f *IBMPIInstanceClient) CaptureInstanceToImageCatalog(id string, body *mod
 // Capture an Instance (V2)
 func (f *IBMPIInstanceClient) CaptureInstanceToImageCatalogV2(id string, body *models.PVMInstanceCapture) (*models.JobReference, error) {
 	params := p_cloud_p_vm_instances.NewPcloudV2PvminstancesCapturePostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithBody(body)
-	resp, err := f.session.Power.PCloudpVMInstances.PcloudV2PvminstancesCapturePost(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudV2PvminstancesCapturePostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Capture the PVM Instance %s: %w", id, err))
 	}
@@ -223,10 +223,10 @@ func (f *IBMPIInstanceClient) CaptureInstanceToImageCatalogV2(id string, body *m
 // Create a snapshot of an Instance
 func (f *IBMPIInstanceClient) CreatePvmSnapShot(id string, body *models.SnapshotCreate) (*models.SnapshotCreateResponse, error) {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesSnapshotsPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithBody(body)
-	snapshotpostaccepted, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesSnapshotsPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	snapshotpostaccepted, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesSnapshotsPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Create the snapshot for the pvminstance %s: %w", id, err))
 	}
@@ -236,28 +236,12 @@ func (f *IBMPIInstanceClient) CreatePvmSnapShot(id string, body *models.Snapshot
 	return snapshotpostaccepted.Payload, nil
 }
 
-// Create a Clone of an Instance
-func (f *IBMPIInstanceClient) CreateClone(id string, body *models.PVMInstanceClone) (*models.PVMInstance, error) {
-	params := p_cloud_p_vm_instances.NewPcloudPvminstancesClonePostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
-		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
-		WithBody(body)
-	clonePost, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesClonePost(params, f.session.AuthInfo(f.cloudInstanceID))
-	if err != nil {
-		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to create the clone of the pvm instance %s: %w", id, err))
-	}
-	if clonePost == nil || clonePost.Payload == nil {
-		return nil, fmt.Errorf("failed to create the clone of the pvm instance %s", id)
-	}
-	return clonePost.Payload, nil
-}
-
 // Get an Instance's Snapshots
 func (f *IBMPIInstanceClient) GetSnapShotVM(id string) (*models.Snapshots, error) {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesSnapshotsGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id)
-	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesSnapshotsGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesSnapshotsGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get the snapshot for the pvminstance %s: %w", id, err))
 	}
@@ -271,11 +255,11 @@ func (f *IBMPIInstanceClient) GetSnapShotVM(id string) (*models.Snapshots, error
 // Restore a Snapshot of an Instance
 func (f *IBMPIInstanceClient) RestoreSnapShotVM(id, snapshotid, restoreAction string, body *models.SnapshotRestore) (*models.Snapshot, error) {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesSnapshotsRestorePostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithSnapshotID(snapshotid).WithRestoreFailAction(&restoreAction).
 		WithBody(body)
-	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesSnapshotsRestorePost(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesSnapshotsRestorePostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to restrore the snapshot for the pvminstance %s: %w", id, err))
 	}
@@ -288,10 +272,10 @@ func (f *IBMPIInstanceClient) RestoreSnapShotVM(id, snapshotid, restoreAction st
 // Add a Network to an Instance
 func (f *IBMPIInstanceClient) AddNetwork(id string, body *models.PVMInstanceAddNetwork) (*models.PVMInstanceNetwork, error) {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesNetworksPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithBody(body)
-	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesNetworksPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesNetworksPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to attach the network to the pvminstanceid %s: %w", id, err))
 	}
@@ -304,12 +288,40 @@ func (f *IBMPIInstanceClient) AddNetwork(id string, body *models.PVMInstanceAddN
 // Delete a Network from an Instance
 func (f *IBMPIInstanceClient) DeleteNetwork(id, networkID string, body *models.PVMInstanceRemoveNetwork) error {
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesNetworksDeleteParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).WithNetworkID(networkID).
 		WithBody(body)
-	_, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesNetworksDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesNetworksDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf("failed to delete the network to the pvminstanceid %s: %w", id, err)
+	}
+	return nil
+}
+
+// Shelve an Instance
+func (f *IBMPIInstanceClient) Shelve(id string) error {
+	params := p_cloud_p_vm_instances.NewPcloudPvminstancesShelvePostParams().
+		WithTimeout(helpers.PICreateTimeOut).
+		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id)
+	_, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesShelvePostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
+	if err != nil {
+		return fmt.Errorf("failed to Shelve PVM Instance %s :%w", id, err)
+	}
+	return nil
+}
+
+// Unshelve an Instance
+func (f *IBMPIInstanceClient) Unshelve(id string, body *models.PVMInstanceUnshelve) error {
+	params := p_cloud_p_vm_instances.NewPcloudPvminstancesUnshelvePostParams().
+		WithTimeout(helpers.PICreateTimeOut).
+		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
+		WithBody(body)
+	resp, err := f.session.Power.PCloudpVMInstances.PcloudPvminstancesUnshelvePostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
+	if err != nil {
+		return ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Unshelve PVM Instance %s :%w", id, err))
+	}
+	if resp == nil || resp.Payload == nil {
+		return fmt.Errorf("failed to Unshelve PVM Instance %s", id)
 	}
 	return nil
 }

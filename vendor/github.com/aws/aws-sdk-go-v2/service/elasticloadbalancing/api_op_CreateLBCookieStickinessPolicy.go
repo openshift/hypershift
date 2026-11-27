@@ -4,8 +4,9 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Generates a stickiness policy with sticky session lifetimes controlled by the
@@ -64,6 +65,24 @@ type CreateLBCookieStickinessPolicyInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateLBCookieStickinessPolicyInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateLBCookieStickinessPolicyInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateLBCookieStickinessPolicyInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.CookieExpirationPeriod != nil {
+		s.WriteInt64(schemas.CreateLBCookieStickinessPolicyInput_CookieExpirationPeriod, *v.CookieExpirationPeriod)
+	}
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.CreateLBCookieStickinessPolicyInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+	if v.PolicyName != nil {
+		s.WriteString(schemas.CreateLBCookieStickinessPolicyInput_PolicyName, *v.PolicyName)
+	}
+}
+
 // Contains the output for CreateLBCookieStickinessPolicy.
 type CreateLBCookieStickinessPolicyOutput struct {
 	// Metadata pertaining to the operation's result.
@@ -72,22 +91,29 @@ type CreateLBCookieStickinessPolicyOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateLBCookieStickinessPolicyOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateLBCookieStickinessPolicyOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateLBCookieStickinessPolicyOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *CreateLBCookieStickinessPolicyOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreateLBCookieStickinessPolicyOutput, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreateLBCookieStickinessPolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpCreateLBCookieStickinessPolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateLBCookieStickinessPolicy, schemas.CreateLBCookieStickinessPolicyInput, schemas.CreateLBCookieStickinessPolicyOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpCreateLBCookieStickinessPolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateLBCookieStickinessPolicy, schemas.CreateLBCookieStickinessPolicyInput, schemas.CreateLBCookieStickinessPolicyOutput), output: &CreateLBCookieStickinessPolicyOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -97,19 +123,10 @@ func (c *Client) addOperationCreateLBCookieStickinessPolicyMiddlewares(stack *mi
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateLBCookieStickinessPolicyValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateLBCookieStickinessPolicy"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

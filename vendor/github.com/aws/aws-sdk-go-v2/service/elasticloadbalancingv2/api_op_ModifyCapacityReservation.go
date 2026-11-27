@@ -4,9 +4,10 @@ package elasticloadbalancingv2
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"time"
 )
 
@@ -45,6 +46,26 @@ type ModifyCapacityReservationInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ModifyCapacityReservationInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ModifyCapacityReservationInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ModifyCapacityReservationInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoadBalancerArn != nil {
+		s.WriteString(schemas.ModifyCapacityReservationInput_LoadBalancerArn, *v.LoadBalancerArn)
+	}
+	if v.MinimumLoadBalancerCapacity != nil {
+		s.WriteStruct(schemas.ModifyCapacityReservationInput_MinimumLoadBalancerCapacity)
+		v.MinimumLoadBalancerCapacity.SerializeMembers(s)
+		s.CloseStruct()
+	}
+	if v.ResetCapacityReservation != nil {
+		s.WriteBool(schemas.ModifyCapacityReservationInput_ResetCapacityReservation, *v.ResetCapacityReservation)
+	}
+}
+
 type ModifyCapacityReservationOutput struct {
 
 	// The state of the capacity reservation.
@@ -65,22 +86,54 @@ type ModifyCapacityReservationOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ModifyCapacityReservationOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ModifyCapacityReservationOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ModifyCapacityReservationOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.CapacityReservationState != nil {
+		serializeZonalCapacityReservationStates(s, schemas.ModifyCapacityReservationOutput_CapacityReservationState, v.CapacityReservationState)
+	}
+	if v.DecreaseRequestsRemaining != nil {
+		s.WriteInt32(schemas.ModifyCapacityReservationOutput_DecreaseRequestsRemaining, *v.DecreaseRequestsRemaining)
+	}
+	if v.LastModifiedTime != nil {
+		s.WriteTime(schemas.ModifyCapacityReservationOutput_LastModifiedTime, *v.LastModifiedTime)
+	}
+	if v.MinimumLoadBalancerCapacity != nil {
+		s.WriteStruct(schemas.ModifyCapacityReservationOutput_MinimumLoadBalancerCapacity)
+		v.MinimumLoadBalancerCapacity.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *ModifyCapacityReservationOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ModifyCapacityReservationOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ModifyCapacityReservationOutput_CapacityReservationState:
+			return deserializeZonalCapacityReservationStates(d, schemas.ModifyCapacityReservationOutput_CapacityReservationState, &v.CapacityReservationState)
+		case schemas.ModifyCapacityReservationOutput_DecreaseRequestsRemaining:
+			v.DecreaseRequestsRemaining = new(int32)
+			return d.ReadInt32(schemas.ModifyCapacityReservationOutput_DecreaseRequestsRemaining, v.DecreaseRequestsRemaining)
+		case schemas.ModifyCapacityReservationOutput_LastModifiedTime:
+			v.LastModifiedTime = new(time.Time)
+			return d.ReadTime(schemas.ModifyCapacityReservationOutput_LastModifiedTime, v.LastModifiedTime)
+		case schemas.ModifyCapacityReservationOutput_MinimumLoadBalancerCapacity:
+			v.MinimumLoadBalancerCapacity = &types.MinimumLoadBalancerCapacity{}
+			return v.MinimumLoadBalancerCapacity.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationModifyCapacityReservationMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpModifyCapacityReservation{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ModifyCapacityReservation, schemas.ModifyCapacityReservationInput, schemas.ModifyCapacityReservationOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpModifyCapacityReservation{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ModifyCapacityReservation, schemas.ModifyCapacityReservationInput, schemas.ModifyCapacityReservationOutput), output: &ModifyCapacityReservationOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -90,19 +143,10 @@ func (c *Client) addOperationModifyCapacityReservationMiddlewares(stack *middlew
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpModifyCapacityReservationValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ModifyCapacityReservation"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

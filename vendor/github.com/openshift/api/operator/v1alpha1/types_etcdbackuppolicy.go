@@ -21,6 +21,7 @@ import (
 // +kubebuilder:printcolumn:name=Status,JSONPath=.status.conditions[?(@.type=="Scheduled")].reason,type=string,description="Status of the EtcdBackupPolicy"
 // +kubebuilder:printcolumn:name=Age,JSONPath=.metadata.creationTimestamp,type=date,description="Age of the EtcdBackupPolicy"
 // +kubebuilder:validation:XValidation:rule="self.metadata.name.size() <= 52",message="name cannot exceed 52 characters"
+// +kubebuilder:metadata:annotations="include.release.openshift.io/self-managed-high-availability=true"
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/2952
 // +openshift:file-pattern=cvoRunLevel=0000_10,operatorName=etcd,operatorOrdering=01
 // +openshift:enable:FeatureGate=AutomatedEtcdBackup

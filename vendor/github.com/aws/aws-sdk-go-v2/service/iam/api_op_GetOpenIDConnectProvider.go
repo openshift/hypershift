@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"time"
 )
 
@@ -45,6 +46,18 @@ type GetOpenIDConnectProviderInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetOpenIDConnectProviderInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetOpenIDConnectProviderRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetOpenIDConnectProviderInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.OpenIDConnectProviderArn != nil {
+		s.WriteString(schemas.GetOpenIDConnectProviderRequest_OpenIDConnectProviderArn, *v.OpenIDConnectProviderArn)
+	}
+}
+
 // Contains the response to a successful [GetOpenIDConnectProvider] request.
 //
 // [GetOpenIDConnectProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetOpenIDConnectProvider.html
@@ -56,9 +69,40 @@ type GetOpenIDConnectProviderOutput struct {
 	// [CreateOpenIDConnectProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateOpenIDConnectProvider.html
 	ClientIDList []string
 
+	// The trusted identity propagation context provider configuration associated with
+	// the IAM OIDC provider resource object. For more information, see [ContextProvider].
+	//
+	// This element is returned only when a trusted identity propagation context
+	// provider is configured for the OIDC provider.
+	//
+	// [ContextProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_ContextProvider.html
+	ContextProvider *types.ContextProvider
+
 	// The date and time when the IAM OIDC provider resource object was created in the
 	// Amazon Web Services account.
 	CreateDate *time.Time
+
+	// The Amazon Resource Name (ARN) of the IAM Identity Center instance associated
+	// with the IAM OIDC provider resource object.
+	//
+	// For the format, see [InstanceMetadata] in the IAM Identity Center API Reference.
+	//
+	// This element is returned only when an IAM Identity Center instance is
+	// associated with the OIDC provider.
+	//
+	// [InstanceMetadata]: https://docs.aws.amazon.com/singlesignon/latest/APIReference/API_InstanceMetadata.html
+	IdentityCenterInstanceArn *string
+
+	// The Amazon Resource Name (ARN) of the identity store that is resolved from the
+	// associated IAM Identity Center instance.
+	//
+	// For the format, see [InstanceMetadata] in the IAM Identity Center API Reference.
+	//
+	// This element is returned only when an IAM Identity Center instance is
+	// associated with the OIDC provider.
+	//
+	// [InstanceMetadata]: https://docs.aws.amazon.com/singlesignon/latest/APIReference/API_InstanceMetadata.html
+	IdentityStoreArn *string
 
 	// A list of tags that are attached to the specified IAM OIDC provider. The
 	// returned list of tags is sorted by tag key. For more information about tagging,
@@ -85,22 +129,76 @@ type GetOpenIDConnectProviderOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetOpenIDConnectProviderOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetOpenIDConnectProviderResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetOpenIDConnectProviderOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientIDList != nil {
+		serializeclientIDListType(s, schemas.GetOpenIDConnectProviderResponse_ClientIDList, v.ClientIDList)
+	}
+	if v.ContextProvider != nil {
+		s.WriteStruct(schemas.GetOpenIDConnectProviderResponse_ContextProvider)
+		v.ContextProvider.SerializeMembers(s)
+		s.CloseStruct()
+	}
+	if v.CreateDate != nil {
+		s.WriteTime(schemas.GetOpenIDConnectProviderResponse_CreateDate, *v.CreateDate)
+	}
+	if v.IdentityCenterInstanceArn != nil {
+		s.WriteString(schemas.GetOpenIDConnectProviderResponse_IdentityCenterInstanceArn, *v.IdentityCenterInstanceArn)
+	}
+	if v.IdentityStoreArn != nil {
+		s.WriteString(schemas.GetOpenIDConnectProviderResponse_IdentityStoreArn, *v.IdentityStoreArn)
+	}
+	if v.Tags != nil {
+		serializetagListType(s, schemas.GetOpenIDConnectProviderResponse_Tags, v.Tags)
+	}
+	if v.ThumbprintList != nil {
+		serializethumbprintListType(s, schemas.GetOpenIDConnectProviderResponse_ThumbprintList, v.ThumbprintList)
+	}
+	if v.Url != nil {
+		s.WriteString(schemas.GetOpenIDConnectProviderResponse_Url, *v.Url)
+	}
+}
+func (v *GetOpenIDConnectProviderOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetOpenIDConnectProviderResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetOpenIDConnectProviderResponse_ClientIDList:
+			return deserializeclientIDListType(d, schemas.GetOpenIDConnectProviderResponse_ClientIDList, &v.ClientIDList)
+		case schemas.GetOpenIDConnectProviderResponse_ContextProvider:
+			v.ContextProvider = &types.ContextProvider{}
+			return v.ContextProvider.Deserialize(d)
+		case schemas.GetOpenIDConnectProviderResponse_CreateDate:
+			v.CreateDate = new(time.Time)
+			return d.ReadTime(schemas.GetOpenIDConnectProviderResponse_CreateDate, v.CreateDate)
+		case schemas.GetOpenIDConnectProviderResponse_IdentityCenterInstanceArn:
+			v.IdentityCenterInstanceArn = new(string)
+			return d.ReadString(schemas.GetOpenIDConnectProviderResponse_IdentityCenterInstanceArn, v.IdentityCenterInstanceArn)
+		case schemas.GetOpenIDConnectProviderResponse_IdentityStoreArn:
+			v.IdentityStoreArn = new(string)
+			return d.ReadString(schemas.GetOpenIDConnectProviderResponse_IdentityStoreArn, v.IdentityStoreArn)
+		case schemas.GetOpenIDConnectProviderResponse_Tags:
+			return deserializetagListType(d, schemas.GetOpenIDConnectProviderResponse_Tags, &v.Tags)
+		case schemas.GetOpenIDConnectProviderResponse_ThumbprintList:
+			return deserializethumbprintListType(d, schemas.GetOpenIDConnectProviderResponse_ThumbprintList, &v.ThumbprintList)
+		case schemas.GetOpenIDConnectProviderResponse_Url:
+			v.Url = new(string)
+			return d.ReadString(schemas.GetOpenIDConnectProviderResponse_Url, v.Url)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetOpenIDConnectProviderMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetOpenIDConnectProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetOpenIDConnectProvider, schemas.GetOpenIDConnectProviderRequest, schemas.GetOpenIDConnectProviderResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetOpenIDConnectProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetOpenIDConnectProvider, schemas.GetOpenIDConnectProviderRequest, schemas.GetOpenIDConnectProviderResponse), output: &GetOpenIDConnectProviderOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -110,19 +208,10 @@ func (c *Client) addOperationGetOpenIDConnectProviderMiddlewares(stack *middlewa
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetOpenIDConnectProviderValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetOpenIDConnectProvider"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -4,14 +4,41 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Updates the metadata document, SAML encryption settings, and private keys for
 // an existing SAML provider. To rotate private keys, add your new private key and
 // then remove the old key in a separate request.
+//
+// You can also use this operation to set, change, or remove the trusted identity
+// propagation context provider, and to associate or disassociate an IAM Identity
+// Center instance with the provider. To remove a configuration rather than replace
+// it, use the RemoveContextProvider and RemoveIdentityCenterInstance parameters.
+// For each configuration, provide either the new value or the corresponding Remove
+// flag in a single request, but not both.
+//
+// A single request can change either the context provider or the provider
+// metadata, but not both. Provider metadata includes the SAML metadata document,
+// assertion encryption mode, private keys, and IAM Identity Center association. To
+// change both, make separate UpdateSAMLProvider requests. To remove the context
+// provider, first remove the IAM Identity Center association in a separate
+// request.
+//
+// To control who can configure trusted identity propagation on a SAML provider,
+// use the [iam:EnableIdentityPropagation], [iam:EnableIdentityCenterAssociation], [iam:RequestIdentityProviderIssuers], [iam:ResourceIdentityProviderIssuers], [iam:RequestIdentityCenterInstanceArn], and [iam:ResourceIdentityCenterInstanceArn] condition keys in IAM policies. The Request keys contain
+// the values in the request. The Resource keys contain the values stored on the
+// provider.
+//
+// [iam:ResourceIdentityCenterInstanceArn]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_ResourceIdentityCenterInstanceArn
+// [iam:RequestIdentityCenterInstanceArn]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_RequestIdentityCenterInstanceArn
+// [iam:EnableIdentityPropagation]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_EnableIdentityPropagation
+// [iam:EnableIdentityCenterAssociation]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_EnableIdentityCenterAssociation
+// [iam:ResourceIdentityProviderIssuers]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_ResourceIdentityProviderIssuers
+// [iam:RequestIdentityProviderIssuers]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html#ck_RequestIdentityProviderIssuers
 func (c *Client) UpdateSAMLProvider(ctx context.Context, params *UpdateSAMLProviderInput, optFns ...func(*Options)) (*UpdateSAMLProviderOutput, error) {
 	if params == nil {
 		params = &UpdateSAMLProviderInput{}
@@ -47,6 +74,31 @@ type UpdateSAMLProviderInput struct {
 	// Specifies the encryption setting for the SAML provider.
 	AssertionEncryptionMode types.AssertionEncryptionModeType
 
+	// The trusted identity propagation context provider configuration to associate
+	// with the SAML provider. This replaces the existing context provider
+	// configuration. For more information, see [ContextProvider].
+	//
+	// [ContextProvider]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_ContextProvider.html
+	ContextProvider *types.ContextProvider
+
+	// The Amazon Resource Name (ARN) of the IAM Identity Center instance to associate
+	// with the SAML provider.
+	//
+	// For the format, see [InstanceMetadata] in the IAM Identity Center API Reference.
+	//
+	// [InstanceMetadata]: https://docs.aws.amazon.com/singlesignon/latest/APIReference/API_InstanceMetadata.html
+	IdentityCenterInstanceArn *string
+
+	// Specifies whether to remove the existing trusted identity propagation context
+	// provider configuration from the SAML provider. When set to true , the context
+	// provider is removed. This parameter is mutually exclusive with ContextProvider .
+	RemoveContextProvider bool
+
+	// Specifies whether to disassociate the IAM Identity Center instance from the
+	// SAML provider. When set to true , the instance is disassociated. This parameter
+	// is mutually exclusive with IdentityCenterInstanceArn .
+	RemoveIdentityCenterInstance bool
+
 	// The Key ID of the private key to remove.
 	RemovePrivateKey *string
 
@@ -58,6 +110,44 @@ type UpdateSAMLProviderInput struct {
 	SAMLMetadataDocument *string
 
 	noSmithyDocumentSerde
+}
+
+func (v *UpdateSAMLProviderInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.UpdateSAMLProviderRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateSAMLProviderInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AddPrivateKey != nil {
+		s.WriteString(schemas.UpdateSAMLProviderRequest_AddPrivateKey, *v.AddPrivateKey)
+	}
+	if v.AssertionEncryptionMode != "" {
+		s.WriteString(schemas.UpdateSAMLProviderRequest_AssertionEncryptionMode, string(v.AssertionEncryptionMode))
+	}
+	if v.ContextProvider != nil {
+		s.WriteStruct(schemas.UpdateSAMLProviderRequest_ContextProvider)
+		v.ContextProvider.SerializeMembers(s)
+		s.CloseStruct()
+	}
+	if v.IdentityCenterInstanceArn != nil {
+		s.WriteString(schemas.UpdateSAMLProviderRequest_IdentityCenterInstanceArn, *v.IdentityCenterInstanceArn)
+	}
+	if v.RemoveContextProvider != false {
+		s.WriteBool(schemas.UpdateSAMLProviderRequest_RemoveContextProvider, v.RemoveContextProvider)
+	}
+	if v.RemoveIdentityCenterInstance != false {
+		s.WriteBool(schemas.UpdateSAMLProviderRequest_RemoveIdentityCenterInstance, v.RemoveIdentityCenterInstance)
+	}
+	if v.RemovePrivateKey != nil {
+		s.WriteString(schemas.UpdateSAMLProviderRequest_RemovePrivateKey, *v.RemovePrivateKey)
+	}
+	if v.SAMLMetadataDocument != nil {
+		s.WriteString(schemas.UpdateSAMLProviderRequest_SAMLMetadataDocument, *v.SAMLMetadataDocument)
+	}
+	if v.SAMLProviderArn != nil {
+		s.WriteString(schemas.UpdateSAMLProviderRequest_SAMLProviderArn, *v.SAMLProviderArn)
+	}
 }
 
 // Contains the response to a successful [UpdateSAMLProvider] request.
@@ -74,22 +164,35 @@ type UpdateSAMLProviderOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *UpdateSAMLProviderOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.UpdateSAMLProviderResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateSAMLProviderOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.SAMLProviderArn != nil {
+		s.WriteString(schemas.UpdateSAMLProviderResponse_SAMLProviderArn, *v.SAMLProviderArn)
+	}
+}
+func (v *UpdateSAMLProviderOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.UpdateSAMLProviderResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.UpdateSAMLProviderResponse_SAMLProviderArn:
+			v.SAMLProviderArn = new(string)
+			return d.ReadString(schemas.UpdateSAMLProviderResponse_SAMLProviderArn, v.SAMLProviderArn)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationUpdateSAMLProviderMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpUpdateSAMLProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateSAMLProvider, schemas.UpdateSAMLProviderRequest, schemas.UpdateSAMLProviderResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpUpdateSAMLProvider{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateSAMLProvider, schemas.UpdateSAMLProviderRequest, schemas.UpdateSAMLProviderResponse), output: &UpdateSAMLProviderOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -99,19 +202,10 @@ func (c *Client) addOperationUpdateSAMLProviderMiddlewares(stack *middleware.Sta
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpUpdateSAMLProviderValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "UpdateSAMLProvider"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -5,9 +5,10 @@ package iam
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Lists the tags that are attached to the specified Security Assertion Markup
@@ -67,6 +68,24 @@ type ListSAMLProviderTagsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListSAMLProviderTagsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListSAMLProviderTagsRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListSAMLProviderTagsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Marker != nil {
+		s.WriteString(schemas.ListSAMLProviderTagsRequest_Marker, *v.Marker)
+	}
+	if v.MaxItems != nil {
+		s.WriteInt32(schemas.ListSAMLProviderTagsRequest_MaxItems, *v.MaxItems)
+	}
+	if v.SAMLProviderArn != nil {
+		s.WriteString(schemas.ListSAMLProviderTagsRequest_SAMLProviderArn, *v.SAMLProviderArn)
+	}
+}
+
 type ListSAMLProviderTagsOutput struct {
 
 	// The list of tags that are currently attached to the Security Assertion Markup
@@ -95,22 +114,45 @@ type ListSAMLProviderTagsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListSAMLProviderTagsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListSAMLProviderTagsResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListSAMLProviderTagsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.IsTruncated != false {
+		s.WriteBool(schemas.ListSAMLProviderTagsResponse_IsTruncated, v.IsTruncated)
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.ListSAMLProviderTagsResponse_Marker, *v.Marker)
+	}
+	if v.Tags != nil {
+		serializetagListType(s, schemas.ListSAMLProviderTagsResponse_Tags, v.Tags)
+	}
+}
+func (v *ListSAMLProviderTagsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ListSAMLProviderTagsResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ListSAMLProviderTagsResponse_IsTruncated:
+			return d.ReadBool(schemas.ListSAMLProviderTagsResponse_IsTruncated, &v.IsTruncated)
+		case schemas.ListSAMLProviderTagsResponse_Marker:
+			v.Marker = new(string)
+			return d.ReadString(schemas.ListSAMLProviderTagsResponse_Marker, v.Marker)
+		case schemas.ListSAMLProviderTagsResponse_Tags:
+			return deserializetagListType(d, schemas.ListSAMLProviderTagsResponse_Tags, &v.Tags)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationListSAMLProviderTagsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpListSAMLProviderTags{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListSAMLProviderTags, schemas.ListSAMLProviderTagsRequest, schemas.ListSAMLProviderTagsResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListSAMLProviderTags{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListSAMLProviderTags, schemas.ListSAMLProviderTagsRequest, schemas.ListSAMLProviderTagsResponse), output: &ListSAMLProviderTagsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -120,19 +162,10 @@ func (c *Client) addOperationListSAMLProviderTagsMiddlewares(stack *middleware.S
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpListSAMLProviderTagsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ListSAMLProviderTags"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

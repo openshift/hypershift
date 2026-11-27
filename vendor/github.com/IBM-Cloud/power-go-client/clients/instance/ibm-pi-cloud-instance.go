@@ -26,9 +26,9 @@ func NewIBMPICloudInstanceClient(ctx context.Context, sess *ibmpisession.IBMPISe
 // Get a Cloud Instance
 func (f *IBMPICloudInstanceClient) Get(id string) (*models.CloudInstance, error) {
 	params := p_cloud_instances.NewPcloudCloudinstancesGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(id)
-	resp, err := f.session.Power.PCloudInstances.PcloudCloudinstancesGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudInstances.PcloudCloudinstancesGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetCloudInstanceOperationFailed, id, err))
 	}
@@ -41,9 +41,9 @@ func (f *IBMPICloudInstanceClient) Get(id string) (*models.CloudInstance, error)
 // Update a Cloud Instance
 func (f *IBMPICloudInstanceClient) Update(id string, body *models.CloudInstanceUpdate) (*models.CloudInstance, error) {
 	params := p_cloud_instances.NewPcloudCloudinstancesPutParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
+		WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(id).WithBody(body)
-	resp, err := f.session.Power.PCloudInstances.PcloudCloudinstancesPut(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudInstances.PcloudCloudinstancesPutContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.UpdateCloudInstanceOperationFailed, id, err))
 	}
@@ -56,9 +56,9 @@ func (f *IBMPICloudInstanceClient) Update(id string, body *models.CloudInstanceU
 // Delete a Cloud Instance
 func (f *IBMPICloudInstanceClient) Delete(id string) error {
 	params := p_cloud_instances.NewPcloudCloudinstancesDeleteParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
+		WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(id)
-	_, err := f.session.Power.PCloudInstances.PcloudCloudinstancesDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudInstances.PcloudCloudinstancesDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf(errors.DeleteCloudInstanceOperationFailed, id, err)
 	}

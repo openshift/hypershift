@@ -6,10 +6,10 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Adds, edits, or deletes tags for a health check or a hosted zone.
+// Adds, edits, or deletes tags for a health check, a health check source, or a
+// hosted zone.
 //
 // For information about using tags for cost allocation, see [Using Cost Allocation Tags] in the Billing and
 // Cost Management User Guide.
@@ -43,16 +43,19 @@ type ChangeTagsForResourceInput struct {
 	//
 	//   - The resource type for health checks is healthcheck .
 	//
+	//   - The resource type for health check sources is healthchecksource .
+	//
 	//   - The resource type for hosted zones is hostedzone .
 	//
 	// This member is required.
 	ResourceType types.TagResourceType
 
 	// A complex type that contains a list of the tags that you want to add to the
-	// specified health check or hosted zone and/or the tags that you want to edit
-	// Value for.
+	// specified health check, health check source, or hosted zone and/or the tags that
+	// you want to edit Value for.
 	//
-	// You can add a maximum of 10 tags to a health check or a hosted zone.
+	// You can add a maximum of 10 tags to a health check, a health check source, or a
+	// hosted zone.
 	AddTags []types.Tag
 
 	// A complex type that contains a list of the tags that you want to delete from
@@ -80,12 +83,6 @@ func (c *Client) addOperationChangeTagsForResourceMiddlewares(stack *middleware.
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -95,19 +92,10 @@ func (c *Client) addOperationChangeTagsForResourceMiddlewares(stack *middleware.
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpChangeTagsForResourceValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ChangeTagsForResource"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
