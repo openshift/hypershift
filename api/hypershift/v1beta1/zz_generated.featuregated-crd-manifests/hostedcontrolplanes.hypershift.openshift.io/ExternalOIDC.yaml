@@ -8274,6 +8274,29 @@ spec:
                         otherwise
                       rule: 'self.provider == ''AESCBC'' ? has(self.aescbc) : !has(self.aescbc)'
                 type: object
+              sharedIngressWorkerAPIEndpoint:
+                description: |-
+                  sharedIngressWorkerAPIEndpoint is the observed address workers use to reach
+                  the API through shared ingress. It is absent when unavailable or not applicable.
+                  It is set by the HyperShift operator from the shared ingress router Service.
+                properties:
+                  host:
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 255
+                    type: string
+                  port:
+                    description: port is the port on which the API server is serving.
+                    format: int32
+                    type: integer
+                required:
+                - host
+                - port
+                type: object
+                x-kubernetes-validations:
+                - message: host must not be empty
+                  rule: self.host != ''
+                - message: port must be between 1 and 65535
+                  rule: self.port >= 1 && self.port <= 65535
               version:
                 description: |-
                   version is the semantic version of the release applied by

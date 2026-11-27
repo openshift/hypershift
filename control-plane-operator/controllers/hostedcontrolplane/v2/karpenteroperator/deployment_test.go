@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -124,6 +125,7 @@ func TestAdaptDeployment(t *testing.T) {
 				g.Expect(container).ToNot(BeNil(), "container %s should exist", ComponentName)
 				g.Expect(container.Image).To(Equal("quay.io/hypershift/operator:latest"))
 				g.Expect(podspec.FindContainer("karpenter-adapter", deploymentObj.Spec.Template.Spec.Containers)).To(BeNil())
+				g.Expect(container.Args).NotTo(ContainElement("--leader-elect=true"))
 
 				// Verify AWS environment variables
 				g.Expect(container.Env).To(ContainElements(
@@ -502,7 +504,16 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 					corev1.EnvVar{Name: TokenMinterImageEnvVar, Value: "quay.io/openshift/token-minter:latest"},
 				))
 
-				g.Expect(container.Args).To(ContainElement(ContainSubstring("--target-kubeconfig=")))
+				g.Expect(container.Args).To(ContainElements(ContainSubstring("--target-kubeconfig="), "--leader-elect=true"))
+
+				roleObj, _, err := assets.LoadManifest(ComponentName, "role.yaml")
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(roleObj.(*rbacv1.Role).Rules).To(ContainElement(rbacv1.PolicyRule{
+					APIGroups:     []string{"coordination.k8s.io"},
+					Resources:     []string{"leases"},
+					Verbs:         []string{"patch", "update"},
+					ResourceNames: []string{karpenterutil.KarpenterLeaderElectionID, karpenterutil.KarpenterOperatorLeaderElectionID},
+				}))
 
 				g.Expect(container.VolumeMounts).To(ContainElement(
 					corev1.VolumeMount{Name: "provider-creds", MountPath: "/etc/provider"},
@@ -532,6 +543,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 
 				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
 				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Args).To(ContainElement("--leader-elect=true"))
 
 				g.Expect(container.Env).To(ContainElements(
 					corev1.EnvVar{Name: "CLUSTER_NAME", Value: "test-azure-456"},

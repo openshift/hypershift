@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -95,6 +96,33 @@ func TestReconcileRouterDeployment(t *testing.T) {
 					t.Errorf("Expected tolerations to be %v, got %v", expectedTolerations, tt.args.deployment.Spec.Template.Spec.Tolerations)
 				}
 			}
+		})
+	}
+}
+
+func TestWorkerAPIEndpoint(t *testing.T) {
+	for name, tc := range map[string]struct {
+		ingress  []corev1.LoadBalancerIngress
+		expected *hyperv1.APIEndpoint
+	}{
+		"When the first ingress has an IP and a hostname, it should use the IP": {
+			ingress:  []corev1.LoadBalancerIngress{{IP: "10.0.0.1", Hostname: "router.example.com"}},
+			expected: &hyperv1.APIEndpoint{Host: "10.0.0.1", Port: KASSVCLBPort},
+		},
+		"When the first ingress has only a hostname, it should use the hostname": {
+			ingress:  []corev1.LoadBalancerIngress{{Hostname: "router.example.com"}},
+			expected: &hyperv1.APIEndpoint{Host: "router.example.com", Port: KASSVCLBPort},
+		},
+		"When the router reports no ingress, it should return nil": {},
+		"When the first ingress has no address, it should return nil": {
+			ingress: []corev1.LoadBalancerIngress{{}, {IP: "10.0.0.2"}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			router := RouterPublicService()
+			router.Status.LoadBalancer.Ingress = tc.ingress
+			g.Expect(WorkerAPIEndpoint(router)).To(Equal(tc.expected))
 		})
 	}
 }

@@ -223,6 +223,7 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 		)
 	}
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.Args = append(c.Args, "--leader-elect=true")
 		c.Image = cpContext.ReleaseImageProvider.GetImage(karpenterutil.KarpenterOperatorImageName)
 		if override, exists := hcp.Annotations[hyperkarpenterv1.KarpenterOperatorImage]; exists && override != "" {
 			c.Image = override

@@ -20,7 +20,10 @@ rules:
       - "patch"
       - "update"
     resourceNames:
+      # The embedded operator must be able to grant the operand's Lease permissions.
       - "karpenter-leader-election"
+      # Operator election uses a separate Lease from the Karpenter operand.
+      - "karpenter-operator.openshift.io"
   - apiGroups:
       - "apps"
     resources:

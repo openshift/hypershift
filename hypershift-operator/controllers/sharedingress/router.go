@@ -257,6 +257,22 @@ func ReconcileRouterService(svc *corev1.Service, azurePipIpTags string) error {
 	return nil
 }
 
+// WorkerAPIEndpoint returns the address and port workers use to reach the API
+// through the router, or nil when the router reports no address.
+func WorkerAPIEndpoint(router *corev1.Service) *hyperv1.APIEndpoint {
+	if len(router.Status.LoadBalancer.Ingress) == 0 {
+		return nil
+	}
+	host := router.Status.LoadBalancer.Ingress[0].IP
+	if host == "" {
+		host = router.Status.LoadBalancer.Ingress[0].Hostname
+	}
+	if host == "" {
+		return nil
+	}
+	return &hyperv1.APIEndpoint{Host: host, Port: KASSVCLBPort}
+}
+
 func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, ownerRef config.OwnerRef) {
 	if pdb.CreationTimestamp.IsZero() {
 		pdb.Spec.Selector = &metav1.LabelSelector{
