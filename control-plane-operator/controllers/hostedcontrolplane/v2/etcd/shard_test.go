@@ -1,13 +1,16 @@
 package etcd
 
 import (
+	"slices"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -418,6 +421,63 @@ func TestAdaptStatefulSetForShard(t *testing.T) {
 			}
 		}
 	})
+
+	for _, tc := range etcdListenURLTestCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			defaultSts, err := assets.LoadStatefulSetManifestTemplated(ComponentName, etcdTemplateData(ComponentName))
+			g.Expect(err).ToNot(HaveOccurred())
+			sts, err := assets.LoadStatefulSetManifestTemplated(ComponentName, etcdTemplateData("etcd-events"))
+			g.Expect(err).ToNot(HaveOccurred())
+			etcdContainer := podspec.FindContainer(ComponentName, sts.Spec.Template.Spec.Containers)
+			g.Expect(etcdContainer).ToNot(BeNil())
+			assetCommand := slices.Clone(etcdContainer.Command)
+
+			shard := hyperv1.ManagedEtcdShardSpec{
+				Name:     "events",
+				Replicas: 3,
+				Storage: hyperv1.ManagedEtcdShardStorageSpec{
+					Type: hyperv1.PersistentVolumeEtcdShardStorage,
+				},
+			}
+			cpContext := component.WorkloadContext{
+				Context: t.Context(),
+				HCP: &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{Namespace: etcdTestNamespace},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Networking: hyperv1.ClusterNetworking{
+							ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+								{CIDR: mustParseCIDR(tc.guestCIDR)},
+							},
+						},
+						ControllerAvailabilityPolicy: hyperv1.HighlyAvailable,
+						Etcd: hyperv1.EtcdSpec{
+							ManagementType: hyperv1.Managed,
+							Managed: &hyperv1.ManagedEtcdSpec{
+								Storage: hyperv1.ManagedEtcdStorageSpec{
+									Type: hyperv1.PersistentVolumeEtcdStorage,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			g.Expect(adaptStatefulSetForShard(cpContext, sts, shard)).To(Succeed())
+			g.Expect(adaptStatefulSet(cpContext, defaultSts)).To(Succeed())
+
+			// After adaptation the shard keeps the same etcd startup command as the
+			// default etcd, so both derive their listen URLs from POD_IP identically.
+			shardEtcdContainer := podspec.FindContainer(ComponentName, sts.Spec.Template.Spec.Containers)
+			g.Expect(shardEtcdContainer).ToNot(BeNil())
+			defaultEtcdContainer := podspec.FindContainer(ComponentName, defaultSts.Spec.Template.Spec.Containers)
+			g.Expect(defaultEtcdContainer).ToNot(BeNil())
+			g.Expect(shardEtcdContainer.Command).To(Equal(defaultEtcdContainer.Command))
+			expectEtcdListenURLsAtStartup(t, sts, assetCommand, "etcd-events-0", "etcd-discovery-events", tc)
+		})
+	}
 }
 
 func TestAdaptStatefulSetForShard_IPv6WithDefrag(t *testing.T) {
@@ -482,24 +542,14 @@ func TestAdaptStatefulSetForShard_IPv6WithDefrag(t *testing.T) {
 	err := adaptStatefulSetForShard(cpContext, sts, shard)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// IPv6 listen URLs should use bracket notation
-	var foundIPv6Peer, foundIPv6Client bool
-	for _, c := range sts.Spec.Template.Spec.Containers {
-		if c.Name == ComponentName {
-			for _, env := range c.Env {
-				if env.Name == "ETCD_LISTEN_PEER_URLS" {
-					g.Expect(env.Value).To(ContainSubstring("[$(POD_IP)]"))
-					foundIPv6Peer = true
-				}
-				if env.Name == "ETCD_LISTEN_CLIENT_URLS" {
-					g.Expect(env.Value).To(ContainSubstring("[$(POD_IP)]"))
-					foundIPv6Client = true
-				}
-			}
-		}
-	}
-	g.Expect(foundIPv6Peer).To(BeTrue())
-	g.Expect(foundIPv6Client).To(BeTrue())
+	// An IPv6 guest network must not force bracketed peer/client listen URLs: the
+	// management pod IP may be IPv4, so the container command derives them at start.
+	// The IPv6 metrics wildcard listen URL is still set from the guest network.
+	etcdContainer := podspec.FindContainer(ComponentName, sts.Spec.Template.Spec.Containers)
+	g.Expect(etcdContainer).ToNot(BeNil())
+	g.Expect(podspec.FindEnvVar("ETCD_LISTEN_PEER_URLS", etcdContainer.Env)).To(BeNil())
+	g.Expect(podspec.FindEnvVar("ETCD_LISTEN_CLIENT_URLS", etcdContainer.Env)).To(BeNil())
+	g.Expect(podspec.FindEnvVar("ETCD_LISTEN_METRICS_URLS", etcdContainer.Env)).To(HaveField("Value", "https://[::]:2382"))
 
 	// HA shard with HighlyAvailable should get defrag container
 	var hasDefrag bool

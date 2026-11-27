@@ -1,7 +1,17 @@
 package etcd
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"net"
+	"net/netip"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -9,7 +19,9 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -673,6 +685,46 @@ func TestAdaptStatefulSet(t *testing.T) {
 		})
 	}
 
+	for _, tc := range etcdListenURLTestCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			sts, err := assets.LoadStatefulSetManifestTemplated(ComponentName, etcdTemplateData(ComponentName))
+			g.Expect(err).ToNot(HaveOccurred())
+			etcdContainer := podspec.FindContainer(ComponentName, sts.Spec.Template.Spec.Containers)
+			g.Expect(etcdContainer).ToNot(BeNil())
+			assetCommand := slices.Clone(etcdContainer.Command)
+
+			cpContext := component.WorkloadContext{
+				Context: t.Context(),
+				HCP: &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{Namespace: etcdTestNamespace},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Etcd: hyperv1.EtcdSpec{
+							ManagementType: hyperv1.Managed,
+							Managed: &hyperv1.ManagedEtcdSpec{
+								Storage: hyperv1.ManagedEtcdStorageSpec{
+									Type: hyperv1.PersistentVolumeEtcdStorage,
+								},
+							},
+						},
+						Networking: hyperv1.ClusterNetworking{
+							ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+								{CIDR: *ipnet.MustParseCIDR(tc.guestCIDR)},
+							},
+						},
+						ControllerAvailabilityPolicy: hyperv1.HighlyAvailable,
+					},
+				},
+			}
+
+			g.Expect(adaptStatefulSet(cpContext, sts)).To(Succeed())
+
+			expectEtcdListenURLsAtStartup(t, sts, assetCommand, "etcd-0", "etcd-discovery", tc)
+		})
+	}
+
 	baseInitContainers := []corev1.Container{
 		{Name: "ensure-dns"},
 		{Name: "reset-member"},
@@ -764,4 +816,239 @@ func TestAdaptStatefulSet(t *testing.T) {
 			g.Expect(names).To(Equal(tc.expectedOrder))
 		})
 	}
+}
+
+const (
+	// etcdTestNamespace is the hosted control plane namespace used by the startup tests.
+	etcdTestNamespace = "clusters-example"
+	// etcdBinaryPath and etcdClusterStatePath are the paths the rendered etcd container
+	// command uses; the startup tests replace them with test doubles.
+	etcdBinaryPath       = "/usr/bin/etcd"
+	etcdClusterStatePath = "/etc/etcd/clusterstate/state"
+)
+
+// etcdListenURLTestCase is one cell of the hosted cluster network family by
+// management pod IP family matrix that both the default and the shard etcd
+// StatefulSets must handle.
+type etcdListenURLTestCase struct {
+	name                string
+	guestCIDR           string
+	podIP               string
+	expectedPeerURLs    string
+	expectedClientURLs  string
+	expectedMetricsURLs string
+	expectedMetricsArgs []string
+}
+
+// etcdListenURLTestCases returns the listen URL matrix shared by the default and
+// shard StatefulSet tests so both paths are held to identical expectations.
+func etcdListenURLTestCases() []etcdListenURLTestCase {
+	ipv4MetricsArgs := []string{"--listen-addr=127.0.0.1:2383", "--metrics-addr=https://0.0.0.0:2381"}
+	ipv6MetricsArgs := []string{"--listen-addr=[::1]:2383", "--metrics-addr=https://[::]:2381"}
+	return []etcdListenURLTestCase{
+		{
+			name:                "When guest network is IPv6 and pod IP is IPv4, it should start etcd with unbracketed IPv4 listen URLs",
+			guestCIDR:           "fd01::/48",
+			podIP:               "10.128.2.47",
+			expectedPeerURLs:    "https://10.128.2.47:2380",
+			expectedClientURLs:  "https://10.128.2.47:2379,https://localhost:2379",
+			expectedMetricsURLs: "https://[::]:2382",
+			expectedMetricsArgs: ipv6MetricsArgs,
+		},
+		{
+			name:                "When guest network is IPv4 and pod IP is IPv4, it should start etcd with unbracketed IPv4 listen URLs",
+			guestCIDR:           "10.128.0.0/14",
+			podIP:               "10.128.2.47",
+			expectedPeerURLs:    "https://10.128.2.47:2380",
+			expectedClientURLs:  "https://10.128.2.47:2379,https://localhost:2379",
+			expectedMetricsURLs: "https://0.0.0.0:2382",
+			expectedMetricsArgs: ipv4MetricsArgs,
+		},
+		{
+			name:                "When guest network is IPv6 and pod IP is IPv6, it should start etcd with bracketed IPv6 listen URLs",
+			guestCIDR:           "fd01::/48",
+			podIP:               "fd00::5",
+			expectedPeerURLs:    "https://[fd00::5]:2380",
+			expectedClientURLs:  "https://[fd00::5]:2379,https://localhost:2379",
+			expectedMetricsURLs: "https://[::]:2382",
+			expectedMetricsArgs: ipv6MetricsArgs,
+		},
+		{
+			name:                "When guest network is IPv4 and pod IP is IPv6, it should start etcd with bracketed IPv6 listen URLs",
+			guestCIDR:           "10.128.0.0/14",
+			podIP:               "fd00::5",
+			expectedPeerURLs:    "https://[fd00::5]:2380",
+			expectedClientURLs:  "https://[fd00::5]:2379,https://localhost:2379",
+			expectedMetricsURLs: "https://0.0.0.0:2382",
+			expectedMetricsArgs: ipv4MetricsArgs,
+		},
+		// An IPv6 address without zero compression contains no "::". These cases fail if the
+		// startup script brackets only "::" addresses (for example *::* instead of *:*).
+		{
+			name:                "When guest network is IPv6 and pod IP is an uncompressed IPv6 address, it should start etcd with bracketed IPv6 listen URLs",
+			guestCIDR:           "fd01::/48",
+			podIP:               "fd00:1:2:3:4:5:6:7",
+			expectedPeerURLs:    "https://[fd00:1:2:3:4:5:6:7]:2380",
+			expectedClientURLs:  "https://[fd00:1:2:3:4:5:6:7]:2379,https://localhost:2379",
+			expectedMetricsURLs: "https://[::]:2382",
+			expectedMetricsArgs: ipv6MetricsArgs,
+		},
+		{
+			name:                "When guest network is IPv4 and pod IP is an uncompressed IPv6 address, it should start etcd with bracketed IPv6 listen URLs",
+			guestCIDR:           "10.128.0.0/14",
+			podIP:               "fd00:1:2:3:4:5:6:7",
+			expectedPeerURLs:    "https://[fd00:1:2:3:4:5:6:7]:2380",
+			expectedClientURLs:  "https://[fd00:1:2:3:4:5:6:7]:2379,https://localhost:2379",
+			expectedMetricsURLs: "https://0.0.0.0:2382",
+			expectedMetricsArgs: ipv4MetricsArgs,
+		},
+	}
+}
+
+// expectEtcdListenURLsAtStartup verifies that an adapted etcd StatefulSet keeps the
+// shared asset command, does not choose listen URLs from the hosted cluster network
+// family, and that executing the rendered command gives etcd listen URLs that match
+// the pod IP family, for both a new and an existing cluster state.
+func expectEtcdListenURLsAtStartup(t *testing.T, sts *appsv1.StatefulSet, assetCommand []string, podName, discoveryService string, tc etcdListenURLTestCase) {
+	t.Helper()
+	g := NewWithT(t)
+
+	etcdContainer := podspec.FindContainer(ComponentName, sts.Spec.Template.Spec.Containers)
+	g.Expect(etcdContainer).ToNot(BeNil())
+	metricsContainer := podspec.FindContainer("etcd-metrics", sts.Spec.Template.Spec.Containers)
+	g.Expect(metricsContainer).ToNot(BeNil())
+
+	g.Expect(etcdContainer.Command).To(Equal(assetCommand), "adaptation must keep the shared asset command")
+	for _, name := range []string{"ETCD_LISTEN_PEER_URLS", "ETCD_LISTEN_CLIENT_URLS"} {
+		g.Expect(podspec.FindEnvVar(name, etcdContainer.Env)).To(BeNil(),
+			"%s must not be rendered from the hosted cluster network family", name)
+	}
+	g.Expect(podspec.FindEnvVar("ETCD_LISTEN_METRICS_URLS", etcdContainer.Env)).To(HaveField("Value", tc.expectedMetricsURLs))
+	g.Expect(metricsContainer.Args).To(ContainElements(tc.expectedMetricsArgs))
+
+	expectedPeerAdvertiseURL := fmt.Sprintf("https://%s.%s.%s.svc:2380", podName, discoveryService, etcdTestNamespace)
+	expectedClientAdvertiseURL := fmt.Sprintf("https://%s.%s.%s.svc:2379", podName, discoveryService, etcdTestNamespace)
+
+	for _, clusterState := range []string{"new", "existing"} {
+		result := runEtcdContainerCommand(t, *etcdContainer, podName, tc.podIP, clusterState)
+
+		// Matching PIDs show that the etcd process replaced the shell. They do not prove the
+		// script uses an explicit exec, because a shell may replace itself for its final
+		// command anyway; runEtcdContainerCommand asserts the explicit exec in the script.
+		g.Expect(result.stubPID).To(Equal(result.shellPID), "etcd should replace the shell process")
+		g.Expect(result.env).To(HaveKeyWithValue("ETCD_LISTEN_PEER_URLS", tc.expectedPeerURLs))
+		g.Expect(result.env).To(HaveKeyWithValue("ETCD_LISTEN_CLIENT_URLS", tc.expectedClientURLs))
+		g.Expect(result.env).To(HaveKeyWithValue("ETCD_INITIAL_CLUSTER_STATE", clusterState))
+		g.Expect(result.env).To(HaveKeyWithValue("ETCD_LISTEN_METRICS_URLS", tc.expectedMetricsURLs))
+		g.Expect(result.env).To(HaveKeyWithValue("ETCD_INITIAL_ADVERTISE_PEER_URLS", expectedPeerAdvertiseURL))
+		g.Expect(result.env).To(HaveKeyWithValue("ETCD_ADVERTISE_CLIENT_URLS", expectedClientAdvertiseURL))
+		g.Expect(result.env).ToNot(HaveKey("listen_host"), "the script helper variable must not reach etcd")
+
+		expectListenURL(g, result.env["ETCD_LISTEN_PEER_URLS"], tc.podIP, "2380")
+		clientURLs := strings.Split(result.env["ETCD_LISTEN_CLIENT_URLS"], ",")
+		g.Expect(clientURLs).To(HaveLen(2))
+		expectListenURL(g, clientURLs[0], tc.podIP, "2379")
+		g.Expect(clientURLs[1]).To(Equal("https://localhost:2379"))
+	}
+}
+
+// etcdStartupResult is what a stub standing in for the etcd binary observed when
+// the rendered etcd container command executed it.
+type etcdStartupResult struct {
+	env      map[string]string
+	stubPID  int
+	shellPID int
+}
+
+// runEtcdContainerCommand executes the rendered etcd container command with /bin/sh,
+// the way the container runtime does, after resolving the container environment like
+// the kubelet (downward API values and $(VAR) references). Only the etcd binary and
+// the cluster state file paths are replaced with test doubles.
+func runEtcdContainerCommand(t *testing.T, c corev1.Container, podName, podIP, clusterState string) etcdStartupResult {
+	t.Helper()
+	g := NewWithT(t)
+
+	g.Expect(c.Command).To(HaveLen(3))
+	g.Expect(c.Command[:2]).To(Equal([]string{"/bin/sh", "-c"}))
+	script := c.Command[2]
+	g.Expect(strings.Count(script, etcdBinaryPath)).To(Equal(1))
+	g.Expect(strings.Count(script, etcdClusterStatePath)).To(Equal(1))
+	// This enforces the explicit exec, which the PID comparison cannot prove.
+	g.Expect(script).To(ContainSubstring("exec " + etcdBinaryPath))
+	// The kubelet rewrites $(NAME) references to container env vars before the shell
+	// runs; the only command substitution must be the cluster state read.
+	g.Expect(strings.Count(script, "$(")).To(Equal(1))
+	g.Expect(script).To(ContainSubstring("$(cat " + etcdClusterStatePath + ")"))
+
+	fieldValues := map[string]string{
+		"status.podIP":       podIP,
+		"metadata.name":      podName,
+		"metadata.namespace": etcdTestNamespace,
+	}
+	resolved := map[string]string{}
+	expand := func(s string) string {
+		for name, value := range resolved {
+			s = strings.ReplaceAll(s, "$("+name+")", value)
+		}
+		return s
+	}
+	environ := []string{"PATH=" + os.Getenv("PATH")}
+	for _, env := range c.Env {
+		switch {
+		case env.ValueFrom == nil:
+			resolved[env.Name] = expand(env.Value)
+		case env.ValueFrom.FieldRef != nil:
+			value, ok := fieldValues[env.ValueFrom.FieldRef.FieldPath]
+			g.Expect(ok).To(BeTrue(), "unsupported downward API field %q for env %s", env.ValueFrom.FieldRef.FieldPath, env.Name)
+			resolved[env.Name] = value
+		default:
+			t.Fatalf("unsupported env source for %s", env.Name)
+		}
+		environ = append(environ, env.Name+"="+resolved[env.Name])
+	}
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state")
+	g.Expect(os.WriteFile(statePath, []byte(clusterState+"\n"), 0o600)).To(Succeed())
+	stubPath := filepath.Join(dir, "etcd")
+	g.Expect(os.WriteFile(stubPath, []byte("#!/bin/sh\necho \"STUB_PID=$$\"\nexec env\n"), 0o700)).To(Succeed())
+
+	shellQuote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+	script = strings.NewReplacer(etcdBinaryPath, shellQuote(stubPath), etcdClusterStatePath, shellQuote(statePath)).Replace(expand(script))
+
+	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", script)
+	cmd.Env = environ
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	g.Expect(cmd.Run()).To(Succeed(), "stderr: %s", stderr.String())
+
+	result := etcdStartupResult{env: map[string]string{}, shellPID: cmd.Process.Pid}
+	for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		if key == "STUB_PID" {
+			pid, err := strconv.Atoi(value)
+			g.Expect(err).ToNot(HaveOccurred())
+			result.stubPID = pid
+			continue
+		}
+		result.env[key] = value
+	}
+	g.Expect(result.stubPID).ToNot(BeZero(), "the etcd stub did not run; stdout: %s", stdout.String())
+	return result
+}
+
+// expectListenURL asserts that rawURL is an https URL whose host is exactly podIP,
+// bracketed only when podIP is an IPv6 literal, so etcd can parse and bind it.
+func expectListenURL(g Gomega, rawURL, podIP, port string) {
+	u, err := url.Parse(rawURL)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(u.Scheme).To(Equal("https"))
+	g.Expect(u.Host).To(Equal(net.JoinHostPort(podIP, port)))
+	addr, err := netip.ParseAddr(u.Hostname())
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(addr).To(Equal(netip.MustParseAddr(podIP)))
 }

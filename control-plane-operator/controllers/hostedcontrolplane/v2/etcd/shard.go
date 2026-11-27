@@ -123,7 +123,8 @@ func NewShardComponent(shard hyperv1.ManagedEtcdShardSpec) component.ControlPlan
 // service names in the YAML. This function handles dynamic values that depend on runtime
 // state: replica count, member list construction, env var overrides, init container
 // scripts (complex bash that's easier to override wholesale in Go), volume secret
-// remapping, IPv6 adaptation, defrag sidecar injection, storage, and scheduling.
+// remapping, IPv6 metrics listen address adaptation, defrag sidecar injection, storage,
+// and scheduling.
 func adaptStatefulSetForShard(cpContext component.WorkloadContext, sts *appsv1.StatefulSet, shard hyperv1.ManagedEtcdShardSpec) error {
 	hcp := cpContext.HCP
 	shardName := fmt.Sprintf("etcd-%s", shard.Name)
@@ -208,7 +209,10 @@ fi
 		}
 	}
 
-	// Apply IPv6 and metrics adaptations shared with the default etcd.
+	// Apply the metrics listen address adaptations shared with the default etcd.
+	// The peer and client listen URLs are derived from the runtime POD_IP by the
+	// container command in the shared asset, because the management cluster pod IP
+	// family can differ from the hosted cluster network family.
 	ipv4, err := netutil.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
 		return fmt.Errorf("error checking the ClusterNetworkCIDR: %w", err)
@@ -216,14 +220,6 @@ fi
 
 	podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if !ipv4 {
-			podspec.UpsertEnvVar(c, corev1.EnvVar{
-				Name:  "ETCD_LISTEN_PEER_URLS",
-				Value: "https://[$(POD_IP)]:2380",
-			})
-			podspec.UpsertEnvVar(c, corev1.EnvVar{
-				Name:  "ETCD_LISTEN_CLIENT_URLS",
-				Value: "https://[$(POD_IP)]:2379,https://localhost:2379",
-			})
 			podspec.UpsertEnvVar(c, corev1.EnvVar{
 				Name:  "ETCD_LISTEN_METRICS_URLS",
 				Value: "https://[::]:2382",
