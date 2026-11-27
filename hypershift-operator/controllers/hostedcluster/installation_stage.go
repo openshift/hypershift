@@ -147,19 +147,11 @@ func hasCompletedVersionHistory(hcp *hyperv1.HostedControlPlane) bool {
 	return false
 }
 
-// hasHealthyWorker returns true if any NodePool for the cluster has at least
+// hasHealthyWorkerInNodePools returns true if any NodePool has at least
 // one ready machine, determined by checking AllMachinesReady=True or
 // NodeVersion.ReadyNodeCount > 0. Both paths are guarded by
 // ObservedGeneration to avoid advancing a forward-only stage based on a
 // stale condition from an older spec.
-func hasHealthyWorker(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) bool {
-	nodePools, err := listNodePools(ctx, c, hcluster.Namespace, hcluster.Name)
-	if err != nil {
-		return false
-	}
-	return hasHealthyWorkerInNodePools(nodePools)
-}
-
 func hasHealthyWorkerInNodePools(nodePools []hyperv1.NodePool) bool {
 	for i := range nodePools {
 		np := &nodePools[i]

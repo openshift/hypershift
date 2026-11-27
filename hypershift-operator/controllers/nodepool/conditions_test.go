@@ -1453,3 +1453,379 @@ func TestReachedIgnitionEndpointCondition(t *testing.T) {
 		})
 	}
 }
+
+func TestIgnitionNotReachedMessage(t *testing.T) {
+	tests := []struct {
+		name            string
+		hc              *hyperv1.HostedCluster
+		includeHint     bool
+		wantContains    []string
+		wantNotContains []string
+	}{
+		{
+			name: "When hint is disabled on AWS it should return neutral message",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			includeHint:     false,
+			wantContains:    []string{"Nodes have not reached the ignition endpoint."},
+			wantNotContains: []string{"Verify"},
+		},
+		{
+			name: "When stalled on AWS it should include security group and published ignition endpoint hints",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			includeHint:  true,
+			wantContains: []string{"Nodes have not reached the ignition endpoint.", "published ignition endpoint"},
+		},
+		{
+			name: "When stalled on Azure private topology it should include NSG and Private Link hints",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{Topology: hyperv1.AzureTopologyPrivate},
+					},
+				},
+			},
+			includeHint:  true,
+			wantContains: []string{"NSG rules", "Private Link Service"},
+		},
+		{
+			name: "When stalled on Azure public topology it should include NSG hint without Private Link",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{Topology: hyperv1.AzureTopologyPublic},
+					},
+				},
+			},
+			includeHint:     true,
+			wantContains:    []string{"NSG rules and network connectivity"},
+			wantNotContains: []string{"Private Link"},
+		},
+		{
+			name: "When stalled on Azure Swift networking it should include NSG hint without Private Link",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPrivate,
+							Private:  hyperv1.AzurePrivateSpec{Type: hyperv1.AzurePrivateTypeSwift},
+						},
+					},
+				},
+			},
+			includeHint:     true,
+			wantContains:    []string{"NSG rules and network connectivity"},
+			wantNotContains: []string{"Private Link"},
+		},
+		{
+			name: "When stalled on KubeVirt platform it should return neutral message",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform},
+				},
+			},
+			includeHint:     true,
+			wantContains:    []string{"Nodes have not reached the ignition endpoint."},
+			wantNotContains: []string{"Verify"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			msg := ignitionNotReachedMessage(tc.hc, tc.includeHint)
+			for _, substr := range tc.wantContains {
+				g.Expect(msg).To(ContainSubstring(substr))
+			}
+			for _, substr := range tc.wantNotContains {
+				g.Expect(msg).NotTo(ContainSubstring(substr))
+			}
+		})
+	}
+}
+
+func TestNodeConnectivityHint(t *testing.T) {
+	tests := []struct {
+		name            string
+		hc              *hyperv1.HostedCluster
+		wantContains    string
+		wantNotContains string
+		wantEmpty       bool
+	}{
+		{
+			name: "AWS platform includes API server endpoint and NACL hints",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			wantContains: "configured API server endpoint",
+		},
+		{
+			name: "Azure private topology includes NSG and Private Link hints",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{Topology: hyperv1.AzureTopologyPrivate},
+					},
+				},
+			},
+			wantContains: "Private Link Service",
+		},
+		{
+			name: "Azure public topology includes NSG hint without Private Link",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{Topology: hyperv1.AzureTopologyPublic},
+					},
+				},
+			},
+			wantContains:    "NSG rules and network connectivity",
+			wantNotContains: "Private Link",
+		},
+		{
+			name: "Azure Swift networking includes NSG hint without Private Link",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPrivate,
+							Private:  hyperv1.AzurePrivateSpec{Type: hyperv1.AzurePrivateTypeSwift},
+						},
+					},
+				},
+			},
+			wantContains:    "NSG rules and network connectivity",
+			wantNotContains: "Private Link",
+		},
+		{
+			name: "Unknown platform returns empty string",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+				},
+			},
+			wantEmpty: true,
+		},
+		{
+			name: "KubeVirt platform returns empty string",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform},
+				},
+			},
+			wantEmpty: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hint := nodeConnectivityHint(tc.hc)
+			if tc.wantEmpty {
+				g.Expect(hint).To(BeEmpty())
+			} else {
+				g.Expect(hint).To(ContainSubstring(tc.wantContains))
+				if tc.wantNotContains != "" {
+					g.Expect(hint).NotTo(ContainSubstring(tc.wantNotContains))
+				}
+			}
+		})
+	}
+}
+
+func TestNodePoolReconciler_SetAllNodesHealthyCondition(t *testing.T) {
+	tests := []struct {
+		name            string
+		hc              *hyperv1.HostedCluster
+		machineAge      time.Duration
+		wantContains    []string
+		wantNotContains []string
+	}{
+		{
+			name: "When AWS machines are newly created and WaitingForNodeRef it should stay neutral during scale-up",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			machineAge: 2 * time.Minute,
+			wantNotContains: []string{
+				"Nodes may be unable to reach the API server",
+			},
+		},
+		{
+			name: "When AWS machines are stalled in WaitingForNodeRef past threshold it should include connectivity hint",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			machineAge: 15 * time.Minute,
+			wantContains: []string{
+				"configured API server endpoint",
+				"Nodes may be unable to reach the API server",
+			},
+		},
+		{
+			name: "When Azure public machines are stalled in WaitingForNodeRef it should omit Private Link",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{Topology: hyperv1.AzureTopologyPublic},
+					},
+				},
+			},
+			machineAge: 15 * time.Minute,
+			wantContains: []string{
+				"NSG rules and network connectivity",
+			},
+			wantNotContains: []string{
+				"Private Link",
+			},
+		},
+		{
+			name: "When KubeVirt machines are stalled in WaitingForNodeRef it should not include connectivity hint",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform},
+				},
+			},
+			machineAge: 15 * time.Minute,
+			wantNotContains: []string{
+				"Nodes may be unable to reach the API server",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-nodepool",
+					Namespace:  "test-ns",
+					Generation: 1,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: tc.hc.Spec.Platform.Type,
+					},
+					Replicas: ptr.To[int32](1),
+				},
+			}
+
+			// Machine without NodeHealthy condition — triggers WaitingForNodeRef.
+			machines := []*v1beta2.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-tc.machineAge)),
+					},
+					Status: v1beta2.MachineStatus{},
+				},
+			}
+
+			r := &NodePoolReconciler{}
+			r.setAllNodesHealthyCondition(nodePool, machines, tc.hc)
+
+			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAllNodesHealthyConditionType)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+			for _, substr := range tc.wantContains {
+				g.Expect(condition.Message).To(ContainSubstring(substr))
+			}
+			for _, substr := range tc.wantNotContains {
+				g.Expect(condition.Message).NotTo(ContainSubstring(substr))
+			}
+		})
+	}
+}
+
+func TestNodePoolReconciler_CreateReachedIgnitionEndpointCondition(t *testing.T) {
+	tests := []struct {
+		name            string
+		replicas        int32
+		secretAge       time.Duration
+		wantContains    []string
+		wantNotContains []string
+	}{
+		{
+			name:            "When NodePool has zero replicas even with old token secret it should keep neutral message",
+			replicas:        0,
+			secretAge:       20 * time.Minute,
+			wantContains:    []string{"Nodes have not reached the ignition endpoint."},
+			wantNotContains: []string{"Verify"},
+		},
+		{
+			name:            "When NodePool expects workers but token secret is fresh it should keep neutral message",
+			replicas:        1,
+			secretAge:       2 * time.Minute,
+			wantContains:    []string{"Nodes have not reached the ignition endpoint."},
+			wantNotContains: []string{"Verify"},
+		},
+		{
+			name:         "When NodePool expects workers and token secret is stalled it should include AWS hint",
+			replicas:     1,
+			secretAge:    15 * time.Minute,
+			wantContains: []string{"Nodes have not reached the ignition endpoint.", "published ignition endpoint"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			tokenSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "token-test",
+					Namespace:         "cp-ns",
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-tc.secretAge)),
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tokenSecret).Build()
+			r := NodePoolReconciler{Client: fakeClient}
+
+			np := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-np", Namespace: "clusters", Generation: 1},
+				Spec: hyperv1.NodePoolSpec{
+					Replicas: ptr.To(tc.replicas),
+				},
+			}
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			}
+
+			cond, err := r.createReachedIgnitionEndpointCondition(t.Context(), &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "token-test", Namespace: "cp-ns"},
+			}, np, hc)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(cond.Status).To(Equal(corev1.ConditionFalse))
+			g.Expect(cond.Reason).To(Equal(hyperv1.IgnitionNotReached))
+			for _, substr := range tc.wantContains {
+				g.Expect(cond.Message).To(ContainSubstring(substr))
+			}
+			for _, substr := range tc.wantNotContains {
+				g.Expect(cond.Message).NotTo(ContainSubstring(substr))
+			}
+		})
+	}
+}

@@ -34,6 +34,11 @@ const (
 	reconciliationActiveConditionReason             = "ReconciliationActive"
 	reconciliationPausedConditionReason             = "ReconciliationPaused"
 	reconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"
+
+	// bootstrapStallThreshold is the minimum time a Machine or token Secret must
+	// remain unready before appending platform networking troubleshooting hints,
+	// avoiding noisy advice during normal initial scale-up.
+	bootstrapStallThreshold = 10 * time.Minute
 )
 
 // These are copies pf metav1.Condition to accept hyperv1.NodePoolCondition
@@ -666,7 +671,7 @@ func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context
 	// if ignition is already reached and InPlace upgrade is used, skip recomputing the NodePoolReachedIgnitionEndpoint condition
 	// to avoid resetting the condition to False because of the missing the annotation on the new generated token-secret.
 	if oldReachedIgnitionEndpointCondition == nil || oldReachedIgnitionEndpointCondition.Status != corev1.ConditionTrue || nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeInPlace {
-		reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation)
+		reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool, hcluster)
 		if err != nil {
 			return &ctrl.Result{}, fmt.Errorf("error setting IgnitionReached condition: %w", err)
 		}
@@ -709,7 +714,7 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 
 	r.setAllMachinesReadyCondition(nodePool, machines)
 
-	r.setAllNodesHealthyCondition(nodePool, machines)
+	r.setAllNodesHealthyCondition(nodePool, machines, hc)
 
 	err = r.setCIDRConflictCondition(ctx, nodePool, machines, hc)
 	if err != nil {
@@ -726,7 +731,7 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 	return nil
 }
 
-func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine) {
+func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine, hc *hyperv1.HostedCluster) {
 	status := corev1.ConditionTrue
 	reason := hyperv1.AsExpectedReason
 	message := hyperv1.AllIsWellMessage
@@ -741,6 +746,8 @@ func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodeP
 		}
 	} else {
 		numNotHealthy := 0
+		hasStalledWaitingForNodeRef := false
+		now := time.Now()
 		messageMap := make(map[string][]string)
 
 		for _, machine := range machines {
@@ -752,6 +759,9 @@ func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodeP
 				mapReason := capiv1.WaitingForNodeRefV1Beta1Reason
 				mapMessage := fmt.Sprintf("Machine %s: %s\n", machine.Name, mapReason)
 				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
+				if isMachineWaitingForNodeRefStalled(machine, now) {
+					hasStalledWaitingForNodeRef = true
+				}
 			} else if condition.Status != metav1.ConditionTrue {
 				status = corev1.ConditionFalse
 				numNotHealthy++
@@ -763,10 +773,21 @@ func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodeP
 					mapMessage = fmt.Sprintf("Machine %s: %s\n", machine.Name, condition.Reason)
 				}
 				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
+				if mapReason == capiv1.WaitingForNodeRefV1Beta1Reason && isMachineWaitingForNodeRefStalled(machine, now) {
+					hasStalledWaitingForNodeRef = true
+				}
 			}
 		}
 		if numNotHealthy > 0 {
 			reason, message = aggregateMachineReasonsAndMessages(messageMap, numMachines, numNotHealthy, aggregatorMachineStateHealthy)
+			// Append platform-specific connectivity hint only once a machine has been
+			// stalled in WaitingForNodeRef past the bootstrap grace window.
+			if hasStalledWaitingForNodeRef {
+				hint := nodeConnectivityHint(hc)
+				if hint != "" && len(message)+1+len(hint) <= maxGlobalMessageLength {
+					message = message + "\n" + hint
+				}
+			}
 		}
 	}
 
@@ -778,6 +799,42 @@ func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodeP
 		ObservedGeneration: nodePool.Generation,
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesHealthyCondition)
+}
+
+func isMachineWaitingForNodeRefStalled(machine *capiv1.Machine, now time.Time) bool {
+	for i := range machine.Status.Conditions {
+		c := &machine.Status.Conditions[i]
+		if c.Type == string(capiv1.MachineNodeHealthyCondition) && !c.LastTransitionTime.IsZero() {
+			return now.Sub(c.LastTransitionTime.Time) >= bootstrapStallThreshold
+		}
+	}
+	if !machine.CreationTimestamp.IsZero() {
+		return now.Sub(machine.CreationTimestamp.Time) >= bootstrapStallThreshold
+	}
+	return false
+}
+
+func azureUsesPrivateLink(hc *hyperv1.HostedCluster) bool {
+	return hc != nil && !netutil.UseSwiftNetworkingHC(hc) && netutil.IsPrivateHC(hc)
+}
+
+// nodeConnectivityHint returns a platform-specific troubleshooting hint when
+// nodes appear stalled waiting to register with the API server (WaitingForNodeRef).
+func nodeConnectivityHint(hc *hyperv1.HostedCluster) string {
+	if hc == nil {
+		return ""
+	}
+	switch hc.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		return "Nodes may be unable to reach the API server. Verify security group egress rules allow traffic to the configured API server endpoint, check NACLs and route table configuration."
+	case hyperv1.AzurePlatform:
+		if azureUsesPrivateLink(hc) {
+			return "Nodes may be unable to reach the API server. Verify NSG rules and Private Link Service connectivity."
+		}
+		return "Nodes may be unable to reach the API server. Verify NSG rules and network connectivity."
+	default:
+		return ""
+	}
 }
 
 func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine) {
@@ -1045,7 +1102,8 @@ func (r *NodePoolReconciler) setCIDRConflictCondition(ctx context.Context, nodeP
 }
 
 // createReachedIgnitionEndpointCondition creates a condition for the NodePool based on the tokenSecret data.
-func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) { //nolint:unparam // error return kept for API consistency
+func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) (*hyperv1.NodePoolCondition, error) { //nolint:unparam // error return kept for API consistency
+	generation := nodePool.Generation
 	var condition *hyperv1.NodePoolCondition
 	if err := r.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -1069,11 +1127,14 @@ func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.C
 	}
 
 	if _, ok := tokenSecret.Annotations[TokenSecretIgnitionReachedAnnotation]; !ok {
+		includeHint := nodePoolExpectsWorkers(nodePool) &&
+			!tokenSecret.CreationTimestamp.IsZero() &&
+			time.Since(tokenSecret.CreationTimestamp.Time) >= bootstrapStallThreshold
 		condition = &hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolReachedIgnitionEndpoint,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.IgnitionNotReached,
-			Message:            "",
+			Message:            ignitionNotReachedMessage(hc, includeHint),
 			ObservedGeneration: generation,
 		}
 		return condition, nil
@@ -1088,6 +1149,40 @@ func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.C
 	}
 
 	return condition, nil
+}
+
+func nodePoolExpectsWorkers(np *hyperv1.NodePool) bool {
+	if np == nil {
+		return false
+	}
+	if np.Spec.Replicas != nil && *np.Spec.Replicas > 0 {
+		return true
+	}
+	if np.Spec.AutoScaling != nil && np.Spec.AutoScaling.Min != nil && *np.Spec.AutoScaling.Min > 0 {
+		return true
+	}
+	return false
+}
+
+// ignitionNotReachedMessage returns a neutral message during normal startup or
+// zero-replica pools, and appends platform-specific troubleshooting guidance
+// once ignition bootstrap appears stalled.
+func ignitionNotReachedMessage(hc *hyperv1.HostedCluster, includeHint bool) string {
+	const base = "Nodes have not reached the ignition endpoint."
+	if !includeHint || hc == nil {
+		return base
+	}
+	switch hc.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		return base + " Verify security group rules allow worker nodes to reach the published ignition endpoint, check NACL rules, DNS resolution, and proxy configuration."
+	case hyperv1.AzurePlatform:
+		if azureUsesPrivateLink(hc) {
+			return base + " Verify NSG rules and Private Link Service connectivity."
+		}
+		return base + " Verify NSG rules and network connectivity."
+	default:
+		return base
+	}
 }
 
 // createValidGeneratedPayloadCondition creates a condition for the NodePool based on the tokenSecret data.

@@ -285,8 +285,8 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 		hclusterLabelValues := []string{hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID}
 		cpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		// List CPCs scoped to this HC's control plane namespace instead of
-		// using a cluster-wide list, to avoid creating a global CPC informer.
+		// List CPCs scoped to this HC's control plane namespace from the manager cache
+		// so each scrape only reads objects belonging to this HostedCluster.
 		cpcs := &hyperv1.ControlPlaneComponentList{}
 		cpcsValid := true
 		if err := c.List(context.Background(), cpcs, client.InNamespace(cpNamespace)); err != nil {

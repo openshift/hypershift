@@ -126,18 +126,29 @@ func TestClassifyIdentityProviderError(t *testing.T) {
 	testCases := []struct {
 		name            string
 		err             error
+		roleARN         string
 		expectedStatus  metav1.ConditionStatus
 		expectedReason  string
 		expectedMessage string
 	}{
 		{
-			name: "When error wraps STS AccessDenied, it should return False with InvalidIdentityProvider",
+			name: "When error wraps STS AccessDenied without roleARN, it should return False with InvalidIdentityProvider",
 			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
 				fmt.Errorf("failed to retrieve credentials, %w",
 					&smithy.GenericAPIError{Code: "AccessDenied", Message: "Not authorized"})),
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  hyperv1.InvalidIdentityProvider,
 			expectedMessage: "AWS identity provider validation failed: AccessDenied: Not authorized",
+		},
+		{
+			name: "When error wraps STS AccessDenied with roleARN, it should prepend role context",
+			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
+				fmt.Errorf("failed to retrieve credentials, %w",
+					&smithy.GenericAPIError{Code: "AccessDenied", Message: "Not authorized"})),
+			roleARN:         "arn:aws:iam::123456789012:role/my-cpo-role",
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.InvalidIdentityProvider,
+			expectedMessage: "Role arn:aws:iam::123456789012:role/my-cpo-role: AWS identity provider validation failed: AccessDenied: Not authorized",
 		},
 		{
 			name: "When error wraps STS IDPRejectedClaim, it should return False with InvalidIdentityProvider",
@@ -202,11 +213,20 @@ func TestClassifyIdentityProviderError(t *testing.T) {
 			expectedReason:  hyperv1.StatusUnknownReason,
 			expectedMessage: "Cannot validate AWS identity provider: https response error StatusCode: 500, connection reset",
 		},
+		{
+			name: "When non-STS error with roleARN, it should NOT prepend role context",
+			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
+				&smithy.GenericAPIError{Code: "ThrottlingException", Message: "Rate exceeded"}),
+			roleARN:         "arn:aws:iam::123456789012:role/my-cpo-role",
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  hyperv1.AWSErrorReason,
+			expectedMessage: "Cannot validate AWS identity provider: ThrottlingException: Rate exceeded",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			status, reason, message := classifyIdentityProviderError(tc.err)
+			status, reason, message := classifyIdentityProviderError(tc.err, tc.roleARN)
 			if status != tc.expectedStatus {
 				t.Errorf("Expected status %v, got %v", tc.expectedStatus, status)
 			}
@@ -233,8 +253,8 @@ func TestClassifyIdentityProviderErrorMessageStability(t *testing.T) {
 		return fmt.Errorf("operation error EC2: DescribeVpcEndpoints, https response error StatusCode: 403, RequestID: %s, %w", requestID, inner)
 	}
 
-	_, _, msg1 := classifyIdentityProviderError(makeError("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"))
-	_, _, msg2 := classifyIdentityProviderError(makeError("bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb"))
+	_, _, msg1 := classifyIdentityProviderError(makeError("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"), "")
+	_, _, msg2 := classifyIdentityProviderError(makeError("bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb"), "")
 
 	if msg1 != msg2 {
 		t.Errorf("When two errors differ only in RequestID, they should produce identical messages, got:\n  %q\n  %q", msg1, msg2)
@@ -246,8 +266,8 @@ func TestClassifyIdentityProviderErrorMessageStability(t *testing.T) {
 		return fmt.Errorf("https response error StatusCode: 500, RequestID: %s, HostID: %s, connection reset", requestID, hostID)
 	}
 
-	_, _, msg3 := classifyIdentityProviderError(makeNonAPIError("aaaa-1111", "host-aaaa"))
-	_, _, msg4 := classifyIdentityProviderError(makeNonAPIError("bbbb-2222", "host-bbbb"))
+	_, _, msg3 := classifyIdentityProviderError(makeNonAPIError("aaaa-1111", "host-aaaa"), "")
+	_, _, msg4 := classifyIdentityProviderError(makeNonAPIError("bbbb-2222", "host-bbbb"), "")
 
 	if msg3 != msg4 {
 		t.Errorf("When two non-API errors differ only in RequestID/HostID, they should produce identical messages, got:\n  %q\n  %q", msg3, msg4)
@@ -258,6 +278,7 @@ func TestAWSHealthCheckIdentityProviderWithMockEC2(t *testing.T) {
 	testCases := []struct {
 		name             string
 		describeErr      error
+		hcpSpec          hyperv1.HostedControlPlaneSpec
 		expectedStatus   metav1.ConditionStatus
 		expectedReason   string
 		expectedErrNil   bool
@@ -278,6 +299,24 @@ func TestAWSHealthCheckIdentityProviderWithMockEC2(t *testing.T) {
 			expectedReason:   hyperv1.InvalidIdentityProvider,
 			expectedErrNil:   false,
 			messageSubstring: "AccessDenied",
+		},
+		{
+			name:        "When DescribeVpcEndpoints returns STS AccessDenied with RolesRef, it should include role ARN in message",
+			describeErr: &smithy.GenericAPIError{Code: "AccessDenied", Message: "Not authorized"},
+			hcpSpec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						RolesRef: hyperv1.AWSRolesRef{
+							ControlPlaneOperatorARN: "arn:aws:iam::111111111111:role/test-cpo-role",
+						},
+					},
+				},
+			},
+			expectedStatus:   metav1.ConditionFalse,
+			expectedReason:   hyperv1.InvalidIdentityProvider,
+			expectedErrNil:   false,
+			messageSubstring: "Role arn:aws:iam::111111111111:role/test-cpo-role:",
 		},
 		{
 			name:             "When DescribeVpcEndpoints returns STS ExpiredTokenException, it should set condition False with InvalidIdentityProvider",
@@ -330,6 +369,7 @@ func TestAWSHealthCheckIdentityProviderWithMockEC2(t *testing.T) {
 					Namespace:  "test-namespace",
 					Generation: 1,
 				},
+				Spec: tc.hcpSpec,
 				Status: hyperv1.HostedControlPlaneStatus{
 					Conditions: []metav1.Condition{},
 				},

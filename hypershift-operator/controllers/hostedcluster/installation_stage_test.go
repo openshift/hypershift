@@ -714,10 +714,10 @@ func TestReconcileInstallationStage(t *testing.T) {
 	})
 }
 
-func TestHasHealthyWorker(t *testing.T) {
+func TestHasHealthyWorkerInNodePools(t *testing.T) {
 	tests := []struct {
 		name      string
-		nodePools []client.Object
+		nodePools []hyperv1.NodePool
 		expected  bool
 	}{
 		{
@@ -726,8 +726,8 @@ func TestHasHealthyWorker(t *testing.T) {
 		},
 		{
 			name: "When NodePool has no ready machines, it should return false",
-			nodePools: []client.Object{
-				&hyperv1.NodePool{
+			nodePools: []hyperv1.NodePool{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-workers",
 						Namespace: "clusters",
@@ -741,8 +741,8 @@ func TestHasHealthyWorker(t *testing.T) {
 		},
 		{
 			name: "When NodePool has AllMachinesReady=True, it should return true",
-			nodePools: []client.Object{
-				&hyperv1.NodePool{
+			nodePools: []hyperv1.NodePool{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-workers",
 						Namespace: "clusters",
@@ -764,8 +764,8 @@ func TestHasHealthyWorker(t *testing.T) {
 		},
 		{
 			name: "When AllMachinesReady=True has stale ObservedGeneration, it should return false",
-			nodePools: []client.Object{
-				&hyperv1.NodePool{
+			nodePools: []hyperv1.NodePool{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       "test-workers",
 						Namespace:  "clusters",
@@ -789,8 +789,8 @@ func TestHasHealthyWorker(t *testing.T) {
 		},
 		{
 			name: "When AllMachinesReady=True has zero ObservedGeneration (legacy), it should return true",
-			nodePools: []client.Object{
-				&hyperv1.NodePool{
+			nodePools: []hyperv1.NodePool{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       "test-workers",
 						Namespace:  "clusters",
@@ -814,8 +814,8 @@ func TestHasHealthyWorker(t *testing.T) {
 		},
 		{
 			name: "When NodePool has ReadyNodeCount=0, it should return false",
-			nodePools: []client.Object{
-				&hyperv1.NodePool{
+			nodePools: []hyperv1.NodePool{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-workers",
 						Namespace: "clusters",
@@ -842,16 +842,7 @@ func TestHasHealthyWorker(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			c := fake.NewClientBuilder().
-				WithScheme(api.Scheme).
-				WithObjects(tc.nodePools...).
-				Build()
-
-			hcluster := &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
-			}
-
-			got := hasHealthyWorker(context.Background(), c, hcluster)
+			got := hasHealthyWorkerInNodePools(tc.nodePools)
 			if got != tc.expected {
 				t.Errorf("expected %v, got %v", tc.expected, got)
 			}
