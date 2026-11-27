@@ -23,7 +23,7 @@ func (r *metricsProxy) IsRequestServing() bool {
 
 // MultiZoneSpread implements controlplanecomponent.ComponentOptions.
 func (r *metricsProxy) MultiZoneSpread() bool {
-	return false
+	return true
 }
 
 // NeedsManagementKASAccess implements controlplanecomponent.ComponentOptions.

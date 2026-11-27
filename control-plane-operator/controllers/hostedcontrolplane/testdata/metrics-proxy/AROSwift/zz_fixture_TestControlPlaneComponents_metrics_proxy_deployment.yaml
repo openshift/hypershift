@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 0c44678725978652c94c70c5219d8d15371ca04be8428338b39651ac6223c3a7
+    hypershift.openshift.io/desired-state-hash: 2a773cced3cacf41477f3dd81061edcc58fca7a8d7ae0ae9f910da52dfa00fd4
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: metrics-proxy
@@ -63,6 +63,22 @@ spec:
                   hypershift.openshift.io/hosted-control-plane: hcp-namespace
               topologyKey: kubernetes.io/hostname
             weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: metrics-proxy
+                hypershift.openshift.io/control-plane-component: metrics-proxy
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/request-serving-component: "true"
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: metrics-proxy
+                hypershift.openshift.io/control-plane-component: metrics-proxy
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/request-serving-component: "true"
+            topologyKey: kubernetes.io/hostname
       automountServiceAccountToken: false
       containers:
       - args:
