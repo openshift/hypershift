@@ -60,6 +60,62 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			},
 		},
 		{
+			name: "When Replace Machines span a downgrade, it should use each Machine spec version",
+			machines: []*capiv1.Machine{
+				machineWithSpecVersionAndHealth("old", "4.22.0", "v1.35.5", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.21.10"}),
+				machineWithSpecVersionAndHealth("replacement", "4.21.10", "v1.34.6", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.22.0"}),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace}},
+				Status: hyperv1.NodePoolStatus{Version: "4.22.0"},
+			},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.21.10", KubeletVersion: "v1.34.6", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+				{OCPVersion: "4.22.0", KubeletVersion: "v1.35.5", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
+			name: "When Replace Machines span a forward upgrade, it should use each Machine spec version",
+			machines: []*capiv1.Machine{
+				machineWithSpecVersionAndHealth("old", "4.21.10", "v1.34.6", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.22.0"}),
+				machineWithSpecVersionAndHealth("replacement", "4.22.0", "v1.35.5", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.21.10"}),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace}},
+				Status: hyperv1.NodePoolStatus{Version: "4.21.10"},
+			},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.21.10", KubeletVersion: "v1.34.6", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+				{OCPVersion: "4.22.0", KubeletVersion: "v1.35.5", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
+			name: "When Replace Machine has no spec version and a stale annotation, it should fall back to NodePool status",
+			machines: []*capiv1.Machine{
+				machineWithVersionAndHealth("legacy", "v1.34.6", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.22.0"}),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace}},
+				Status: hyperv1.NodePoolStatus{Version: "4.21.10"},
+			},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.21.10", KubeletVersion: "v1.34.6", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
+			name: "When InPlace Machine has a spec version and an upgrader annotation, it should use the annotation",
+			machines: []*capiv1.Machine{
+				machineWithSpecVersionAndHealth("inplace", "4.21.10", "v1.35.5", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.22.0"}),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeInPlace}},
+				Status: hyperv1.NodePoolStatus{Version: "4.21.10"},
+			},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.22.0", KubeletVersion: "v1.35.5", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
 			name: "When there is mixed health, it should report ready and unready counts per version",
 			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
@@ -626,6 +682,12 @@ func machineWithVersionAndHealth(name, kubeletVersion string, healthy bool, anno
 	return machineWithVersionAndConditions(name, kubeletVersion, []metav1.Condition{
 		{Type: capiv1.MachineNodeHealthyCondition, Status: healthStatus},
 	}, annotations)
+}
+
+func machineWithSpecVersionAndHealth(name, specVersion, kubeletVersion string, healthy bool, annotations map[string]string) *capiv1.Machine {
+	machine := machineWithVersionAndHealth(name, kubeletVersion, healthy, annotations)
+	machine.Spec.Version = specVersion
+	return machine
 }
 
 func machineWithVersionAndConditions(name, kubeletVersion string, conditions []metav1.Condition, annotations map[string]string) *capiv1.Machine {
