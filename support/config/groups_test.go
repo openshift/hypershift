@@ -68,6 +68,11 @@ func TestCurvePreferences(t *testing.T) {
 			nilCustom:     true,
 			expectedError: "Custom but Custom field is nil",
 		},
+		{
+			name:          "When TLS profile type is unknown, it should return an error",
+			profileType:   configv1.TLSProfileType("Bogus"),
+			expectedError: "unknown TLS profile type",
+		},
 	}
 	for _, profileType := range []configv1.TLSProfileType{configv1.TLSProfileOldType, configv1.TLSProfileIntermediateType, configv1.TLSProfileModernType} {
 		expected, _ := libgocrypto.TLSGroupsToCurveIDs(configv1.TLSProfiles[profileType].Groups)
