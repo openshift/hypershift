@@ -43,9 +43,17 @@ func reconcileLegacyInPlaceSecret(ctx context.Context, c client.Client, store pa
 	}
 
 	owner := payloadstore.OwnerRef{Namespace: crOwner.Namespace, Name: crOwner.Name}
-	payload, _, err := store.Get(ctx, owner, current.RolloutGeneration)
+	payload, storedConfigHash, err := store.Get(ctx, owner, current.RolloutGeneration)
 	if err != nil {
 		return fmt.Errorf("failed to read payload for in-place rollout generation %d: %w", current.RolloutGeneration, err)
+	}
+	// The Secret name carries status.current.configHash, so its bytes must be that payload. A
+	// same-generation refresh writes the store before it commits the new configHash to status, so the
+	// store can briefly be ahead of the status this reconcile read. Fail rather than write payload b
+	// under hash a; the retry reads the committed status and writes the matching Secret.
+	if storedConfigHash != current.ConfigHash {
+		return fmt.Errorf("stored payload for in-place rollout generation %d has config hash %q, status has %q; waiting for the generator to commit it",
+			current.RolloutGeneration, storedConfigHash, current.ConfigHash)
 	}
 	compressed, err := supportutil.CompressAndEncode(payload)
 	if err != nil {

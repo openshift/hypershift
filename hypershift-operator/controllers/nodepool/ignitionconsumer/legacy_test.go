@@ -12,6 +12,7 @@ import (
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -46,6 +47,22 @@ func TestReconcileLegacyInPlaceSecret(t *testing.T) {
 		g.Expect(secret.OwnerReferences[0].Name).To(Equal("np-1"))
 		g.Expect(secret.OwnerReferences[0].Controller).ToNot(BeNil())
 		g.Expect(*secret.OwnerReferences[0].Controller).To(BeTrue())
+	})
+
+	// A same-generation refresh writes the store before it commits the new configHash to status, so
+	// the store can be ahead of the status read. The Secret named for the status hash must not get the
+	// newer bytes.
+	t.Run("InPlace writes nothing when the stored payload is for another configHash", func(t *testing.T) {
+		g := NewWithT(t)
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		store := payloadstore.NewMemStore()
+		g.Expect(store.Put(ctx, owner, current.RolloutGeneration, "cfg2", []byte("PAYLOAD-2"))).To(Succeed())
+
+		err := reconcileLegacyInPlaceSecret(ctx, c, store, "ms-1", hyperv1.UpgradeTypeInPlace, "4.23.0", current, crOwner)
+		g.Expect(err).To(HaveOccurred())
+
+		err = c.Get(ctx, client.ObjectKey{Namespace: "hcp", Name: "token-ms-1-cfg1"}, &corev1.Secret{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 	})
 
 	t.Run("Replace writes nothing", func(t *testing.T) {
