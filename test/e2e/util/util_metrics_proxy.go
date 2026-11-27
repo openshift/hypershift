@@ -84,6 +84,16 @@ func EnsureMetricsForwarderWorking(t *testing.T, ctx context.Context, mgtClient 
 			`apiserver_request_total{job="apiserver"}`,
 			"should have apiserver_request_total metrics from kube-apiserver")
 
+		// The metrics-proxy scrapes the cluster-api PodMonitor over HTTPS through the CAPI manager's
+		// kube-rbac-proxy sidecar with the metrics-client certificate. These series prove that the
+		// CAPI manager TLS metrics endpoint serves metrics end to end.
+		if _, disabled := hostedCluster.Annotations[hyperv1.DisableMachineManagement]; !disabled {
+			t.Log("Querying Prometheus for CAPI manager metrics scraped via the metrics-forwarder")
+			assertMetricPresent(t, ctx, g, guestRestConfig, promPodName,
+				`controller_runtime_reconcile_total{job="cluster-api"}`,
+				"should have controller_runtime_reconcile_total metrics from the CAPI manager")
+		}
+
 		// 8. Verify the metrics-proxy deployment has --metrics-set All in its args.
 		t.Log("Verifying metrics-proxy deployment has --metrics-set All")
 		waitForMetricsProxyArgs(t, ctx, g, mgtClient, hcpNamespace, string(hyperv1.MetricsSetAll), 5*time.Minute)

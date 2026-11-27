@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-api-kube-rbac-proxy
+data:
+  # Only the HyperShift metrics client certificate (metrics-client secret) may read /metrics.
+  # Requests are authorized statically, so the proxy needs no TokenReview or SubjectAccessReview access.
+  config.yaml: |
+    authorization:
+      static:
+      - user:
+          name: system:serviceaccount:hypershift:prometheus
+        verb: get
+        path: /metrics
+        resourceRequest: false

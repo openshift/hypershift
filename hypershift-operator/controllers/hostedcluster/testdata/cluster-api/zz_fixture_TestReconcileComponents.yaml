@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   annotations:
     hypershift.openshift.io/cluster: ""
-    hypershift.openshift.io/desired-state-hash: 1d2c43735093a54d3384c2b4e0d83f43d2a903b9476e9a58f04be8f7ebfca363
+    hypershift.openshift.io/desired-state-hash: df24053833787eefb444597339cf31c77b5db2c8e3163153a6ba544fb24b55c5
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-api
@@ -25,7 +25,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: 741638a5741638a5
+        component.hypershift.openshift.io/config-hash: 3d47c11e741638a5741638a5741638a5741638a5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: cluster-api
@@ -69,6 +69,8 @@ spec:
         - --leader-elect-lease-duration=137s
         - --leader-elect-retry-period=26s
         - --leader-elect-renew-deadline=107s
+        - --diagnostics-address=127.0.0.1:8080
+        - --insecure-diagnostics
         env:
         - name: MY_NAMESPACE
           valueFrom:
@@ -111,6 +113,43 @@ spec:
           readOnly: true
         - mountPath: /tmp
           name: tmp-dir
+      - args:
+        - --secure-listen-address=:8444
+        - --upstream=http://127.0.0.1:8080/
+        - --tls-cert-file=/etc/tls/private/tls.crt
+        - --tls-private-key-file=/etc/tls/private/tls.key
+        - --client-ca-file=/etc/tls/client/ca.crt
+        - --config-file=/etc/kube-rbac-proxy/config.yaml
+        - --allow-paths=/metrics
+        - --tls-min-version=VersionTLS12
+        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        image: kube-rbac-proxy
+        imagePullPolicy: IfNotPresent
+        name: kube-rbac-proxy
+        ports:
+        - containerPort: 8444
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 1m
+            memory: 15Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/tls/private
+          name: metrics-tls
+          readOnly: true
+        - mountPath: /etc/tls/client
+          name: metrics-client-ca
+          readOnly: true
+        - mountPath: /etc/kube-rbac-proxy
+          name: kube-rbac-proxy-config
+          readOnly: true
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       serviceAccount: cluster-api
       serviceAccountName: cluster-api
@@ -128,6 +167,24 @@ spec:
         secret:
           defaultMode: 416
           secretName: capi-webhooks-tls
+      - name: metrics-tls
+        secret:
+          defaultMode: 416
+          optional: true
+          secretName: cluster-api-metrics-tls
+      - name: metrics-client-ca
+        secret:
+          defaultMode: 416
+          items:
+          - key: ca.crt
+            path: ca.crt
+          optional: true
+          secretName: metrics-client
+      - configMap:
+          defaultMode: 420
+          name: cluster-api-kube-rbac-proxy
+          optional: true
+        name: kube-rbac-proxy-config
       - emptyDir: {}
         name: tmp-dir
 status: {}
