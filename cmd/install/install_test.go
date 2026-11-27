@@ -23,6 +23,7 @@ import (
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
@@ -2123,6 +2124,8 @@ func TestSetupMonitoring(t *testing.T) {
 		opts             Options
 		expectSLOAlerts  bool
 		expectDashboards bool
+		expectGMPMonitor bool
+		expectMonitor    bool
 		minResourceCount int
 	}{
 		{
@@ -2132,6 +2135,18 @@ func TestSetupMonitoring(t *testing.T) {
 			},
 			expectSLOAlerts:  false,
 			expectDashboards: false,
+			expectMonitor:    true,
+			minResourceCount: 4,
+		},
+		{
+			name: "When GMP monitoring is enabled, it should return a PodMonitoring instead of a ServiceMonitor",
+			opts: Options{
+				PlatformMonitoring:  metrics.PlatformMonitoringAll,
+				EnableGMPMonitoring: true,
+			},
+			expectSLOAlerts:  false,
+			expectDashboards: false,
+			expectGMPMonitor: true,
 			minResourceCount: 4,
 		},
 		{
@@ -2140,6 +2155,7 @@ func TestSetupMonitoring(t *testing.T) {
 				SLOsAlerts: true,
 			},
 			expectSLOAlerts:  true,
+			expectMonitor:    true,
 			minResourceCount: 5,
 		},
 		{
@@ -2149,6 +2165,7 @@ func TestSetupMonitoring(t *testing.T) {
 				MonitoringDashboards: true,
 			},
 			expectDashboards: true,
+			expectMonitor:    true,
 			minResourceCount: 5,
 		},
 	}
@@ -2157,9 +2174,25 @@ func TestSetupMonitoring(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
-			objects := setupMonitoring(tc.opts, ns)
+			objects, err := setupMonitoring(tc.opts, ns)
+			g.Expect(err).NotTo(HaveOccurred())
 
 			g.Expect(len(objects)).To(BeNumerically(">=", tc.minResourceCount))
+
+			// The monitoring backend is exclusive: GMP manages a PodMonitoring
+			// while the default backend manages a ServiceMonitor.
+			foundPodMonitoring := false
+			foundServiceMonitor := false
+			for _, obj := range objects {
+				switch obj.(type) {
+				case *gmpmonitoring.PodMonitoring:
+					foundPodMonitoring = true
+				case *prometheusoperatorv1.ServiceMonitor:
+					foundServiceMonitor = true
+				}
+			}
+			g.Expect(foundPodMonitoring).To(Equal(tc.expectGMPMonitor), "unexpected GMP PodMonitoring presence")
+			g.Expect(foundServiceMonitor).To(Equal(tc.expectMonitor), "unexpected ServiceMonitor presence")
 
 			// Check SLO alerts
 			foundAlertingRule := false
@@ -2273,6 +2306,8 @@ func TestSetupExternalDNS(t *testing.T) {
 		opts             Options
 		minResourceCount int
 		expectGCPRules   bool
+		expectPodMonitor bool
+		expectGMPMonitor bool
 	}{
 		{
 			name: "When AWS provider is set with role ARN, it should return base resources with credentials secret",
@@ -2282,6 +2317,18 @@ func TestSetupExternalDNS(t *testing.T) {
 				ExternalDNSRoleARN:      "arn:aws:iam::123456789012:role/external-dns",
 			},
 			minResourceCount: 6,
+			expectPodMonitor: true,
+		},
+		{
+			name: "When GMP monitoring is enabled, it should return a PodMonitoring instead of a PodMonitor",
+			opts: Options{
+				ExternalDNSProvider:     "aws",
+				ExternalDNSDomainFilter: "example.com",
+				ExternalDNSRoleARN:      "arn:aws:iam::123456789012:role/external-dns",
+				EnableGMPMonitoring:     true,
+			},
+			minResourceCount: 6,
+			expectGMPMonitor: true,
 		},
 		{
 			name: "When google provider is set, it should include additional ClusterRole rules",
@@ -2291,6 +2338,7 @@ func TestSetupExternalDNS(t *testing.T) {
 			},
 			minResourceCount: 5,
 			expectGCPRules:   true,
+			expectPodMonitor: true,
 		},
 		{
 			name: "When credentials secret name is set, it should return base resources without creating a new secret",
@@ -2300,6 +2348,7 @@ func TestSetupExternalDNS(t *testing.T) {
 				ExternalDNSCredentialsSecret: "my-dns-secret",
 			},
 			minResourceCount: 5,
+			expectPodMonitor: true,
 		},
 	}
 
@@ -2311,6 +2360,19 @@ func TestSetupExternalDNS(t *testing.T) {
 			objects, err := setupExternalDNS(t.Context(), tc.opts, ns, client)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(len(objects)).To(BeNumerically(">=", tc.minResourceCount))
+
+			foundPodMonitor := false
+			foundPodMonitoring := false
+			for _, obj := range objects {
+				switch obj.(type) {
+				case *gmpmonitoring.PodMonitoring:
+					foundPodMonitoring = true
+				case *prometheusoperatorv1.PodMonitor:
+					foundPodMonitor = true
+				}
+			}
+			g.Expect(foundPodMonitor).To(Equal(tc.expectPodMonitor), "unexpected PodMonitor presence")
+			g.Expect(foundPodMonitoring).To(Equal(tc.expectGMPMonitor), "unexpected GMP PodMonitoring presence")
 
 			if tc.expectGCPRules {
 				for _, obj := range objects {

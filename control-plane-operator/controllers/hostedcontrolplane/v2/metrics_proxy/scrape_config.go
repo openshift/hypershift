@@ -7,6 +7,7 @@ import (
 
 	metricsproxybin "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,17 +43,27 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 		},
 	}
 
-	smComponents, err := componentsFromServiceMonitors(cpContext, namespace)
-	if err != nil {
-		return err
-	}
-	cfg.Components = append(cfg.Components, smComponents...)
+	if cpContext.EnableGMPMonitoring {
+		// The CoreOS monitors are not created when GMP is selected, so the
+		// PodMonitorings that replace them describe the targets instead.
+		gmpComponents, err := componentsFromPodMonitorings(cpContext, namespace)
+		if err != nil {
+			return err
+		}
+		cfg.Components = append(cfg.Components, gmpComponents...)
+	} else {
+		smComponents, err := componentsFromServiceMonitors(cpContext, namespace)
+		if err != nil {
+			return err
+		}
+		cfg.Components = append(cfg.Components, smComponents...)
 
-	pmComponents, err := componentsFromPodMonitors(cpContext, namespace)
-	if err != nil {
-		return err
+		pmComponents, err := componentsFromPodMonitors(cpContext, namespace)
+		if err != nil {
+			return err
+		}
+		cfg.Components = append(cfg.Components, pmComponents...)
 	}
-	cfg.Components = append(cfg.Components, pmComponents...)
 
 	sort.Slice(cfg.Components, func(i, j int) bool {
 		return cfg.Components[i].Name < cfg.Components[j].Name
@@ -202,6 +213,81 @@ func componentFromPodMonitor(cpContext component.WorkloadContext, log logr.Logge
 	return comp, true
 }
 
+func componentsFromPodMonitorings(cpContext component.WorkloadContext, namespace string) ([]metricsproxybin.ComponentFileConfig, error) {
+	log := logr.FromContextOrDiscard(cpContext)
+
+	pmList := &gmpmonitoring.PodMonitoringList{}
+	if err := cpContext.Client.List(cpContext, pmList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list PodMonitorings: %w", err)
+	}
+
+	var components []metricsproxybin.ComponentFileConfig
+	for i := range pmList.Items {
+		comp, ok := componentFromPodMonitoring(cpContext, log, namespace, &pmList.Items[i])
+		if ok {
+			components = append(components, comp)
+		}
+	}
+	return components, nil
+}
+
+func componentFromPodMonitoring(cpContext component.WorkloadContext, log logr.Logger, namespace string, pm *gmpmonitoring.PodMonitoring) (metricsproxybin.ComponentFileConfig, bool) {
+	if len(pm.Spec.Endpoints) == 0 {
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+	ep := pm.Spec.Endpoints[0]
+
+	podSelector, err := metav1.LabelSelectorAsSelector(&pm.Spec.Selector)
+	if err != nil {
+		log.V(4).Info("skipping PodMonitoring: invalid selector", "podMonitoring", pm.Name, "error", err)
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+
+	var port int32
+	switch {
+	case ep.Port.Type == intstr.Int && ep.Port.IntVal > 0:
+		port = ep.Port.IntVal
+	case ep.Port.Type == intstr.String && ep.Port.StrVal != "":
+		port, err = resolvePodPort(cpContext, namespace, podSelector, ep.Port.StrVal)
+		if err != nil {
+			log.V(4).Info("skipping PodMonitoring: port not resolvable", "podMonitoring", pm.Name, "port", ep.Port.StrVal, "error", err)
+			return metricsproxybin.ComponentFileConfig{}, false
+		}
+	default:
+		log.V(4).Info("skipping PodMonitoring: no port", "podMonitoring", pm.Name)
+		return metricsproxybin.ComponentFileConfig{}, false
+	}
+
+	scheme := ep.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+
+	comp := metricsproxybin.ComponentFileConfig{
+		Selector:      pm.Spec.Selector.MatchLabels,
+		MetricsPort:   port,
+		MetricsPath:   endpointMetricsPath(ep.Path),
+		MetricsScheme: scheme,
+	}
+
+	if ep.TLS != nil {
+		comp.TLSServerName = ep.TLS.ServerName
+		comp.CAFile = certFilePathFromSecretSelector(ep.TLS.CA)
+		comp.CertFile = certFilePathFromSecretSelector(ep.TLS.Cert)
+		comp.KeyFile = certFilePathFromSecretSelector(ep.TLS.Key)
+	}
+
+	// Some PodMonitorings are renamed to give GMP the CoreOS job label; the
+	// guest keeps addressing them, and the proxy keeps filtering them, by the
+	// CoreOS monitor name.
+	comp.Name = pm.Name
+	if name := pm.Annotations[metricsproxybin.ComponentNameAnnotation]; name != "" {
+		comp.Name = name
+	}
+	populateMetricsLabelsFromAnnotations(&comp, pm.Annotations)
+	return comp, true
+}
+
 func endpointScheme(scheme *prometheusoperatorv1.Scheme) string {
 	if scheme != nil {
 		return scheme.String()
@@ -243,6 +329,16 @@ func certFilePathFromSecretOrConfigMap(ref prometheusoperatorv1.SecretOrConfigMa
 		return filepath.Join(certBasePath, ref.Secret.Name, ref.Secret.Key)
 	}
 	return ""
+}
+
+// certFilePathFromSecretSelector returns the file path for a volume-mounted
+// cert from a GMP Secret reference, following the same convention as
+// certFilePathFromSecretOrConfigMap.
+func certFilePathFromSecretSelector(ref *gmpmonitoring.SecretSelector) string {
+	if ref == nil || ref.Secret == nil {
+		return ""
+	}
+	return filepath.Join(certBasePath, ref.Secret.Name, ref.Secret.Key)
 }
 
 // findServiceForMonitor finds the Service for a ServiceMonitor and returns its

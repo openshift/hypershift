@@ -1401,6 +1401,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"cluster.x-k8s.io",
 					"monitoring.coreos.com",
 					"monitoring.rhobs",
+					"monitoring.googleapis.com",
 				},
 				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{rbacv1.VerbAll},

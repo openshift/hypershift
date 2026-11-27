@@ -40,6 +40,11 @@ type ScrapeTarget struct {
 	Port    int32
 }
 
+// ComponentNameAnnotation records the component name a GMP PodMonitoring
+// stands in for when its own name differs from the CoreOS monitor it was
+// generated from. The proxy keys metric filters and guest paths on that name.
+const ComponentNameAnnotation = "hypershift.openshift.io/metrics-proxy-component"
+
 // FileConfig is the YAML structure shared between the CPO (writer) and the
 // metrics-proxy binary (reader) for the scrape-config ConfigMap.
 type FileConfig struct {

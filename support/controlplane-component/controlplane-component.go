@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
@@ -29,6 +30,29 @@ import (
 type NamedComponent interface {
 	Name() string
 }
+
+// CoreOS monitoring asset names. When Google Managed Prometheus is selected the
+// framework does not apply these and removes any copy the HCP owns. Removing the
+// monitors keeps a target from being scraped by both backends. The recording
+// rules have no GMP counterpart: once the CoreOS Prometheus stops scraping the
+// HCP, their inputs are gone and they would only record empty series.
+const (
+	coreOSServiceMonitorManifest = "servicemonitor.yaml"
+	coreOSPodMonitorManifest     = "podmonitor.yaml"
+	coreOSRulesManifest          = "prometheus-recording-rules.yaml"
+)
+
+func isCoreOSMonitoringManifest(name string) bool {
+	switch name {
+	case coreOSServiceMonitorManifest, coreOSPodMonitorManifest, coreOSRulesManifest:
+		return true
+	default:
+		return false
+	}
+}
+
+// disabledAdapter removes the manifest when the HCP owns it and never applies it.
+var disabledAdapter = genericAdapter{predicate: func(WorkloadContext) bool { return false }}
 
 // PreconditionGate decides whether a group of preconditions is enforced on a given
 // reconcile. Returning true enforces the preconditions; returning false skips them
@@ -299,6 +323,15 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 		return err
 	}
 
+	// Google Managed Prometheus manifests live outside the CoreOS asset tree, so
+	// the walk above does not see them. Only an HCP that uses GMP creates them,
+	// which keeps this path free of API calls on every other HCP.
+	if cpContext.EnableGMPMonitoring {
+		if err := c.deleteGMPManifests(cpContext); err != nil {
+			return err
+		}
+	}
+
 	component := &hyperv1.ControlPlaneComponent{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Name(),
@@ -307,6 +340,34 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 	}
 	_, err = k8sutil.DeleteIfNeeded(cpContext, cpContext.Client, component)
 	return err
+}
+
+// deleteGMPManifests removes the staged GMP manifests this operator created for
+// the component. Deletion is limited to objects carrying the HCP owner
+// reference, matching the CoreOS adapter predicate path.
+func (c *controlPlaneWorkload[T]) deleteGMPManifests(cpContext ControlPlaneContext) error {
+	manifestNames, err := assets.GMPManifests(c.AssetDirName())
+	if err != nil {
+		return err
+	}
+	for _, manifestName := range manifestNames {
+		obj, gvk, err := assets.LoadManifestTemplated(c.AssetDirName(), manifestName, c.templateData)
+		if err != nil {
+			return err
+		}
+		obj.SetNamespace(cpContext.HCP.Namespace)
+
+		// A client whose scheme does not register the GMP types cannot have
+		// created these objects, so there is nothing to remove.
+		if !cpContext.Client.Scheme().Recognizes(*gvk) {
+			continue
+		}
+
+		if err := disabledAdapter.reconcile(cpContext, obj); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // update reconciles component workload and related manifests
@@ -335,6 +396,13 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 			k8sutil.EnsurePullSecret(typedObj, common.PullSecret("").Name)
 		}
 
+		if cpContext.EnableGMPMonitoring && isCoreOSMonitoringManifest(manifestName) {
+			// The GMP backend replaces this monitor. Never apply the CoreOS
+			// object, and remove one an earlier operator version created for the
+			// HCP rather than leaving both backends scraping the same target.
+			return disabledAdapter.reconcile(cpContext, obj)
+		}
+
 		adapter, exist := c.manifestsAdapters[manifestName]
 		if exist {
 			return adapter.reconcile(cpContext, obj)
@@ -347,6 +415,12 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+
+	if cpContext.EnableGMPMonitoring {
+		if err := c.reconcileGMPManifests(cpContext); err != nil {
+			return fmt.Errorf("failed to reconcile GMP monitoring manifests: %w", err)
+		}
 	}
 
 	if c.serviceAccountKubeConfigOpts != nil {
@@ -370,6 +444,58 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 	}
 
 	return c.reconcileWorkload(cpContext)
+}
+
+// reconcileGMPManifests applies the Google Managed Prometheus monitoring
+// manifests staged for this component. The framework owns metrics set selection
+// and the cluster ID label, so the staged snapshot is adapted here rather than
+// applied verbatim.
+func (c *controlPlaneWorkload[T]) reconcileGMPManifests(cpContext ControlPlaneContext) error {
+	manifestNames, err := assets.GMPManifests(c.AssetDirName())
+	if err != nil {
+		return err
+	}
+	if len(manifestNames) == 0 {
+		return nil
+	}
+
+	adapter := c.coreOSMonitorAdapter()
+	adapter.adapt = func(cpContext WorkloadContext, obj client.Object) error {
+		podMonitoring, ok := obj.(*gmpmonitoring.PodMonitoring)
+		if !ok {
+			return fmt.Errorf("%s: unsupported GMP manifest type %T", c.AssetDirName(), obj)
+		}
+		return metrics.AdaptGMPPodMonitoring(c.AssetDirName(), podMonitoring, cpContext.MetricsSet, cpContext.HCP.Spec.ClusterID, cpContext.HCP.Namespace)
+	}
+	ownerRef := config.OwnerRefFrom(cpContext.HCP)
+
+	for _, manifestName := range manifestNames {
+		obj, _, err := assets.LoadManifestTemplated(c.AssetDirName(), manifestName, c.templateData)
+		if err != nil {
+			return err
+		}
+		obj.SetNamespace(cpContext.HCP.Namespace)
+		if !cpContext.OmitOwnerReference {
+			ownerRef.ApplyTo(obj)
+		}
+
+		if err := adapter.reconcile(cpContext, obj); err != nil {
+			return fmt.Errorf("%s/%s: %w", c.AssetDirName(), manifestName, err)
+		}
+	}
+	return nil
+}
+
+// coreOSMonitorAdapter returns the predicate and skip settings of the CoreOS
+// monitor adapter a staged GMP monitor stands in for, so an opt-out such as
+// DisableIfAnnotationExist(DisableMonitoringServices) applies to both backends.
+func (c *controlPlaneWorkload[T]) coreOSMonitorAdapter() genericAdapter {
+	for _, manifestName := range []string{coreOSServiceMonitorManifest, coreOSPodMonitorManifest} {
+		if adapter, exist := c.manifestsAdapters[manifestName]; exist {
+			return genericAdapter{predicate: adapter.predicate, skip: adapter.skip}
+		}
+	}
+	return genericAdapter{}
 }
 
 func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContext) error {

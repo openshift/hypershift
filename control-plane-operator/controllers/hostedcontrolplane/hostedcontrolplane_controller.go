@@ -87,6 +87,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
@@ -436,6 +437,11 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 	}
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		handlers = append(handlers, eventHandler{obj: &routev1.Route{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})})
+	}
+	// Only GMP management clusters install the GMP CRDs, so watching them
+	// elsewhere would fail to start the informer.
+	if r.EnableGMPMonitoring {
+		handlers = append(handlers, eventHandler{obj: &gmpmonitoring.PodMonitoring{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})})
 	}
 
 	return handlers
@@ -1482,6 +1488,14 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		}
 	}
 
+	// Reconcile GMP collector access
+	if r.EnableGMPMonitoring {
+		r.Log.Info("Reconciling GMP collector access")
+		if err := r.reconcileGMPCollectorAccess(ctx, hcp, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile GMP collector access: %w", err)
+		}
+	}
+
 	// Reconcile unmanaged etcd
 	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		r.Log.Info("Reconciling unmanaged Etcd")
@@ -1674,6 +1688,16 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdCerts(ctx context.Context, h
 		return pki.ReconcileEtcdSignerConfigMap(etcdSignerCM, p.OwnerRef, etcdSignerSecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd signer CA configmap: %w", err)
+	}
+
+	// CA-only mirror for the GMP etcd monitor; see reconcilePKI.
+	if r.EnableGMPMonitoring {
+		etcdCACertSecret := manifests.EtcdCACertSecret(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, etcdCACertSecret, func() error {
+			return pki.ReconcileCASecretMirror(etcdCACertSecret, etcdSignerCM, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile etcd CA mirror secret: %w", err)
+		}
 	}
 
 	etcdClientSecret := manifests.EtcdClientSecret(hcp.Namespace)
@@ -2292,6 +2316,17 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert, namedCertCAs...)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile root CA configmap: %w", err)
+	}
+
+	// GMP monitors reference Secrets only, so mirror the public CA into a
+	// CA-only Secret. Skipped unless this management cluster uses GMP.
+	if r.EnableGMPMonitoring {
+		rootCACertSecret := manifests.RootCACertSecret(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, rootCACertSecret, func() error {
+			return pki.ReconcileCASecretMirror(rootCACertSecret, rootCAConfigMap, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile root CA mirror secret: %w", err)
+		}
 	}
 
 	if err := r.reconcileEtcdCerts(ctx, hcp, p, createOrUpdate); err != nil {

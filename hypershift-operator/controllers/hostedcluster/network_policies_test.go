@@ -124,7 +124,7 @@ func TestReconcileNetworkPolicies_GCP_PrivateRouter(t *testing.T) {
 	log := ctrl.Log.WithName("test-gcp")
 	version := semver.MustParse("4.15.0")
 
-	err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, hcluster, hcp, version, false)
+	err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, hcluster, hcp, version, false, false)
 	if err != nil {
 		t.Fatalf("reconcileNetworkPolicies failed: %v", err)
 	}
@@ -144,6 +144,8 @@ func TestReconcileNetworkPolicies_GCP_PrivateRouter(t *testing.T) {
 			t.Errorf("Expected %s NetworkPolicy to be created", policyName)
 		}
 	}
+
+	t.Run("GMP monitoring", testReconcileNetworkPoliciesGMPMonitoring)
 }
 
 // verifyPrivateRouterNetworkPolicy verifies that the private-router NetworkPolicy has the correct configuration
@@ -607,7 +609,7 @@ func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
 			log := ctrl.Log.WithName("test")
 			version := semver.MustParse("4.15.0")
 
-			err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, tc.hcluster, tc.hcp, version, false)
+			err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, tc.hcluster, tc.hcp, version, false, false)
 			if err != nil {
 				t.Fatalf("reconcileNetworkPolicies failed: %v", err)
 			}
@@ -1727,7 +1729,7 @@ func TestReconcileNetworkPolicies_LoadBalancerOauth(t *testing.T) {
 			log := ctrl.Log.WithName("test")
 			version := semver.MustParse("4.15.0")
 
-			err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, tc.hcluster, tc.hcp, version, false)
+			err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, tc.hcluster, tc.hcp, version, false, false)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			_, policyCreated := createdNetworkPolicies["loadbalancer-oauth"]
@@ -2014,7 +2016,7 @@ func TestReconcileNetworkPolicies_HCPEgressBlockCIDRs(t *testing.T) {
 			log := ctrl.Log.WithName("test")
 			version := semver.MustParse("4.15.0")
 
-			err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, hcluster, hcp, version, true)
+			err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, hcluster, hcp, version, true, false)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// Verify the private-router policy egress exceptions.
@@ -2068,4 +2070,147 @@ func collectIPBlockExceptCIDRs(policy *networkingv1.NetworkPolicy, cidr string) 
 		}
 	}
 	return nil
+}
+
+func TestReconcileOpenshiftMonitoringNetworkPolicy(t *testing.T) {
+	gmpCollectorPeer := networkingv1.NetworkPolicyPeer{
+		NamespaceSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{"kubernetes.io/metadata.name": "gke-gmp-system"},
+		},
+		PodSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{"app.kubernetes.io/name": "collector"},
+		},
+	}
+	monitoringPeer := networkingv1.NetworkPolicyPeer{
+		NamespaceSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{"network.openshift.io/policy-group": "monitoring"},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		gmpEnabled bool
+		expected   []networkingv1.NetworkPolicyPeer
+	}{
+		{
+			name:       "When GMP monitoring is disabled, it should admit only monitoring-labeled namespaces",
+			gmpEnabled: false,
+			expected:   []networkingv1.NetworkPolicyPeer{monitoringPeer},
+		},
+		{
+			name:       "When GMP monitoring is enabled, it should also admit the GMP collector pods",
+			gmpEnabled: true,
+			expected:   []networkingv1.NetworkPolicyPeer{monitoringPeer, gmpCollectorPeer},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			policy := networkpolicy.OpenshiftMonitoringNetworkPolicy("clusters-example")
+
+			g.Expect(reconcileOpenshiftMonitoringNetworkPolicy(policy, tc.gmpEnabled)).To(Succeed())
+
+			g.Expect(policy.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
+			g.Expect(policy.Spec.PodSelector).To(Equal(metav1.LabelSelector{}), "the policy must select every control plane pod")
+			g.Expect(policy.Spec.Ingress).To(HaveLen(1))
+			g.Expect(policy.Spec.Ingress[0].From).To(Equal(tc.expected))
+		})
+	}
+}
+
+// testReconcileNetworkPoliciesGMPMonitoring checks that the monitoring policy
+// follows the per-cluster GMP gate rather than the management flag.
+func testReconcileNetworkPoliciesGMPMonitoring(t *testing.T) {
+	tests := []struct {
+		name                string
+		enableGMPMonitoring bool
+		expectCollectorPeer bool
+	}{
+		{
+			name:                "When the hosted cluster does not use GMP on a GMP-enabled management cluster, it should not admit the GMP collector",
+			enableGMPMonitoring: false,
+			expectCollectorPeer: false,
+		},
+		{
+			name:                "When the hosted cluster uses GMP, it should admit the GMP collector",
+			enableGMPMonitoring: true,
+			expectCollectorPeer: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			scheme := runtime.NewScheme()
+			g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(configv1.AddToScheme(scheme)).To(Succeed())
+			g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+
+			managementClusterNetwork := &configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: configv1.NetworkSpec{
+					ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14"}},
+					ServiceNetwork: []string{"172.30.0.0/16"},
+				},
+			}
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+			kubernetesEndpoint := &corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"},
+				//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
+				Subsets: []corev1.EndpointSubset{
+					{Addresses: []corev1.EndpointAddress{{IP: "10.0.0.1"}}},
+				},
+			}
+			reconciler := &HostedClusterReconciler{
+				Client:                        fake.NewClientBuilder().WithScheme(scheme).WithObjects(kubernetesEndpoint, managementClusterNetwork).Build(),
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(),
+				// The management flag only permits GMP; the per-cluster gate decides.
+				EnableGMPMonitoring: true,
+			}
+
+			createdNetworkPolicies := make(map[string]*networkingv1.NetworkPolicy)
+			createOrUpdate := upsert.CreateOrUpdateFN(func(_ context.Context, _ client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				if np, ok := obj.(*networkingv1.NetworkPolicy); ok {
+					if err := f(); err != nil {
+						return controllerutil.OperationResultNone, err
+					}
+					createdNetworkPolicies[np.Name] = np
+				}
+				return controllerutil.OperationResultCreated, nil
+			})
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform},
+				},
+			}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name),
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform},
+				},
+			}
+
+			err := reconciler.reconcileNetworkPolicies(context.Background(), ctrl.Log.WithName("test"), createOrUpdate, hcluster, hcp, semver.MustParse("4.15.0"), false, tc.enableGMPMonitoring)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			policy, exists := createdNetworkPolicies[networkpolicy.OpenshiftMonitoringNetworkPolicy(hcp.Namespace).Name]
+			g.Expect(exists).To(BeTrue(), "the monitoring NetworkPolicy should be created")
+			g.Expect(policy.Spec.Ingress).To(HaveLen(1))
+			hasCollectorPeer := false
+			for _, peer := range policy.Spec.Ingress[0].From {
+				if peer.NamespaceSelector != nil && peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] == "gke-gmp-system" {
+					hasCollectorPeer = true
+				}
+			}
+			g.Expect(hasCollectorPeer).To(Equal(tc.expectCollectorPeer))
+		})
+	}
 }

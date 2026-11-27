@@ -944,7 +944,10 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	objects = append(objects, techPreviewCM)
 
 	// Setup Monitoring resources
-	monitoringObjs := setupMonitoring(opts, operatorNamespace)
+	monitoringObjs, err := setupMonitoring(opts, operatorNamespace)
+	if err != nil {
+		return nil, nil, err
+	}
 	objects = append(objects, monitoringObjs...)
 
 	// Setup Shared Ingress resources (ARO HCP only)
@@ -1302,7 +1305,7 @@ func dryRunValidateCRDs(ctx context.Context, out io.Writer, crds []crclient.Obje
 // - RecordingRule for HyperShift
 // - AlertingRule for HyperShift (if SLOsAlerts is enabled)
 // - MonitoringDashboardTemplate for HC monitoring dashboards (if MonitoringDashboards is enabled)
-func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclient.Object {
+func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) ([]crclient.Object, error) {
 	var objects []crclient.Object
 
 	prometheusRole := assets.HyperShiftPrometheusRole{
@@ -1317,10 +1320,21 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 	}.Build()
 	objects = append(objects, prometheusRoleBinding)
 
-	serviceMonitor := assets.HyperShiftServiceMonitor{
-		Namespace: operatorNamespace,
-	}.Build()
-	objects = append(objects, serviceMonitor)
+	if opts.EnableGMPMonitoring {
+		// The GMP collector discovers the operator through a PodMonitoring in the
+		// install namespace. The staged asset is generated from the CoreOS
+		// ServiceMonitor it replaces, so the two cannot drift.
+		podMonitoring, err := loadGMPMonitor("operator", operatorNamespace.Name)
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, podMonitoring)
+	} else {
+		serviceMonitor := assets.HyperShiftServiceMonitor{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, serviceMonitor)
+	}
 
 	recordingRule := assets.HypershiftRecordingRule{
 		Namespace: operatorNamespace,
@@ -1340,7 +1354,18 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 		}.Build()
 		objects = append(objects, monitoringDashboardTemplate)
 	}
-	return objects
+	return objects, nil
+}
+
+// loadGMPMonitor loads a staged GMP PodMonitoring and points it at the install
+// namespace. The generated asset carries a placeholder namespace because
+// `hypershift install` can deploy into any namespace.
+func loadGMPMonitor(component, namespace string) (crclient.Object, error) {
+	obj, err := assets.LoadGMPPodMonitoring(component, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load the GMP %s monitor: %w", component, err)
+	}
+	return obj, nil
 }
 
 // setupSharedIngress returns the shared ingress resources that need to be included
@@ -1560,10 +1585,18 @@ func setupExternalDNS(ctx context.Context, opts Options, operatorNamespace *core
 	}.Build()
 	objects = append(objects, externalDNSDeployment)
 
-	podMonitor := assets.ExternalDNSPodMonitor{
-		Namespace: operatorNamespace,
-	}.Build()
-	objects = append(objects, podMonitor)
+	if opts.EnableGMPMonitoring {
+		podMonitoring, err := loadGMPMonitor("external-dns", operatorNamespace.Name)
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, podMonitoring)
+	} else {
+		podMonitor := assets.ExternalDNSPodMonitor{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, podMonitor)
+	}
 
 	return objects, nil
 }

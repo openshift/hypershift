@@ -3,9 +3,11 @@ package assets
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
+	"strings"
 	"text/template"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -25,7 +27,44 @@ const (
 	statefulSetManifest = "statefulset.yaml"
 	cronJobManifest     = "cronjob.yaml"
 	jobManifest         = "job.yaml"
+
+	// gmpManifestPrefix marks a manifest for the Google Managed Prometheus
+	// backend. These files sit next to the CoreOS monitors they replace but are
+	// generated, GCP-only, and applied only when GMP monitoring is selected, so
+	// the default manifest walk must never yield them.
+	gmpManifestPrefix = "gmp-"
 )
+
+// GMPPodMonitoringManifest is the generated GMP scrape configuration of a
+// component.
+const GMPPodMonitoringManifest = gmpManifestPrefix + "podmonitoring.yaml"
+
+// isGMPManifest reports whether a manifest file is a GMP backend manifest.
+func isGMPManifest(manifestName string) bool {
+	return strings.HasPrefix(manifestName, gmpManifestPrefix)
+}
+
+// GMPManifests returns the names of the GMP manifests staged for a component.
+// ForEachManifest never yields these, so a caller that wants them asks for
+// them here, and only when Google Managed Prometheus is selected.
+func GMPManifests(componentName string) ([]string, error) {
+	entries, err := fs.ReadDir(manifestsAssets, componentName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() || !isGMPManifest(entry.Name()) {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	return names, nil
+}
 
 func LoadDeploymentManifest(componentName string) (*appsv1.Deployment, error) {
 	deploy := &appsv1.Deployment{}
@@ -140,6 +179,11 @@ func LoadStatefulSetManifestTemplated(componentName string, templateData map[str
 	return sts, nil
 }
 
+// ForEachManifest calls action for every manifest of a component other than its
+// workload (Deployment, StatefulSet, CronJob, Job) and its GMP manifests. GMP
+// manifests are skipped unconditionally so the default walk, which also drives
+// status reporting and deletion, never sees them. The component framework asks
+// for them explicitly through GMPManifests when GMP monitoring is selected.
 func ForEachManifest(componentName string, action func(manifestName string) error) error {
 	return fs.WalkDir(manifestsAssets, componentName, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -150,6 +194,9 @@ func ForEachManifest(componentName string, action func(manifestName string) erro
 		}
 		manifestName := d.Name()
 		if manifestName == deploymentManifest || manifestName == statefulSetManifest || manifestName == cronJobManifest || manifestName == jobManifest {
+			return nil
+		}
+		if isGMPManifest(manifestName) {
 			return nil
 		}
 
