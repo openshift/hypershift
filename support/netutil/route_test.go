@@ -3,6 +3,7 @@ package netutil
 import (
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -65,6 +66,41 @@ func TestShortenName(t *testing.T) {
 			})
 		}
 	}
+
+	// A truncated base must never end in '.', which would leave ".-" in the result.
+	validCases := []struct {
+		name   string
+		base   string
+		suffix string
+	}{
+		{
+			name:   "When the base is truncated right after a dot, it should drop the trailing dot",
+			base:   "user-" + strings.Repeat("a.", 117) + "bbbbbbbbbb",
+			suffix: "np-1",
+		},
+		{
+			name:   "When the suffix is too long and the base is truncated right after a dot, it should drop the trailing dot",
+			base:   strings.Repeat("a.", 140),
+			suffix: randSeq(kvalidation.DNS1123SubdomainMaxLength),
+		},
+	}
+	for _, tc := range validCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ShortenName(tc.base, tc.suffix, kvalidation.DNS1123SubdomainMaxLength)
+			if errs := kvalidation.IsDNS1123Subdomain(got); len(errs) > 0 {
+				t.Errorf("ShortenName(%q, %q) = %q is not a valid DNS-1123 subdomain: %v", tc.base, tc.suffix, got, errs)
+			}
+		})
+	}
+
+	t.Run("When a dotted base is truncated at any length, it should produce a valid DNS-1123 subdomain", func(t *testing.T) {
+		for n := 200; n < 260; n++ {
+			base := strings.Repeat("a.", n/2) + strings.Repeat("b", n%2+2)
+			if got := ShortenName(base, "np-1", kvalidation.DNS1123SubdomainMaxLength); len(kvalidation.IsDNS1123Subdomain(got)) > 0 {
+				t.Errorf("ShortenName(<%d-char dotted base>, %q) = %q is not a valid DNS-1123 subdomain", len(base), "np-1", got)
+			}
+		}
+	})
 }
 
 func TestShortenNameIsDifferent(t *testing.T) {
