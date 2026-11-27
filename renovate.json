@@ -131,6 +131,16 @@
                 "docker.io/zensical/zensical"
             ],
             "groupName": "zensical"
+        },
+        {
+            "description": "Disable updates (including vulnerability fixes) to the CAPI provider sync input pins; bump them deliberately by editing hack/capi-vendor/<provider>/go.mod and then running make capi-sync-force, see hack/capi-sync-provider.sh",
+            "matchManagers": [
+                "gomod"
+            ],
+            "matchFileNames": [
+                "hack/capi-vendor/*/go.mod"
+            ],
+            "enabled": false
         }
     ]
 }
