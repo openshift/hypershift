@@ -28,3 +28,12 @@ func TestValidateGMPMonitoring(t *testing.T) {
 		})
 	}
 }
+
+func TestGMPUnsupportedComponents(t *testing.T) {
+	g := NewWithT(t)
+
+	g.Expect(GMPUnsupportedComponents).ToNot(BeEmpty())
+	for component, reason := range GMPUnsupportedComponents {
+		g.Expect(reason).ToNot(BeEmpty(), "component %q must state why it has no GMP monitor", component)
+	}
+}

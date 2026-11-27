@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"strings"
 	"text/template"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -25,7 +26,18 @@ const (
 	statefulSetManifest = "statefulset.yaml"
 	cronJobManifest     = "cronjob.yaml"
 	jobManifest         = "job.yaml"
+
+	// gmpManifestPrefix marks a manifest for the Google Managed Prometheus
+	// backend. These files sit next to the CoreOS monitors they replace but are
+	// generated, GCP-only, and applied only when GMP monitoring is selected, so
+	// the default manifest walk must never yield them.
+	gmpManifestPrefix = "gmp-"
 )
+
+// isGMPManifest reports whether a manifest file is a GMP backend manifest.
+func isGMPManifest(manifestName string) bool {
+	return strings.HasPrefix(manifestName, gmpManifestPrefix)
+}
 
 func LoadDeploymentManifest(componentName string) (*appsv1.Deployment, error) {
 	deploy := &appsv1.Deployment{}
@@ -140,6 +152,10 @@ func LoadStatefulSetManifestTemplated(componentName string, templateData map[str
 	return sts, nil
 }
 
+// ForEachManifest calls action for every manifest of a component other than its
+// workload (Deployment, StatefulSet, CronJob, Job) and its GMP manifests. GMP
+// manifests are skipped unconditionally: nothing in the component framework
+// opts in to them yet, so no HostedControlPlane applies, deletes or reports one.
 func ForEachManifest(componentName string, action func(manifestName string) error) error {
 	return fs.WalkDir(manifestsAssets, componentName, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -150,6 +166,9 @@ func ForEachManifest(componentName string, action func(manifestName string) erro
 		}
 		manifestName := d.Name()
 		if manifestName == deploymentManifest || manifestName == statefulSetManifest || manifestName == cronJobManifest || manifestName == jobManifest {
+			return nil
+		}
+		if isGMPManifest(manifestName) {
 			return nil
 		}
 
