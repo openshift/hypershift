@@ -10,14 +10,16 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -436,7 +438,14 @@ func (c *CAPI) awsMachineTemplate(ctx context.Context, templateNameGenerator fun
 	return template, nil
 }
 
+// reconcileAWSMachines updates the additional tags of the NodePool's existing
+// AWSMachines in place, so that tag changes do not require a rolling upgrade.
+// It only patches AWSMachines returned by the List: an AWSMachine that is deleted
+// before it is patched is skipped, and it is never created. AWSMachines that
+// already have the desired tags are not patched. Failures for individual
+// AWSMachines do not stop the loop; they are returned together.
 func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
+	log := ctrl.LoggerFrom(ctx)
 	awsMachines := &capiaws.AWSMachineList{}
 	if err := c.List(ctx, awsMachines, client.InNamespace(c.controlplaneNamespace), client.MatchingLabels{
 		capiv1.MachineDeploymentNameLabel: c.nodePool.Name,
@@ -446,10 +455,19 @@ func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
 
 	var errs []error
 	for _, machine := range awsMachines.Items {
-		if _, err := controllerutil.CreateOrPatch(ctx, c.Client, &machine, func() error {
-			machine.Spec.AdditionalTags = awsAdditionalTags(c.nodePool, c.hostedCluster, c.capiClusterName)
-			return nil
-		}); err != nil {
+		original := machine.DeepCopy()
+		machine.Spec.AdditionalTags = awsAdditionalTags(c.nodePool, c.hostedCluster, c.capiClusterName)
+		if equality.Semantic.DeepEqual(original, &machine) {
+			continue
+		}
+
+		// Patch instead of CreateOrPatch: a JSON merge patch never creates the
+		// AWSMachine if it was deleted after the List.
+		if err := c.Patch(ctx, &machine, client.MergeFrom(original)); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("AWSMachine no longer exists, skipping tag reconciliation", "awsMachine", client.ObjectKeyFromObject(&machine).String())
+				continue
+			}
 			errs = append(errs, fmt.Errorf("failed to reconcile AWSMachine %s: %w", machine.Name, err))
 		}
 	}

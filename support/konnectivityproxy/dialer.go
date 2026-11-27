@@ -225,7 +225,7 @@ type konnectivityProxy struct {
 	tlsConfig     *tls.Config
 
 	httpDialerOnce sync.Once
-	httpDialer     proxy.Dialer
+	httpDialer     proxy.ContextDialer
 
 	excludeCloudHosts sets.Set[string]
 }
@@ -280,7 +280,21 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 	// return a dial direct function which respects any proxy environment settings
 	if p.IsCloudAPI(requestHost) {
 		p.log.Info("Host name is cloud API, dialing through mgmt cluster proxy if present")
-		return p.dialDirectWithProxy(network, requestAddress)
+		return p.dialDirectWithProxy(ctx, network, requestAddress)
+	}
+
+	// Resolve hostname to IPs when needed (HTTPS proxy path).
+	// Resolve() stores fallback IPs in ctx for the loop below.
+	tunnelAddress := requestAddress
+	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
+		log.Info("Host name must be resolved before dialing", "host", requestHost)
+		var ip net.IP
+		ctx, ip, err = p.Resolve(ctx, requestHost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve name %s: %w", requestHost, err)
+		}
+		log.Info("Host name resolved", "ip", ip.String())
+		tunnelAddress = net.JoinHostPort(ip.String(), requestPort)
 	}
 
 	// return a dial direct function ignoring any proxy environment settings
@@ -294,24 +308,11 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 		return p.dialDirectWithoutProxy(ctx, network, requestAddress)
 	}
 
-	// Resolve hostname to IPs when needed (HTTPS proxy path).
-	// Resolve() stores fallback IPs in ctx for the loop below.
-	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
-		log.Info("Host name must be resolved before dialing", "host", requestHost)
-		var ip net.IP
-		ctx, ip, err = p.Resolve(ctx, requestHost)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve name %s: %w", requestHost, err)
-		}
-		log.Info("Host name resolved", "ip", ip.String())
-		requestAddress = net.JoinHostPort(ip.String(), requestPort)
-	}
-
 	// Build address list: primary address + any fallback IPs from context.
 	// Fallback IPs are populated by Resolve() — either called above (HTTPS)
 	// or by the socks5 library before calling DialContext (SOCKS5).
 	const maxFallbacks = 3
-	addresses := buildAddressList(requestAddress, fallbackIPsFromContext(ctx), requestPort, maxFallbacks)
+	addresses := buildAddressList(tunnelAddress, fallbackIPsFromContext(ctx), requestPort, maxFallbacks)
 	if len(addresses) > 1 {
 		log.Info("Resolved addresses for fallback", "using", len(addresses))
 	}
@@ -417,7 +418,7 @@ func (p *konnectivityProxy) dialDirectWithoutProxy(ctx context.Context, network,
 }
 
 // dialDirectWithProxy directly connect to the target, respecting any local proxy settings from the environment
-func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn, error) {
+func (p *konnectivityProxy) dialDirectWithProxy(ctx context.Context, network, addr string) (net.Conn, error) {
 	p.httpDialerOnce.Do(func() {
 		if proxyURLStr := os.Getenv("HTTPS_PROXY"); proxyURLStr != "" {
 			proxyURL, err := url.Parse(proxyURLStr)
@@ -431,7 +432,7 @@ func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn,
 			p.httpDialer = proxy.Direct
 		}
 	})
-	return p.httpDialer.Dial(network, addr)
+	return p.httpDialer.DialContext(ctx, network, addr)
 }
 
 // konnectivityHealth tracks the health of the konnectivity tunnel based on DNS resolution success/failure.
