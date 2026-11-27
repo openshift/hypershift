@@ -21,6 +21,7 @@ import (
 
 	"github.com/armon/go-socks5"
 	"github.com/go-logr/logr"
+	"golang.org/x/net/http/httpproxy"
 	"golang.org/x/net/proxy"
 )
 
@@ -225,7 +226,7 @@ type konnectivityProxy struct {
 	tlsConfig     *tls.Config
 
 	httpDialerOnce sync.Once
-	httpDialer     proxy.Dialer
+	proxyFunc      func(reqURL *url.URL) (*url.URL, error)
 
 	excludeCloudHosts sets.Set[string]
 }
@@ -416,22 +417,36 @@ func (p *konnectivityProxy) dialDirectWithoutProxy(ctx context.Context, network,
 	return connection, nil
 }
 
-// dialDirectWithProxy directly connect to the target, respecting any local proxy settings from the environment
+// dialDirectWithProxy directly connects to the target, respecting the local proxy settings
+// from the environment. Hosts excluded by NO_PROXY are dialed directly, like any other
+// Go HTTP client would.
 func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn, error) {
+	dialer, err := p.dialerForHost(addr)
+	if err != nil {
+		return nil, err
+	}
+	return dialer.Dial(network, addr)
+}
+
+// dialerForHost returns the dialer for a direct (non-konnectivity) connection to addr,
+// based on the proxy environment: a proxy dialer when HTTPS_PROXY applies to the host,
+// and a direct dialer otherwise, honoring NO_PROXY exclusions.
+func (p *konnectivityProxy) dialerForHost(addr string) (proxy.Dialer, error) {
 	p.httpDialerOnce.Do(func() {
-		if proxyURLStr := os.Getenv("HTTPS_PROXY"); proxyURLStr != "" {
-			proxyURL, err := url.Parse(proxyURLStr)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to parse HTTPS_PROXY(%s): %v", proxyURLStr, err)
-			} else {
-				p.httpDialer = newHTTPDialer(proxyURL)
-			}
-		}
-		if p.httpDialer == nil {
-			p.httpDialer = proxy.Direct
-		}
+		p.proxyFunc = httpproxy.FromEnvironment().ProxyFunc()
 	})
-	return p.httpDialer.Dial(network, addr)
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	proxyURL, err := p.proxyFunc(&url.URL{Scheme: "https", Host: host})
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine proxy for %s: %w", addr, err)
+	}
+	if proxyURL == nil {
+		return proxy.Direct, nil
+	}
+	return newHTTPDialer(proxyURL), nil
 }
 
 // konnectivityHealth tracks the health of the konnectivity tunnel based on DNS resolution success/failure.
@@ -521,6 +536,10 @@ func (kh *konnectivityHealth) isHealthy() bool {
 // AWS ISO: https://docs.aws.amazon.com/general/latest/gr/aws-iso_region.html
 // AZURE: https://docs.microsoft.com/en-us/rest/api/azure/#how-to-call-azure-rest-apis-with-curl
 // IBMCLOUD: https://cloud.ibm.com/apidocs/iam-identity-token-api#endpoints
+// GCP: https://cloud.google.com/apis-design, e.g. compute/dns/storage/iamcredentials.googleapis.com.
+// Cloud API traffic must not depend on the guest cluster: routing it through Konnectivity
+// makes it fail as soon as the guest agents are gone (NodePool deletion during cluster
+// teardown), which leaves cloud resources behind (see GCP-1532).
 func (p *konnectivityProxy) IsCloudAPI(host string) bool {
 	log := p.log.WithName("konnectivityProxy.IsCloudAPI")
 	if !p.connectDirectlyToCloudAPIs {
@@ -542,7 +561,8 @@ func (p *konnectivityProxy) IsCloudAPI(host string) bool {
 		strings.HasSuffix(host, ".sc2s.sgov.gov") ||
 		strings.HasSuffix(host, ".microsoftonline.com") ||
 		strings.HasSuffix(host, ".azure.com") ||
-		strings.HasSuffix(host, ".cloud.ibm.com") {
+		strings.HasSuffix(host, ".cloud.ibm.com") ||
+		strings.HasSuffix(host, ".googleapis.com") {
 		log.V(1).Info("Host has one of the cloud API suffixes, returning true")
 		return true
 	}

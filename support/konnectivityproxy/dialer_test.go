@@ -436,8 +436,13 @@ func TestDialDirectWithProxy(t *testing.T) {
 		t.Setenv("HTTPS_PROXY", fmt.Sprintf("http://%s", proxyLn.Addr().String()))
 
 		p := &konnectivityProxy{}
-		conn, err := p.dialDirectWithProxy("tcp", echo.Addr().String())
-		g.Expect(err).NotTo(HaveOccurred(), "dialDirectWithProxy should succeed")
+		// Select the dialer for a non-loopback host: like net/http, httpproxy never
+		// proxies loopback targets, and the echo server listens on 127.0.0.1.
+		dialer, err := p.dialerForHost("example.com:443")
+		g.Expect(err).NotTo(HaveOccurred(), "dialerForHost should succeed")
+		g.Expect(dialer).To(BeAssignableToTypeOf(&httpProxyDialer{}), "non-excluded host should use the proxy")
+		conn, err := dialer.Dial("tcp", echo.Addr().String())
+		g.Expect(err).NotTo(HaveOccurred(), "dial through the proxy should succeed")
 		defer conn.Close()
 		g.Expect(conn.SetDeadline(time.Now().Add(testTimeout))).To(Succeed())
 
@@ -509,6 +514,24 @@ func TestIsCloudAPI(t *testing.T) {
 			expected:    true,
 			description: "IBM Cloud API endpoints should be detected",
 		},
+		{
+			name:        "When host is valid GCP API, it should return true",
+			host:        "dns.googleapis.com",
+			expected:    true,
+			description: "GCP API endpoints should be detected",
+		},
+		{
+			name:        "When host is valid GCP API with subdomain, it should return true",
+			host:        "compute.googleapis.com",
+			expected:    true,
+			description: "GCP API endpoints with subdomains should be detected",
+		},
+		{
+			name:        "When host is valid GCP STS API, it should return true",
+			host:        "sts.googleapis.com",
+			expected:    true,
+			description: "GCP STS endpoints should be detected",
+		},
 
 		// Valid AWS ISO cloud API hosts
 		{
@@ -555,6 +578,18 @@ func TestIsCloudAPI(t *testing.T) {
 			expected:    false,
 			description: "Malicious hosts trying to mimic IBM should not be detected as cloud API",
 		},
+		{
+			name:        "When host is GCP lookalike, it should return false",
+			host:        "notgoogleapis.com",
+			expected:    false,
+			description: "False positive: hosts ending with googleapis.com but not actually GCP",
+		},
+		{
+			name:        "When host is malicious GCP lookalike, it should return false",
+			host:        "evilgoogleapis.com",
+			expected:    false,
+			description: "Malicious hosts trying to mimic GCP should not be detected as cloud API",
+		},
 
 		// Edge cases
 		{
@@ -596,6 +631,62 @@ func TestIsCloudAPI(t *testing.T) {
 			got := proxy.IsCloudAPI(tt.host)
 			if got != tt.expected {
 				t.Errorf("IsCloudAPI(%q) = %v, expected %v - %s", tt.host, got, tt.expected, tt.description)
+			}
+		})
+	}
+}
+
+func TestKonnectivityProxy_DialerForHost(t *testing.T) {
+	tests := []struct {
+		name        string
+		httpsProxy  string
+		noProxy     string
+		addr        string
+		expectProxy bool
+	}{
+		{
+			name:        "cloud API host goes through the proxy when no exclusion matches",
+			httpsProxy:  "http://proxy.example.com:3128",
+			addr:        "dns.googleapis.com:443",
+			expectProxy: true,
+		},
+		{
+			name:        "cloud API host excluded by NO_PROXY dials direct",
+			httpsProxy:  "http://proxy.example.com:3128",
+			noProxy:     ".googleapis.com",
+			addr:        "dns.googleapis.com:443",
+			expectProxy: false,
+		},
+		{
+			name:        "non-excluded host still goes through the proxy",
+			httpsProxy:  "http://proxy.example.com:3128",
+			noProxy:     ".googleapis.com",
+			addr:        "example.com:443",
+			expectProxy: true,
+		},
+		{
+			name:        "no proxy configured dials direct",
+			addr:        "dns.googleapis.com:443",
+			expectProxy: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HTTPS_PROXY", tt.httpsProxy)
+			t.Setenv("NO_PROXY", tt.noProxy)
+			t.Setenv("https_proxy", tt.httpsProxy)
+			t.Setenv("no_proxy", tt.noProxy)
+
+			// The proxy func is cached in a sync.Once, so a fresh instance per case.
+			p := &konnectivityProxy{}
+			dialer, err := p.dialerForHost(tt.addr)
+			if err != nil {
+				t.Fatalf("dialerForHost(%q) returned error: %v", tt.addr, err)
+			}
+			_, isHTTPProxy := dialer.(*httpProxyDialer)
+			if isHTTPProxy != tt.expectProxy {
+				t.Errorf("dialerForHost(%q) proxy usage = %v, expected %v", tt.addr, isHTTPProxy, tt.expectProxy)
 			}
 		})
 	}
