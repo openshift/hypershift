@@ -753,7 +753,7 @@ func TestSetupCRDs(t *testing.T) {
 			// Smoke test to ensure that CRDs that should apply for any feature gate are present.
 			g.Expect(machineDeploymentCRD).ToNot(BeNil())
 
-			// Component route labels must only be exposed by the preview installation.
+			// Component route labels must be exposed by both the default and preview installations.
 			for crdName, matchingCRDs := range clusterCRDs {
 				g.Expect(matchingCRDs).To(HaveLen(1), "Expected exactly one %s CRD", crdName)
 				var schema *apiextensionsv1.JSONSchemaProps
@@ -769,7 +769,7 @@ func TestSetupCRDs(t *testing.T) {
 				g.Expect(componentRoutes.Items).ToNot(BeNil(), "Expected componentRoutes items for %s", crdName)
 				g.Expect(componentRoutes.Items.Schema).ToNot(BeNil(), "Expected a componentRoutes item schema for %s", crdName)
 				_, hasLabels := componentRoutes.Items.Schema.Properties["labels"]
-				g.Expect(hasLabels).To(Equal(tc.inputOptions.TechPreviewNoUpgrade), "Unexpected component route labels availability for %s", crdName)
+				g.Expect(hasLabels).To(BeTrue(), "Expected component route labels in the %s schema", crdName)
 			}
 
 			// Validate the feature set specific CRDs are applied.
