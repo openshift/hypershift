@@ -74,6 +74,7 @@ func TestNewCreateCommand(t *testing.T) {
 		g.Expect(flags).To(ConsistOf(
 			"azure-creds",
 			"cloud",
+			"disable-cluster-capabilities",
 			"enable-karpenter",
 			"enable-kms",
 			"infra-id",
