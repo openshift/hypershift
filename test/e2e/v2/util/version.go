@@ -4,6 +4,7 @@ import "github.com/blang/semver"
 
 var (
 	// y-stream versions supported by e2e in main
+	Version52  = semver.MustParse("5.2.0")
 	Version51  = semver.MustParse("5.1.0")
 	Version50  = semver.MustParse("5.0.0")
 	Version423 = semver.MustParse("4.23.0")
