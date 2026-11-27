@@ -27,6 +27,7 @@ type TemplateParams struct {
 	ExternalDNSInterval              string
 	ExternalDNSAWSZonesCacheDuration string
 	RegistryOverrides                string
+	UserReleaseRegistryOverrides     string
 	AROHCPKeyVaultUsersClientID      string
 	TemplateNamespace                bool
 	TemplateParamWrapper             func(string) string
@@ -81,6 +82,7 @@ func hyperShiftOperatorTemplateManifest(ctx context.Context, client crclient.Cli
 
 	// registry overrides
 	opts.RegistryOverrides = templateParamConfig.TemplateParamWrapper(templateParamConfig.RegistryOverrides)
+	opts.UserReleaseRegistryOverrides = templateParamConfig.TemplateParamWrapper(templateParamConfig.UserReleaseRegistryOverrides)
 
 	// azure key vault client id
 	opts.AroHCPKeyVaultUsersClientID = templateParamConfig.TemplateParamWrapper(templateParamConfig.AROHCPKeyVaultUsersClientID)

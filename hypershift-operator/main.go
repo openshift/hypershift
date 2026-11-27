@@ -163,6 +163,7 @@ type StartOptions struct {
 	EnableCIDebugOutput                    bool
 	ControlPlaneOperatorImage              string
 	RegistryOverrides                      map[string]string
+	UserReleaseRegistryOverrides           map[string]string
 	PrivatePlatform                        string
 	OIDCStorageProviderS3BucketName        string
 	OIDCStorageProviderS3Region            string
@@ -195,6 +196,7 @@ func NewStartCommand() *cobra.Command {
 		CertDir:                          "",
 		ControlPlaneOperatorImage:        "",
 		RegistryOverrides:                map[string]string{},
+		UserReleaseRegistryOverrides:     map[string]string{},
 		PrivatePlatform:                  string(hyperv1.NonePlatform),
 		OIDCStorageProviderS3Region:      "",
 		OIDCStorageProviderS3Credentials: "",
@@ -209,6 +211,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().StringToStringVar(&opts.UserReleaseRegistryOverrides, "user-release-registry-overrides", map[string]string{}, "user-release-registry-overrides applies registry substitution to images resolved from the user (data-plane) release image, i.e. spec.releaseImage. When set, component images stamped into HCP pod specs from the user release (e.g. kube-rbac-proxy sidecars) are redirected to the specified registry. Does not inherit from --registry-overrides. Format is: sr1=dr1,sr2=dr2")
 	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"Azure\", \"GCP\", or \"None\")")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.GCPOIDCStorageBucketName, "gcp-oidc-storage-bucket-name", "", "Name of the GCS bucket in which to store the clusters OIDC discovery information. Required for GCP guest clusters using issuer URL discovery")
@@ -682,6 +685,7 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 		ManagementClusterCapabilities:           mgmtClusterCaps,
 		HypershiftOperatorImage:                 operatorImage,
 		RegistryOverrides:                       opts.RegistryOverrides,
+		UserReleaseRegistryOverrides:            opts.UserReleaseRegistryOverrides,
 		RegistryProvider:                        registryProvider,
 		EnableOCPClusterMonitoring:              opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,

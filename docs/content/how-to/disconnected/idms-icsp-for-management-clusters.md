@@ -135,6 +135,37 @@ The ignition server reconciler forwards this information on to the `ignition-ser
 ### Control Plane Operator
 The `HostedClusterReconciler` passes on the image registry override information as an environment variable in the CPO called `OPENSHIFT_IMG_OVERRIDES`. The CPO will check for the existence of this environment variable when it runs. If the variable exists, it's used to build the HostedControlPlaneReconciler's `releaseProvider`.
 
+On clusters where IDMS/ICSP CRDs are available, `OPENSHIFT_IMG_OVERRIDES` is populated from those objects and covers all images resolved from `spec.releaseImage` (the data-plane release). On **clusters where IDMS/ICSP CRDs are not available**, `OPENSHIFT_IMG_OVERRIDES` is always empty and cannot serve as a fallback for data-plane images.
+
+#### Clusters Where IDMS/ICSP CRDs Are Not Available
+
+On clusters where IDMS/ICSP CRDs are not installed, the `--user-release-registry-overrides`
+flag provides an explicit alternative. It applies registry substitution to images resolved
+from `spec.releaseImage` (the data-plane release) when they are stamped into HCP pod specs —
+for example, `kube-rbac-proxy` sidecar containers in CSI driver pods.
+
+Unlike `--registry-overrides` (which covers control-plane images and is propagated from
+IDMS/ICSP on clusters where those CRDs are available), `--user-release-registry-overrides`
+is an independent flag that does not inherit from `--registry-overrides`. This separation
+ensures that control-plane registry configuration is not unintentionally applied to
+data-plane images.
+
+Pass the flag when installing or upgrading the HyperShift operator:
+
+```bash
+hypershift install \
+  --registry-overrides quay.io/openshift-release-dev/ocp-v5.0-art-dev=<ecr-uri> \
+  --user-release-registry-overrides quay.io/openshift-release-dev/ocp-v5.0-art-dev=<ecr-uri>
+```
+
+You can verify the flag is active by checking the CPO Deployment args in the HCP namespace:
+
+```bash
+kubectl get deployment control-plane-operator \
+  -n <hcp-namespace> -o jsonpath='{.spec.template.spec.containers[0].args}' \
+  | tr ',' '\n' | grep user-release
+```
+
 #### OLM Catalogs
 
 The imageStream used for the OLM catalogs, when using the `management` (default) OLMCatalogPlacement mode, is not automatically amended with override information detected from ImageContentSourcePolicy (ICSP) on the management cluster.

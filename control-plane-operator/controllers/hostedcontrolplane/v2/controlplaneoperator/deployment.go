@@ -44,6 +44,12 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			fmt.Sprintf("--image-overrides=%s", imageOverrides),
 		)
 
+		if cpo.UserReleaseRegistryOverrideCommandLine != "" {
+			c.Args = append(c.Args,
+				fmt.Sprintf("--user-release-registry-overrides=%s", cpo.UserReleaseRegistryOverrideCommandLine),
+			)
+		}
+
 		if !cpo.HasUtilities {
 			c.Args = append(c.Args,
 				"--socks5-proxy-image", cpo.UtilitiesImage,

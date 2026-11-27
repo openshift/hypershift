@@ -159,6 +159,7 @@ type Options struct {
 	AroHCPKeyVaultUsersClientID               string
 	TechPreviewNoUpgrade                      bool
 	RegistryOverrides                         string
+	UserReleaseRegistryOverrides              string
 	RenderNamespace                           bool
 	PlatformsToInstall                        []string
 	ImagePullPolicy                           string
@@ -533,6 +534,7 @@ func NewCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
 	// and make it so that setting this flag is essentially equivalent to that?
 	cmd.PersistentFlags().BoolVar(&opts.TechPreviewNoUpgrade, "tech-preview-no-upgrade", opts.TechPreviewNoUpgrade, "If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled")
 	cmd.PersistentFlags().StringVar(&opts.RegistryOverrides, "registry-overrides", "", "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.PersistentFlags().StringVar(&opts.UserReleaseRegistryOverrides, "user-release-registry-overrides", "", "user-release-registry-overrides applies registry substitution to images resolved from the user (data-plane) release image, i.e. spec.releaseImage. When set, component images stamped into HCP pod specs from the user release (e.g. kube-rbac-proxy sidecars) are redirected to the specified registry. Does not inherit from --registry-overrides. Format is: sr1=dr1,sr2=dr2")
 	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack, GCP.")
 	cmd.PersistentFlags().StringToStringVar(&opts.AdditionalOperatorEnvVars, "additional-operator-env-vars", opts.AdditionalOperatorEnvVars, "Set of additional environment variables to be set on the HyperShift Operator deployment.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAuditLogPersistence, "enable-audit-log-persistence", opts.EnableAuditLogPersistence, "If true, enables persistent audit logs with automatic snapshots for kube-apiserver pods")
@@ -1441,6 +1443,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		AROHCPKeyVaultUsersClientID:             opts.AroHCPKeyVaultUsersClientID,
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 		RegistryOverrides:                       opts.RegistryOverrides,
+		UserReleaseRegistryOverrides:            opts.UserReleaseRegistryOverrides,
 		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
 		ControlPlaneReleasePullSecretName:       opts.ControlPlaneReleasePullSecretName,
 		ImagePullPolicy:                         opts.ImagePullPolicy,

@@ -32,6 +32,7 @@ var helmTemplateParams = TemplateParams{
 	ExternalDNSInterval:              ".Values.externaldns.interval",
 	ExternalDNSAWSZonesCacheDuration: ".Values.externaldns.awsZonesCacheDuration",
 	RegistryOverrides:                ".Values.registryOverrides",
+	UserReleaseRegistryOverrides:     ".Values.userReleaseRegistryOverrides",
 	AROHCPKeyVaultUsersClientID:      ".Values.azure.keyVault.clientId",
 	TemplateNamespace:                false,
 	TemplateParamWrapper: func(name string) string {
