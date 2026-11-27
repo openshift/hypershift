@@ -22,12 +22,11 @@ func NewIBMPIInstanceNetworksClient(ctx context.Context, sess *ibmpisession.IBMP
 // GetAll returns the wrapper that contains all networks on a PVM instance.
 func (c *IBMPIInstanceNetworksClient) GetAll(pvmInstanceID string) (*models.PVMInstanceNetworks, error) {
 	params := pvmclient.NewPcloudPvminstancesNetworksGetallParams().
-		WithContext(c.ctx).
 		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(c.cloudInstanceID).
 		WithPvmInstanceID(pvmInstanceID)
 
-	resp, err := c.session.Power.PCloudpVMInstances.PcloudPvminstancesNetworksGetall(params, c.session.AuthInfo(c.cloudInstanceID))
+	resp, err := c.session.Power.PCloudpVMInstances.PcloudPvminstancesNetworksGetallContext(c.ctx, params, c.session.AuthInfo(c.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to get networks for pvm instance %s: %w", pvmInstanceID, err))
 	}
@@ -40,13 +39,12 @@ func (c *IBMPIInstanceNetworksClient) GetAll(pvmInstanceID string) (*models.PVMI
 // Get returns the wrapper for a specific network on a PVM instance.
 func (c *IBMPIInstanceNetworksClient) Get(pvmInstanceID, networkID string) (*models.PVMInstanceNetworks, error) {
 	params := pvmclient.NewPcloudPvminstancesNetworksGetParams().
-		WithContext(c.ctx).
 		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(c.cloudInstanceID).
 		WithPvmInstanceID(pvmInstanceID).
 		WithNetworkID(networkID)
 
-	resp, err := c.session.Power.PCloudpVMInstances.PcloudPvminstancesNetworksGet(params, c.session.AuthInfo(c.cloudInstanceID))
+	resp, err := c.session.Power.PCloudpVMInstances.PcloudPvminstancesNetworksGetContext(c.ctx, params, c.session.AuthInfo(c.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to get network %s for pvm instance %s: %w", networkID, pvmInstanceID, err))
 	}
