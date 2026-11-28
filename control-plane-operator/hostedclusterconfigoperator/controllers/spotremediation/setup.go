@@ -18,7 +18,7 @@ import (
 const ControllerName = "spot-remediation"
 
 func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
-	if opts.PlatformType != hyperv1.AWSPlatform {
+	if opts.PlatformType != hyperv1.AWSPlatform && opts.PlatformType != hyperv1.GCPPlatform {
 		return nil
 	}
 
