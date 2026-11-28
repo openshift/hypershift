@@ -1923,6 +1923,10 @@ type ScaleDownConfig struct {
 	// When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
 	// When omitted, the autoscaler defaults to 0s.
 	//
+	// When scaling is set to ScaleUpAndScaleDown and resourceLimits configures a minimum greater than 0
+	// for any resource type, this field must be explicitly set to at least 60 seconds.
+	// This requirement does not apply when scaling is ScaleUpOnly.
+	//
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=86400
 	// +optional
@@ -1958,6 +1962,46 @@ type ScaleDownConfig struct {
 	// +kubebuilder:validation:Maximum=100
 	// +optional
 	UtilizationThresholdPercent *int32 `json:"utilizationThresholdPercent,omitempty"`
+
+	// nodeTerminationPolicy controls whether the autoscaler marks a node unschedulable before
+	// draining and terminating it during scale-down.
+	// Valid values are Cordon and DoNotCordon.
+	// When set to Cordon, the node is marked unschedulable before it is drained and terminated,
+	// so no new pods are scheduled onto a node that is about to go away.
+	// When set to DoNotCordon, the node is drained and terminated without first being marked
+	// unschedulable.
+	// When omitted, this means no opinion, and the platform is left to choose a reasonable default,
+	// which is subject to change over time. The current default is Cordon.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=HostedClusterAutoscalerConfiguration
+	NodeTerminationPolicy NodeTerminationPolicy `json:"nodeTerminationPolicy,omitempty"`
+
+	// nodesWithLocalStoragePolicy controls whether nodes running pods with local storage, such as
+	// EmptyDir or HostPath volumes, are eligible for scale-down.
+	// Valid values are Delete and Skip.
+	// When set to Delete, the autoscaler may remove such nodes like any other node, and any data
+	// held in the local storage of the pods running on them is lost.
+	// When set to Skip, such nodes are protected from scale-down.
+	// When omitted, this defaults to Delete, so local storage data may be lost during scale-down.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=HostedClusterAutoscalerConfiguration
+	NodesWithLocalStoragePolicy NodesWithLocalStoragePolicy `json:"nodesWithLocalStoragePolicy,omitempty"`
+
+	// daemonSetUtilization controls whether DaemonSet pod resource requests count toward node
+	// utilization when the autoscaler decides whether a node is underutilized enough to scale down.
+	// Valid values are Include and Exclude.
+	// When set to Include, DaemonSet pod requests count toward node utilization, so a node running
+	// only DaemonSet pods may still look utilized and be kept.
+	// When set to Exclude, DaemonSet pod requests are left out of node utilization, so a node running
+	// only DaemonSet pods looks idle and becomes eligible for scale-down.
+	// When omitted, this means no opinion, and the platform is left to choose a reasonable default,
+	// which is subject to change over time. The current default is Include.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=HostedClusterAutoscalerConfiguration
+	DaemonSetUtilization DaemonSetUtilizationPolicy `json:"daemonSetUtilization,omitempty"`
 }
 
 // ExpanderString contains the name of an expander to be used by the cluster autoscaler.
@@ -1983,9 +2027,211 @@ const (
 	ScaleUpAndScaleDown ScalingType = "ScaleUpAndScaleDown"
 )
 
+// NodesWithLocalStoragePolicy controls whether nodes running pods with local storage are
+// eligible for scale-down.
+// +kubebuilder:validation:Enum=Delete;Skip
+type NodesWithLocalStoragePolicy string
+
+const (
+	// NodesWithLocalStorageDelete allows nodes running pods with local storage to be
+	// scaled down like any other node.
+	NodesWithLocalStorageDelete NodesWithLocalStoragePolicy = "Delete"
+
+	// NodesWithLocalStorageSkip protects nodes running pods with local storage from scale-down.
+	NodesWithLocalStorageSkip NodesWithLocalStoragePolicy = "Skip"
+)
+
+// SimilarNodePoolsBalancingPolicy controls whether the autoscaler balances scale-up across
+// similar NodePools.
+// +kubebuilder:validation:Enum=Auto;None
+type SimilarNodePoolsBalancingPolicy string
+
+const (
+	// SimilarNodePoolsBalancingAuto directs the autoscaler to automatically identify similar
+	// NodePools and keep them at similar sizes when scaling up.
+	SimilarNodePoolsBalancingAuto SimilarNodePoolsBalancingPolicy = "Auto"
+
+	// SimilarNodePoolsBalancingNone disables balancing across NodePools: each scale-up is
+	// placed without regard to the size of similar NodePools.
+	SimilarNodePoolsBalancingNone SimilarNodePoolsBalancingPolicy = "None"
+)
+
+// DaemonSetUtilizationPolicy controls whether DaemonSet pod resource requests count toward
+// node utilization when evaluating scale-down.
+// +kubebuilder:validation:Enum=Include;Exclude
+type DaemonSetUtilizationPolicy string
+
+const (
+	// DaemonSetUtilizationInclude counts DaemonSet pod resource requests toward node utilization.
+	DaemonSetUtilizationInclude DaemonSetUtilizationPolicy = "Include"
+
+	// DaemonSetUtilizationExclude leaves DaemonSet pod resource requests out of node utilization.
+	DaemonSetUtilizationExclude DaemonSetUtilizationPolicy = "Exclude"
+)
+
+// NodeTerminationPolicy controls whether the autoscaler marks a node unschedulable before
+// draining and terminating it during scale-down.
+// +kubebuilder:validation:Enum=Cordon;DoNotCordon
+type NodeTerminationPolicy string
+
+const (
+	// NodeTerminationPolicyCordon directs the autoscaler to mark a node unschedulable before
+	// draining and terminating it during scale-down.
+	NodeTerminationPolicyCordon NodeTerminationPolicy = "Cordon"
+
+	// NodeTerminationPolicyDoNotCordon directs the autoscaler to drain and terminate a node
+	// during scale-down without first marking it unschedulable.
+	NodeTerminationPolicyDoNotCordon NodeTerminationPolicy = "DoNotCordon"
+)
+
+// ScaleUpConfig configures the behavior of the Cluster Autoscaler scale up operation.
+// At least one field must be set.
+// +kubebuilder:validation:MinProperties=1
+type ScaleUpConfig struct {
+	// newPodScaleUpDelaySeconds delays scale-up evaluation for pods younger than this many seconds,
+	// measured from the pod's creation timestamp on the guest cluster. This is useful for short-lived,
+	// bursty, or batch workloads that should not trigger scale-up before they have a chance to be
+	// scheduled on existing capacity.
+	// The value must be between 0 and 3600 (1 hour).
+	// When set to 0, pods are considered for scale-up as soon as they are created, without any delay.
+	// When omitted, this means no opinion, and the platform is left to choose a reasonable default,
+	// which is subject to change over time. The current default is 0 seconds.
+	//
+	// A shorter per-pod "cluster-autoscaler.kubernetes.io/pod-scale-up-delay" annotation on an
+	// individual pod cannot override this value; the autoscaler keeps the longer of the two delays.
+	//
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=3600
+	NewPodScaleUpDelaySeconds *int32 `json:"newPodScaleUpDelaySeconds,omitempty"`
+
+	// similarNodePoolsBalancing controls whether the autoscaler tries to keep similar NodePools,
+	// meaning NodePools with the same instance type and labels, at similar sizes when scaling up.
+	// Valid values are Auto and None.
+	// When set to Auto, the autoscaler spreads scale-up across similar NodePools to keep them at
+	// similar sizes. Balancing is applied only when scaling up; NodePools that become unbalanced
+	// through scale-down are not rebalanced.
+	// When set to None, each scale-up is placed without regard to the size of similar NodePools.
+	// When omitted, this defaults to Auto.
+	//
+	// +optional
+	SimilarNodePoolsBalancing SimilarNodePoolsBalancingPolicy `json:"similarNodePoolsBalancing,omitempty"`
+}
+
+// ResourceLimits specifies cluster-wide bounds on aggregate guest-cluster node resources,
+// across all NodePools. Maximums cap scale-up and minimums are floors that scale-down must
+// preserve.
+// At least one of cores, memory or gpus must be set.
+//
+// When scaling is ScaleUpAndScaleDown and any minimum here is greater than 0,
+// ClusterAutoscaling.scaleDown.delayAfterDeleteSeconds must be explicitly set to at least
+// 60 seconds. This does not apply when scaling is ScaleUpOnly,
+// since scale-down is disabled in that mode.
+//
+// +kubebuilder:validation:MinProperties=1
+type ResourceLimits struct {
+	// cores bounds the total CPU cores, in whole cores, across all guest-cluster nodes.
+	// Its maximum caps scale-up and its minimum is a floor that scale-down must preserve.
+	// When omitted, this means no opinion, and the platform is left to choose a reasonable default,
+	// which is subject to change over time. The current default is a minimum of 0 and a maximum
+	// of 320000 cores.
+	//
+	// +optional
+	Cores ResourceRange `json:"cores,omitzero"`
+
+	// memory bounds the total memory, in whole GiB, across all guest-cluster nodes.
+	// Its maximum caps scale-up and its minimum is a floor that scale-down must preserve.
+	// When omitted, this means no opinion, and the platform is left to choose a reasonable default,
+	// which is subject to change over time. The current default is a minimum of 0 and a maximum
+	// of 6400000 GiB.
+	//
+	// +optional
+	Memory ResourceRange `json:"memory,omitzero"`
+
+	// gpus bounds the total number of GPU devices of each listed type across all
+	// guest-cluster nodes. Each entry's maximum caps scale-up and its minimum is a floor
+	// that scale-down must preserve. Each entry's type must match the value of the
+	// "cluster-api/accelerator" label that administrators set on the GPU-capable NodePool
+	// and that is applied to its guest Nodes.
+	// At most one entry may be listed per GPU type, and between 1 and 64 entries may be
+	// listed in total.
+	// When omitted, no GPU limits are applied.
+	//
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=64
+	GPUs []GPULimit `json:"gpus,omitempty"`
+}
+
+// ResourceRange specifies a minimum and maximum bound, in whole units, for a cluster-wide
+// CPU or memory resource limit. Both bounds are required, so a minimum of zero must be stated
+// explicitly rather than inferred from an omitted field. min must not be greater than max.
+// +kubebuilder:validation:XValidation:rule="self.min <= self.max",message="min must not exceed max"
+type ResourceRange struct {
+	// min is the minimum amount of this resource that scale-down must preserve across all
+	// guest-cluster nodes. A configured minimum prevents scale-down from reducing aggregate
+	// capacity below this floor; it does not trigger scale-up to reach it.
+	// The value must be 0 or greater and must not be greater than max.
+	//
+	// +required
+	// +kubebuilder:validation:Minimum=0
+	Min *int32 `json:"min,omitempty"`
+
+	// max is the maximum amount of this resource allowed across all guest-cluster nodes.
+	// The autoscaler will not scale up beyond this ceiling.
+	// The value must be 1 or greater and must not be less than min.
+	//
+	// +required
+	// +kubebuilder:validation:Minimum=1
+	Max int32 `json:"max,omitempty"`
+}
+
+// GPULimit specifies a minimum and maximum bound on the number of GPU devices of a given
+// accelerator type across all guest-cluster nodes. min must not be greater than max.
+// +kubebuilder:validation:XValidation:rule="self.min <= self.max",message="min must not exceed max"
+type GPULimit struct {
+	// type identifies the GPU accelerator type this limit applies to, matching the value of
+	// the "cluster-api/accelerator" label on the guest Nodes it applies to. It is a label
+	// value, not a resource name.
+	// The value must be between 1 and 63 characters, must consist of alphanumeric characters,
+	// '-', '_' or '.', and must start and end with an alphanumeric character.
+	// The values "cpu" and "memory" are reserved and are rejected, because the autoscaler
+	// tracks CPU, memory and GPU limits under the same set of names, so a GPU entry using
+	// either name would overwrite the corresponding CPU or memory limit.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$')",message="type must be a valid label value"
+	// +kubebuilder:validation:XValidation:rule="self != 'cpu' && self != 'memory'",message="type must not be \"cpu\" or \"memory\""
+	Type string `json:"type,omitempty"`
+
+	// min is the minimum number of GPU devices of this type that scale-down must preserve
+	// across all guest-cluster nodes. A configured minimum prevents scale-down from
+	// reducing aggregate capacity below this floor; it does not trigger scale-up to reach
+	// it.
+	// The value must be 0 or greater and must not be greater than max.
+	//
+	// +required
+	// +kubebuilder:validation:Minimum=0
+	Min *int32 `json:"min,omitempty"`
+
+	// max is the maximum number of GPU devices of this type allowed across all
+	// guest-cluster nodes. The autoscaler will not scale up beyond this ceiling.
+	// The value must be 0 or greater and must not be less than min.
+	// When set to 0, all scale-up of this GPU type is blocked.
+	//
+	// +required
+	// +kubebuilder:validation:Minimum=0
+	Max *int32 `json:"max,omitempty"`
+}
+
 // ClusterAutoscaling specifies auto-scaling behavior that applies to all
 // NodePools associated with a control plane.
 // +kubebuilder:validation:XValidation:rule="self.scaling == 'ScaleUpAndScaleDown' ? true : !has(self.scaleDown)",message="scaleDown can only be set when scaling is ScaleUpAndScaleDown"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=HostedClusterAutoscalerConfiguration,rule="self.scaling != 'ScaleUpAndScaleDown' || !((has(self.resourceLimits) && ((has(self.resourceLimits.cores) && self.resourceLimits.cores.min > 0) || (has(self.resourceLimits.memory) && self.resourceLimits.memory.min > 0) || (has(self.resourceLimits.gpus) && self.resourceLimits.gpus.exists(g, g.min > 0))))) || (has(self.scaleDown) && has(self.scaleDown.delayAfterDeleteSeconds) && self.scaleDown.delayAfterDeleteSeconds >= 60)",message="scaleDown.delayAfterDeleteSeconds must be explicitly set to at least 60 seconds when scaling is ScaleUpAndScaleDown and resourceLimits configures a minimum greater than 0 for cores, memory, or any gpu type"
 type ClusterAutoscaling struct {
 	// scaling defines the scaling behavior for the cluster autoscaler.
 	// ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.
@@ -2057,7 +2303,6 @@ type ClusterAutoscaling struct {
 	// When set to 100, this means node groups will be considered similar regardless of their free resource differences (any difference allowed).
 	// A value between 0 and 100 represents the maximum allowed difference ratio for free resources between node groups to be considered similar.
 	// When omitted, the autoscaler defaults to 10%.
-	// This affects the "--max-free-difference-ratio" flag on cluster-autoscaler.
 	//
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
@@ -2109,6 +2354,47 @@ type ClusterAutoscaling struct {
 	// +kubebuilder:validation:Maximum=2000
 	// +optional
 	KubeClientBurst int32 `json:"kubeClientBurst,omitempty"`
+
+	// resourceLimits bounds the aggregate CPU, memory, and GPU resources across all
+	// guest-cluster nodes. Each limit has both a maximum and a minimum, so this field
+	// affects both scale-up and scale-down: the autoscaler blocks scale-up of any NodePool
+	// once a configured maximum would be exceeded, and it does not scale down below a
+	// configured minimum. maxNodesTotal and each configured resourceLimits maximum are
+	// independent, cluster-wide ceilings that apply in addition to each NodePool's own
+	// autoScaling.max; the core or memory budget is shared across NodePools, not a
+	// separate allowance for each one.
+	//
+	// When scaling is ScaleUpAndScaleDown and any minimum here is greater than 0,
+	// scaleDown.delayAfterDeleteSeconds must be explicitly set to at least 60 seconds.
+	//
+	// When omitted, no additional resource limits are applied beyond maxNodesTotal and
+	// NodePool bounds.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=HostedClusterAutoscalerConfiguration
+	ResourceLimits ResourceLimits `json:"resourceLimits,omitzero"`
+
+	// scaleUp configures the behavior of the Cluster Autoscaler scale up operation.
+	// At least one field must be set when scaleUp is specified.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=HostedClusterAutoscalerConfiguration
+	ScaleUp ScaleUpConfig `json:"scaleUp,omitzero"`
+
+	// logLevel sets the log verbosity of the hosted cluster's autoscaler. This is a top-level field,
+	// independent of scaling, scaleDown, and scaleUp: it changes only the autoscaler container's own log
+	// output, not scaling policy, the control plane operator's logs, or guest control-plane logs.
+	// Valid values are Normal, Debug, Trace and TraceAll.
+	// When set to Normal, standard operational log messages are produced for auditing and common operations.
+	// When set to Debug, more verbose logging is enabled for diagnosing problems.
+	// When set to Trace, very verbose logging is enabled including function-level tracing.
+	// When set to TraceAll, the most verbose logging is used, which can cause significant performance
+	// impact and produce large volumes of logs.
+	// When omitted, this defaults to Debug.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=HostedClusterAutoscalerConfiguration
+	LogLevel LogLevel `json:"logLevel,omitempty"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance

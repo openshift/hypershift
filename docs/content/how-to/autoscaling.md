@@ -159,7 +159,190 @@ The `scaleDown` field is only valid when `scaling` is set to `ScaleUpAndScaleDow
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `balancingIgnoredLabels` | []string | [] | Labels the autoscaler should ignore when comparing node groups for balancing. Platform-specific labels are added automatically. |
-| `maxFreeDifferenceRatioPercent` | int | 10 | Maximum allowed difference in free resources between node groups to be considered similar for balancing. 0 = exact match required; 100 = any difference allowed. |
+| `maxFreeDifferenceRatioPercent` | int | 10 | Maximum allowed difference in free resources between node groups to be considered similar for balancing. 0 = exact match required; 100 = any difference allowed. Sets `--max-free-difference-ratio`. |
+
+#### Node Behavior (Tech Preview)
+
+!!! note
+    These fields require the management cluster to be installed with the `HostedClusterAutoscalerConfiguration` feature gate, part of the `TechPreviewNoUpgrade` feature set (`hypershift install --tech-preview-no-upgrade`). They are omitted from the Default HostedCluster/HostedControlPlane CRD schemas. Setting `HostedCluster.spec.configuration.featureGate` (the guest cluster's feature gates) does not enable these fields — the gate is a management-cluster-level setting.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `scaleDown.nodesWithLocalStoragePolicy` | string | `Delete` | `Skip` protects nodes running pods with disk-backed local storage (`emptyDir` volumes without `medium: Memory` or `hostPath` volumes). `Delete` allows such nodes to be removed like any other node, and any data held in that local storage is lost. Sets `--skip-nodes-with-local-storage`. |
+| `scaleDown.daemonSetUtilization` | string | unset (autoscaler default applies) | `Include` or `Exclude`. Controls whether DaemonSet pod resource requests count toward node utilization for scale-down eligibility. When omitted, no flag is rendered and the autoscaler's own default (include) applies. Sets `--ignore-daemonsets-utilization`. |
+| `scaleUp.similarNodePoolsBalancing` | string | `Auto` | `Auto` or `None`. Controls whether the autoscaler tries to keep NodePools with matching instance type and labels at similar sizes during scale-up. Balancing is applied only when scaling up; NodePools that become unbalanced through scale-down are not rebalanced. Sets `--balance-similar-node-groups`. |
+
+`scaleDown.nodesWithLocalStoragePolicy` and `scaleDown.daemonSetUtilization` are part of `scaleDown`, so like the rest of `scaleDown` they can only be set when `scaling` is `ScaleUpAndScaleDown`. `scaleUp.similarNodePoolsBalancing` can be set with either scaling mode.
+
+!!! note
+    HyperShift intentionally preserves its own historical defaults for these two behaviors, which differ from the upstream cluster autoscaler and standalone OpenShift:
+
+    | Behavior | Upstream cluster autoscaler / standalone OCP | HyperShift (when the field is omitted) |
+    |----------|----------------------------------------------|----------------------------------------|
+    | Balance similar node groups | `false` | `true` (`similarNodePoolsBalancing: Auto`) |
+    | Skip nodes with local storage | `true` | `false` (`nodesWithLocalStoragePolicy: Delete`) |
+
+```bash
+oc patch hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> --type merge -p '{
+  "spec": {
+    "autoscaling": {
+      "scaleDown": {
+        "nodesWithLocalStoragePolicy": "Skip",
+        "daemonSetUtilization": "Exclude"
+      },
+      "scaleUp": {
+        "similarNodePoolsBalancing": "None"
+      }
+    }
+  }
+}'
+```
+
+#### Resource Limits (Tech Preview)
+
+!!! note
+    These fields require the management cluster to be installed with the `HostedClusterAutoscalerConfiguration` feature gate, part of the `TechPreviewNoUpgrade` feature set (`hypershift install --tech-preview-no-upgrade`). They are omitted from the Default HostedCluster/HostedControlPlane CRD schemas. Setting `HostedCluster.spec.configuration.featureGate` (the guest cluster's feature gates) does not enable these fields — the gate is a management-cluster-level setting.
+
+`spec.autoscaling.resourceLimits` bounds the aggregate CPU, memory, and GPU resources across
+**all** guest-cluster nodes, read by the autoscaler through its guest kubeconfig. These are
+cluster-wide ceilings that apply in addition to, not instead of, `maxNodesTotal` and each
+NodePool's own `autoScaling.max`. At least one of `cores`, `memory`, or `gpus` must be set;
+an empty `resourceLimits: {}` is rejected.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `cores.min` / `cores.max` | int | unset (autoscaler default `0:320000`) | Minimum and maximum total CPU cores, in whole cores, across all guest-cluster nodes. `min` may be `0`; `max` must be at least `1`. Sets `--cores-total=<min>:<max>`. |
+| `memory.min` / `memory.max` | int | unset (autoscaler default `0:6400000`) | Minimum and maximum total memory, in whole GiB, across all guest-cluster nodes. `min` may be `0`; `max` must be at least `1`. Sets `--memory-total=<min>:<max>`. |
+| `gpus` | []object | unset (no GPU limits) | 1–64 unique `{type, min, max}` entries bounding the number of GPU devices of each `type` across all guest-cluster nodes. `min` and `max` may both be `0` (a `max: 0` entry blocks scale-up of that type). `type` must match the `cluster-api/accelerator` label on the GPU-capable NodePool's guest Nodes, and cannot be `cpu` or `memory` (reserved). Sets one `--gpu-total=<type>:<min>:<max>` per entry. |
+
+A configured minimum only constrains scale-down (it prevents aggregate capacity from dropping
+below the floor) and never triggers scale-up on its own. A configured maximum only constrains
+scale-up. The core or memory budget is shared across all NodePools — it is not a separate
+allowance granted to each NodePool.
+
+!!! note
+    When `scaling` is `ScaleUpAndScaleDown` (the default) and any `resourceLimits` minimum
+    (`cores.min`, `memory.min`, or a `gpus[].min`) is greater than `0`,
+    `scaleDown.delayAfterDeleteSeconds` must be explicitly set to at least `60`
+    seconds. This requirement does not apply when `scaling` is `ScaleUpOnly`, because scale-down
+    is disabled in that mode and `scaleDown` must not be set. With a shorter delay (or omitted, which defaults to `0`), the autoscaler can resume
+    scale-down evaluation before a prior node deletion is fully accounted for by Cluster API,
+    letting it delete a second node whose removal would drop aggregate capacity below the
+    configured floor. This is enforced at admission time. The `60`-second floor is a value
+    confirmed sufficient by live testing, not a provable bound on Cluster API's node-deletion
+    convergence time: a sufficiently slow or degraded cloud-provider deletion could still exceed
+    it. Closing this race fully requires the autoscaler itself to account for in-flight
+    deletions, which is tracked as future work and not delivered by this feature.
+
+!!! warning
+    A GPU limit depends on the GPU-capable NodePool's guest Nodes carrying the
+    `cluster-api/accelerator` label matching the configured `type`, which HyperShift does not
+    yet propagate automatically through the scale-from-zero path. Until that propagation lands,
+    verify the label is present on real guest Nodes before relying on a `gpus` limit for
+    enforcement.
+
+```bash
+oc patch hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> --type merge -p '{
+  "spec": {
+    "autoscaling": {
+      "resourceLimits": {
+        "cores": {"min": 0, "max": 128},
+        "memory": {"min": 0, "max": 512},
+        "gpus": [
+          {"type": "nvidia-tesla-t4", "min": 0, "max": 8}
+        ]
+      }
+    }
+  }
+}'
+```
+
+#### Node Termination Policy (Tech Preview)
+
+!!! note
+    This field requires the management cluster to be installed with the `HostedClusterAutoscalerConfiguration` feature gate, part of the `TechPreviewNoUpgrade` feature set (`hypershift install --tech-preview-no-upgrade`). It is omitted from the Default HostedCluster/HostedControlPlane CRD schemas. Setting `HostedCluster.spec.configuration.featureGate` (the guest cluster's feature gates) does not enable this field — the gate is a management-cluster-level setting.
+
+`spec.autoscaling.scaleDown.nodeTerminationPolicy` is nested under `scaleDown`, so it is
+only valid when `scaling` is `ScaleUpAndScaleDown`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `nodeTerminationPolicy` | string | unset (autoscaler default, currently cordons) | `Cordon` or `DoNotCordon`. Controls whether the autoscaler cordons a guest-cluster node (marks it unschedulable) before draining and terminating it during scale-down. When omitted, HyperShift does not set `--cordon-node-before-terminating`, so the autoscaler's built-in default applies (currently cordoning), as in standalone OpenShift. Set `DoNotCordon` to stop cordoning. Sets `--cordon-node-before-terminating`. |
+
+The cordon is applied to the guest-cluster Node object through the autoscaler's guest kubeconfig.
+The backing management-cluster Machine is deleted separately through Cluster API, after the node
+has drained; cordoning does not change that deletion ordering, only whether the node is marked
+unschedulable beforehand.
+
+```bash
+oc patch hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> --type merge -p '{
+  "spec": {
+    "autoscaling": {
+      "scaling": "ScaleUpAndScaleDown",
+      "scaleDown": {
+        "nodeTerminationPolicy": "Cordon"
+      }
+    }
+  }
+}'
+```
+
+#### New Pod Scale-Up Delay (Tech Preview)
+
+!!! note
+    This field requires the management cluster to be installed with the `HostedClusterAutoscalerConfiguration` feature gate, part of the `TechPreviewNoUpgrade` feature set (`hypershift install --tech-preview-no-upgrade`). It is omitted from the Default HostedCluster/HostedControlPlane CRD schemas. Setting `HostedCluster.spec.configuration.featureGate` (the guest cluster's feature gates) does not enable this field — the gate is a management-cluster-level setting.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `scaleUp.newPodScaleUpDelaySeconds` | int | unset (autoscaler default of no delay applies) | Delays scale-up evaluation for pods younger than this many seconds, measured from the pod's creation timestamp. Must be between `0` and `3600` (1 hour). Sets `--new-pod-scale-up-delay`. |
+
+`newPodScaleUpDelaySeconds` is useful for short-lived, bursty, or batch workloads that should not
+trigger scale-up before they have a chance to schedule on existing capacity. The delay is
+measured from the pod's `metadata.creationTimestamp`, not from when it first becomes
+unschedulable: a pod already older than the effective delay can be considered for scale-up on the
+next autoscaler scan. The per-pod
+`cluster-autoscaler.kubernetes.io/pod-scale-up-delay` annotation can only extend this delay for an
+individual pod; if the annotation specifies a shorter delay than the global setting, the
+autoscaler ignores the shorter value and keeps the longer, global delay.
+
+```bash
+oc patch hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> --type merge -p '{
+  "spec": {
+    "autoscaling": {
+      "scaleUp": {
+        "newPodScaleUpDelaySeconds": 30
+      }
+    }
+  }
+}'
+```
+
+#### Log Level (Tech Preview)
+
+!!! note
+    This field requires the management cluster to be installed with the `HostedClusterAutoscalerConfiguration` feature gate, part of the `TechPreviewNoUpgrade` feature set (`hypershift install --tech-preview-no-upgrade`). It is omitted from the Default HostedCluster/HostedControlPlane CRD schemas. Setting `HostedCluster.spec.configuration.featureGate` (the guest cluster's feature gates) does not enable this field — the gate is a management-cluster-level setting.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `logLevel` | string | `Debug` | `Normal`, `Debug`, `Trace` or `TraceAll`. Sets the hosted cluster autoscaler's log level, which maps to klog verbosity `2`, `4`, `6` and `8` respectively. Sets `--v`. |
+
+`logLevel` is a top-level `autoscaling` field, independent of `scaling`, `scaleDown`, and
+`scaleUp`: it changes only the management-cluster autoscaler container's own log output, not
+scaling policy, the control plane operator's logs, or guest control-plane logs. It uses the same
+`LogLevel` enum as the rest of the HyperShift API. When omitted, this defaults to `Debug`
+(`--v=4`), preserving HyperShift's current behavior. Higher levels increase log volume and can
+add processing overhead — remove the field to restore the default `Debug` and normal log volume
+after a diagnostic session.
+
+```bash
+oc patch hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> --type merge -p '{
+  "spec": {
+    "autoscaling": {
+      "logLevel": "Trace"
+    }
+  }
+}'
+```
 
 ## How It Works
 
