@@ -141,7 +141,10 @@ spec:
           /usr/bin/hypershift install \
           --oidc-storage-provider-s3-bucket-name=hypershift-ci-2-oidc \
           --oidc-storage-provider-s3-region=us-east-1 \
-          --oidc-storage-provider-s3-secret=oidc-s3-creds \
+          --private-platform=AWS \
+          --aws-private-region=us-east-1 \
+          --aws-private-role-arn=arn:aws:iam::820196288204:role/hypershift-operator-ec2 \
+          --oidc-storage-provider-s3-role-arn=arn:aws:iam::820196288204:role/hypershift-operator-oidc-s3 \
           --platform-monitoring=All \
           --hypershift-image=$(cat /installer-data/image-ref)
 
