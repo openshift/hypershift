@@ -50,6 +50,9 @@ func (c *catalogOptions) adaptCatalogDeployment(cpContext component.WorkloadCont
 		podspec.UpdateContainer("extract-content", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 			c.Image = image
 		})
+		podspec.UpdateContainer("rebuild-cache", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+			c.Image = image
+		})
 	}
 
 	return nil
