@@ -5,6 +5,8 @@ package lifecycle
 import (
 	"reflect"
 	"testing"
+
+	. "github.com/onsi/gomega"
 )
 
 func TestManifestRoundTrip(t *testing.T) {
@@ -53,6 +55,37 @@ func TestManifestRoundTrip(t *testing.T) {
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("got %+v, want %+v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestResolveVariantsWithRequiredEnv(t *testing.T) {
+	const key = "TEST_LANE_REQUIRED_INPUT"
+	for _, tc := range []struct {
+		name, variant, value, wantErr string
+	}{
+		{name: "When the selected variant loses a prerequisite after provisioning, it should reject dispatch", variant: "custom", wantErr: `variant "custom" requires TEST_LANE_REQUIRED_INPUT`},
+		{name: "When the manifest prerequisite is present, it should resolve the variant", variant: "custom", value: "configured"},
+		{name: "When a prerequisite belongs only to an unselected variant, it should resolve the selected variant", variant: "public"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(key, tc.value)
+			g := NewWithT(t)
+			dir := t.TempDir()
+			g.Expect(WriteManifest(dir, &ClusterManifest{Clusters: []ClusterEntry{
+				{Variant: "custom", Name: "custom-cluster", RequiredEnv: []string{key}},
+				{Variant: "public", Name: "public-cluster"},
+			}})).To(Succeed())
+			manifest, err := ReadManifest(dir)
+			g.Expect(err).NotTo(HaveOccurred())
+			matrix := TestMatrix{Parallel: []TestGroup{{Variant: tc.variant}}}
+			resolved, err := matrix.ResolveVariants(manifest)
+			if tc.wantErr != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.wantErr)))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(resolved).To(HaveKey(tc.variant))
 		})
 	}
 }

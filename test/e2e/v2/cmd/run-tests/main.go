@@ -76,10 +76,9 @@ func main() {
 	if err := plan.TestMatrix.Validate(); err != nil {
 		log.Fatalf("Invalid test plan: %v", err)
 	}
-
 	clustersByVariant, err := plan.TestMatrix.ResolveVariants(manifest)
 	if err != nil {
-		log.Fatalf("Manifest/test matrix mismatch: %v", err)
+		log.Fatalf("Cannot resolve test plan variants: %v", err)
 	}
 
 	var (
@@ -163,6 +162,8 @@ func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitP
 
 	args := []string{
 		fmt.Sprintf("--ginkgo.label-filter=%s", labelFilter),
+		// A label filter that matches nothing is a configuration error.
+		"--ginkgo.fail-on-empty",
 		fmt.Sprintf("--e2e.junit-report=%s", junitPath),
 		fmt.Sprintf("--ginkgo.timeout=%s", ginkgoTimeout),
 		"--ginkgo.v",

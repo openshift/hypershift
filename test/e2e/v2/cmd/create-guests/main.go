@@ -170,6 +170,7 @@ func run(ctx context.Context, cfg envConfig) error {
 			InfraID:     name,
 			Namespace:   cfg.namespace,
 			DestroyArgs: spec.DestroyArgs,
+			RequiredEnv: spec.RequiredEnv,
 		}
 		log.Printf("Cluster %s: name=%s", spec.Variant, name)
 	}

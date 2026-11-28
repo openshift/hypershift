@@ -166,17 +166,18 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
 	}
 
-	deterministicLBArgs := []string{
-		"--endpoint-access=PublicAndPrivate",
-		"--feature-set=TechPreviewNoUpgrade",
-	}
-	if eip := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_EIP"); eip != "" {
-		if subnet := os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET"); subnet != "" {
-			deterministicLBArgs = append(deterministicLBArgs,
-				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+eip,
-				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+subnet,
-			)
-		}
+	// Keep the variant in the catalog even without CI inputs: only plans that
+	// select it require the EIP and subnet at provisioning time.
+	const (
+		deterministicLBEIPEnv    = "HYPERSHIFT_DETERMINISTIC_LB_EIP"
+		deterministicLBSubnetEnv = "HYPERSHIFT_DETERMINISTIC_LB_SUBNET"
+	)
+	deterministicLBArgs := []string{"--endpoint-access=PublicAndPrivate", "--feature-set=TechPreviewNoUpgrade"}
+	if eip, subnet := os.Getenv(deterministicLBEIPEnv), os.Getenv(deterministicLBSubnetEnv); eip != "" && subnet != "" {
+		deterministicLBArgs = append(deterministicLBArgs,
+			"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+eip,
+			"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+subnet,
+		)
 	}
 
 	specs := []ClusterSpec{
@@ -284,15 +285,6 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			}, v2util.EtcdShardingCreateArgs("")...)...),
 		},
 		{
-			// Dedicated cluster for the deterministic LoadBalancer IP test.
-			// The EIP and public subnet belong to the management cluster and
-			// are reserved by the CI pre-step before create-guests runs.
-			Variant:                 "deterministic-lb",
-			DestroyArgs:             destroyArgs,
-			InitialNodePoolReplicas: &oneInitialReplica,
-			CreateArgs:              clusterArgs(deterministicLBArgs...),
-		},
-		{
 			// Dedicated cluster for etcd KMS re-encryption tests. When
 			// HYPERSHIFT_ETCD_KMS_KEY_ARN is set, the cluster is created with
 			// --kms-key-arn so AWSKMSKeyRotationTest can rotate keys. When the
@@ -304,6 +296,16 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		},
 	}
 
+	specs = append(specs, ClusterSpec{
+		// Dedicated cluster for the deterministic LoadBalancer IP test.
+		// The EIP and public subnet belong to the management cluster and
+		// are reserved by the CI pre-step before create-guests runs.
+		Variant:                 "deterministic-lb",
+		RequiredEnv:             []string{deterministicLBEIPEnv, deterministicLBSubnetEnv, "E2E_EXPECTED_DETERMINISTIC_LB_IP"},
+		DestroyArgs:             destroyArgs,
+		InitialNodePoolReplicas: &oneInitialReplica,
+		CreateArgs:              clusterArgs(deterministicLBArgs...),
+	})
 	return specs
 }
 

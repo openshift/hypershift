@@ -18,7 +18,6 @@ package tests
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,25 +30,18 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:DeterministicLBIP] Hosted Cluster Deterministic LoadBalancer IP", Label("lifecycle", "deterministic-lb-ip", internal.InformingLabel), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:DeterministicLBIP] Hosted Cluster Deterministic LoadBalancer IP", Label("lifecycle", "deterministic-lb-ip"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		for _, name := range []string{
-			"HYPERSHIFT_DETERMINISTIC_LB_EIP",
-			"HYPERSHIFT_DETERMINISTIC_LB_SUBNET",
-			"E2E_EXPECTED_DETERMINISTIC_LB_IP",
-		} {
-			if internal.GetEnvVarValue(name) == "" {
-				Skip(fmt.Sprintf("deterministic LB EIP pre-step did not provide %s", name))
-			}
-		}
 	})
 
 	It("should configure the primary kube-apiserver LoadBalancer Service from the HostedCluster annotations", func() {
+		expectedIP := internal.GetEnvVarValue("E2E_EXPECTED_DETERMINISTIC_LB_IP")
+		Expect(expectedIP).NotTo(BeEmpty(), "E2E_EXPECTED_DETERMINISTIC_LB_IP is required to verify the reserved EIP")
+
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred(), "read the HostedCluster")
 
@@ -58,7 +50,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:DeterministicLBIP] H
 			Client:                testCtx.MgmtClient,
 			HostedCluster:         hc,
 			ControlPlaneNamespace: testCtx.ControlPlaneNamespace,
-			ExpectedIP:            internal.GetEnvVarValue("E2E_EXPECTED_DETERMINISTIC_LB_IP"),
+			ExpectedIP:            expectedIP,
 			Timeout:               15 * time.Minute,
 			Out:                   GinkgoWriter,
 			GuestClient: func(ctx context.Context, fresh *hyperv1.HostedCluster) (crclient.Client, error) {

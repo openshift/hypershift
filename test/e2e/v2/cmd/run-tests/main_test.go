@@ -67,6 +67,13 @@ func TestRunTestBinary(t *testing.T) {
 		assertNoLifecycle(t, report.Suites[0].TestCases[0])
 	})
 
+	t.Run("When the label filter selects no specs, it should fail instead of reporting success", func(t *testing.T) {
+		junitPath := filepath.Join(t.TempDir(), "junit.xml")
+		if err := runTestBinary(binary, "synthetic-cluster", "clusters", "no-such-label", "", junitPath); err == nil {
+			t.Fatal("expected a zero-spec selection to fail")
+		}
+	})
+
 	testRequiredWIF(t, binary)
 }
 
