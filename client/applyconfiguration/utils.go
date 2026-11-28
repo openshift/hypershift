@@ -399,6 +399,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.NodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolPlatformStatus"):
 		return &hypershiftv1beta1.NodePoolPlatformStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("NodePoolScaleDown"):
+		return &hypershiftv1beta1.NodePoolScaleDownApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolSpec"):
 		return &hypershiftv1beta1.NodePoolSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolStatus"):
