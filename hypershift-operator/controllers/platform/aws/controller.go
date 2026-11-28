@@ -578,8 +578,13 @@ func (r *AWSEndpointServiceReconciler) ensureVpcEndpointService(ctx context.Cont
 			var adoptErr error
 			serviceName, serviceID, adoptErr = findExistingVpcEndpointService(ctx, ec2Client, aws.ToString(lbARN))
 			if adoptErr != nil {
+				// Keep the Create error as the wrap target so smithy.APIError (and request IDs)
+				// remain unwrap-able for AWSError conditions, but surface the adoption cause
+				// so operators are not left with only the outer InvalidParameter trigger.
 				log.Info("existing endpoint service not found, adoption failed", "err", adoptErr)
-				return "", "", err
+				// Wrap both errors: adoptErr is shown in parentheses for readability
+				// (per review), and the create err remains unwrap-able as smithy.APIError.
+				return "", "", fmt.Errorf("endpoint service adoption failed (%w): %w", adoptErr, err)
 			}
 			log.Info("endpoint service adopted", "serviceName", serviceName)
 		} else {
