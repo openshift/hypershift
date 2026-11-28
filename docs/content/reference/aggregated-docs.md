@@ -19288,11 +19288,6 @@ You configure the TTL per hosted cluster with the
     event-ttl enhancement
     for the full design.
 
-!!! important
-
-    This field is behind the `KubeAPIServerEventTTL` feature gate and is currently available only
-    in the `TechPreviewNoUpgrade` feature set.
-
 ## Valid values
 
 | | |

@@ -46,9 +46,6 @@
                         "name": "IngressComponentRouteLabels"
                     },
                     {
-                        "name": "KubeAPIServerEventTTL"
-                    },
-                    {
                         "name": "IgnitionPayloadSystem"
                     }
                 ],
@@ -75,6 +72,9 @@
                     },
                     {
                         "name": "HCPUserFacingOperatorLogs"
+                    },
+                    {
+                        "name": "KubeAPIServerEventTTL"
                     }
                 ],
                 "version": ""
