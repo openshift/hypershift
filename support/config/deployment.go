@@ -1,7 +1,9 @@
 package config
 
 import (
+	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -30,4 +32,27 @@ func TLSArgs(profile *configv1.TLSSecurityProfile) ([]string, error) {
 		tlsArgs = append(tlsArgs, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
 	}
 	return tlsArgs, nil
+}
+
+// TLSCurveArgs returns the --tls-curve-preferences argument for a TLS security profile.
+// Not all TLSArgs consumers support curve preferences, so they are handled
+// separately. Callers must ensure their operand supports this flag. If no
+// supported groups remain, it returns no arguments so the operand uses its
+// default curves.
+// The caller is responsible for appending these to their argument list using
+// the spread operator (...).
+func TLSCurveArgs(ctx context.Context, profile *configv1.TLSSecurityProfile) ([]string, error) {
+	curveIDs, err := CurvePreferences(ctx, profile)
+	if err != nil {
+		return nil, err
+	}
+	if len(curveIDs) == 0 {
+		return nil, nil
+	}
+
+	curvePreferences := make([]string, 0, len(curveIDs))
+	for _, curveID := range curveIDs {
+		curvePreferences = append(curvePreferences, strconv.Itoa(int(curveID)))
+	}
+	return []string{fmt.Sprintf("--tls-curve-preferences=%s", strings.Join(curvePreferences, ","))}, nil
 }

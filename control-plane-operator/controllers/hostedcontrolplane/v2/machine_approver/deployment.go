@@ -2,8 +2,6 @@ package machineapprover
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -22,17 +20,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		return err
 	}
 
-	// Curve preferences are supported by machine-approver, but not all TLSArgs consumers.
-	curveIDs, err := config.CurvePreferences(cpContext, profile)
+	curveArgs, err := config.TLSCurveArgs(cpContext, profile)
 	if err != nil {
 		return err
 	}
-	if len(curveIDs) > 0 {
-		curvePreferences := make([]string, 0, len(curveIDs))
-		for _, curveID := range curveIDs {
-			curvePreferences = append(curvePreferences, strconv.Itoa(int(curveID)))
-		}
-		tlsArgs = append(tlsArgs, fmt.Sprintf("--tls-curve-preferences=%s", strings.Join(curvePreferences, ",")))
+	if len(curveArgs) > 0 {
+		tlsArgs = append(tlsArgs, curveArgs...)
 	}
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {

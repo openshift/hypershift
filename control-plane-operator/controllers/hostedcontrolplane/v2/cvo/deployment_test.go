@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -408,12 +409,47 @@ func TestAdaptDeploymentClusterVersionCapabilities(t *testing.T) {
 func TestAdaptDeployment(t *testing.T) {
 	t.Parallel()
 
+	defaultTLSGroups := "--tls-curve-preferences=4588,29,23,24"
+	if libgocrypto.IsFIPSEnabled() {
+		defaultTLSGroups = "--tls-curve-preferences=23,24"
+	}
+
+	hcpWithCustomGroups := func(groups []configv1.TLSGroup) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				Configuration: &hyperv1.ClusterConfiguration{APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+						Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+							Groups: groups,
+						}},
+					},
+				}},
+			},
+		}
+	}
+
 	testCases := []struct {
 		name                  string
 		hcp                   *hyperv1.HostedControlPlane
 		expectedTLSMinVersion string
 		expectedCipherSuites  string
+		expectedTLSGroups     string
 	}{
+		{
+			name: "When configuration is omitted, it should use default TLS groups",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			expectedTLSMinVersion: "--tls-min-version=VersionTLS12",
+			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+			expectedTLSGroups:     defaultTLSGroups,
+		},
 		{
 			name: "When TLS profile has empty cipher suites list, it should not add tls-cipher-suites flag",
 			hcp: &hyperv1.HostedControlPlane{
@@ -538,6 +574,37 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
 		},
 		{
+			name: "When a custom TLS profile has no groups, it should omit the curve preferences flag",
+			hcp:  hcpWithCustomGroups([]configv1.TLSGroup{}),
+		},
+		{
+			name: "When a custom TLS profile has a configured group, it should pass the curve ID",
+			hcp: hcpWithCustomGroups([]configv1.TLSGroup{
+				configv1.TLSGroupSecP256r1,
+			}),
+			expectedTLSGroups: "--tls-curve-preferences=23",
+		},
+		{
+			name: "When a custom TLS profile has only unrecognized groups, it should omit the curve preferences flag",
+			hcp: hcpWithCustomGroups([]configv1.TLSGroup{
+				"unrecognized-group",
+			}),
+		},
+		{
+			name: "When TLS group preferences include unrecognized and supported groups, it should pass only supported curve IDs",
+			hcp: hcpWithCustomGroups([]configv1.TLSGroup{
+				"unrecognized-group", configv1.TLSGroupSecP256r1,
+			}),
+			expectedTLSGroups: "--tls-curve-preferences=23",
+		},
+		{
+			name: "When a custom TLS profile has groups, it should pass the profile groups as numeric curve IDs",
+			hcp: hcpWithCustomGroups([]configv1.TLSGroup{
+				configv1.TLSGroupSecP384r1, configv1.TLSGroupSecP256r1,
+			}),
+			expectedTLSGroups: "--tls-curve-preferences=24,23",
+		},
+		{
 			name: "When TLS profile type is Modern, it should set min version to TLS 1.3 and not add cipher suites flag",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
@@ -555,6 +622,7 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 			expectedTLSMinVersion: "--tls-min-version=VersionTLS13",
 			expectedCipherSuites:  "",
+			expectedTLSGroups:     defaultTLSGroups,
 		},
 	}
 
@@ -585,6 +653,11 @@ func TestAdaptDeployment(t *testing.T) {
 				g.Expect(container.Args).To(ContainElement(tc.expectedCipherSuites))
 			} else {
 				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-cipher-suites")))
+			}
+			if tc.expectedTLSGroups != "" {
+				g.Expect(container.Args).To(ContainElement(tc.expectedTLSGroups))
+			} else {
+				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-curve-preferences")))
 			}
 		})
 	}
