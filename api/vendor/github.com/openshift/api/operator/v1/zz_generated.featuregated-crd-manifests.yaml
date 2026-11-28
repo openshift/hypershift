@@ -206,6 +206,7 @@ ingresses.operator.openshift.io:
   Category: ""
   FeatureGates:
   - GatewayAPIManagementMode
+  - IngressCanaryNodePlacement
   FilenameOperatorName: ingress
   FilenameOperatorOrdering: "02"
   FilenameRunLevel: "0000_50"
@@ -231,6 +232,7 @@ ingresscontrollers.operator.openshift.io:
   - IngressControllerDynamicConfigurationManager
   - IngressControllerLBSecurityGroupsAWS
   - IngressControllerMultipleHAProxyVersions
+  - IngressControllerResourceConfiguration
   - TLSGroupPreferences
   FilenameOperatorName: ingress
   FilenameOperatorOrdering: "00"
@@ -250,7 +252,7 @@ insightsoperators.operator.openshift.io:
   Annotations: {}
   ApprovedPRNumber: https://github.com/openshift/api/pull/1237
   CRDName: insightsoperators.operator.openshift.io
-  Capability: ""
+  Capability: Insights
   Category: ""
   FeatureGates: []
   FilenameOperatorName: insights
