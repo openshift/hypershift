@@ -12,6 +12,7 @@ import (
 
 	"github.com/openshift/hypershift/support/azureutil/velerocreds"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
 
@@ -28,11 +29,20 @@ func (m *mockAzureBlobClient) UploadFile(ctx context.Context, containerName stri
 	return azblob.UploadFileResponse{}, nil
 }
 
+func newAzureBlobUploaderWithClient(encryptionScope string, client AzureBlobUploadAPI) *AzureBlobUploader {
+	return &AzureBlobUploader{
+		container:       "my-container",
+		serviceURL:      "https://mystorageaccount.blob.core.windows.net",
+		encryptionScope: encryptionScope,
+		client:          client,
+	}
+}
+
 func TestAzureBlobUploader(t *testing.T) {
 	t.Run("When uploading successfully it should return the correct Azure Blob URL", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
-		uploader := newAzureBlobUploaderWithClient("my-container", "mystorageaccount", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 		snapshotPath := createTempSnapshot(t)
 
 		result, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -43,7 +53,7 @@ func TestAzureBlobUploader(t *testing.T) {
 	t.Run("When uploading it should set IfNoneMatch for conditional write", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
-		uploader := newAzureBlobUploaderWithClient("my-container", "mystorageaccount", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 		snapshotPath := createTempSnapshot(t)
 
 		_, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -57,7 +67,7 @@ func TestAzureBlobUploader(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
 		encryptionScope := "my-encryption-scope"
-		uploader := newAzureBlobUploaderWithClient("my-container", "mystorageaccount", encryptionScope, mock)
+		uploader := newAzureBlobUploaderWithClient(encryptionScope, mock)
 		snapshotPath := createTempSnapshot(t)
 
 		_, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -70,7 +80,7 @@ func TestAzureBlobUploader(t *testing.T) {
 	t.Run("When no encryption scope is provided it should not set CPKScopeInfo", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
-		uploader := newAzureBlobUploaderWithClient("my-container", "mystorageaccount", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 		snapshotPath := createTempSnapshot(t)
 
 		_, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -85,7 +95,7 @@ func TestAzureBlobUploader(t *testing.T) {
 				return azblob.UploadFileResponse{}, fmt.Errorf("ConditionNotMet: The condition specified using HTTP conditional header(s) is not met")
 			},
 		}
-		uploader := newAzureBlobUploaderWithClient("my-container", "mystorageaccount", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 		snapshotPath := createTempSnapshot(t)
 
 		_, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -96,11 +106,69 @@ func TestAzureBlobUploader(t *testing.T) {
 	t.Run("When snapshot file does not exist it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
-		uploader := newAzureBlobUploaderWithClient("my-container", "mystorageaccount", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 
 		_, err := uploader.Upload(context.Background(), "/nonexistent/snapshot.db", "backups/12345.db")
 		g.Expect(err).To(HaveOccurred())
 	})
+}
+
+func TestNewAzureBlobUploader(t *testing.T) {
+	t.Run("When required options are provided it should return a configured uploader", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		uploader, err := NewAzureBlobUploader(context.Background(), "my-container", "mystorageaccount", "", "my-scope", velerocreds.AuthTypeClientSecret, "")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(uploader).ToNot(BeNil())
+		g.Expect(uploader.container).To(Equal("my-container"))
+		g.Expect(uploader.encryptionScope).To(Equal("my-scope"))
+		g.Expect(uploader.serviceURL).To(Equal("https://mystorageaccount.blob.core.windows.net"))
+		g.Expect(uploader.client).ToNot(BeNil())
+	})
+
+	t.Run("When container is empty it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		_, err := NewAzureBlobUploader(context.Background(), "", "mystorageaccount", "", "", "", "")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("--container is required"))
+	})
+
+	t.Run("When storage account is empty it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		_, err := NewAzureBlobUploader(context.Background(), "my-container", "", "", "", "", "")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("--storage-account is required"))
+	})
+
+	t.Run("When cloud name is invalid it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		_, err := NewAzureBlobUploader(context.Background(), "my-container", "mystorageaccount", "", "", "", "InvalidCloud")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to get Azure cloud configuration"))
+	})
+}
+
+func TestAzureBlobServiceURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		cloud   string
+		wantURL string
+	}{
+		{name: "When cloud is empty it should default to the public endpoint", cloud: "", wantURL: "https://testaccount.blob.core.windows.net"},
+		{name: "When cloud is public it should return the public endpoint", cloud: "AzurePublicCloud", wantURL: "https://testaccount.blob.core.windows.net"},
+		{name: "When cloud is government it should return the government endpoint", cloud: "AzureUSGovernmentCloud", wantURL: "https://testaccount.blob.core.usgovcloudapi.net"},
+		{name: "When cloud is China it should return the China endpoint", cloud: "AzureChinaCloud", wantURL: "https://testaccount.blob.core.chinacloudapi.cn"},
+		{name: "When cloud is German it should return the German endpoint", cloud: "AzureGermanCloud", wantURL: "https://testaccount.blob.core.cloudapi.de"},
+		{name: "When cloud is Bleu it should return the Bleu endpoint", cloud: "AzureBleuCloud", wantURL: "https://testaccount.blob.core.sovcloud-api.fr"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			got, err := azureBlobServiceURL("testaccount", tt.cloud)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(got).To(Equal(tt.wantURL))
+		})
+	}
 }
 
 func TestAzureCredential(t *testing.T) {
@@ -125,7 +193,7 @@ func TestAzureCredential(t *testing.T) {
 
 		// msi-dataplane will parse the JSON but fail on the invalid certificate.
 		// This proves the managed-identity path is reached and the file is consumed.
-		_, err = newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeManagedIdentity)
+		_, err = newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeManagedIdentity, cloud.AzurePublic)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("managed identity credential"))
 	})
@@ -133,7 +201,7 @@ func TestAzureCredential(t *testing.T) {
 	t.Run("When auth type is managed-identity and credentials file is missing it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		_, err := newAzureCredential(context.Background(), "/nonexistent/creds.json", velerocreds.AuthTypeManagedIdentity)
+		_, err := newAzureCredential(context.Background(), "/nonexistent/creds.json", velerocreds.AuthTypeManagedIdentity, cloud.AzurePublic)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("managed identity credential"))
 	})
@@ -142,7 +210,7 @@ func TestAzureCredential(t *testing.T) {
 		// When no credentials file is provided, authType is ignored and
 		// DefaultAzureCredential is used. This matches the behavior where
 		// the controller doesn't pass --credentials-file.
-		_, err := newAzureCredential(context.Background(), "", velerocreds.AuthTypeManagedIdentity)
+		_, err := newAzureCredential(context.Background(), "", velerocreds.AuthTypeManagedIdentity, cloud.AzurePublic)
 		// DefaultAzureCredential will fail in a test environment (no Azure identity),
 		// but the error should NOT mention "managed identity credential".
 		if err != nil {
@@ -166,7 +234,7 @@ func TestAzureCredential(t *testing.T) {
 		credFile := filepath.Join(t.TempDir(), "client-secret-creds.json")
 		g.Expect(os.WriteFile(credFile, data, 0644)).To(Succeed())
 
-		credential, err := newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeClientSecret)
+		credential, err := newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeClientSecret, cloud.AzurePublic)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(credential).ToNot(BeNil())
 	})
@@ -178,7 +246,7 @@ func TestAzureCredential(t *testing.T) {
 		credFile := filepath.Join(t.TempDir(), "cloud")
 		g.Expect(os.WriteFile(credFile, []byte(dotenv), 0644)).To(Succeed())
 
-		credential, err := newClientSecretCredential(credFile)
+		credential, err := newClientSecretCredential(credFile, cloud.AzurePublic)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(credential).ToNot(BeNil())
 	})
@@ -190,7 +258,7 @@ func TestAzureCredential(t *testing.T) {
 		credFile := filepath.Join(t.TempDir(), "cloud")
 		g.Expect(os.WriteFile(credFile, []byte(dotenv), 0644)).To(Succeed())
 
-		_, err := newClientSecretCredential(credFile)
+		_, err := newClientSecretCredential(credFile, cloud.AzurePublic)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("failed to parse credentials file as JSON"))
 		g.Expect(err.Error()).To(ContainSubstring("or dotenv (missing required fields)"))

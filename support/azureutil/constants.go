@@ -37,4 +37,9 @@ const (
 	azureGermanManagedHSMDNSSuffix     = "managedhsm.microsoftazure.de"
 	azureBleuKeyVaultDNSSuffix         = "vault.sovcloud-api.fr"
 	azureBleuManagedHSMDNSSuffix       = "managedhsm.sovcloud-api.fr"
+	azurePublicBlobDNSSuffix           = "blob.core.windows.net"
+	azureGovernmentBlobDNSSuffix       = "blob.core.usgovcloudapi.net"
+	azureChinaBlobDNSSuffix            = "blob.core.chinacloudapi.cn"
+	azureGermanBlobDNSSuffix           = "blob.core.cloudapi.de"
+	azureBleuBlobDNSSuffix             = "blob.core.sovcloud-api.fr"
 )
