@@ -19,6 +19,7 @@ package tests
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -661,6 +662,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 		targetExternalDNSNeedsRestore bool
 		backupName                    string
 		expectedConditions            []util.Condition
+		preBackupMachines             []backuprestore.MachineIdentity
+		preBackupNodes                []backuprestore.NodeIdentity
 	)
 
 	BeforeAll(func() {
@@ -707,6 +710,29 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 		It("should have control plane healthy before backup", func() {
 			validateBeforeEach(sourceCtx)
 			expectedConditions = validatePreBackupControlPlane(sourceCtx, platformCfg.excludeWorkloads)
+
+			By("Capturing machine identities before backup")
+			var err error
+			preBackupMachines, err = backuprestore.CaptureMachineIdentities(sourceCtx)
+			if err != nil {
+				GinkgoWriter.Printf("WARNING: failed to capture machine identities: %v\n", err)
+			} else {
+				GinkgoWriter.Printf("Captured %d machine identities before backup\n", len(preBackupMachines))
+				for _, m := range preBackupMachines {
+					GinkgoWriter.Printf("  Machine %s: providerID=%s nodeRef=%s\n", m.Name, m.ProviderID, m.NodeRefName)
+				}
+			}
+
+			By("Capturing node identities before backup")
+			preBackupNodes, err = backuprestore.CaptureNodeIdentities(sourceCtx)
+			if err != nil {
+				GinkgoWriter.Printf("WARNING: failed to capture node identities: %v\n", err)
+			} else {
+				GinkgoWriter.Printf("Captured %d node identities before backup\n", len(preBackupNodes))
+				for _, n := range preBackupNodes {
+					GinkgoWriter.Printf("  Node %s: uid=%s providerID=%s\n", n.Name, n.UID, n.ProviderID)
+				}
+			}
 		})
 	})
 
@@ -823,6 +849,84 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 		It("should have control plane healthy after restore", func() {
 			validateBeforeEach(targetCtx)
 			validatePostRestoreControlPlane(targetCtx, platformCfg.excludeWorkloads, expectedConditions, false)
+		})
+
+		It("should report whether machines and nodes were preserved after cross-cluster restore", Label(internal.InformingLabel), func() {
+			if len(preBackupMachines) == 0 && len(preBackupNodes) == 0 {
+				Skip("no pre-backup machine or node identities were captured")
+			}
+
+			By("Capturing machine identities after restore on the target cluster")
+			var postRestoreMachines []backuprestore.MachineIdentity
+			if len(preBackupMachines) > 0 {
+				var err error
+				postRestoreMachines, err = backuprestore.CaptureMachineIdentities(targetCtx)
+				Expect(err).NotTo(HaveOccurred(), "should be able to list CAPI Machines on target cluster")
+				Expect(postRestoreMachines).NotTo(BeEmpty(), "at least one CAPI Machine should exist after restore")
+
+				GinkgoWriter.Printf("Post-restore machines (%d):\n", len(postRestoreMachines))
+				for _, m := range postRestoreMachines {
+					GinkgoWriter.Printf("  Machine %s: providerID=%s nodeRef=%s\n", m.Name, m.ProviderID, m.NodeRefName)
+				}
+			}
+
+			By("Capturing node identities after restore on the target cluster")
+			var postRestoreNodes []backuprestore.NodeIdentity
+			if len(preBackupNodes) > 0 {
+				var err error
+				postRestoreNodes, err = backuprestore.CaptureNodeIdentities(targetCtx)
+				Expect(err).NotTo(HaveOccurred(), "should be able to list Nodes in the hosted cluster")
+				Expect(postRestoreNodes).NotTo(BeEmpty(), "at least one Node should exist after restore")
+
+				GinkgoWriter.Printf("Post-restore nodes (%d):\n", len(postRestoreNodes))
+				for _, n := range postRestoreNodes {
+					GinkgoWriter.Printf("  Node %s: uid=%s providerID=%s\n", n.Name, n.UID, n.ProviderID)
+				}
+			}
+
+			By("Comparing machine provider IDs")
+			var machinesResult string
+			preMachineIDs := backuprestore.ProviderIDs(preBackupMachines)
+			if len(preMachineIDs) == 0 {
+				machinesResult = "not_compared"
+				GinkgoWriter.Printf("RESULT [machines]: not compared — no pre-backup provider IDs available\n")
+			} else {
+				postMachineIDs := backuprestore.ProviderIDs(postRestoreMachines)
+				if slices.Equal(preMachineIDs, postMachineIDs) {
+					machinesResult = "preserved"
+					GinkgoWriter.Printf("RESULT [machines]: preserved — same cloud instances (provider IDs match)\n")
+				} else {
+					machinesResult = "reprovisioned"
+					GinkgoWriter.Printf("RESULT [machines]: reprovisioned — cloud instances differ\n")
+					GinkgoWriter.Printf("  pre-backup:   %v\n", preMachineIDs)
+					GinkgoWriter.Printf("  post-restore: %v\n", postMachineIDs)
+				}
+			}
+
+			By("Comparing node UIDs")
+			var nodesResult string
+			preNodeUIDs := backuprestore.NodeUIDs(preBackupNodes)
+			if len(preNodeUIDs) == 0 {
+				nodesResult = "not_compared"
+				GinkgoWriter.Printf("RESULT [nodes]: not compared — no pre-backup node UIDs available\n")
+			} else {
+				postNodeUIDs := backuprestore.NodeUIDs(postRestoreNodes)
+				if slices.Equal(preNodeUIDs, postNodeUIDs) {
+					nodesResult = "preserved"
+					GinkgoWriter.Printf("RESULT [nodes]: preserved — same node objects (UIDs match)\n")
+				} else {
+					nodesResult = "replaced"
+					GinkgoWriter.Printf("RESULT [nodes]: replaced — different node objects\n")
+					preNodeNames := backuprestore.NodeNames(preBackupNodes)
+					postNodeNames := backuprestore.NodeNames(postRestoreNodes)
+					GinkgoWriter.Printf("  pre-backup  nodes: %v\n", preNodeNames)
+					GinkgoWriter.Printf("  post-restore nodes: %v\n", postNodeNames)
+					GinkgoWriter.Printf("  pre-backup  UIDs:  %v\n", preNodeUIDs)
+					GinkgoWriter.Printf("  post-restore UIDs: %v\n", postNodeUIDs)
+				}
+			}
+
+			GinkgoWriter.Printf("SUMMARY: machines=%s nodes=%s\n", machinesResult, nodesResult)
 		})
 	})
 })
