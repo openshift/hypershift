@@ -364,6 +364,7 @@ nodepools.hypershift.openshift.io:
   Category: ""
   FeatureGates:
   - GCPPlatform
+  - NodePoolScaleDown
   - OSStreams
   - OpenStack
   FilenameOperatorName: ""

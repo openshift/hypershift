@@ -43,6 +43,9 @@
                         "name": "AWSManagedDNS"
                     },
                     {
+                        "name": "NodePoolScaleDown"
+                    },
+                    {
                         "name": "IngressComponentRouteLabels"
                     },
                     {

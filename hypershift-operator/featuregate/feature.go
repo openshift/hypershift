@@ -89,6 +89,11 @@ const (
 	// owner: @muraee
 	// alpha: v0.1.84
 	IgnitionPayloadSystem featuregate.Feature = "IgnitionPayloadSystem"
+
+	// NodePoolScaleDown enables spec.scaleDown on NodePools, which sets the deletion order of the NodePool's
+	// MachineSet or MachineDeployment.
+	// alpha: v0.1.90
+	NodePoolScaleDown featuregate.Feature = "NodePoolScaleDown"
 )
 
 // Initialize new features here
@@ -106,6 +111,7 @@ var (
 	awsManagedDNSFeature           = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	kubeletHAProxyRoutingFeature   = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	ignitionPayloadSystemFeature   = featuregates.NewFeature(IgnitionPayloadSystem, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	nodePoolScaleDownFeature       = featuregates.NewFeature(NodePoolScaleDown, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -121,6 +127,7 @@ func init() {
 	allFeatures.AddFeature(awsManagedDNSFeature)
 	allFeatures.AddFeature(kubeletHAProxyRoutingFeature)
 	allFeatures.AddFeature(ignitionPayloadSystemFeature)
+	allFeatures.AddFeature(nodePoolScaleDownFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))

@@ -68,6 +68,9 @@
                         "name": "AWSManagedDNS"
                     },
                     {
+                        "name": "NodePoolScaleDown"
+                    },
+                    {
                         "name": "TLSGroupPreferences"
                     },
                     {

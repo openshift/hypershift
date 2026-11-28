@@ -161,6 +161,14 @@ type NodePoolSpec struct {
 	// +optional
 	AutoScaling *NodePoolAutoScaling `json:"autoScaling,omitempty"`
 
+	// scaleDown configures which Machines are removed when the NodePool scales down.
+	// When omitted, Cluster API uses its default "Random" order.
+	// Changing this field does not trigger a rollout.
+	//
+	// +openshift:enable:FeatureGate=NodePoolScaleDown
+	// +optional
+	ScaleDown NodePoolScaleDown `json:"scaleDown,omitzero"`
+
 	// config is a list of references to ConfigMaps containing serialized
 	// MachineConfig resources to be injected into the ignition configurations of
 	// nodes in the NodePool. The MachineConfig API schema is defined here:
@@ -554,6 +562,35 @@ type NodePoolManagement struct {
 	// +kubebuilder:default=false
 	AutoRepair bool `json:"autoRepair"`
 }
+
+// NodePoolScaleDown configures which Machines are removed when a NodePool scales down.
+// +kubebuilder:validation:MinProperties=1
+type NodePoolScaleDown struct {
+	// deletionOrder is the order in which Cluster API deletes the healthy Machines of a MachineSet when it scales down.
+	// Valid values are "Random", "Newest" and "Oldest". When omitted, "Random" is used.
+	// Machines that are being deleted, annotated with "cluster.x-k8s.io/delete-machine", being updated in place by
+	// Cluster API, or unhealthy are deleted before healthy Machines, with one exception below.
+	// "Newest" and "Oldest" lose precision as Machines age: healthy Machines that are both older than about 375 days
+	// get the same priority and are picked by name, and with "Oldest" such a Machine also gets the same priority as
+	// an unhealthy Machine, so it can be deleted before the unhealthy one.
+	// For the Replace upgrade type, the order applies within the MachineSet that Cluster API scales down.
+	//
+	// +optional
+	DeletionOrder NodePoolDeletionOrder `json:"deletionOrder,omitempty"`
+}
+
+// NodePoolDeletionOrder is the order in which Machines are deleted when a NodePool scales down.
+// +kubebuilder:validation:Enum=Random;Newest;Oldest
+type NodePoolDeletionOrder string
+
+const (
+	// NodePoolDeletionOrderRandom does not consider the age of healthy Machines.
+	NodePoolDeletionOrderRandom NodePoolDeletionOrder = "Random"
+	// NodePoolDeletionOrderNewest deletes the most recently created healthy Machines first.
+	NodePoolDeletionOrderNewest NodePoolDeletionOrder = "Newest"
+	// NodePoolDeletionOrderOldest deletes the least recently created healthy Machines first.
+	NodePoolDeletionOrderOldest NodePoolDeletionOrder = "Oldest"
+)
 
 // NodePoolAutoScaling specifies auto-scaling behavior for a NodePool.
 // +kubebuilder:validation:XValidation:rule="self.max >= self.min", message="max must be equal or greater than min"

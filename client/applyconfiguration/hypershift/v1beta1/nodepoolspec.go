@@ -31,6 +31,7 @@ type NodePoolSpecApplyConfiguration struct {
 	Replicas                *int32                                    `json:"replicas,omitempty"`
 	Management              *NodePoolManagementApplyConfiguration     `json:"management,omitempty"`
 	AutoScaling             *NodePoolAutoScalingApplyConfiguration    `json:"autoScaling,omitempty"`
+	ScaleDown               *NodePoolScaleDownApplyConfiguration      `json:"scaleDown,omitempty"`
 	Config                  []v1.LocalObjectReference                 `json:"config,omitempty"`
 	NodeDrainTimeout        *metav1.Duration                          `json:"nodeDrainTimeout,omitempty"`
 	NodeVolumeDetachTimeout *metav1.Duration                          `json:"nodeVolumeDetachTimeout,omitempty"`
@@ -93,6 +94,14 @@ func (b *NodePoolSpecApplyConfiguration) WithManagement(value *NodePoolManagemen
 // If called multiple times, the AutoScaling field is set to the value of the last call.
 func (b *NodePoolSpecApplyConfiguration) WithAutoScaling(value *NodePoolAutoScalingApplyConfiguration) *NodePoolSpecApplyConfiguration {
 	b.AutoScaling = value
+	return b
+}
+
+// WithScaleDown sets the ScaleDown field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ScaleDown field is set to the value of the last call.
+func (b *NodePoolSpecApplyConfiguration) WithScaleDown(value *NodePoolScaleDownApplyConfiguration) *NodePoolSpecApplyConfiguration {
+	b.ScaleDown = value
 	return b
 }
 

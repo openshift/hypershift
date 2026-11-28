@@ -537,3 +537,84 @@ func TestAzureNodePoolPlatformSerializationCompatibility(t *testing.T) {
 		})
 	}
 }
+
+// nodePoolSpecScaleDownNMinus1 represents the subset of the previous NodePoolSpec
+// that is relevant to scaleDown: the field did not exist yet.
+type nodePoolSpecScaleDownNMinus1 struct {
+	ClusterName string `json:"clusterName,omitempty"` //nolint:kubeapilinter // test-only N-1 compat struct
+	Replicas    *int32 `json:"replicas,omitempty"`    //nolint:kubeapilinter // test-only N-1 compat struct
+}
+
+func TestNodePoolScaleDownSerializationCompatibility(t *testing.T) {
+	tests := []struct {
+		name string
+		// current is the N (current) version of the struct
+		current NodePoolSpec
+		// expectScaleDownKey is whether the scaleDown key is expected in the serialized N version
+		expectScaleDownKey bool
+		// expectedScaleDownJSON is the expected JSON of the scaleDown key when present
+		expectedScaleDownJSON string
+	}{
+		{
+			name: "When scaleDown is omitted it should not be serialized",
+			current: NodePoolSpec{
+				ClusterName: "cluster",
+				Replicas:    ptr.To[int32](3),
+			},
+			expectScaleDownKey: false,
+		},
+		{
+			name: "When deletionOrder is set it should serialize scaleDown and N-1 should ignore it",
+			current: NodePoolSpec{
+				ClusterName: "cluster",
+				Replicas:    ptr.To[int32](3),
+				ScaleDown:   NodePoolScaleDown{DeletionOrder: NodePoolDeletionOrderOldest},
+			},
+			expectScaleDownKey:    true,
+			expectedScaleDownJSON: `{"deletionOrder":"Oldest"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Marshal current (N) version
+			data, err := json.Marshal(tt.current)
+			if err != nil {
+				t.Fatalf("failed to marshal current struct: %v", err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatalf("failed to unmarshal current JSON into a map: %v", err)
+			}
+			scaleDown, found := fields["scaleDown"]
+			if found != tt.expectScaleDownKey {
+				t.Fatalf("unexpected presence of scaleDown key: got %t, want %t (json: %s)", found, tt.expectScaleDownKey, string(data))
+			}
+			if found && string(scaleDown) != tt.expectedScaleDownJSON {
+				t.Errorf("unexpected scaleDown JSON: got %s, want %s", string(scaleDown), tt.expectedScaleDownJSON)
+			}
+
+			// Deserialize into N-1 struct
+			var nMinus1 nodePoolSpecScaleDownNMinus1
+			if err := json.Unmarshal(data, &nMinus1); err != nil {
+				t.Fatalf("N-1 failed to unmarshal JSON from N: %v", err)
+			}
+			if nMinus1.ClusterName != tt.current.ClusterName || ptr.Deref(nMinus1.Replicas, -1) != ptr.Deref(tt.current.Replicas, -1) {
+				t.Errorf("N-1 deserialization mismatch: got %+v", nMinus1)
+			}
+
+			// Reverse: marshal N-1 and deserialize into current (N)
+			nMinus1Data, err := json.Marshal(nMinus1)
+			if err != nil {
+				t.Fatalf("failed to marshal N-1 struct: %v", err)
+			}
+			var roundTripped NodePoolSpec
+			if err := json.Unmarshal(nMinus1Data, &roundTripped); err != nil {
+				t.Fatalf("N failed to unmarshal JSON from N-1: %v", err)
+			}
+			if roundTripped.ScaleDown != (NodePoolScaleDown{}) {
+				t.Errorf("expected zero-value scaleDown after N-1 round-trip, got %+v", roundTripped.ScaleDown)
+			}
+		})
+	}
+}

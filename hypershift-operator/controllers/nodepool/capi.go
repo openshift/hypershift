@@ -9,6 +9,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -56,6 +57,8 @@ type CAPI struct {
 	capiClusterName       string
 	scaleFromZeroPlatform hyperv1.PlatformType
 	upsert.ApplyProvider
+	// scaleDownEnabled reports whether the NodePoolScaleDown feature gate is enabled.
+	scaleDownEnabled bool
 }
 
 // hasStatusCapacity checks if a machine template has Status.Capacity populated
@@ -80,9 +83,10 @@ func newCAPI(token *Token, capiClusterName string) (*CAPI, error) {
 	}
 
 	return &CAPI{
-		Token:           token,
-		capiClusterName: capiClusterName,
-		ApplyProvider:   upsert.NewApplyProvider(false),
+		Token:            token,
+		capiClusterName:  capiClusterName,
+		ApplyProvider:    upsert.NewApplyProvider(false),
+		scaleDownEnabled: featuregate.Gate().Enabled(featuregate.NodePoolScaleDown),
 	}, nil
 }
 
@@ -529,6 +533,9 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 
 	scaleFromZeroSupported := hasStatusCapacity(machineTemplateCR) || nodePool.Spec.Platform.Type == c.scaleFromZeroPlatform
 	setMachineDeploymentReplicas(nodePool, machineDeployment, scaleFromZeroSupported)
+	if c.scaleDownEnabled {
+		machineDeployment.Spec.Deletion.Order = capiv1.MachineSetDeletionOrder(nodePool.Spec.ScaleDown.DeletionOrder)
+	}
 
 	if updated := c.propagateVersionAndTemplate(log, machineDeployment, machineTemplateCR); updated {
 		return nil
@@ -1181,6 +1188,9 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 
 	scaleFromZeroSupported := hasStatusCapacity(machineTemplateCR) || nodePool.Spec.Platform.Type == c.scaleFromZeroPlatform
 	setMachineSetReplicas(nodePool, machineSet, scaleFromZeroSupported)
+	if c.scaleDownEnabled {
+		machineSet.Spec.Deletion.Order = capiv1.MachineSetDeletionOrder(nodePool.Spec.ScaleDown.DeletionOrder)
+	}
 
 	if c.propagateVersionAndTemplateToMachineSet(log, machineSet, machineTemplateCR) {
 		// Return early during a version/config/MachineTemplate update to persist
