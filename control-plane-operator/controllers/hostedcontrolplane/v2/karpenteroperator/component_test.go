@@ -8,10 +8,13 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	karpenteroperatoroverrides "github.com/openshift/hypershift/hypershift-operator/karpenteroperator-overrides"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/upsert"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -179,9 +182,7 @@ func TestPredicate(t *testing.T) {
 	}
 }
 
-func TestKarpenterCredentialsSecretReconcile(t *testing.T) {
-	t.Parallel()
-
+func TestNewComponent(t *testing.T) {
 	const (
 		namespace = "test-namespace"
 		roleARN   = "arn:aws:iam::123456789012:role/karpenter"
@@ -278,6 +279,86 @@ func TestKarpenterCredentialsSecretReconcile(t *testing.T) {
 			} else {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
+		})
+	}
+
+	// Image selection is checked on the Deployment after workload defaulting.
+	tests := []struct {
+		name, override, wantImage, wantError string
+		registries                           map[string]string
+	}{
+		{
+			name:      "When the override is qualified, it should survive payload substitution on the reconciled Deployment",
+			override:  "quay.io/openshift/karpenter-operator:ci-main",
+			wantImage: "quay.io/openshift/karpenter-operator:ci-main",
+		},
+		{
+			name:       "When registry overrides match the operator, it should persist the mirrored image on the Deployment",
+			override:   "quay.io/openshift/karpenter-operator:ci-main",
+			registries: map[string]string{"quay.io": "mirror.internal:5000"},
+			wantImage:  "mirror.internal:5000/openshift/karpenter-operator:ci-main",
+		},
+		{
+			name:       "When registry remapping produces a bare payload key, it should reject it before payload substitution",
+			override:   "quay.io/openshift/karpenter-operator",
+			registries: map[string]string{"quay.io/openshift/karpenter-operator": "karpenter-operator"},
+			wantError:  "explicit registry",
+		},
+		{
+			name:      "When the override is a bare payload key, it should reject it instead of deploying the payload image",
+			override:  "karpenter-operator",
+			wantError: "explicit registry",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			t.Setenv(karpenteroperatoroverrides.ImageOverrideEnvVar, tc.override)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64",
+					Platform:     hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+					AutoNode: hyperv1.AutoNode{Provisioner: hyperv1.ProvisionerConfig{
+						Name:      hyperv1.ProvisionerKarpenter,
+						Karpenter: hyperv1.KarpenterConfig{Platform: hyperv1.AWSPlatform},
+					}},
+				},
+			}
+			cpContext := controlplanecomponent.ControlPlaneContext{
+				Context:       t.Context(),
+				HCP:           hcp,
+				Client:        fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				ApplyProvider: upsert.NewApplyProvider(false),
+				ReleaseImageProvider: &fakeReleaseImageProvider{images: map[string]string{
+					"karpenter-operator":         "quay.io/openshift/karpenter-operator:payload",
+					"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+					"token-minter":               "quay.io/openshift/token-minter:latest",
+					"availability-prober":        "quay.io/openshift/availability-prober:latest",
+				}},
+				SkipPredicate:          true,
+				SkipCertificateSigning: true,
+				OmitOwnerReference:     true,
+			}
+			opts := &KarpenterOperatorOptions{
+				HyperShiftOperatorImage:            "quay.io/openshift/hypershift:latest",
+				ControlPlaneOperatorImage:          "quay.io/openshift/control-plane-operator:latest",
+				StandaloneKarpenterOperatorEnabled: true,
+				RegistryOverrides:                  tc.registries,
+			}
+			err := NewComponent(opts).Reconcile(cpContext)
+			deployment := &appsv1.Deployment{}
+			key := client.ObjectKey{Namespace: hcp.Namespace, Name: ComponentName}
+			if tc.wantError != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.wantError)))
+				g.Expect(apierrors.IsNotFound(cpContext.Client.Get(t.Context(), key, deployment))).To(BeTrue())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(cpContext.Client.Get(t.Context(), key, deployment)).To(Succeed())
+			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+			g.Expect(container).ToNot(BeNil())
+			g.Expect(container.Image).To(Equal(tc.wantImage))
 		})
 	}
 }

@@ -79,6 +79,7 @@ func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlpl
 		ControlPlaneOperatorImage:          controlPlaneOperatorImage,
 		IgnitionEndpoint:                   hcluster.Status.IgnitionEndpoint,
 		StandaloneKarpenterOperatorEnabled: karpenterutil.IsStandaloneKarpenterOperatorEnabled(),
+		RegistryOverrides:                  r.RegistryOverrides,
 	})
 
 	// Always reconcile the Karpenter Operator so it has a chance to clean up, the predicate on
