@@ -1012,6 +1012,28 @@ func (EtcdSpec) SwaggerDoc() map[string]string {
 	return map_EtcdSpec
 }
 
+var map_CanaryNodePlacement = map[string]string{
+	"":            "CanaryNodePlacement describes node placement configuration for the ingress canary daemonset pods.",
+	"tolerations": "tolerations is a list of tolerations that are applied to the ingress canary daemonset pods in addition to the tolerations the canary daemonset has by default. The default toleration for the node-role.kubernetes.io/infra taint is always preserved.\n\nEach toleration is plumbed directly to the Pod specification of the canary daemonset pods: it is applied unmodified to the pods' tolerations and has the same semantics as the corresponding fields of the Kubernetes core/v1 Toleration type.\n\nIf unset, the canary daemonset has only its default tolerations. When specified, the list must contain at least 1 toleration; to remove all additional tolerations, omit the entire spec.canary field rather than setting an empty list or leaving empty parent objects. Retain at least one other valid spec field, such as spec.gatewayAPI, because spec must not be empty.\n\nEach toleration has the following constraints:\n\n* operator is required and must be \"Exists\" or \"Equal\"; omitted and empty\n  operators, as well as \"Lt\" and \"Gt\", are rejected.\n* effect is required and must be \"NoSchedule\", \"PreferNoSchedule\", or\n  \"NoExecute\"; omitted and empty effects are rejected.\n* value must be empty when operator is \"Exists\". * key must be non-empty. A toleration with an empty key is rejected; in\n  particular, a toleration with an empty key and operator \"Exists\", which\n  tolerates all taints, is rejected.\n* key must be a qualified label key: a 1-63 character name consisting of\n  alphanumeric characters, '-', '_', or '.', beginning and ending with an\n  alphanumeric character, optionally preceded by a lowercase DNS subdomain\n  prefix of at most 253 characters and a '/'. The total limit is 317 characters.\n* value for \"Equal\" must be empty or a label value of at most 63 characters,\n  using the same characters and beginning/end constraints as the key name.\n* tolerationSeconds may be specified only when effect is \"NoExecute\".\n\nAt least 1 and no more than 32 tolerations may be specified.\n\nList order is preserved, but duplicate tolerations are rejected: two tolerations must not have the same key, operator, value, and effect, regardless of their tolerationSeconds. Two tolerations are duplicates only when they also agree on whether value is set; if both set value, the values must be equal. Overlapping tolerations (for example, the same key with a different effect) are allowed. For NoExecute, omitted tolerationSeconds means tolerating indefinitely; finite values are preserved, including zero and negative values.\n\nSee https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/",
+}
+
+func (CanaryNodePlacement) SwaggerDoc() map[string]string {
+	return map_CanaryNodePlacement
+}
+
+var map_CanaryToleration = map[string]string{
+	"":                  "CanaryToleration describes a toleration added to the ingress canary daemonset.\n\nA CanaryToleration is plumbed directly to the Pod specification of the canary daemonset pods and corresponds to a Kubernetes core/v1 Toleration. Its fields have the same semantics as their core/v1 Toleration counterparts, with the validation constraints documented on each field.",
+	"key":               "key is required and identifies the taint to tolerate. It must be a qualified label key of 1-317 characters: an alphanumeric-bounded name of 1-63 characters using alphanumerics, '-', '_', or '.', optionally preceded by a lowercase DNS subdomain prefix of at most 253 characters and a '/'.",
+	"operator":          "operator is required and specifies how the taint value is matched. Equal matches the specified value; Exists matches any value and requires value to be empty or omitted. Only Equal and Exists are allowed; omitted or empty operators are rejected.",
+	"value":             "value is optional; when omitted, no value is matched. For Equal, it must be a non-empty label value of at most 63 characters, consisting of alphanumerics, '-', '_', or '.', beginning and ending with an alphanumeric character. The empty string is not allowed: omit value instead, as there is no semantic difference between the two. For Exists, it must be omitted.",
+	"effect":            "effect is required and specifies the taint effect to match. Only NoSchedule, PreferNoSchedule, and NoExecute are allowed; omitted or empty effects are rejected. NoSchedule prevents scheduling, PreferNoSchedule expresses a scheduling preference, and NoExecute also evicts pods that do not tolerate it.",
+	"tolerationSeconds": "tolerationSeconds is optional and may be set only for effect NoExecute. When omitted, the taint is tolerated indefinitely. When specified, this is the duration in seconds for which the taint is tolerated. Zero and negative values are preserved by the API and treated as zero by Kubernetes.",
+}
+
+func (CanaryToleration) SwaggerDoc() map[string]string {
+	return map_CanaryToleration
+}
+
 var map_GatewayAPIIngressConfig = map[string]string{
 	"":               "GatewayAPIIngressConfig holds configuration for Gateway API integration in the Cluster Ingress Operator.",
 	"managementMode": "managementMode specifies how the Cluster Ingress Operator manages Gateway API Custom Resource Definitions (CRDs), the OpenShift Gateway API implementation, and its Gateway API controllers.\n\nAllowed values are \"Managed\" and \"Unmanaged\".\n\nWhen omitted or set to \"Managed\", the ingress operator installs, owns, and upgrades the Gateway API CRDs, protects them with a Validating Admission Policy, and deploys the OpenShift Gateway API implementation and its Gateway API controllers.\n\nWhen set to \"Unmanaged\", the ingress operator does not install or manage Gateway API CRDs and does not deploy the OpenShift Gateway API implementation or its Gateway API controllers. The cluster administrator or a third-party product is responsible for providing their own CRDs and Gateway controller. The ingress operator reports observational status only.",
@@ -1032,6 +1054,15 @@ func (Ingress) SwaggerDoc() map[string]string {
 	return map_Ingress
 }
 
+var map_IngressCanary = map[string]string{
+	"":              "IngressCanary holds configuration for the ingress canary daemonset.",
+	"nodePlacement": "nodePlacement enables explicit control over the scheduling of the ingress canary daemonset pods.\n\nnodePlacement is optional. To leave the canary daemonset with its default scheduling configuration, which tolerates the node-role.kubernetes.io/infra taint, omit the parent canary field entirely: because canary requires at least one field, nodePlacement can only be absent when canary itself is absent. When specified, nodePlacement must set at least one of its fields; an empty object is rejected.",
+}
+
+func (IngressCanary) SwaggerDoc() map[string]string {
+	return map_IngressCanary
+}
+
 var map_IngressList = map[string]string{
 	"":         "IngressList is a collection of Ingresses.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
@@ -1045,6 +1076,7 @@ func (IngressList) SwaggerDoc() map[string]string {
 var map_IngressSpec = map[string]string{
 	"":           "IngressSpec is the specification of the desired behavior of the Ingress Operator.",
 	"gatewayAPI": "gatewayAPI holds configuration for Gateway API integration, including how the ingress operator manages Gateway API CRDs, the OpenShift Gateway API implementation, and its Gateway API controllers.",
+	"canary":     "canary holds configuration for the ingress canary daemonset (the ingress-canary DaemonSet in the openshift-ingress-canary namespace).\n\ncanary is optional. When omitted, the ingress canary daemonset keeps its default configuration. When specified, canary must set at least one of its fields; an empty object is rejected.",
 }
 
 func (IngressSpec) SwaggerDoc() map[string]string {
@@ -1240,6 +1272,17 @@ func (IngressControllerCaptureHTTPHeaders) SwaggerDoc() map[string]string {
 	return map_IngressControllerCaptureHTTPHeaders
 }
 
+var map_IngressControllerContainerResource = map[string]string{
+	"":        "IngressControllerContainerResource defines an override for one resource.",
+	"name":    "name is required and identifies cpu, memory, ephemeral-storage, hugepages-<size>, or a domain-qualified extended resource such as example.com/device. It must be a Kubernetes qualified name of 1 to 253 characters: an optional lowercase DNS subdomain and slash followed by an alphanumeric name of at most 63 characters, with '-', '_' and '.' allowed internally. Extended resource domains must not be kubernetes.io or its subdomains, and names must not start with 'requests.'. Hugepage sizes must be valid quantities of 1 to 20 characters representing a positive, whole number of bytes.",
+	"request": "request optionally sets the minimum amount of this resource per replica.\n\nWARNING: the platform does not validate this value against what the container needs, and setting it too low or too high can break ingress. A request below what the container needs causes CPU throttling and makes the pod more likely to be evicted when its node runs short of memory; users see slow route updates, added latency, timeouts and 5xx responses. A request that the nodes cannot satisfy leaves ingress pods Pending, and a rolling update can then stall with fewer replicas than desired. A request is static: the platform never adjusts it as route count, configuration size or traffic grows. Issues caused by an inappropriate value are not supported, and the cluster administrator is responsible for choosing it; the platform default described on spec.resources is the supported configuration.\n\nIt must be a valid, positive, non-zero quantity of 1 to 20 characters and must not exceed limit. Extended resources and hugepages require an equal limit; extended resource values must be whole numbers, and hugepage values must be whole multiples of the page size. When omitted with a limit, the operator uses that limit as the effective request, without defaulting this API field. When there is no entry for a resource, the platform default request applies.",
+	"limit":   "limit optionally sets the maximum amount of this resource per replica.\n\nWARNING: setting a limit on a cluster component such as the router is discouraged, the platform does not validate it against what the container needs, and the cluster administrator accepts responsibility for any unavailability it causes; the platform default of no limit, described on spec.resources, is the supported configuration. A CPU limit that the container exceeds is enforced by throttling, which appears as latency spikes, timeouts and 5xx responses under bursty traffic. A memory limit below the working set of the container causes it to be OOMKilled and restarted, and while a container that serves traffic is restarting, the routes handled by that replica are unavailable; with a single replica that is an ingress outage. Because a limit-only entry also becomes the request, a limit that the nodes cannot satisfy leaves the pods Pending. The platform never re-evaluates the limit, so a value that works today can start causing these failures as route count, configuration size or traffic grows.\n\nIt must be a valid, positive, non-zero quantity of 1 to 20 characters and must not be less than request. Extended resource values must be whole numbers; hugepage values must be whole multiples of the page size. For extended resources and hugepages, an explicit request must equal limit. When request is omitted, the operator uses limit as the effective request, without defaulting the API field. When limit is omitted, the platform default applies (currently no limit), unless a LimitRange in the router namespace applies one.",
+}
+
+func (IngressControllerContainerResource) SwaggerDoc() map[string]string {
+	return map_IngressControllerContainerResource
+}
+
 var map_IngressControllerHTTPHeader = map[string]string{
 	"":       "IngressControllerHTTPHeader specifies configuration for setting or deleting an HTTP header.",
 	"name":   "name specifies the name of a header on which to perform an action. Its value must be a valid HTTP header name as defined in RFC 2616 section 4.2. The name must consist only of alphanumeric and the following special characters, \"-!#$%&'*+.^_`\". The following header names are reserved and may not be modified via this API: Strict-Transport-Security, Proxy, Host, Cookie, Set-Cookie. It must be no more than 255 characters in length. Header name must be unique.",
@@ -1310,6 +1353,16 @@ func (IngressControllerLogging) SwaggerDoc() map[string]string {
 	return map_IngressControllerLogging
 }
 
+var map_IngressControllerResources = map[string]string{
+	"":        "IngressControllerResources configures per-replica resources for ingress containers.",
+	"router":  "router optionally configures resources for the controller that watches routes and generates HAProxy configuration. When specified, it must be a list of 1 to 8 resource overrides with unique names. Removing an entry restores the platform default for that resource. When omitted, the platform applies its default for the router container, as described on the spec.resources field.",
+	"haproxy": "haproxy optionally configures resources for the proxy that handles ingress traffic. It runs as a restartable init sidecar in the router pod. When specified, it must be a list of 1 to 8 resource overrides with unique names. Removing an entry restores the platform default for that resource. When omitted, the platform applies its default for the haproxy container, as described on the spec.resources field.",
+}
+
+func (IngressControllerResources) SwaggerDoc() map[string]string {
+	return map_IngressControllerResources
+}
+
 var map_IngressControllerSetHTTPHeader = map[string]string{
 	"":      "IngressControllerSetHTTPHeader defines the value which needs to be set on an HTTP header.",
 	"value": "value specifies a header value. Dynamic values can be added. The value will be interpreted as an HAProxy format string as defined in http://cbonte.github.io/haproxy-dconv/2.6/configuration.html#8.2.6  and may use HAProxy's %[] syntax and otherwise must be a valid HTTP header value as defined in https://datatracker.ietf.org/doc/html/rfc7230#section-3.2. The value of this field must be no more than 16384 characters in length. Note that the total size of all net added headers *after* interpolating dynamic values must not exceed the value of spec.tuningOptions.headerBufferMaxRewriteBytes on the IngressController. ",
@@ -1329,6 +1382,7 @@ var map_IngressControllerSpec = map[string]string{
 	"namespaceSelector":               "namespaceSelector is used to filter the set of namespaces serviced by the ingress controller. This is useful for implementing shards.\n\nIf unset, the default is no filtering.",
 	"routeSelector":                   "routeSelector is used to filter the set of Routes serviced by the ingress controller. This is useful for implementing shards.\n\nIf unset, the default is no filtering.",
 	"nodePlacement":                   "nodePlacement enables explicit control over the scheduling of the ingress controller.\n\nIf unset, defaults are used. See NodePlacement for more details.",
+	"resources":                       "resources optionally configures per-replica resources for the router and haproxy containers independently. At least one container must be configured. When omitted, the platform is left to choose reasonable defaults, which are subject to change over time. The current defaults are requests of 25m CPU and 64Mi memory for router, requests of 100m CPU and 256Mi memory for haproxy, and no limits for either container.\n\nThe values set here are not validated against what the workload needs; setting them too low or too high can make the router unavailable, and Red Hat does not support issues caused by such values. See the request and limit fields for the specific risks of each. The cluster administrator is responsible for choosing appropriate values.",
 	"tlsSecurityProfile":              "tlsSecurityProfile specifies settings for TLS connections for ingresscontrollers.\n\nIf unset, the default is based on the apiservers.config.openshift.io/cluster resource.\n\nNote that when using the Old, Intermediate, and Modern profile types, the effective profile configuration is subject to change between releases. For example, given a specification to use the Intermediate profile deployed on release X.Y.Z, an upgrade to release X.Y.Z+1 may cause a new profile configuration to be applied to the ingress controller, resulting in a rollout.",
 	"clientTLS":                       "clientTLS specifies settings for requesting and verifying client certificates, which can be used to enable mutual TLS for edge-terminated and reencrypt routes.",
 	"routeAdmission":                  "routeAdmission defines a policy for handling new route claims (for example, to allow or deny claims across namespaces).\n\nIf empty, defaults will be applied. See specific routeAdmission fields for details about their defaults.",

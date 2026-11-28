@@ -141,6 +141,16 @@ func (in CSISnapshotControllerStatus) OpenAPIModelName() string {
 }
 
 // OpenAPIModelName returns the OpenAPI model name for this type.
+func (in CanaryNodePlacement) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.CanaryNodePlacement"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in CanaryToleration) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.CanaryToleration"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
 func (in Capability) OpenAPIModelName() string {
 	return "com.github.openshift.api.operator.v1.Capability"
 }
@@ -571,6 +581,11 @@ func (in Ingress) OpenAPIModelName() string {
 }
 
 // OpenAPIModelName returns the OpenAPI model name for this type.
+func (in IngressCanary) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.IngressCanary"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
 func (in IngressController) OpenAPIModelName() string {
 	return "com.github.openshift.api.operator.v1.IngressController"
 }
@@ -593,6 +608,11 @@ func (in IngressControllerCaptureHTTPHeader) OpenAPIModelName() string {
 // OpenAPIModelName returns the OpenAPI model name for this type.
 func (in IngressControllerCaptureHTTPHeaders) OpenAPIModelName() string {
 	return "com.github.openshift.api.operator.v1.IngressControllerCaptureHTTPHeaders"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in IngressControllerContainerResource) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.IngressControllerContainerResource"
 }
 
 // OpenAPIModelName returns the OpenAPI model name for this type.
@@ -628,6 +648,11 @@ func (in IngressControllerList) OpenAPIModelName() string {
 // OpenAPIModelName returns the OpenAPI model name for this type.
 func (in IngressControllerLogging) OpenAPIModelName() string {
 	return "com.github.openshift.api.operator.v1.IngressControllerLogging"
+}
+
+// OpenAPIModelName returns the OpenAPI model name for this type.
+func (in IngressControllerResources) OpenAPIModelName() string {
+	return "com.github.openshift.api.operator.v1.IngressControllerResources"
 }
 
 // OpenAPIModelName returns the OpenAPI model name for this type.
