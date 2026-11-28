@@ -40,7 +40,6 @@ jobs:
           UPDATES=$(printf '%s\n' "$BODY" | \
             sed -nE 's/^Updates `([^`]+)` from (.+) to (.+)$/\1|\2|\3/p')
 
-          SIGNOFF=$(printf '%s\n' "$BODY" | grep '^Signed-off-by:' | head -1 || true)
           BODY_NO_SIGNOFF=$(printf '%s\n' "$BODY" | sed '/^Signed-off-by:/d')
 
           if [ -z "$UPDATES" ]; then
@@ -63,9 +62,6 @@ jobs:
             echo "$SUBJECT"
             echo ""
             echo "$NEW_BODY"
-            if [ -n "$SIGNOFF" ]; then
-              echo "$SIGNOFF"
-            fi
           } > /tmp/commit-msg.txt
 
           git config user.name "dependabot[bot]"
