@@ -180,24 +180,25 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		return nil, fmt.Errorf("unable to create image file cache: %w", err)
 	}
 
-	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageregistry.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
+	imageRegistryOverrides := imageregistry.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES"))
+	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{}
+	imageMetaDataProvider.SetOpenShiftImageRegistryOverrides(imageRegistryOverrides)
+	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			RegistryOverrides: registryOverrides,
+		},
 	}
+	releaseProvider.SetOpenShiftImageRegistryOverrides(imageRegistryOverrides)
 
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
 		IgnitionProvider: &controllers.LocalIgnitionProvider{
-			ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-				Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-					Delegate: &releaseinfo.CachedProvider{
-						Inner: &releaseinfo.RegistryClientProvider{},
-						Cache: map[string]*releaseinfo.ReleaseImage{},
-					},
-					RegistryOverrides: registryOverrides,
-				},
-				OpenShiftImageRegistryOverrides: imageregistry.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
-			},
+			ReleaseProvider:       releaseProvider,
 			Client:                mgr.GetClient(),
 			Namespace:             os.Getenv(namespaceEnvVariableName),
 			CloudProvider:         cloudProvider,

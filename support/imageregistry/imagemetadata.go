@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -116,11 +117,31 @@ type ImageMetadataProvider interface {
 type metadataGetterFn func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error)
 
 type RegistryClientImageMetadataProvider struct {
-	OpenShiftImageRegistryOverrides map[string][]string
+	// overrides holds an immutable snapshot published by SetOpenShiftImageRegistryOverrides.
+	overrides atomic.Pointer[map[string][]string]
 	// repoSetupFn overrides GetRepoSetup for testing; nil means use the real implementation.
 	repoSetupFn func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error)
 	// metadataGetter overrides getMetadata for testing; nil means use the real implementation.
 	metadataGetter metadataGetterFn
+}
+
+// SetOpenShiftImageRegistryOverrides publishes the current image registry mirror snapshot.
+func (r *RegistryClientImageMetadataProvider) SetOpenShiftImageRegistryOverrides(overrides map[string][]string) {
+	snapshot := releaseinfo.CopyOpenShiftImageRegistryOverrides(overrides)
+	r.overrides.Store(&snapshot)
+}
+
+// GetOpenShiftImageRegistryOverrides returns a defensive copy of the current mirror snapshot.
+func (r *RegistryClientImageMetadataProvider) GetOpenShiftImageRegistryOverrides() map[string][]string {
+	return releaseinfo.CopyOpenShiftImageRegistryOverrides(r.loadOverrides())
+}
+
+// loadOverrides returns an immutable snapshot; callers must not modify it.
+func (r *RegistryClientImageMetadataProvider) loadOverrides() map[string][]string {
+	if snapshot := r.overrides.Load(); snapshot != nil {
+		return *snapshot
+	}
+	return nil
 }
 
 func (r *RegistryClientImageMetadataProvider) getRepoSetup(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
@@ -214,7 +235,8 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 
 	// There are no ICSPs/IDMSs to process.
 	// That means the image reference should be pulled from the external registry
-	if len(r.OpenShiftImageRegistryOverrides) == 0 {
+	overrides := r.loadOverrides()
+	if len(overrides) == 0 {
 		// If the image name is in the cache, return early
 		if imageDigest, exists := digestCache.Get(imageRef); exists {
 			parsedImageRef.ID = string(imageDigest.(digest.Digest))
@@ -225,7 +247,7 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 	}
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
-	ref = r.seekOverride(ctx, parsedImageRef, pullSecret)
+	ref = r.seekOverrideWithOverrides(ctx, parsedImageRef, pullSecret, overrides)
 	composedRef := ref.String()
 
 	// If the overridden image name is in the cache, return early
@@ -297,7 +319,8 @@ func (r *RegistryClientImageMetadataProvider) GetMetadata(ctx context.Context, i
 		err            error
 	)
 
-	if len(r.OpenShiftImageRegistryOverrides) == 0 {
+	overrides := r.loadOverrides()
+	if len(overrides) == 0 {
 		return getMetadata(ctx, imageRef, pullSecret)
 	}
 
@@ -307,7 +330,7 @@ func (r *RegistryClientImageMetadataProvider) GetMetadata(ctx context.Context, i
 	}
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
-	ref = r.seekOverride(ctx, parsedImageRef, pullSecret)
+	ref = r.seekOverrideWithOverrides(ctx, parsedImageRef, pullSecret, overrides)
 	composedRef := ref.String()
 
 	return getMetadata(ctx, composedRef, pullSecret)
@@ -538,9 +561,13 @@ func GetPayloadVersion(ctx context.Context, releaseImageProvider releaseinfo.Pro
 }
 
 func (r *RegistryClientImageMetadataProvider) seekOverride(ctx context.Context, parsedImageReference reference.DockerImageReference, pullSecret []byte) *reference.DockerImageReference {
+	return r.seekOverrideWithOverrides(ctx, parsedImageReference, pullSecret, r.loadOverrides())
+}
+
+func (r *RegistryClientImageMetadataProvider) seekOverrideWithOverrides(ctx context.Context, parsedImageReference reference.DockerImageReference, pullSecret []byte, overrides map[string][]string) *reference.DockerImageReference {
 	getter := r.getMetadataGetter()
 	log := ctrl.LoggerFrom(ctx)
-	for source, mirrors := range r.OpenShiftImageRegistryOverrides {
+	for source, mirrors := range overrides {
 		// Skip empty sources
 		if source == "" {
 			continue

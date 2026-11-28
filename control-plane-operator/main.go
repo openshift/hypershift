@@ -313,8 +313,8 @@ func buildReleaseProviders(componentImages map[string]string, registryOverrides 
 			Delegate:          newCoreReleaseProvider(),
 			RegistryOverrides: nil, // UserReleaseProvider shouldn't include registry overrides as they should not get propagated to the data plane.
 		},
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
+	userReleaseProvider.SetOpenShiftImageRegistryOverrides(imageRegistryOverrides)
 
 	// It should be used to lookup spec.controlPlaneReleaseImage.
 	cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
@@ -322,8 +322,8 @@ func buildReleaseProviders(componentImages map[string]string, registryOverrides 
 			Delegate:          newCoreReleaseProvider(),
 			RegistryOverrides: registryOverrides,
 		},
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
+	cpReleaseProvider.SetOpenShiftImageRegistryOverrides(imageRegistryOverrides)
 
 	return cpReleaseProvider, userReleaseProvider
 }
@@ -519,9 +519,8 @@ func NewStartCommand() *cobra.Command {
 
 		cpReleaseProvider, userReleaseProvider := buildReleaseProviders(componentImages, registryOverrides, imageRegistryOverrides)
 
-		imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		}
+		imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{}
+		imageMetaDataProvider.SetOpenShiftImageRegistryOverrides(imageRegistryOverrides)
 
 		defaultIngressDomain := os.Getenv(config.DefaultIngressDomainEnvVar)
 

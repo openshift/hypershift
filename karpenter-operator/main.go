@@ -211,12 +211,11 @@ func run(ctx context.Context) error {
 			},
 			RegistryOverrides: nil,
 		},
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
+	releaseProvider.SetOpenShiftImageRegistryOverrides(imageRegistryOverrides)
 
-	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-	}
+	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{}
+	imageMetaDataProvider.SetOpenShiftImageRegistryOverrides(imageRegistryOverrides)
 
 	kir := karpenterignition.KarpenterIgnitionReconciler{
 		NodeClassGVK:            nodeClassGVK,
