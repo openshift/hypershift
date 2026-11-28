@@ -34,7 +34,34 @@ Changes to the following fields alter the configuration hash that the controller
 
 - **`HostedCluster.spec.pullSecret`** — a change in the **name** of the referenced Secret triggers a rollout. Changing the content of the Secret without changing the name does not trigger a rollout.
 
-- **`HostedCluster.spec.additionalTrustBundle`** — same behavior as `pullSecret`: only a change in the referenced ConfigMap **name** triggers a rollout.
+- **`HostedCluster.spec.additionalTrustBundle`** — a change in the referenced ConfigMap **name** triggers a rollout. Changing the `ca-bundle.crt` content of the ConfigMap also triggers a rollout across all NodePools when the control plane operator supports rendered trust-bundle validation (see below).
+
+- **`HostedCluster.spec.configuration.proxy.trustedCA`** — a change in the referenced ConfigMap **name** triggers a rollout through the proxy configuration. Changing the `ca-bundle.crt` content of the ConfigMap also triggers a rollout across all NodePools when the control plane operator supports rendered trust-bundle validation.
+
+Content-based trust-bundle rollouts require a CPO/ignition-server image advertising the
+`io.openshift.hypershift.control-plane-operator-manages.rendered-trust-bundle-validation` label.
+The ignition server checks the hash of the combined additional and proxy CA bundle rendered
+for the MCO before caching a payload, so a delayed ConfigMap propagation delays payload
+generation instead of serving stale certificates. With older CPO images, the configuration
+hash keeps using only the ConfigMap names, and in-place content edits do not trigger a rollout.
+
+The controller records the trust-bundle content that the NodePool's current configuration
+already reflects in the `hypershift.openshift.io/nodePoolTrustBundleBaseline` annotation
+(Karpenter stores it in `hypershift.openshift.io/nodeClassTrustBundleBaseline` on the
+`OpenshiftEC2NodeClass`). While the content matches the baseline, the configuration hash is
+identical to the name-based hash. When the content differs from the baseline, the content is
+included in the hash and the NodePool rolls out. Reverting the content to the baseline also
+rolls out, back to the original configuration.
+
+!!! note "HyperShift Operator or CPO upgrade and trust-bundle hashing"
+
+    The baseline is seeded on the first reconcile in which the CPO supports rendered
+    trust-bundle validation. Seeding never changes the configuration hash, so upgrading the
+    HyperShift Operator, or upgrading a HostedCluster to a release whose CPO adds the
+    capability, does **not** roll out NodePools by itself. CA edits made before the baseline is
+    seeded are absorbed into it; existing token Secrets are refreshed in place so that the
+    ignition server serves the current CA content to new nodes. Subsequent CA content edits
+    trigger a rollout.
 
 - **`HostedCluster.spec.imageContentSources`** — changes to image content source policies managed at the HostedCluster level produce an additional core ignition config that alters the configuration hash.
 
@@ -172,6 +199,8 @@ These conditions are set to `True` while the corresponding rollout is in progres
 | `NodePool.spec.tuningConfig` | Yes | The changed NodePool |
 | `HostedCluster.spec.pullSecret` (name change) | Yes | All NodePools |
 | `HostedCluster.spec.additionalTrustBundle` (name change) | Yes | All NodePools |
+| `HostedCluster.spec.additionalTrustBundle` (content change, CPO with rendered trust-bundle validation) | Yes | All NodePools |
+| `HostedCluster.spec.configuration.proxy.trustedCA` (content change, CPO with rendered trust-bundle validation) | Yes | All NodePools |
 | `HostedCluster.spec.imageContentSources` | Yes | All NodePools |
 | `HostedCluster.spec.configuration.proxy` | Yes | All NodePools |
 | `HostedCluster.spec.configuration.image` | Yes | All NodePools |

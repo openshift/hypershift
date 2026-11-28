@@ -34,19 +34,29 @@ import (
 )
 
 const (
-	TokenSecretTokenGenerationTime       = "hypershift.openshift.io/last-token-generation-time"
-	TokenSecretReleaseKey                = "release"
-	TokenSecretReleaseVersionKey         = "release-version"
-	TokenSecretTokenKey                  = "token"
-	TokenSecretPullSecretHashKey         = "pull-secret-hash"
-	TokenSecretHCConfigurationHashKey    = "hc-configuration-hash"
-	TokenSecretAdditionalTrustBundleKey  = "additional-trust-bundle-hash"
-	TokenSecretCloudConfigHashKey        = "cloud-config-hash"
-	TokenSecretConfigKey                 = "config"
-	TokenSecretAnnotation                = "hypershift.openshift.io/ignition-config"
-	TokenSecretIgnitionReachedAnnotation = "hypershift.openshift.io/ignition-reached"
-	TokenSecretNodePoolUpgradeType       = "hypershift.openshift.io/node-pool-upgrade-type"
-	TokenSecretOSStreamKey               = "os-stream"
+	TokenSecretTokenGenerationTime      = "hypershift.openshift.io/last-token-generation-time"
+	TokenSecretReleaseKey               = "release"
+	TokenSecretReleaseVersionKey        = "release-version"
+	TokenSecretTokenKey                 = "token"
+	TokenSecretPullSecretHashKey        = "pull-secret-hash"
+	TokenSecretHCConfigurationHashKey   = "hc-configuration-hash"
+	TokenSecretAdditionalTrustBundleKey = "additional-trust-bundle-hash"
+	// TokenSecretProxyTrustedCAHashKey tracks spec.configuration.proxy.trustedCA ConfigMap
+	// content, mirroring TokenSecretAdditionalTrustBundleKey. Together with
+	// TokenSecretRenderedTrustBundleHashKey it is kept in sync in place on every reconcile so the
+	// ignition-server token-secret controller can invalidate a cached payload when trust-bundle
+	// content changes for a token Secret whose name does not change (for example, when the
+	// trust-bundle baseline absorbs a pre-existing edit without a rollout).
+	TokenSecretProxyTrustedCAHashKey = "proxy-trusted-ca-hash"
+	// TokenSecretRenderedTrustBundleHashKey is the hash of the aggregate trust bundle the
+	// ignition server must find in the machine-config-server config before generating a payload.
+	TokenSecretRenderedTrustBundleHashKey = "rendered-trust-bundle-hash"
+	TokenSecretCloudConfigHashKey         = "cloud-config-hash"
+	TokenSecretConfigKey                  = "config"
+	TokenSecretAnnotation                 = "hypershift.openshift.io/ignition-config"
+	TokenSecretIgnitionReachedAnnotation  = "hypershift.openshift.io/ignition-reached"
+	TokenSecretNodePoolUpgradeType        = "hypershift.openshift.io/node-pool-upgrade-type"
+	TokenSecretOSStreamKey                = "os-stream"
 )
 
 // Token knows how to create an UUUID token for a unique configGenerator Hash.
@@ -56,12 +66,13 @@ type Token struct {
 	upsert.CreateOrUpdateProvider
 	cpoCapabilities *CPOCapabilities
 	*ConfigGenerator
-	// TODO(alberto): we don't really support content inplace changes for fields like pull secret and AdditionalTrustBundle.
-	// In fact we only trigger a rollout if the .Name referenced in the field changes.
-	// Consider removing these hash checks and consolidate with the rolloutConfig struct input.
-	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
+	// These content hashes are stored in the token Secret for the ignition-server
+	// token-secret controller. In-place pull secret edits do not trigger a rollout.
+	// Trust-bundle content edits do when the CPO supports rendered trust-bundle validation
+	// (see ConfigGenerator.trustBundleRolloutInput).
 	pullSecretHash            []byte
 	additionalTrustBundleHash []byte
+	proxyTrustedCAHash        []byte
 	globalConfigHash          []byte
 	cloudConfigHash           []byte
 	userData                  *userData
@@ -103,6 +114,9 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 			return nil, err
 		}
 		additionalTrustBundle = additionalTrustBundleCM.Data["ca-bundle.crt"]
+		if configGenerator.renderedTrustBundleHash != "" && supportutil.HashSimple(additionalTrustBundle) != configGenerator.additionalTrustBundleHash {
+			return nil, &TrustBundleConfigError{err: fmt.Errorf("additional trust bundle changed while building token; retrying")}
+		}
 	}
 
 	// TODO(alberto): This hash should be consolidated with configGenerator using globalConfigString as that is what configGenerator uses to create a configGenerator.Hash() and so what triggers a rollout.
@@ -127,6 +141,7 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		cpoCapabilities:           cpoCapabilities,
 		pullSecretHash:            []byte(supportutil.HashSimple(pullSecretBytes)),
 		additionalTrustBundleHash: []byte(supportutil.HashSimple(additionalTrustBundle)),
+		proxyTrustedCAHash:        []byte(configGenerator.proxyTrustedCAHash),
 		globalConfigHash:          []byte(hcConfigurationHash),
 		cloudConfigHash:           []byte(cloudConfigHash),
 	}
@@ -375,6 +390,18 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	// Otherwise if something which does not trigger a new token generation from spec.Config changes, like .IDP, both hashes would mismatch forever.
 	tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
 	tokenSecret.Data[TokenSecretCloudConfigHashKey] = t.cloudConfigHash
+	// Trust-bundle hashes are also kept in sync in place. When the trust-bundle baseline absorbs
+	// content that changed before it was seeded, the token Secret keeps its name; without this the
+	// ignition server would reject a payload rebuild for a stale additional-trust-bundle-hash and
+	// keep serving a cached payload with the old CA content.
+	tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = t.additionalTrustBundleHash
+	if t.renderedTrustBundleHash != "" {
+		tokenSecret.Data[TokenSecretProxyTrustedCAHashKey] = t.proxyTrustedCAHash
+		tokenSecret.Data[TokenSecretRenderedTrustBundleHashKey] = []byte(t.renderedTrustBundleHash)
+	} else {
+		delete(tokenSecret.Data, TokenSecretProxyTrustedCAHashKey)
+		delete(tokenSecret.Data, TokenSecretRenderedTrustBundleHashKey)
+	}
 
 	return nil
 }

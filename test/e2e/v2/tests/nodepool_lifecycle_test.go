@@ -796,10 +796,11 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 
 // NodePoolTrustBundleTest creates an additional trust bundle ConfigMap, updates the
 // HostedCluster to reference it, waits for NodePool update cycle, verifies user-ca-bundle
-// exists in the hosted cluster, removes the trust bundle, verifies CPO deployment no longer
+// exists in the hosted cluster, updates ca-bundle.crt in place and waits for another update
+// cycle, removes the trust bundle, verifies CPO deployment no longer
 // mounts it, waits for another update cycle, and verifies user-ca-bundle is deleted (4.22+).
 func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
-	It("should propagate and remove additional trust bundle to/from the hosted cluster", func() {
+	It("should propagate and remove additional trust bundle to/from the hosted cluster", Label("nodepool-trust-bundle"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -923,6 +924,47 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				func(obj *corev1.ConfigMap) (bool, string, error) { return true, "exists", nil },
 			},
 			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(guestUserCABundlePropagationTimeout),
+		)
+
+		// An in-place content change (same ConfigMap name and HostedCluster reference) must
+		// trigger a NodePool config rollout when the CPO supports rendered trust-bundle validation.
+		GinkgoWriter.Printf("Updating trust bundle ConfigMap %s ca-bundle.crt in place\n", trustBundle.Name)
+		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, trustBundle, func(obj *corev1.ConfigMap) {
+			obj.Data["ca-bundle.crt"] = "dummy-updated-content"
+		})).To(Succeed(), "failed to update trust bundle ConfigMap content in place")
+
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to begin updating after in-place trust bundle content change", np.Namespace, np.Name),
+			func(ctx context.Context) (*hyperv1.NodePool, error) {
+				pool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
+				return pool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+					Type:   hyperv1.NodePoolUpdatingConfigConditionType,
+					Status: metav1.ConditionTrue,
+				}),
+			},
+			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateStartTimeout),
+		)
+
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to stop updating after in-place trust bundle content change", np.Namespace, np.Name),
+			func(ctx context.Context) (*hyperv1.NodePool, error) {
+				pool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
+				return pool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+					Type:   hyperv1.NodePoolUpdatingConfigConditionType,
+					Status: metav1.ConditionFalse,
+				}),
+				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+					Type:   hyperv1.NodePoolAllNodesHealthyConditionType,
+					Status: metav1.ConditionTrue,
+				}),
+			},
+			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateFinishTimeout),
 		)
 
 		// Remove trust bundle from HostedCluster

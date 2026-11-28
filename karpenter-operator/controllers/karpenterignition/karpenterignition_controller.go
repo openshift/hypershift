@@ -51,18 +51,27 @@ const (
 	// It's used to track the current config version for outdated token cleanup
 	nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 
+	// openshiftEC2NodeClassAnnotationTrustBundleBaseline persists the trust-bundle content baseline
+	// for the in-memory NodePool, which has no durable annotations of its own.
+	openshiftEC2NodeClassAnnotationTrustBundleBaseline = "hypershift.openshift.io/nodeClassTrustBundleBaseline"
+	// nodePoolAnnotationTrustBundleBaseline mirrors the annotation from nodepool_controller.go.
+	nodePoolAnnotationTrustBundleBaseline = "hypershift.openshift.io/nodePoolTrustBundleBaseline"
+
 	kubeletConfigFinalizer = "hypershift.openshift.io/karpenter-kubelet-config-finalizer"
 )
 
 type KarpenterIgnitionReconciler struct {
-	ManagementClient        client.Client
-	GuestClient             client.Client
-	ReleaseProvider         releaseinfo.Provider
-	VersionResolver         releaseinfo.VersionResolver
-	ImageMetadataProvider   supportutil.ImageMetadataProvider
-	HypershiftOperatorImage string
-	IgnitionEndpoint        string
-	Namespace               string
+	// ControlPlaneOperatorImage is the image of the CPO running this control plane. It is used to
+	// detect CPO capabilities such as rendered trust-bundle validation.
+	ControlPlaneOperatorImage string
+	ManagementClient          client.Client
+	GuestClient               client.Client
+	ReleaseProvider           releaseinfo.Provider
+	VersionResolver           releaseinfo.VersionResolver
+	ImageMetadataProvider     supportutil.ImageMetadataProvider
+	HypershiftOperatorImage   string
+	IgnitionEndpoint          string
+	Namespace                 string
 	upsert.CreateOrUpdateProvider
 }
 
@@ -265,14 +274,33 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 
 	np := r.createInMemoryNodePool(hcp, openshiftEC2NodeClass, releaseImage)
 
-	cg, err := r.buildConfigGenerator(ctx, hostedCluster, np, hcp.Namespace)
+	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hostedCluster)
+	if err != nil {
+		return fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+
+	trustBundleBaseline := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationTrustBundleBaseline]
+	if trustBundleBaseline != "" {
+		np.Annotations[nodePoolAnnotationTrustBundleBaseline] = trustBundleBaseline
+	}
+
+	cg, err := r.buildConfigGenerator(ctx, hostedCluster, np, hcp.Namespace, cpoCapabilities.RenderedTrustBundleValidation)
 	if err != nil {
 		return fmt.Errorf("failed to build config generator: %w", err)
 	}
 
-	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
-		DecompressAndDecodeConfig: true,
-	})
+	// Persist the trust-bundle baseline before reconciling bootstrap secrets. Seeding it never
+	// changes the config hash, and persisting it first ensures a retry after a failed write cannot
+	// absorb a later ca-bundle.crt edit that should roll out.
+	if trustBundleBaseline == "" && cg.TrustBundleContentHash() != "" {
+		if err := r.updateTrustBundleBaselineAnnotation(ctx, openshiftEC2NodeClass, cg.TrustBundleContentHash()); err != nil {
+			return err
+		}
+		np.Annotations[nodePoolAnnotationTrustBundleBaseline] = cg.TrustBundleContentHash()
+		log.Info("Seeded trust bundle baseline", "baseline", cg.TrustBundleContentHash())
+	}
+
+	token, err := nodepool.NewToken(ctx, cg, cpoCapabilities)
 	if err != nil {
 		return fmt.Errorf("failed to create token: %w", err)
 	}
@@ -554,12 +582,36 @@ func kubeletConfigManifest(name string, kubeletConfig map[string]interface{}) (s
 	return strings.TrimSuffix(string(out), "\n"), nil
 }
 
+// detectCPOCapabilities uses the CPO image supplied by the running control plane.
+// The synthesized HostedCluster does not carry the original HC's image override,
+// so resolving from its release can select a different image from the one serving ignition.
+// Karpenter is only supported with CPOs that decompress and decode config, so that capability
+// is always set.
+func (r *KarpenterIgnitionReconciler) detectCPOCapabilities(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*nodepool.CPOCapabilities, error) {
+	if r.ControlPlaneOperatorImage == "" {
+		// Without the CPO image the capability cannot be verified; keep the legacy behavior.
+		return &nodepool.CPOCapabilities{DecompressAndDecodeConfig: true}, nil
+	}
+	cluster := hostedCluster.DeepCopy()
+	if cluster.Annotations == nil {
+		cluster.Annotations = make(map[string]string)
+	}
+	cluster.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = r.ControlPlaneOperatorImage
+	capabilities, err := nodepool.DetectCPOCapabilities(ctx, r.ManagementClient, cluster, r.ReleaseProvider, r.ImageMetadataProvider, r.HypershiftOperatorImage)
+	if err != nil {
+		return nil, err
+	}
+	capabilities.DecompressAndDecodeConfig = true
+	return capabilities, nil
+}
+
 // buildConfigGenerator creates a ConfigGenerator for the in-memory NodePool
 func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 	ctx context.Context,
 	hostedCluster *hyperv1.HostedCluster,
 	np *hyperv1.NodePool,
 	controlPlaneNamespace string,
+	cpoHasRenderedTrustBundleValidation bool,
 ) (*nodepool.ConfigGenerator, error) {
 	pullSecret := common.PullSecret(controlPlaneNamespace)
 	if err := r.ManagementClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
@@ -598,7 +650,7 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream, cpoHasRenderedTrustBundleValidation)
 }
 
 // hostedClusterFromHCP creates a barebones in-memory HostedCluster from a HostedControlPlane.
@@ -670,6 +722,18 @@ func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.
 	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = newVersion
 	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to update config version annotation on OpenshiftEC2NodeClass: %w", err)
+	}
+	return nil
+}
+
+func (r *KarpenterIgnitionReconciler) updateTrustBundleBaselineAnnotation(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, baseline string) error {
+	original := openshiftEC2NodeClass.DeepCopy()
+	if openshiftEC2NodeClass.Annotations == nil {
+		openshiftEC2NodeClass.Annotations = make(map[string]string)
+	}
+	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationTrustBundleBaseline] = baseline
+	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("failed to update trust bundle baseline annotation on OpenshiftEC2NodeClass: %w", err)
 	}
 	return nil
 }
