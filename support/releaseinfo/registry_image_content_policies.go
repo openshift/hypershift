@@ -16,20 +16,40 @@ import (
 var _ ProviderWithOpenShiftImageRegistryOverrides = (*ProviderWithOpenShiftImageRegistryOverridesDecorator)(nil)
 
 type ProviderWithOpenShiftImageRegistryOverridesDecorator struct {
-	Delegate                        ProviderWithRegistryOverrides
-	OpenShiftImageRegistryOverrides map[string][]string
-	mirroredReleaseImage            string
+	Delegate ProviderWithRegistryOverrides
 
 	// repoSetupFn is an injectable function for verifying mirror availability.
 	// When nil, defaults to registryclient.GetRepoSetup.
 	repoSetupFn func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error)
 
-	lock sync.Mutex
+	// overridesLock protects openShiftImageRegistryOverrides. It is separate
+	// from lookupLock so that Reconcile (which calls Set) does not block
+	// behind a slow Lookup doing network calls.
+	overridesLock                   sync.RWMutex
+	openShiftImageRegistryOverrides map[string][]string
+
+	// lookupLock serializes Lookup calls and protects mirroredReleaseImage.
+	lookupLock           sync.Mutex
+	mirroredReleaseImage string
+}
+
+// SetOpenShiftImageRegistryOverrides replaces the mirror map under a write lock.
+// The provided map is deep-copied so callers cannot mutate provider state.
+func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) SetOpenShiftImageRegistryOverrides(overrides map[string][]string) {
+	p.overridesLock.Lock()
+	defer p.overridesLock.Unlock()
+	p.openShiftImageRegistryOverrides = deepCopyMirrorMap(overrides)
 }
 
 func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) Lookup(ctx context.Context, image string, pullSecret []byte) (*ReleaseImage, error) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.lookupLock.Lock()
+	defer p.lookupLock.Unlock()
+
+	// Snapshot overrides under the read lock so Reconcile is not blocked
+	// behind a slow registry call.
+	p.overridesLock.RLock()
+	overrides := deepCopyMirrorMap(p.openShiftImageRegistryOverrides)
+	p.overridesLock.RUnlock()
 
 	repoSetup := p.repoSetupFn
 	if repoSetup == nil {
@@ -38,7 +58,7 @@ func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) Lookup(ctx contex
 
 	logger := ctrl.LoggerFrom(ctx)
 
-	for registrySource, registryDest := range p.OpenShiftImageRegistryOverrides {
+	for registrySource, registryDest := range overrides {
 		if strings.Contains(image, registrySource) {
 			for _, registryReplacement := range registryDest {
 				replacedImage := strings.Replace(image, registrySource, registryReplacement, 1)
@@ -69,10 +89,32 @@ func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) GetRegistryOverri
 	return p.Delegate.GetRegistryOverrides()
 }
 
+// GetOpenShiftImageRegistryOverrides returns a deep copy of the mirror map under a read lock.
 func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) GetOpenShiftImageRegistryOverrides() map[string][]string {
-	return p.OpenShiftImageRegistryOverrides
+	p.overridesLock.RLock()
+	defer p.overridesLock.RUnlock()
+	return deepCopyMirrorMap(p.openShiftImageRegistryOverrides)
 }
 
+// GetMirroredReleaseImage returns the currently mirrored release image.
+// It is protected by lookupLock because only Lookup writes to it.
 func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) GetMirroredReleaseImage() string {
+	p.lookupLock.Lock()
+	defer p.lookupLock.Unlock()
 	return p.mirroredReleaseImage
+}
+
+// deepCopyMirrorMap returns a deep copy of a map[string][]string.
+// Returns nil when the input is nil, preserving nil vs empty semantics.
+func deepCopyMirrorMap(m map[string][]string) map[string][]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string][]string, len(m))
+	for k, v := range m {
+		cp := make([]string, len(v))
+		copy(cp, v)
+		out[k] = cp
+	}
+	return out
 }
