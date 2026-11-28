@@ -42686,16 +42686,22 @@ Three metrics sets are available:
 |---|---|---|
 | `Telemetry` (default) | Only a small curated subset of metrics per component | Minimal resource usage |
 | `SRE` | Configurable via a `sre-metric-set` ConfigMap with custom RelabelConfigs per component | Fine-grained control for alerting and troubleshooting |
-| `All` | All metrics from each component (some legacy metrics are still dropped) | Full observability |
+| `All` | All metrics from each component, without filtering by the metrics-proxy | Full observability |
 
-The metrics set is configured globally on the HyperShift Operator deployment:
+For each hosted cluster, the metrics-proxy uses the first metrics set that is configured:
+
+1. `spec.monitoring.metricsForwarding.metricsSet` on the HostedCluster.
+2. `spec.monitoring.metricsSet` on the HostedCluster.
+3. The `METRICS_SET` environment variable of the HyperShift Operator, which defaults to `Telemetry`.
+
+To change the fallback for all hosted clusters, set `METRICS_SET` on the HyperShift Operator deployment:
 
 ```shell
 oc set env -n hypershift deployment/operator METRICS_SET=All
 ```
 
 !!! note
-    The metrics-proxy defaults to `All` when no metrics set is explicitly configured. This means that if the HyperShift Operator does not have `METRICS_SET` set, all metrics will be forwarded to the guest cluster.
+    `METRICS_SET` only changes the fallback. A HostedCluster that sets `spec.monitoring.metricsForwarding.metricsSet` or `spec.monitoring.metricsSet` keeps forwarding that set. For example, a HostedCluster with `spec.monitoring.metricsForwarding.metricsSet: Telemetry` does not forward all metrics after you set `METRICS_SET=All`.
 
 #### Example: Telemetry metrics set
 
@@ -42718,7 +42724,12 @@ Similar curated subsets apply to each of the other ServiceMonitor-based componen
 
 #### Example: SRE metrics set with custom configuration
 
-With `METRICS_SET=SRE`, you can define exactly which metrics to forward per component by creating a ConfigMap named `sre-metric-set` in each control plane namespace. Each key in the ConfigMap's `config` field maps a component name to a list of Prometheus RelabelConfigs (typically `action: keep` with a regex on `__name__`). See the dashboard example below for a complete ConfigMap.
+With the `SRE` set, you define exactly which metrics to forward per component in a ConfigMap named `sre-metric-set`:
+
+- If a `sre-metric-set` ConfigMap exists in the HyperShift Operator namespace (for example `hypershift`), it is the managed source. The HyperShift Operator copies its content into the `sre-metric-set` ConfigMap of each control plane namespace that uses the `SRE` set, replacing changes made there. Edit the ConfigMap in the operator namespace.
+- Otherwise, create and manage the `sre-metric-set` ConfigMap directly in each control plane namespace.
+
+Each key in the ConfigMap's `config` field maps a component name to a list of Prometheus RelabelConfigs (typically `action: keep` with a regex on `__name__`). See the dashboard example below for a complete ConfigMap.
 
 The configurable components are:
 
@@ -42738,6 +42749,17 @@ The configurable components are:
 
 !!! note
     PodMonitor-based components (cluster-autoscaler, ignition-server, karpenter, etc.) are not subject to metric filtering and always forward all their metrics regardless of the configured metrics set.
+
+#### How the filter rules are applied
+
+With the `Telemetry` and `SRE` sets, the metrics-proxy evaluates the component's rules against every exposed sample, in order:
+
+- Only the `keep` and `drop` actions are applied. Other actions (for example `replace` or `labeldrop`) are logged once and ignored.
+- The values of `sourceLabels` are joined with `separator` (default `;`) and matched against the fully anchored `regex` (default `(.*)`). The values come from the sample name (`__name__`), the sample's labels, and the labels the metrics-proxy injects (see Label compatibility).
+- Histogram and summary samples are evaluated individually, so a rule can select `<name>_bucket`, `<name>_sum` or `<name>_count`, or specific buckets with `sourceLabels: ["__name__", "le"]`. When only some samples of a histogram or summary are kept on any pod, the kept samples of that metric from all pods are forwarded as untyped samples with unchanged names and labels.
+- With the `SRE` set, a ServiceMonitor-based component that has no rules in the `sre-metric-set` ConfigMap forwards no samples from its pods.
+- If a `keep` or `drop` regex is invalid, the component forwards no samples from its pods.
+- The rules apply only to samples scraped from the component's pods. When some of the pods cannot be scraped, the response also includes the synthetic `metrics_aggregator_pod_scrape_errors_total` metric for them, which is not filtered.
 
 ### Label compatibility
 
@@ -42769,7 +42791,7 @@ Using `METRICS_SET=SRE` lets you forward exactly the metrics the dashboard needs
     oc set env -n hypershift deployment/operator METRICS_SET=SRE
     ```
 
-2. Create the `sre-metric-set` ConfigMap in the HCP namespace with the relabel configs that match the dashboard panels:
+2. Create the `sre-metric-set` ConfigMap with the relabel configs that match the dashboard panels. Create it in the HCP namespace as shown, or in the HyperShift Operator namespace to manage it for every control plane namespace that uses the `SRE` set (see Example: SRE metrics set with custom configuration):
 
     ```yaml
     apiVersion: v1

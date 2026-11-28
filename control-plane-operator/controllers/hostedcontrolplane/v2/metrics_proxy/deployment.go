@@ -18,7 +18,11 @@ import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
-func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+// effectiveForwardingMetricsSet returns the metrics set that selects the
+// samples the metrics-proxy forwards: the HostedControlPlane's
+// metricsForwarding.metricsSet when set, else the control plane's metrics set,
+// else All.
+func effectiveForwardingMetricsSet(cpContext component.WorkloadContext) metrics.MetricsSet {
 	metricsSet := cpContext.MetricsSet
 	if fwdSet := cpContext.HCP.Spec.Monitoring.MetricsForwarding.MetricsSet; fwdSet != "" {
 		metricsSet = metrics.MetricsSet(fwdSet)
@@ -26,6 +30,11 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	if metricsSet == "" {
 		metricsSet = metrics.MetricsSetAll
 	}
+	return metricsSet
+}
+
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	metricsSet := effectiveForwardingMetricsSet(cpContext)
 
 	namespace := cpContext.HCP.Namespace
 

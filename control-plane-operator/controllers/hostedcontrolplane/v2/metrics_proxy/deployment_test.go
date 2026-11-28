@@ -588,3 +588,44 @@ func TestAdaptDeployment_MetricsSetOverride(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveForwardingMetricsSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		contextSet    metrics.MetricsSet
+		forwardingSet hyperv1.MetricsSet
+		want          metrics.MetricsSet
+	}{
+		{
+			name:          "When the forwarding metrics set is set, it should take precedence over the control plane metrics set",
+			contextSet:    metrics.MetricsSetTelemetry,
+			forwardingSet: hyperv1.MetricsSetSRE,
+			want:          metrics.MetricsSetSRE,
+		},
+		{
+			name:       "When the forwarding metrics set is unset, it should use the control plane metrics set",
+			contextSet: metrics.MetricsSetTelemetry,
+			want:       metrics.MetricsSetTelemetry,
+		},
+		{
+			name: "When neither metrics set is set, it should default to All",
+			want: metrics.MetricsSetAll,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			cpContext := component.WorkloadContext{
+				MetricsSet: tt.contextSet,
+				HCP: &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Monitoring: hyperv1.MonitoringSpec{
+					MetricsForwarding: hyperv1.MetricsForwardingSpec{MetricsSet: tt.forwardingSet},
+				}}},
+			}
+			g.Expect(effectiveForwardingMetricsSet(cpContext)).To(Equal(tt.want))
+		})
+	}
+}

@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/supportedversion"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -58,11 +57,11 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&certFile, "tls-cert-file", "/etc/metrics-proxy/serving-cert/tls.crt", "Path to TLS certificate file.")
 	cmd.Flags().StringVar(&keyFile, "tls-key-file", "/etc/metrics-proxy/serving-cert/tls.key", "Path to TLS private key file.")
 	cmd.Flags().StringVar(&clientCAFile, "client-ca-file", "/etc/metrics-proxy/client-ca/ca.crt", "Path to CA certificate file for verifying client certificates (mTLS).")
-	cmd.Flags().StringVar(&metricsSet, "metrics-set", "All", "The metrics set to use for filtering (e.g. All, Telemetry, SRE).")
+	cmd.Flags().StringVar(&metricsSet, "metrics-set", "All", "The effective forwarding metrics set (e.g. All, Telemetry, SRE). Informational only: the per-component filter rules are read from the config file.")
 	cmd.Flags().StringVar(&configFile, "config-file", "", "Path to scrape config file (required). Component discovery and endpoint resolution use file-based config and the endpoint-resolver service.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		l.Info("Starting metrics-proxy", "version", supportedversion.String())
+		l.Info("Starting metrics-proxy", "version", supportedversion.String(), "metricsSet", metricsSet)
 
 		if configFile == "" {
 			fmt.Fprintf(os.Stderr, "Error: --config-file is required\n")
@@ -106,7 +105,7 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		scraper := NewScraper()
-		filter := NewFilter(metrics.MetricsSet(metricsSet))
+		filter := NewFilter(l)
 		labeler := NewLabeler(namespace)
 
 		handler := NewProxyHandler(l, configReader, resolverClient, scraper, filter, labeler)

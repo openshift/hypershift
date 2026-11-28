@@ -1490,8 +1490,17 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		}
 	}
 
-	if err := r.reconcileSREMetricsConfig(ctx, hcp.Namespace); err != nil {
-		return fmt.Errorf("failed to reconcile metrics config: %w", err)
+	// When only metrics forwarding uses the SRE set, its configuration only
+	// selects the samples metrics-proxy forwards. A failure to load it must not
+	// block the other components: it is reported after they reconcile, and
+	// metrics-proxy keeps the last loaded rules (none if nothing was loaded), so
+	// it never forwards samples allowed only by the unloaded configuration.
+	var forwardingSREConfigErr error
+	if err := r.reconcileSREMetricsConfig(ctx, hcp); err != nil {
+		if r.MetricsSet == metrics.MetricsSetSRE {
+			return fmt.Errorf("failed to reconcile metrics config: %w", err)
+		}
+		forwardingSREConfigErr = fmt.Errorf("failed to reconcile metrics config: %w", err)
 	}
 
 	if routerutil.UseHCPRouter(hcp) {
@@ -1564,6 +1573,9 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 	}
 
 	var errs []error
+	if forwardingSREConfigErr != nil {
+		errs = append(errs, forwardingSREConfigErr)
+	}
 	for _, c := range r.components {
 		r.Log.Info("Reconciling component", "component_name", c.Name())
 		if err := c.Reconcile(cpContext); err != nil {
@@ -4016,18 +4028,25 @@ func (r *HostedControlPlaneReconciler) GetGuestClusterClient(ctx context.Context
 	return kubernetes.NewForConfig(restConfig)
 }
 
-// reconcileSREMetricsConfig ensures that if using the SRE metrics set that the loaded configuration
-// is the latest from the ConfigMap.
-func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Context, cpNamespace string) error {
+// reconcileSREMetricsConfig ensures that if using the SRE metrics set, either for collection or for
+// metrics forwarding, the loaded configuration is the latest from the ConfigMap.
+func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
-	if r.MetricsSet != metrics.MetricsSetSRE {
+	if r.MetricsSet != metrics.MetricsSetSRE && hcp.Spec.Monitoring.MetricsForwarding.MetricsSet != hyperv1.MetricsSetSRE {
 		return nil
 	}
 	log.Info("Reconciling SRE metrics configuration")
-	cm := metrics.SREMetricsSetConfigurationConfigMap(cpNamespace)
+	cm := metrics.SREMetricsSetConfigurationConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(cm), cm); err != nil {
 		if apierrors.IsNotFound(err) {
+			// Clear rules loaded from a ConfigMap that no longer exists, and the
+			// hash together with them, so a recreated ConfigMap with the same
+			// content is loaded again. This matches a freshly started operator.
+			// The configuration is process-wide, and this process reconciles a
+			// single HostedControlPlane.
 			log.Info("SRE configuration does not exist")
+			metrics.ResetSREMetricsSetConfiguration()
+			r.SREConfigHash = ""
 			return nil
 		}
 		return fmt.Errorf("failed to get SRE configuration configmap: %w", err)

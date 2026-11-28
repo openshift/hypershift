@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -73,13 +75,16 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Scrape all targets
 	results := h.scraper.ScrapeAll(ctx, targets, componentConfig.MetricsPath, componentConfig.MetricsScheme, componentConfig.TLSServerName, componentConfig.TLSConfig)
 
-	// Merge, filter, and label results
+	// Label each target's families, merge them, then filter and encode once.
 	format := expfmt.NewFormat(expfmt.TypeTextPlain)
 	var buf bytes.Buffer
 	encoder := expfmt.NewEncoder(&buf, format)
 
 	successes := 0
 	var failedTargets []ScrapeTarget
+	// Families of the same name and type are merged across targets so each
+	// family is filtered and encoded once, with a single TYPE declaration.
+	batches := []map[string]*dto.MetricFamily{make(map[string]*dto.MetricFamily)}
 	for i, result := range results {
 		if result.Err != nil {
 			h.log.Error(result.Err, "scrape error", "target", targets[i].PodName)
@@ -88,11 +93,15 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		successes++
 
-		families := h.filter.Apply(componentName, result.Families)
-		families = h.labeler.Inject(families, targets[i], componentName, componentConfig)
+		// Inject labels first so the relabel rules see each sample with the
+		// labels it is exposed with.
+		families := h.labeler.Inject(result.Families, targets[i], componentName, componentConfig)
+		batches = addToBatches(batches, families)
+	}
 
-		for _, mf := range families {
-			if err := encoder.Encode(mf); err != nil {
+	for _, filtered := range h.filter.Apply(componentName, componentConfig, batches) {
+		for _, name := range slices.Sorted(maps.Keys(filtered)) {
+			if err := encoder.Encode(filtered[name]); err != nil {
 				h.log.Error(err, "encode error")
 			}
 		}
@@ -137,6 +146,44 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(buf.Bytes())
+}
+
+// addToBatches merges families into the first batch that has no family of the
+// same name or has one of the same type, and adds a batch when every batch
+// holds a family of that name with another type. Families of the same name and
+// type from any targets therefore share one batch, while incompatible types
+// stay in separate batches and are exposed separately, as before merging.
+func addToBatches(batches []map[string]*dto.MetricFamily, families map[string]*dto.MetricFamily) []map[string]*dto.MetricFamily {
+	for i := 0; len(families) > 0; i++ {
+		if i == len(batches) {
+			batches = append(batches, make(map[string]*dto.MetricFamily))
+		}
+		families = mergeFamilies(batches[i], families)
+	}
+	return batches
+}
+
+// mergeFamilies appends the metrics of families to the family of the same
+// name in merged, or adds the family when merged has none. Families whose type
+// differs from the merged family of the same name cannot share one family; they
+// are returned so the caller can try another batch.
+func mergeFamilies(merged, families map[string]*dto.MetricFamily) map[string]*dto.MetricFamily {
+	var conflicting map[string]*dto.MetricFamily
+	for name, mf := range families {
+		existing, ok := merged[name]
+		switch {
+		case !ok:
+			merged[name] = mf
+		case existing.GetType() == mf.GetType():
+			existing.Metric = append(existing.Metric, mf.Metric...)
+		default:
+			if conflicting == nil {
+				conflicting = make(map[string]*dto.MetricFamily)
+			}
+			conflicting[name] = mf
+		}
+	}
+	return conflicting
 }
 
 // acceptsGzip reports whether the request's Accept-Encoding header accepts gzip.
