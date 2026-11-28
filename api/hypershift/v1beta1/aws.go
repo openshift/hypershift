@@ -84,6 +84,21 @@ type AWSNodePoolPlatform struct {
 	//
 	// +optional
 	CPUOptions CPUOptions `json:"cpuOptions,omitzero"`
+
+	// sourceDestCheck configures the source/destination check on the EC2
+	// instance's network interfaces.
+	// When set to "Disabled", the instance can forward traffic for which it is
+	// not the source or destination. This is required for workloads that forward
+	// or route traffic, such as advertising routes to an AWS VPC Route Server
+	// with OVN-Kubernetes BGP and user-defined networking (UDN).
+	// When omitted or set to "Enabled", AWS enforces its default
+	// source/destination check, dropping any packet whose source or destination
+	// is not the instance itself.
+	// Changing this value triggers a replacement of the NodePool's instances.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=Enabled;Disabled
+	SourceDestCheck SourceDestCheck `json:"sourceDestCheck,omitempty"`
 }
 
 // PlacementOptions specifies the placement options for the EC2 instances.
@@ -208,6 +223,21 @@ const (
 
 	// NestedVirtualizationDisabled disables nested virtualization on the instance.
 	NestedVirtualizationDisabled NestedVirtualizationPolicy = "Disabled"
+)
+
+// SourceDestCheck describes whether the source/destination check is enabled on an
+// EC2 instance's network interfaces.
+type SourceDestCheck string
+
+const (
+	// SourceDestCheckEnabled enables the source/destination check, which is the AWS
+	// default. Packets whose source or destination is not the instance itself are
+	// dropped.
+	SourceDestCheckEnabled SourceDestCheck = "Enabled"
+
+	// SourceDestCheckDisabled disables the source/destination check, allowing the
+	// instance to forward traffic for which it is not the source or destination.
+	SourceDestCheckDisabled SourceDestCheck = "Disabled"
 )
 
 // MarketType describes the market type for EC2 instances.
