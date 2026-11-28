@@ -114,19 +114,20 @@ kind: HostedCluster
 metadata:
   name: hosted-ipv6
   namespace: clusters
-  annotations:
-    hypershift.openshift.io/control-plane-operator-image: registry.ocp-edge-cluster-0.qe.lab.redhat.com:5005/openshift/release@sha256:31149e3e5f8c5e5b5b100ff2d89975cf5f7a73801b2c06c639bf6648766117f8
 spec:
+  configuration:
+    operatorhub:
+      disableAllDefaultSources: true
   additionalTrustBundle:
     name: "user-ca-bundle"
   olmCatalogPlacement: guest
   imageContentSources:
   - source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
     mirrors:
-    - registry.hypershiftbm.lab:5000/openshift/release
+    - registry.<dns.base.domain.name>:5000/openshift/release
   - source: quay.io/openshift-release-dev/ocp-release
     mirrors:
-    - registry.hypershiftbm.lab:5000/openshift/release-images
+    - registry.<dns.base.domain.name>:5000/openshift/release-images
   - mirrors:
   ...
   ...
@@ -156,7 +157,7 @@ spec:
   pullSecret:
     name: hosted-ipv6-pull-secret
   release:
-    image: registry.hypershiftbm.lab:5000/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
+    image: registry.<dns.base.domain.name>:5000/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
   secretEncryption:
     aescbc:
       activeKey:
@@ -199,6 +200,8 @@ status:
 !!! note
 
     The `imageContentSources` section within the `spec` field contains mirror references for user workloads within the HostedCluster.
+    The images the management cluster pulls — HyperShift, MCE and the rest of the management stack — are mirrored
+    as part of the management cluster setup and are not listed here.
 
 As you can see, all the objects created before are referenced here. You can also refer to the [documentation](https://hypershift.pages.dev/reference/api/#hypershift.openshift.io%2fv1beta1) where all the fields are described.
 
