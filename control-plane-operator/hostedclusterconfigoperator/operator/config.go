@@ -192,14 +192,14 @@ func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpN
 	return mgr
 }
 
-func CfgFromFile(path string) *rest.Config {
+func CfgFromFile(path string) (*rest.Config, error) {
 	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: path},
 		&clientcmd.ConfigOverrides{}).ClientConfig()
 	if err != nil {
-		panic(fmt.Sprintf("failed to construct kubeconfig from path %s: %v", path, err))
+		return nil, fmt.Errorf("failed to load kubeconfig from path %q: %w", path, err)
 	}
-	return cfg
+	return cfg, nil
 }
 
 func (c *HostedClusterConfigOperatorConfig) Start(ctx context.Context) error {

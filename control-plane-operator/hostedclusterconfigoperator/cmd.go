@@ -228,7 +228,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		"release":    o.ReleaseVersion,
 		"kubernetes": o.KubernetesVersion,
 	}
-	cfg := operator.CfgFromFile(o.TargetKubeconfig)
+	cfg, err := operator.CfgFromFile(o.TargetKubeconfig)
+	if err != nil {
+		return err
+	}
 	cpConfig := ctrl.GetConfigOrDie()
 
 	// Detect the management cluster capabilities once at startup so controllers can
@@ -259,7 +262,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 	var kubevirtInfraConfig *rest.Config
 	if o.KubevirtInfraKubeconfig != "" {
-		kubevirtInfraConfig = operator.CfgFromFile(o.KubevirtInfraKubeconfig)
+		kubevirtInfraConfig, err = operator.CfgFromFile(o.KubevirtInfraKubeconfig)
+		if err != nil {
+			return fmt.Errorf("failed to load kubevirt infra kubeconfig: %w", err)
+		}
 	} else {
 		// in case infra kubeconfig hasn't been provided, default the kubevirtInfraCluster to cpConfig
 		kubevirtInfraConfig = cpConfig
