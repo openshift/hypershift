@@ -36,6 +36,7 @@ import (
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -3729,6 +3730,7 @@ func TestReconcileClusterRecovery(t *testing.T) {
 		expectCondition  bool
 		conditionStatus  metav1.ConditionStatus
 		conditionMessage string
+		policyError      bool
 	}{
 		{
 			name: "When no restore annotation exists, it should return immediately without error",
@@ -3741,6 +3743,18 @@ func TestReconcileClusterRecovery(t *testing.T) {
 			expectError:     false,
 			expectRequeue:   false,
 			expectCondition: false,
+		},
+		{
+			name: "When only an immutable snapshot URL remains after recovery, it should not install a recovery policy",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{Etcd: hyperv1.EtcdSpec{
+					ManagementType: hyperv1.Managed,
+					Managed: &hyperv1.ManagedEtcdSpec{Storage: hyperv1.ManagedEtcdStorageSpec{
+						RestoreSnapshotURL: []string{"https://example.com/snapshot"},
+					}},
+				}},
+			},
 		},
 		{
 			name: "When restore annotation exists and monitoring stack is ready, it should set condition to true",
@@ -3808,6 +3822,18 @@ func TestReconcileClusterRecovery(t *testing.T) {
 			conditionMessage: "Hosted cluster recovery not finished yet",
 		},
 		{
+			name: "When node recovery policy creation fails, it should preserve previous errors and not report recovery complete",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-hcp", Namespace: "test-ns",
+					Annotations: map[string]string{hyperv1.HostedClusterRestoredFromBackupAnnotation: ""},
+				},
+			},
+			existingErrs: []error{fmt.Errorf("previous error")},
+			policyError:  true,
+			expectError:  true,
+		},
+		{
 			name: "When restore annotation exists and monitoring stack does not exist, it should return aggregate error with existing errors",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -3837,11 +3863,34 @@ func TestReconcileClusterRecovery(t *testing.T) {
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
+			if tt.policyError {
+				r.CreateOrUpdateProvider = upsert.New(false)
+				r.uncachedClient = interceptor.NewClient(uncachedClient, interceptor.Funcs{
+					Create: func(context.Context, client.WithWatch, client.Object, ...client.CreateOption) error {
+						return fmt.Errorf("policy creation failed")
+					},
+				})
+			}
 
 			result, err := r.reconcileClusterRecovery(t.Context(), log, tt.hcp, tt.existingErrs)
+			policy := &admissionregistrationv1.ValidatingAdmissionPolicy{}
+			policyErr := uncachedClient.Get(t.Context(), client.ObjectKey{Name: "hypershift-node-status-recovery"}, policy)
+			_, restoring := tt.hcp.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]
+			if restoring && !tt.policyError {
+				g.Expect(policyErr).NotTo(HaveOccurred(), "restoration must protect against stale kubelet status patches")
+			} else {
+				g.Expect(apierrors.IsNotFound(policyErr)).To(BeTrue(), "normal reconciliation must not install recovery policy")
+			}
 
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())
+				if tt.policyError {
+					g.Expect(err.Error()).To(ContainSubstring("previous error"))
+					g.Expect(err.Error()).To(ContainSubstring("policy creation failed"))
+					updatedHCP := &hyperv1.HostedControlPlane{}
+					g.Expect(cpClient.Get(t.Context(), client.ObjectKeyFromObject(tt.hcp), updatedHCP)).To(Succeed())
+					g.Expect(meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.HostedClusterRestoredFromBackup))).To(BeNil())
+				}
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())
