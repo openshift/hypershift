@@ -4,8 +4,9 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Deletes the specified instance profile. The instance profile must not have an
@@ -50,6 +51,18 @@ type DeleteInstanceProfileInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteInstanceProfileInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeleteInstanceProfileRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteInstanceProfileInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.InstanceProfileName != nil {
+		s.WriteString(schemas.DeleteInstanceProfileRequest_InstanceProfileName, *v.InstanceProfileName)
+	}
+}
+
 type DeleteInstanceProfileOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -57,22 +70,29 @@ type DeleteInstanceProfileOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteInstanceProfileOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(nil)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteInstanceProfileOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *DeleteInstanceProfileOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, nil, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDeleteInstanceProfileMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeleteInstanceProfile{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteInstanceProfile, schemas.DeleteInstanceProfileRequest, nil)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeleteInstanceProfile{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteInstanceProfile, schemas.DeleteInstanceProfileRequest, nil), output: &DeleteInstanceProfileOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -82,19 +102,10 @@ func (c *Client) addOperationDeleteInstanceProfileMiddlewares(stack *middleware.
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDeleteInstanceProfileValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DeleteInstanceProfile"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -10,7 +10,6 @@ import (
 	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	smithytime "github.com/aws/smithy-go/time"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	smithywaiter "github.com/aws/smithy-go/waiter"
 	"strconv"
 	"time"
@@ -109,6 +108,9 @@ type DescribeImagesInput struct {
 	//   - block-device-mapping.encrypted - A Boolean that indicates whether the Amazon
 	//   EBS volume is encrypted.
 	//
+	//   - boot-mode – The boot mode of the image ( legacy-bios | uefi | uefi-preferred
+	//   ).
+	//
 	//   - creation-date - The time when the image was created, in the ISO 8601 format
 	//   in the UTC time zone (YYYY-MM-DDThh:mm:ss.sssZ), for example,
 	//   2021-09-29T11:04:43.305Z . You can use a wildcard ( * ), for example,
@@ -150,6 +152,16 @@ type DescribeImagesInput struct {
 	//
 	//   - image-type - The image type ( machine | kernel | ramdisk ).
 	//
+	//   - instance-type-specification.supported-instance-type – The instance types
+	//   that are compatible with the AMI, as specified by the AMI owner. Values can be
+	//   individual instance types (for example, t3.micro ) or wildcard patterns that
+	//   match multiple instance types (for example, t3.* ).
+	//
+	//   - instance-type-specification.unsupported-instance-type – The instance types
+	//   that are not compatible with the AMI, as specified by the AMI owner. Values can
+	//   be individual instance types (for example, t3.micro ) or wildcard patterns
+	//   that match multiple instance types (for example, t3.* ).
+	//
 	//   - is-public - A Boolean that indicates whether the image is public.
 	//
 	//   - kernel-id - The kernel ID.
@@ -184,6 +196,46 @@ type DescribeImagesInput struct {
 	//
 	//   - root-device-type - The type of the root device volume ( ebs | instance-store
 	//   ).
+	//
+	//   - scan-result.critical-fix-available-since - The earliest date and time, in
+	//   the ISO 8601 format in the UTC time zone (YYYY-MM-DDThh:mm:ss.sssZ), at which
+	//   Amazon Inspector reported a fix as available for a critical severity finding
+	//   on the AMI.
+	//
+	//   - scan-result.finding-scan-date - The date and time, in the ISO 8601 format in
+	//   the UTC time zone (YYYY-MM-DDThh:mm:ss.sssZ), of the most recent Amazon
+	//   Inspector scan of the AMI.
+	//
+	//   - scan-result.high-fix-available-since - The earliest date and time, in the
+	//   ISO 8601 format in the UTC time zone (YYYY-MM-DDThh:mm:ss.sssZ), at which Amazon
+	//   Inspector reported a fix as available for a high severity finding on the AMI.
+	//
+	//   - scan-result.highest-finding-severity-label - The highest severity among the
+	//   AMI's Amazon Inspector findings, whether or not a fix is available. The valid
+	//   values are the following Amazon Inspector severity levels:
+	//
+	//   - informational - CVSS score of 0.
+	//
+	//   - low - CVSS score of 0.1 to 3.9.
+	//
+	//   - medium - CVSS score of 4.0 to 6.9.
+	//
+	//   - high - CVSS score of 7.0 to 8.9.
+	//
+	//   - critical - CVSS score of 9.0 to 10.0.
+	//
+	//   - scan-result.informational-fix-available-since - The earliest date and time,
+	//   in the ISO 8601 format in the UTC time zone (YYYY-MM-DDThh:mm:ss.sssZ), at which
+	//   Amazon Inspector reported a fix as available for an informational severity
+	//   finding on the AMI.
+	//
+	//   - scan-result.low-fix-available-since - The earliest date and time, in the ISO
+	//   8601 format in the UTC time zone (YYYY-MM-DDThh:mm:ss.sssZ), at which Amazon
+	//   Inspector reported a fix as available for a low severity finding on the AMI.
+	//
+	//   - scan-result.medium-fix-available-since - The earliest date and time, in the
+	//   ISO 8601 format in the UTC time zone (YYYY-MM-DDThh:mm:ss.sssZ), at which Amazon
+	//   Inspector reported a fix as available for a medium severity finding on the AMI.
 	//
 	//   - source-image-id - The ID of the source AMI from which the AMI was created.
 	//
@@ -278,12 +330,6 @@ func (c *Client) addOperationDescribeImagesMiddlewares(stack *middleware.Stack, 
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -293,16 +339,7 @@ func (c *Client) addOperationDescribeImagesMiddlewares(stack *middleware.Stack, 
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeImages"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

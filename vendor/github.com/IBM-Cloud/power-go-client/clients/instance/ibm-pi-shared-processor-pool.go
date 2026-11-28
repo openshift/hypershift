@@ -26,9 +26,9 @@ func NewIBMPISharedProcessorPoolClient(ctx context.Context, sess *ibmpisession.I
 // Get a PI Shared Processor Pool
 func (f *IBMPISharedProcessorPoolClient) Get(id string) (*models.SharedProcessorPoolDetail, error) {
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithSharedProcessorPoolID(id)
-	resp, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetSharedProcessorPoolOperationFailed, id, err))
 	}
@@ -41,9 +41,9 @@ func (f *IBMPISharedProcessorPoolClient) Get(id string) (*models.SharedProcessor
 // Get All Shared Processor Pools
 func (f *IBMPISharedProcessorPoolClient) GetAll() (*models.SharedProcessorPools, error) {
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
-	resp, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get All Shared Processor Pools: %w", err))
 	}
@@ -60,9 +60,9 @@ func (f *IBMPISharedProcessorPoolClient) Create(body *models.SharedProcessorPool
 		return nil, fmt.Errorf("host id parameter is not supported in on-prem location")
 	}
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
-	postok, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	postok, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.CreateSharedProcessorPoolOperationFailed, f.cloudInstanceID, err))
 	}
@@ -75,9 +75,9 @@ func (f *IBMPISharedProcessorPoolClient) Create(body *models.SharedProcessorPool
 // Delete a Shared Processor Pool
 func (f *IBMPISharedProcessorPoolClient) Delete(id string) error {
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsDeleteParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
+		WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithSharedProcessorPoolID(id)
-	_, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf(errors.DeleteSharedProcessorPoolOperationFailed, id, err)
 	}
@@ -87,9 +87,9 @@ func (f *IBMPISharedProcessorPoolClient) Delete(id string) error {
 // Update a PI Shared Processor Pool
 func (f *IBMPISharedProcessorPoolClient) Update(id string, body *models.SharedProcessorPoolUpdate) (*models.SharedProcessorPool, error) {
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsPutParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
+		WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body).WithSharedProcessorPoolID(id)
-	resp, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsPut(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudSharedProcessorPools.PcloudSharedprocessorpoolsPutContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.UpdateSharedProcessorPoolOperationFailed, id, err))
 	}

@@ -24,7 +24,7 @@ func NewIBMPIDatacenterClient(ctx context.Context, sess *ibmpisession.IBMPISessi
 }
 func (f *IBMPIDatacentersClient) Get(datacenterRegion string) (*models.Datacenter, error) {
 	if !f.session.IsOnPrem() {
-		params := datacenters.NewV1DatacentersGetParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).WithDatacenterRegion(datacenterRegion)
+		params := datacenters.NewV1DatacentersGetParams().WithTimeout(helpers.PIGetTimeOut).WithDatacenterRegion(datacenterRegion)
 		resp, err := f.session.Power.Datacenters.V1DatacentersGet(params)
 
 		if err != nil {
@@ -35,8 +35,8 @@ func (f *IBMPIDatacentersClient) Get(datacenterRegion string) (*models.Datacente
 		}
 		return resp.Payload, nil
 	} else {
-		params := datacenters.NewV1DatacentersPrivateGetParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).WithDatacenterRegion(datacenterRegion)
-		resp, err := f.session.Power.Datacenters.V1DatacentersPrivateGet(params, f.session.AuthInfo(f.cloudInstanceID))
+		params := datacenters.NewV1DatacentersPrivateGetParams().WithTimeout(helpers.PIGetTimeOut).WithDatacenterRegion(datacenterRegion)
+		resp, err := f.session.Power.Datacenters.V1DatacentersPrivateGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 
 		if err != nil {
 			return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetDatacenterOperationFailed, f.cloudInstanceID, err))
@@ -50,7 +50,7 @@ func (f *IBMPIDatacentersClient) Get(datacenterRegion string) (*models.Datacente
 
 func (f *IBMPIDatacentersClient) GetAll() (*models.Datacenters, error) {
 	if !f.session.IsOnPrem() {
-		params := datacenters.NewV1DatacentersGetallParams().WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut)
+		params := datacenters.NewV1DatacentersGetallParams().WithTimeout(helpers.PICreateTimeOut)
 		resp, err := f.session.Power.Datacenters.V1DatacentersGetall(params)
 
 		if err != nil {
@@ -61,8 +61,8 @@ func (f *IBMPIDatacentersClient) GetAll() (*models.Datacenters, error) {
 		}
 		return resp.Payload, nil
 	} else {
-		params := datacenters.NewV1DatacentersPrivateGetallParams().WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut)
-		resp, err := f.session.Power.Datacenters.V1DatacentersPrivateGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+		params := datacenters.NewV1DatacentersPrivateGetallParams().WithTimeout(helpers.PICreateTimeOut)
+		resp, err := f.session.Power.Datacenters.V1DatacentersPrivateGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 
 		if err != nil {
 			return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get all Datacenters: %w", err))

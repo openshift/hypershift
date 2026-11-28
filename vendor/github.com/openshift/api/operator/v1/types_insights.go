@@ -12,6 +12,7 @@ import (
 // +kubebuilder:subresource:status
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/1237
 // +openshift:file-pattern=cvoRunLevel=0000_50,operatorName=insights,operatorOrdering=00
+// +openshift:capability=Insights
 //
 // InsightsOperator holds cluster-wide information about the Insights Operator.
 //

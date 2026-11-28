@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a new health check.
@@ -26,9 +25,13 @@ import (
 // You can associate health checks with failover resource record sets in a private
 // hosted zone. Note the following:
 //
-//   - Route 53 health checkers are outside the VPC. To check the health of an
-//     endpoint within a VPC by IP address, you must assign a public IP address to the
-//     instance in the VPC.
+//   - For a public health check, Route 53 health checkers are outside the VPC. To
+//     check the health of an endpoint within a VPC by IP address, you must assign a
+//     public IP address to the instance in the VPC.
+//
+//   - To check the health of an endpoint within a VPC by using a private IP
+//     address, use a private endpoint health check ( EndpointType of PRIVATE ). For
+//     more information, see CreateHealthCheckSource .
 //
 //   - You can configure a health checker to check the health of an external
 //     resource that the instance relies on, such as a database server.
@@ -126,12 +129,6 @@ func (c *Client) addOperationCreateHealthCheckMiddlewares(stack *middleware.Stac
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -141,19 +138,10 @@ func (c *Client) addOperationCreateHealthCheckMiddlewares(stack *middleware.Stac
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateHealthCheckValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateHealthCheck"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

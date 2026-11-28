@@ -195,7 +195,7 @@ func (NUMAGuestMappingPassthrough) SwaggerDoc() map[string]string {
 
 func (NUMA) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"guestMappingPassthrough": "GuestMappingPassthrough will create an efficient guest topology based on host CPUs exclusively assigned to a pod.\nThe created topology ensures that memory and CPUs on the virtual numa nodes never cross boundaries of host numa nodes.\n+optional",
+		"guestMappingPassthrough": "GuestMappingPassthrough will create an efficient guest topology based on host CPUs exclusively assigned to a pod.\nThe created topology ensures that memory and CPUs on the virtual numa nodes never cross boundaries of host numa nodes.\nIt is not supported on a VMI with dedicatedCPUPlacement while the CPUsWithDRA feature gate is enabled, because the\nhost CPUs are then assigned by the DRA driver instead of by kubelet's CPU manager.\n+optional",
 	}
 }
 
@@ -353,8 +353,8 @@ func (GPU) SwaggerDoc() map[string]string {
 
 func (ClaimRequest) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"claimName":   "ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this\ndevice is allocated\n+optional",
-		"requestName": "RequestName needs to be provided from resourceClaim.spec.devices.requests[].name where this\ndevice is requested\n+optional",
+		"claimName":   "ClaimName references the name of an entry in the\nVMI's spec.resourceClaims[] array. The referenced\nentry may use either resourceClaimName or\nresourceClaimTemplateName.",
+		"requestName": "RequestName specifies which request from the\nResourceClaim/ResourceClaimTemplate spec.devices.requests array this\nclaim request corresponds to.",
 	}
 }
 
@@ -388,7 +388,7 @@ func (Disk) SwaggerDoc() map[string]string {
 		"bootOrder":            "BootOrder is an integer value > 0, used to determine ordering of boot devices.\nLower values take precedence.\nEach disk or interface that has a boot order must have a unique value.\nDisks without a boot order are not tried if a disk with a boot order exists.\n+optional",
 		"serial":               "Serial provides the ability to specify a serial number for the disk device.\n+optional",
 		"dedicatedIOThread":    "dedicatedIOThread indicates this disk should have an exclusive IO Thread.\nEnabling this implies useIOThreads = true.\nDefaults to false.\n+optional",
-		"cache":                "Cache specifies which kvm disk cache mode should be used.\nSupported values are:\nnone: Guest I/O not cached on the host, but may be kept in a disk cache.\nwritethrough: Guest I/O cached on the host but written through to the physical medium. Slowest but with most guarantees.\nwriteback: Guest I/O cached on the host.\nDefaults to none if the storage supports O_DIRECT, otherwise writethrough.\n+optional",
+		"cache":                "Cache specifies which kvm disk cache mode should be used.\nSupported values are:\nnone: Guest I/O not cached on the host, but may be kept in a disk cache.\nwritethrough: Guest I/O cached on the host but written through to the physical medium. Slowest but with most guarantees.\nwriteback: Guest I/O cached on the host.\ndirectsync: Guest I/O bypasses the host page cache and is written to the physical medium synchronously.\nDefaults to none if the storage supports O_DIRECT, otherwise writethrough.\n+optional",
 		"io":                   "IO specifies which QEMU disk IO mode should be used.\nSupported values are: native, default, threads.\n+optional",
 		"tag":                  "If specified, disk address and its tag will be provided to the guest via config drive metadata\n+optional",
 		"blockSize":            "If specified, the virtual disk will be presented with the given block sizes.\n+optional",
@@ -493,16 +493,16 @@ func (VolumeSource) SwaggerDoc() map[string]string {
 		"cloudInitNoCloud":      "CloudInitNoCloud represents a cloud-init NoCloud user-data source.\nThe NoCloud data will be added as a disk to the vmi. A proper cloud-init installation is required inside the guest.\nMore info: http://cloudinit.readthedocs.io/en/latest/topics/datasources/nocloud.html\n+optional",
 		"cloudInitConfigDrive":  "CloudInitConfigDrive represents a cloud-init Config Drive user-data source.\nThe Config Drive data will be added as a disk to the vmi. A proper cloud-init installation is required inside the guest.\nMore info: https://cloudinit.readthedocs.io/en/latest/topics/datasources/configdrive.html\n+optional",
 		"sysprep":               "Represents a Sysprep volume source.\n+optional",
-		"containerDisk":         "ContainerDisk references a docker image, embedding a qcow or raw disk.\nMore info: https://kubevirt.gitbooks.io/user-guide/registry-disk.html\n+optional",
+		"containerDisk":         "ContainerDisk references a docker image, embedding a qcow or raw disk.\nMore info: https://kubevirt.io/user-guide/storage/disks_and_volumes/#containerdisk\n+optional",
 		"ephemeral":             "Ephemeral is a special volume source that \"wraps\" specified source and provides copy-on-write image on top of it.\n+optional",
-		"emptyDisk":             "EmptyDisk represents a temporary disk which shares the vmis lifecycle.\nMore info: https://kubevirt.gitbooks.io/user-guide/disks-and-volumes.html\n+optional",
+		"emptyDisk":             "EmptyDisk represents a temporary disk which shares the vmis lifecycle.\nMore info: https://kubevirt.io/user-guide/storage/disks_and_volumes/#emptydisk\n+optional",
 		"dataVolume":            "DataVolume represents the dynamic creation a PVC for this volume as well as\nthe process of populating that PVC with a disk image.\n+optional",
 		"configMap":             "ConfigMapSource represents a reference to a ConfigMap in the same namespace.\nMore info: https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/\n+optional",
 		"secret":                "SecretVolumeSource represents a reference to a secret data in the same namespace.\nMore info: https://kubernetes.io/docs/concepts/configuration/secret/\n+optional",
 		"downwardAPI":           "DownwardAPI represents downward API about the pod that should populate this volume\n+optional",
 		"serviceAccount":        "ServiceAccountVolumeSource represents a reference to a service account.\nThere can only be one volume of this type!\nMore info: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/\n+optional",
 		"downwardMetrics":       "DownwardMetrics adds a very small disk to VMIs which contains a limited view of host and guest\nmetrics. The disk content is compatible with vhostmd (https://github.com/vhostmd/vhostmd) and vm-dump-metrics.",
-		"memoryDump":            "MemoryDump is attached to the virt launcher and is populated with a memory dump of the vmi",
+		"memoryDump":            "MemoryDump is attached to the virt launcher and is populated with a memory dump of the vmi\nDeprecated: memory dumps are attached as utility volumes of type MemoryDump.",
 		"containerPath":         "ContainerPath exposes a path from the virt-launcher container to the VM via virtiofs.\nThe path must correspond to an existing volumeMount in the compute container.\n+optional",
 	}
 }
@@ -530,7 +530,9 @@ func (PersistentVolumeClaimVolumeSource) SwaggerDoc() map[string]string {
 }
 
 func (MemoryDumpVolumeSource) SwaggerDoc() map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"": "MemoryDumpVolumeSource represents a memory dump PVC in the volumes of a VMI.\nDeprecated: memory dumps are attached as utility volumes of type MemoryDump.",
+	}
 }
 
 func (EphemeralVolumeSource) SwaggerDoc() map[string]string {
@@ -746,7 +748,8 @@ func (Interface) SwaggerDoc() map[string]string {
 		"name":        "Logical name of the interface as well as a reference to the associated networks.\nMust match the Name of a Network.",
 		"model":       "Interface model.\nOne of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.\nDefaults to virtio.",
 		"binding":     "Binding specifies the binding plugin that will be used to connect the interface to the guest.\nIt provides an alternative to InterfaceBindingMethod.\nversion: 1alphav1",
-		"ports":       "List of ports to be forwarded to the virtual machine.",
+		"ports":       "List of ports to be forwarded to the virtual machine.\nMutually exclusive with portRanges.",
+		"portRanges":  "List of port ranges to be forwarded to the virtual machine.\nMutually exclusive with ports. Only supported on masquerade interfaces.\nThis feature is in Alpha.\n+optional\n+listType=atomic",
 		"macAddress":  "Interface MAC address. For example: de:ad:00:00:be:af or DE-AD-00-00-BE-AF.",
 		"bootOrder":   "BootOrder is an integer value > 0, used to determine ordering of boot devices.\nLower values take precedence.\nEach interface or disk that has a boot order must have a unique value.\nInterfaces without a boot order are not tried.\n+optional",
 		"pciAddress":  "If specified, the virtual network interface will be placed on the guests pci address with the specified PCI address. For example: 0000:81:01.10\n+optional",
@@ -839,6 +842,15 @@ func (Port) SwaggerDoc() map[string]string {
 		"name":     "If specified, this must be an IANA_SVC_NAME and unique within the pod. Each\nnamed port in a pod must have a unique name. Name for the port that can be\nreferred to by services.\n+optional",
 		"protocol": "Protocol for port. Must be UDP or TCP.\nDefaults to \"TCP\".\n+optional",
 		"port":     "Number of port to expose for the virtual machine.\nThis must be a valid port number, 0 < x < 65536.",
+	}
+}
+
+func (PortRange) SwaggerDoc() map[string]string {
+	return map[string]string{
+		"":         "PortRange represents a range of ports to be forwarded to the virtual machine.\nAll fields are mandatory.",
+		"protocol": "Required. Must be UDP or TCP.",
+		"start":    "First port of the range to expose for the virtual machine.\nThis must be a valid port number, 0 < x < 65536.",
+		"end":      "Last port of the range to expose for the virtual machine.\nThis must be a valid port number, 0 < x < 65536.\nMust be greater than or equal to start.",
 	}
 }
 
@@ -936,7 +948,8 @@ func (Network) SwaggerDoc() map[string]string {
 
 func (NetworkSource) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"": "Represents the source resource that will be connected to the vm.\nOnly one of its members may be specified.",
+		"":              "Represents the source resource that will be connected to the vm.\nOnly one of its members may be specified.",
+		"resourceClaim": "ResourceClaim represents a network resource requested\nvia a VMI spec.resourceClaims[] entry, backed by either a\nKubernetes ResourceClaim or ResourceClaimTemplate.\nThis field should only be configured if the NetworkDevicesWithDRA feature-gate is enabled.\nThis feature is in alpha.",
 	}
 }
 

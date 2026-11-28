@@ -47,7 +47,8 @@ clusterversionoperators.operator.openshift.io:
   Version: v1alpha1
 
 etcdbackups.operator.openshift.io:
-  Annotations: {}
+  Annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
   ApprovedPRNumber: https://github.com/openshift/api/pull/2952
   CRDName: etcdbackups.operator.openshift.io
   Capability: ""
@@ -86,7 +87,8 @@ etcdbackups.operator.openshift.io:
   Version: v1alpha1
 
 etcdbackuppolicies.operator.openshift.io:
-  Annotations: {}
+  Annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
   ApprovedPRNumber: https://github.com/openshift/api/pull/2952
   CRDName: etcdbackuppolicies.operator.openshift.io
   Capability: ""

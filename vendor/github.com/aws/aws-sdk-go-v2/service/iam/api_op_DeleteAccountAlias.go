@@ -4,8 +4,9 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 //	Deletes the specified Amazon Web Services account alias. For information about
@@ -45,6 +46,18 @@ type DeleteAccountAliasInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteAccountAliasInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeleteAccountAliasRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteAccountAliasInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AccountAlias != nil {
+		s.WriteString(schemas.DeleteAccountAliasRequest_AccountAlias, *v.AccountAlias)
+	}
+}
+
 type DeleteAccountAliasOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -52,22 +65,29 @@ type DeleteAccountAliasOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteAccountAliasOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(nil)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteAccountAliasOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *DeleteAccountAliasOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, nil, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDeleteAccountAliasMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeleteAccountAlias{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteAccountAlias, schemas.DeleteAccountAliasRequest, nil)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeleteAccountAlias{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteAccountAlias, schemas.DeleteAccountAliasRequest, nil), output: &DeleteAccountAliasOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -77,19 +97,10 @@ func (c *Client) addOperationDeleteAccountAliasMiddlewares(stack *middleware.Sta
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDeleteAccountAliasValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DeleteAccountAlias"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -54,6 +54,9 @@ type ConditionSet struct {
 // ForOptions configures a ConditionSet.
 type ForOptions struct {
 	Clock clock.Clock
+	// ObservedOnly builds the set from conditions already present, without
+	// initializing absent root/dependent conditions to Unknown. See WithObservedOnly.
+	ObservedOnly bool
 }
 
 // ForOption is a functional option for For.
@@ -65,6 +68,15 @@ func WithClock(c clock.Clock) ForOption {
 	return func(o *ForOptions) { o.Clock = c }
 }
 
+// WithObservedOnly builds the ConditionSet from the conditions already present on
+// the object, skipping initialization of missing root/dependent conditions to
+// Unknown. Use this when the set is a read-only reflection of observed state (e.g.
+// metrics emission for an object the caller does not own), so absent conditions are
+// not fabricated.
+func WithObservedOnly() ForOption {
+	return func(o *ForOptions) { o.ObservedOnly = true }
+}
+
 // For creates a ConditionSet from an object using the original
 // ConditionTypes as a reference. Status must be a pointer to a struct.
 func (r ConditionTypes) For(object Object, opts ...ForOption) ConditionSet {
@@ -73,6 +85,9 @@ func (r ConditionTypes) For(object Object, opts ...ForOption) ConditionSet {
 		opt(&o)
 	}
 	cs := ConditionSet{object: object, ConditionTypes: r, clock: o.Clock}
+	if o.ObservedOnly {
+		return cs
+	}
 	// Set known conditions Unknown if not set.
 	// Set the root condition first to get consistent timing for LastTransitionTime
 	for _, t := range append([]string{r.root}, r.dependents...) {

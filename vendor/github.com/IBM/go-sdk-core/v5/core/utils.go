@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,13 +45,13 @@ const (
 )
 
 // IsNil checks if the specified object is nil or not.
-func IsNil(object interface{}) bool {
+func IsNil(object any) bool {
 	if object == nil {
 		return true
 	}
 
 	switch reflect.TypeOf(object).Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
 		return reflect.ValueOf(object).IsNil()
 	}
 
@@ -58,7 +59,7 @@ func IsNil(object interface{}) bool {
 }
 
 // ValidateNotNil returns the specified error if 'object' is nil, nil otherwise.
-func ValidateNotNil(object interface{}, errorMsg string) error {
+func ValidateNotNil(object any, errorMsg string) error {
 	if IsNil(object) {
 		err := errors.New(errorMsg)
 		return SDKErrorf(err, "", "obj-is-nil", getComponentInfo())
@@ -68,7 +69,7 @@ func ValidateNotNil(object interface{}, errorMsg string) error {
 
 // ValidateStruct validates 'param' (assumed to be a ptr to a struct) according to the
 // annotations attached to its fields.
-func ValidateStruct(param interface{}, paramName string) error {
+func ValidateStruct(param any, paramName string) error {
 	err := ValidateNotNil(param, paramName+" cannot be nil")
 	if err != nil {
 		err = RepurposeSDKProblem(err, "struct-is-nil")
@@ -183,7 +184,7 @@ func SystemInfo() string {
 }
 
 // PrettyPrint print pretty.
-func PrettyPrint(result interface{}, resultName string) {
+func PrettyPrint(result any, resultName string) {
 	output, err := json.MarshalIndent(result, "", "    ")
 
 	if err == nil {
@@ -204,7 +205,7 @@ var reJsonSlice = regexp.MustCompile(`(?s)\[(\S*)\]`)
 // string manipulation on the resulting string, and converts
 // the string to a '[]string'. If 'slice' is nil, not a 'slice' type,
 // or an error occurred during conversion, an error will be returned
-func ConvertSlice(slice interface{}) (s []string, err error) {
+func ConvertSlice(slice any) (s []string, err error) {
 	inputIsSlice := false
 
 	if IsNil(slice) {
@@ -270,12 +271,7 @@ func ConvertSlice(slice interface{}) (s []string, err error) {
 
 // SliceContains returns true iff "contains" is an element of "slice"
 func SliceContains(slice []string, contains string) bool {
-	for _, elem := range slice {
-		if elem == contains {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, contains)
 }
 
 // GetQueryParam returns a pointer to the value of query parameter `param` from urlStr,
@@ -405,17 +401,53 @@ var redactedTokens = strings.Join(redactedKeywords, "|")
 
 // Pre-compiled regular expressions used by RedactSecrets().
 var (
-	reAuthHeader      = regexp.MustCompile(`(?m)^(Authorization|X-Auth\S*): .*`)
-	rePropertySetting = regexp.MustCompile(`(?i)(` + redactedTokens + `)=[^&]*(&|$)`)
-	reJsonField       = regexp.MustCompile(`(?i)"([^"]*(` + redactedTokens + `)[^"_]*)":\s*"[^\,]*"`)
+	reHeaderLine      = regexp.MustCompile("^([!#$%&'*+.^_`|~0-9A-Za-z-]+):")
+	rePropertySetting = regexp.MustCompile(`(?im)(` + redactedTokens + `)=[^&\n]*(&|$)`)
+	reJsonField       = regexp.MustCompile(`(?i)"([^"]*(` + redactedTokens + `)[^"_]*)":\s*"[^"\n]*"`)
 )
+
+// redactedHeaderNames contains the (lower-case) names of HTTP headers whose values
+// must never be logged. In addition to these, any header whose name starts with
+// "x-auth" is also redacted (see isRedactedHeader()).
+// NOTE: keep this list consistent with the other SDK cores (Java, Node, Python).
+var redactedHeaderNames = map[string]bool{
+	"authorization":       true,
+	"proxy-authorization": true,
+	"cookie":              true,
+	"set-cookie":          true,
+	"secret":              true,
+}
+
+// isRedactedHeader returns true iff the header "name" (compared case-insensitively)
+// is one whose value must be redacted.
+func isRedactedHeader(name string) bool {
+	lowerName := strings.ToLower(name)
+	return redactedHeaderNames[lowerName] || strings.HasPrefix(lowerName, "x-auth")
+}
+
+// redactHeaders redacts the value of each credential-bearing HTTP header found in "input".
+// Header names are parsed line-by-line and compared case-insensitively. Line terminators
+// (LF or CRLF) are preserved.
+func redactHeaders(input string) string {
+	lines := strings.Split(input, "\n")
+	for i, line := range lines {
+		content, eol := line, ""
+		if strings.HasSuffix(content, "\r") {
+			content, eol = content[:len(content)-1], "\r"
+		}
+		if m := reHeaderLine.FindStringSubmatch(content); m != nil && isRedactedHeader(m[1]) {
+			lines[i] = m[1] + ": [redacted]" + eol
+		}
+	}
+	return strings.Join(lines, "\n")
+}
 
 // RedactSecrets() returns the input string with secrets redacted.
 func RedactSecrets(input string) string {
 	redacted := "[redacted]"
 
 	redactedString := input
-	redactedString = reAuthHeader.ReplaceAllString(redactedString, "$1: "+redacted)
+	redactedString = redactHeaders(redactedString)
 	redactedString = rePropertySetting.ReplaceAllString(redactedString, "$1="+redacted+"$2")
 	redactedString = reJsonField.ReplaceAllString(redactedString, fmt.Sprintf(`"$1":"%s"`, redacted))
 

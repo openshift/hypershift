@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates one or more flow logs to capture information about IP traffic for a
@@ -46,7 +45,7 @@ type CreateFlowLogsInput struct {
 	// The IDs of the resources to monitor. For example, if the resource type is VPC ,
 	// specify the IDs of the VPCs.
 	//
-	// Constraints: Maximum of 25 for transit gateway resource types. Maximum of 1000
+	// Constraints: Maximum of 25 for transit gateway resource types. Maximum of 300
 	// for the other resource types.
 	//
 	// This member is required.
@@ -115,12 +114,14 @@ type CreateFlowLogsInput struct {
 	// which they should appear. If you omit this parameter, the flow log is created
 	// using the default format. If you specify this parameter, you must include at
 	// least one field. For more information about the available fields, see [Flow log records]in the
-	// Amazon VPC User Guide or [Transit Gateway Flow Log records]in the Amazon Web Services Transit Gateway Guide.
+	// Amazon VPC User Guide, [Transit Gateway Flow Log records]in the Amazon Web Services Transit Gateway Guide, or [Cloud WAN Flow Log records] in
+	// the Amazon Web Services Cloud WAN User Guide.
 	//
 	// Specify the fields using the ${field-id} format, separated by spaces.
 	//
 	// [Flow log records]: https://docs.aws.amazon.com/vpc/latest/userguide/flow-log-records.html
 	// [Transit Gateway Flow Log records]: https://docs.aws.amazon.com/vpc/latest/tgw/tgw-flow-logs.html#flow-log-records
+	// [Cloud WAN Flow Log records]: https://docs.aws.amazon.com/network-manager/latest/cloudwan/cwan-flow-logs.html
 	LogFormat *string
 
 	// The name of a new or existing CloudWatch Logs log group where Amazon EC2
@@ -132,7 +133,7 @@ type CreateFlowLogsInput struct {
 	// The maximum interval of time during which a flow of packets is captured and
 	// aggregated into a flow log record. The possible values are 60 seconds (1 minute)
 	// or 600 seconds (10 minutes). This parameter must be 60 seconds for transit
-	// gateway resource types.
+	// gateway and Cloud WAN resource types.
 	//
 	// When a network interface is attached to a [Nitro-based instance], the aggregation interval is always
 	// 60 seconds or less, regardless of the value that you specify.
@@ -150,8 +151,8 @@ type CreateFlowLogsInput struct {
 	TagSpecifications []types.TagSpecification
 
 	// The type of traffic to monitor (accepted traffic, rejected traffic, or all
-	// traffic). This parameter is not supported for transit gateway resource types. It
-	// is required for the other resource types.
+	// traffic). This parameter is not supported for transit gateway or Cloud WAN
+	// resource types. It is required for the other resource types.
 	TrafficType types.TrafficType
 
 	noSmithyDocumentSerde
@@ -185,12 +186,6 @@ func (c *Client) addOperationCreateFlowLogsMiddlewares(stack *middleware.Stack, 
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -200,19 +195,10 @@ func (c *Client) addOperationCreateFlowLogsMiddlewares(stack *middleware.Stack, 
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateFlowLogsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateFlowLogs"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

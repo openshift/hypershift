@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,11 +49,8 @@ const (
 	// Universe domain is the default service domain for a given Cloud universe.
 	DefaultUniverseDomain = "googleapis.com"
 
-	// TrustBoundaryNoOp is a constant indicating no trust boundary is enforced.
-	TrustBoundaryNoOp = "0x0"
-
-	// TrustBoundaryDataKey is the key used to store trust boundary data in a token's metadata.
-	TrustBoundaryDataKey = "google.auth.trust_boundary_data"
+	// RegionalAccessBoundaryDataKey is the key used to store regional access boundary data in a token's metadata.
+	RegionalAccessBoundaryDataKey = "google.auth.regional_access_boundary_data"
 )
 
 type clonableTransport interface {
@@ -188,21 +186,25 @@ func (p StaticProperty) GetProperty(context.Context) (string, error) {
 // ComputeUniverseDomainProvider fetches the credentials universe domain from
 // the google cloud metadata service.
 type ComputeUniverseDomainProvider struct {
-	MetadataClient     *metadata.Client
-	universeDomainOnce sync.Once
-	universeDomain     string
-	universeDomainErr  error
+	MetadataClient *metadata.Client
+	mu             sync.Mutex
+	universeDomain string
 }
 
 // GetProperty fetches the credentials universe domain from the google cloud
-// metadata service.
+// metadata service. Successful lookups are cached for the lifetime of the
+// provider; errors are not cached so subsequent calls may retry.
 func (c *ComputeUniverseDomainProvider) GetProperty(ctx context.Context) (string, error) {
-	c.universeDomainOnce.Do(func() {
-		c.universeDomain, c.universeDomainErr = getMetadataUniverseDomain(ctx, c.MetadataClient)
-	})
-	if c.universeDomainErr != nil {
-		return "", c.universeDomainErr
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.universeDomain != "" {
+		return c.universeDomain, nil
 	}
+	ud, err := getMetadataUniverseDomain(ctx, c.MetadataClient)
+	if err != nil {
+		return "", err
+	}
+	c.universeDomain = ud
 	return c.universeDomain, nil
 }
 
@@ -215,14 +217,19 @@ var httpGetMetadataUniverseDomain = func(ctx context.Context, client *metadata.C
 
 func getMetadataUniverseDomain(ctx context.Context, client *metadata.Client) (string, error) {
 	universeDomain, err := httpGetMetadataUniverseDomain(ctx, client)
-	if err == nil {
-		return universeDomain, nil
+	if err != nil {
+		var notDefined metadata.NotDefinedError
+		if errors.As(err, &notDefined) {
+			// http.StatusNotFound (404)
+			return DefaultUniverseDomain, nil
+		}
+		return "", err
 	}
-	if _, ok := err.(metadata.NotDefinedError); ok {
-		// http.StatusNotFound (404)
+	universeDomain = strings.TrimSpace(universeDomain)
+	if universeDomain == "" {
 		return DefaultUniverseDomain, nil
 	}
-	return "", err
+	return universeDomain, nil
 }
 
 // FormatIAMServiceAccountResource sets a service account name in an IAM resource
@@ -231,55 +238,35 @@ func FormatIAMServiceAccountResource(name string) string {
 	return fmt.Sprintf("projects/-/serviceAccounts/%s", name)
 }
 
-// TrustBoundaryData represents the trust boundary data associated with a token.
+// RegionalAccessBoundaryData represents the regional access boundary data associated with a token.
 // It contains information about the regions or environments where the token is valid.
-type TrustBoundaryData struct {
+type RegionalAccessBoundaryData struct {
 	// Locations is the list of locations that the token is allowed to be used in.
 	Locations []string
 	// EncodedLocations represents the locations in an encoded format.
 	EncodedLocations string
 }
 
-// NewTrustBoundaryData returns a new TrustBoundaryData with the specified locations and encoded locations.
-func NewTrustBoundaryData(locations []string, encodedLocations string) *TrustBoundaryData {
+// NewRegionalAccessBoundaryData returns a new RegionalAccessBoundaryData with the specified locations and encoded locations.
+func NewRegionalAccessBoundaryData(locations []string, encodedLocations string) *RegionalAccessBoundaryData {
 	// Ensure consistency by treating a nil slice as an empty slice.
 	if locations == nil {
 		locations = []string{}
 	}
 	locationsCopy := make([]string, len(locations))
 	copy(locationsCopy, locations)
-	return &TrustBoundaryData{
+	return &RegionalAccessBoundaryData{
 		Locations:        locationsCopy,
 		EncodedLocations: encodedLocations,
 	}
 }
 
-// NewNoOpTrustBoundaryData returns a new TrustBoundaryData with no restrictions.
-func NewNoOpTrustBoundaryData() *TrustBoundaryData {
-	return &TrustBoundaryData{
-		Locations:        []string{},
-		EncodedLocations: TrustBoundaryNoOp,
-	}
-}
-
-// TrustBoundaryHeader returns the value for the x-allowed-locations header and a bool
-// indicating if the header should be set. The return values are structured to
-// handle three distinct states required by the backend:
-// 1. Header not set: (value="", present=false) -> data is empty.
-// 2. Header set to an empty string: (value="", present=true) -> data is a no-op.
-// 3. Header set to a value: (value="...", present=true) -> data has locations.
-func (t TrustBoundaryData) TrustBoundaryHeader() (value string, present bool) {
+// RegionalAccessBoundaryHeader returns the value for the x-allowed-locations header and a bool
+// indicating if the header should be set. If EncodedLocations is empty, the header
+// should not be present. Otherwise, it should be present with the value of EncodedLocations.
+func (t RegionalAccessBoundaryData) RegionalAccessBoundaryHeader() (value string, present bool) {
 	if t.EncodedLocations == "" {
-		// If the data is empty, the header should not be present.
 		return "", false
 	}
-
-	// If data is not empty, the header should always be present.
-	present = true
-	value = ""
-	if t.EncodedLocations != TrustBoundaryNoOp {
-		value = t.EncodedLocations
-	}
-	// For a no-op, the backend requires an empty string.
-	return value, present
+	return t.EncodedLocations, true
 }

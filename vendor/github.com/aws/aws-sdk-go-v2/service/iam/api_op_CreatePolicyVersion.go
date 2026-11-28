@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a new version of the specified managed policy. To update a managed
@@ -94,6 +95,24 @@ type CreatePolicyVersionInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreatePolicyVersionInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreatePolicyVersionRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreatePolicyVersionInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.PolicyArn != nil {
+		s.WriteString(schemas.CreatePolicyVersionRequest_PolicyArn, *v.PolicyArn)
+	}
+	if v.PolicyDocument != nil {
+		s.WriteString(schemas.CreatePolicyVersionRequest_PolicyDocument, *v.PolicyDocument)
+	}
+	if v.SetAsDefault != false {
+		s.WriteBool(schemas.CreatePolicyVersionRequest_SetAsDefault, v.SetAsDefault)
+	}
+}
+
 // Contains the response to a successful [CreatePolicyVersion] request.
 //
 // [CreatePolicyVersion]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreatePolicyVersion.html
@@ -108,22 +127,37 @@ type CreatePolicyVersionOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreatePolicyVersionOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreatePolicyVersionResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreatePolicyVersionOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.PolicyVersion != nil {
+		s.WriteStruct(schemas.CreatePolicyVersionResponse_PolicyVersion)
+		v.PolicyVersion.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *CreatePolicyVersionOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreatePolicyVersionResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreatePolicyVersionResponse_PolicyVersion:
+			v.PolicyVersion = &types.PolicyVersion{}
+			return v.PolicyVersion.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreatePolicyVersionMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpCreatePolicyVersion{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreatePolicyVersion, schemas.CreatePolicyVersionRequest, schemas.CreatePolicyVersionResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpCreatePolicyVersion{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreatePolicyVersion, schemas.CreatePolicyVersionRequest, schemas.CreatePolicyVersionResponse), output: &CreatePolicyVersionOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -133,19 +167,10 @@ func (c *Client) addOperationCreatePolicyVersionMiddlewares(stack *middleware.St
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreatePolicyVersionValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreatePolicyVersion"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

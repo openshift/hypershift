@@ -4,9 +4,10 @@ package elasticloadbalancingv2
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Replaces the specified properties of the specified rule. Any properties that
@@ -55,6 +56,30 @@ type ModifyRuleInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ModifyRuleInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ModifyRuleInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ModifyRuleInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Actions != nil {
+		serializeActions(s, schemas.ModifyRuleInput_Actions, v.Actions)
+	}
+	if v.Conditions != nil {
+		serializeRuleConditionList(s, schemas.ModifyRuleInput_Conditions, v.Conditions)
+	}
+	if v.ResetTransforms != nil {
+		s.WriteBool(schemas.ModifyRuleInput_ResetTransforms, *v.ResetTransforms)
+	}
+	if v.RuleArn != nil {
+		s.WriteString(schemas.ModifyRuleInput_RuleArn, *v.RuleArn)
+	}
+	if v.Transforms != nil {
+		serializeRuleTransformList(s, schemas.ModifyRuleInput_Transforms, v.Transforms)
+	}
+}
+
 type ModifyRuleOutput struct {
 
 	// Information about the modified rule.
@@ -66,22 +91,34 @@ type ModifyRuleOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ModifyRuleOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ModifyRuleOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ModifyRuleOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Rules != nil {
+		serializeRules(s, schemas.ModifyRuleOutput_Rules, v.Rules)
+	}
+}
+func (v *ModifyRuleOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ModifyRuleOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ModifyRuleOutput_Rules:
+			return deserializeRules(d, schemas.ModifyRuleOutput_Rules, &v.Rules)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationModifyRuleMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpModifyRule{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ModifyRule, schemas.ModifyRuleInput, schemas.ModifyRuleOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpModifyRule{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ModifyRule, schemas.ModifyRuleInput, schemas.ModifyRuleOutput), output: &ModifyRuleOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -91,19 +128,10 @@ func (c *Client) addOperationModifyRuleMiddlewares(stack *middleware.Stack, opti
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpModifyRuleValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ModifyRule"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

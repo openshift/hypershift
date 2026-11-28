@@ -5,9 +5,10 @@ package elasticloadbalancingv2
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Describes the specified rules or the rules for the specified listener. You must
@@ -45,6 +46,27 @@ type DescribeRulesInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeRulesInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeRulesInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeRulesInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ListenerArn != nil {
+		s.WriteString(schemas.DescribeRulesInput_ListenerArn, *v.ListenerArn)
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.DescribeRulesInput_Marker, *v.Marker)
+	}
+	if v.PageSize != nil {
+		s.WriteInt32(schemas.DescribeRulesInput_PageSize, *v.PageSize)
+	}
+	if v.RuleArns != nil {
+		serializeRuleArns(s, schemas.DescribeRulesInput_RuleArns, v.RuleArns)
+	}
+}
+
 type DescribeRulesOutput struct {
 
 	// If there are additional results, this is the marker for the next set of
@@ -60,22 +82,40 @@ type DescribeRulesOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeRulesOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeRulesOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeRulesOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.NextMarker != nil {
+		s.WriteString(schemas.DescribeRulesOutput_NextMarker, *v.NextMarker)
+	}
+	if v.Rules != nil {
+		serializeRules(s, schemas.DescribeRulesOutput_Rules, v.Rules)
+	}
+}
+func (v *DescribeRulesOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DescribeRulesOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.DescribeRulesOutput_NextMarker:
+			v.NextMarker = new(string)
+			return d.ReadString(schemas.DescribeRulesOutput_NextMarker, v.NextMarker)
+		case schemas.DescribeRulesOutput_Rules:
+			return deserializeRules(d, schemas.DescribeRulesOutput_Rules, &v.Rules)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDescribeRulesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDescribeRules{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeRules, schemas.DescribeRulesInput, schemas.DescribeRulesOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDescribeRules{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeRules, schemas.DescribeRulesInput, schemas.DescribeRulesOutput), output: &DescribeRulesOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -85,16 +125,7 @@ func (c *Client) addOperationDescribeRulesMiddlewares(stack *middleware.Stack, o
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeRules"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

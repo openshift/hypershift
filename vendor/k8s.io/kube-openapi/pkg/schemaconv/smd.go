@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sort"
 
-	"sigs.k8s.io/structured-merge-diff/v6/schema"
+	"sigs.k8s.io/structured-merge-diff/v7/schema"
 )
 
 const (
@@ -125,17 +125,9 @@ func makeUnions(extensions map[string]interface{}) ([]schema.Union, error) {
 			return nil, fmt.Errorf(`"x-kubernetes-unions" should be a list, got %#v`, unions)
 		}
 		for _, iunion := range unions {
-			union, ok := iunion.(map[interface{}]interface{})
-			if !ok {
-				return nil, fmt.Errorf(`"x-kubernetes-unions" items should be a map of string to unions, got %#v`, iunion)
-			}
-			unionMap := map[string]interface{}{}
-			for k, v := range union {
-				key, ok := k.(string)
-				if !ok {
-					return nil, fmt.Errorf(`"x-kubernetes-unions" has non-string key: %#v`, k)
-				}
-				unionMap[key] = v
+			unionMap, err := toMap(iunion)
+			if err != nil {
+				return nil, fmt.Errorf(`"x-kubernetes-unions" has unexpected items: %w`, err)
 			}
 			schemaUnion, err := makeUnion(unionMap)
 			if err != nil {
@@ -179,19 +171,14 @@ func makeUnion(extensions map[string]interface{}) (schema.Union, error) {
 	}
 
 	if ifields, ok := extensions["fields-to-discriminateBy"]; ok {
-		fields, ok := ifields.(map[interface{}]interface{})
-		if !ok {
-			return schema.Union{}, fmt.Errorf(`"fields-to-discriminateBy" must be a map[string]string, got: %#v`, ifields)
+		fields, err := toMap(ifields)
+		if err != nil {
+			return schema.Union{}, fmt.Errorf(`"fields-to-discriminateBy" must be a map[string]string: %w`, err)
 		}
 		// Needs sorted keys by field.
 		keys := []string{}
-		for ifield := range fields {
-			field, ok := ifield.(string)
-			if !ok {
-				return schema.Union{}, fmt.Errorf(`"fields-to-discriminateBy": field must be a string, got: %#v`, ifield)
-			}
+		for field := range fields {
 			keys = append(keys, field)
-
 		}
 		sort.Strings(keys)
 		reverseMap := map[string]struct{}{}
@@ -215,6 +202,27 @@ func makeUnion(extensions map[string]interface{}) (schema.Union, error) {
 	}
 
 	return union, nil
+}
+
+func toMap(o interface{}) (map[string]interface{}, error) {
+	switch m := o.(type) {
+	// JSON and go.yaml.in/yaml/v3 decode objects into map[string]interface{}
+	case map[string]interface{}:
+		return m, nil
+	// go.yaml.in/yaml/v2 decodes objects into map[interface{}]interface{}
+	case map[interface{}]interface{}:
+		ret := make(map[string]interface{}, len(m))
+		for k, v := range m {
+			key, ok := k.(string)
+			if !ok {
+				return nil, fmt.Errorf(`has non-string key: %#v`, k)
+			}
+			ret[key] = v
+		}
+		return ret, nil
+	default:
+		return nil, fmt.Errorf(`items should be a map of string to interface, got %#v`, o)
+	}
 }
 
 func toStringSlice(o interface{}) (out []string, ok bool) {

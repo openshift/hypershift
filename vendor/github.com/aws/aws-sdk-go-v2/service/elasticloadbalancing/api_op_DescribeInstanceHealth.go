@@ -6,11 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
 	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	smithytime "github.com/aws/smithy-go/time"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	smithywaiter "github.com/aws/smithy-go/waiter"
 	"time"
 )
@@ -49,6 +49,21 @@ type DescribeInstanceHealthInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeInstanceHealthInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeEndPointStateInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeInstanceHealthInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Instances != nil {
+		serializeInstances(s, schemas.DescribeEndPointStateInput_Instances, v.Instances)
+	}
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.DescribeEndPointStateInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+}
+
 // Contains the output for DescribeInstanceHealth.
 type DescribeInstanceHealthOutput struct {
 
@@ -61,22 +76,34 @@ type DescribeInstanceHealthOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DescribeInstanceHealthOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DescribeEndPointStateOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DescribeInstanceHealthOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.InstanceStates != nil {
+		serializeInstanceStates(s, schemas.DescribeEndPointStateOutput_InstanceStates, v.InstanceStates)
+	}
+}
+func (v *DescribeInstanceHealthOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DescribeEndPointStateOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.DescribeEndPointStateOutput_InstanceStates:
+			return deserializeInstanceStates(d, schemas.DescribeEndPointStateOutput_InstanceStates, &v.InstanceStates)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDescribeInstanceHealthMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDescribeInstanceHealth{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeInstanceHealth, schemas.DescribeEndPointStateInput, schemas.DescribeEndPointStateOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDescribeInstanceHealth{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DescribeInstanceHealth, schemas.DescribeEndPointStateInput, schemas.DescribeEndPointStateOutput), output: &DescribeInstanceHealthOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -86,19 +113,10 @@ func (c *Client) addOperationDescribeInstanceHealthMiddlewares(stack *middleware
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDescribeInstanceHealthValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeInstanceHealth"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

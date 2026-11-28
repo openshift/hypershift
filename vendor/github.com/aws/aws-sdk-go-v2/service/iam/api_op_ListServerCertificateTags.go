@@ -5,9 +5,10 @@ package iam
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Lists the tags that are attached to the specified IAM server certificate. The
@@ -69,6 +70,24 @@ type ListServerCertificateTagsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListServerCertificateTagsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListServerCertificateTagsRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListServerCertificateTagsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Marker != nil {
+		s.WriteString(schemas.ListServerCertificateTagsRequest_Marker, *v.Marker)
+	}
+	if v.MaxItems != nil {
+		s.WriteInt32(schemas.ListServerCertificateTagsRequest_MaxItems, *v.MaxItems)
+	}
+	if v.ServerCertificateName != nil {
+		s.WriteString(schemas.ListServerCertificateTagsRequest_ServerCertificateName, *v.ServerCertificateName)
+	}
+}
+
 type ListServerCertificateTagsOutput struct {
 
 	// The list of tags that are currently attached to the IAM server certificate.
@@ -96,22 +115,45 @@ type ListServerCertificateTagsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListServerCertificateTagsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListServerCertificateTagsResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListServerCertificateTagsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.IsTruncated != false {
+		s.WriteBool(schemas.ListServerCertificateTagsResponse_IsTruncated, v.IsTruncated)
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.ListServerCertificateTagsResponse_Marker, *v.Marker)
+	}
+	if v.Tags != nil {
+		serializetagListType(s, schemas.ListServerCertificateTagsResponse_Tags, v.Tags)
+	}
+}
+func (v *ListServerCertificateTagsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ListServerCertificateTagsResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ListServerCertificateTagsResponse_IsTruncated:
+			return d.ReadBool(schemas.ListServerCertificateTagsResponse_IsTruncated, &v.IsTruncated)
+		case schemas.ListServerCertificateTagsResponse_Marker:
+			v.Marker = new(string)
+			return d.ReadString(schemas.ListServerCertificateTagsResponse_Marker, v.Marker)
+		case schemas.ListServerCertificateTagsResponse_Tags:
+			return deserializetagListType(d, schemas.ListServerCertificateTagsResponse_Tags, &v.Tags)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationListServerCertificateTagsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpListServerCertificateTags{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListServerCertificateTags, schemas.ListServerCertificateTagsRequest, schemas.ListServerCertificateTagsResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListServerCertificateTags{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListServerCertificateTags, schemas.ListServerCertificateTagsRequest, schemas.ListServerCertificateTagsResponse), output: &ListServerCertificateTagsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -121,19 +163,10 @@ func (c *Client) addOperationListServerCertificateTagsMiddlewares(stack *middlew
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpListServerCertificateTagsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ListServerCertificateTags"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

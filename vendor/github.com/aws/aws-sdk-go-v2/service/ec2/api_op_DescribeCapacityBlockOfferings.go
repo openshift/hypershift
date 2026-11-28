@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"time"
 )
 
@@ -63,6 +62,11 @@ type DescribeCapacityBlockOfferingsInput struct {
 	// The type of instance for which the Capacity Block offering reserves capacity.
 	InstanceType *string
 
+	// List of instance type preferences for the Capacity Block offering search.
+	// Accepts one or more instance type names. Either this or the legacy InstanceType
+	// parameter is required.
+	InstanceTypePreferences []types.CapacityBlockInstanceTypePreference
+
 	// The maximum number of items to return for this request. To get the next page of
 	// items, make another request with the token returned in the output. For more
 	// information, see [Pagination].
@@ -110,12 +114,6 @@ func (c *Client) addOperationDescribeCapacityBlockOfferingsMiddlewares(stack *mi
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -125,19 +123,10 @@ func (c *Client) addOperationDescribeCapacityBlockOfferingsMiddlewares(stack *mi
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDescribeCapacityBlockOfferingsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeCapacityBlockOfferings"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

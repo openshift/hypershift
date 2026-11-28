@@ -26,9 +26,9 @@ func NewIBMPIVolumeClient(ctx context.Context, sess *ibmpisession.IBMPISession, 
 // Get a Volume
 func (f *IBMPIVolumeClient) Get(id string) (*models.Volume, error) {
 	params := p_cloud_volumes.NewPcloudCloudinstancesVolumesGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVolumeID(id)
-	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetVolumeOperationFailed, id, err))
 	}
@@ -41,9 +41,9 @@ func (f *IBMPIVolumeClient) Get(id string) (*models.Volume, error) {
 // Get All Volumes
 func (f *IBMPIVolumeClient) GetAll() (*models.Volumes, error) {
 	params := p_cloud_volumes.NewPcloudCloudinstancesVolumesGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
-	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get all Volumes for Cloud Instance %s: %w", f.cloudInstanceID, err))
 	}
@@ -56,9 +56,9 @@ func (f *IBMPIVolumeClient) GetAll() (*models.Volumes, error) {
 // Get All Affinity Volumes
 func (f *IBMPIVolumeClient) GetAllAffinityVolumes(affinity string) (*models.Volumes, error) {
 	params := p_cloud_volumes.NewPcloudCloudinstancesVolumesGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithAffinity(&affinity)
-	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get all Volumes with affinity %s for Cloud Instance %s: %w", affinity, f.cloudInstanceID, err))
 	}
@@ -71,9 +71,9 @@ func (f *IBMPIVolumeClient) GetAllAffinityVolumes(affinity string) (*models.Volu
 // Create a VolumeV2
 func (f *IBMPIVolumeClient) CreateVolumeV2(body *models.MultiVolumesCreate) (*models.Volumes, error) {
 	params := p_cloud_volumes.NewPcloudV2VolumesPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
-	resp, err := f.session.Power.PCloudVolumes.PcloudV2VolumesPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudV2VolumesPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.CreateVolumeV2OperationFailed, *body.Name, err))
 	}
@@ -86,9 +86,9 @@ func (f *IBMPIVolumeClient) CreateVolumeV2(body *models.MultiVolumesCreate) (*mo
 // Create a Volume
 func (f *IBMPIVolumeClient) CreateVolume(body *models.CreateDataVolume) (*models.Volume, error) {
 	params := p_cloud_volumes.NewPcloudCloudinstancesVolumesPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
-	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.CreateVolumeOperationFailed, *body.Name, err))
 	}
@@ -101,10 +101,10 @@ func (f *IBMPIVolumeClient) CreateVolume(body *models.CreateDataVolume) (*models
 // Update a Volume
 func (f *IBMPIVolumeClient) UpdateVolume(id string, body *models.UpdateVolume) (*models.Volume, error) {
 	params := p_cloud_volumes.NewPcloudCloudinstancesVolumesPutParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
+		WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVolumeID(id).
 		WithBody(body)
-	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesPut(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesPutContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.UpdateVolumeOperationFailed, id, err))
 	}
@@ -117,9 +117,9 @@ func (f *IBMPIVolumeClient) UpdateVolume(id string, body *models.UpdateVolume) (
 // Delete a Volume
 func (f *IBMPIVolumeClient) DeleteVolume(id string) error {
 	params := p_cloud_volumes.NewPcloudCloudinstancesVolumesDeleteParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
+		WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVolumeID(id)
-	_, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf(errors.DeleteVolumeOperationFailed, id, err)
 	}
@@ -129,10 +129,10 @@ func (f *IBMPIVolumeClient) DeleteVolume(id string) error {
 // Attach a Volume to an Instance
 func (f *IBMPIVolumeClient) Attach(id, volumename string) error {
 	params := p_cloud_volumes.NewPcloudPvminstancesVolumesPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithVolumeID(volumename)
-	_, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf(errors.AttachVolumeOperationFailed, volumename, err)
 	}
@@ -142,10 +142,10 @@ func (f *IBMPIVolumeClient) Attach(id, volumename string) error {
 // Detach a Volume from an Instance
 func (f *IBMPIVolumeClient) Detach(id, volumename string) error {
 	params := p_cloud_volumes.NewPcloudPvminstancesVolumesDeleteParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithVolumeID(volumename)
-	_, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf(errors.DetachVolumeOperationFailed, volumename, err)
 	}
@@ -155,9 +155,9 @@ func (f *IBMPIVolumeClient) Detach(id, volumename string) error {
 // Get All Volumes attached to an Instance
 func (f *IBMPIVolumeClient) GetAllInstanceVolumes(id string) (*models.Volumes, error) {
 	params := p_cloud_volumes.NewPcloudPvminstancesVolumesGetallParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id)
-	resp, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesGetall(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesGetallContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get all Volumes for PI Instance %s: %w", id, err))
 	}
@@ -170,10 +170,10 @@ func (f *IBMPIVolumeClient) GetAllInstanceVolumes(id string) (*models.Volumes, e
 // Set a Volume as the Boot Volume for an Instance
 func (f *IBMPIVolumeClient) SetBootVolume(id, volumename string) error {
 	params := p_cloud_volumes.NewPcloudPvminstancesVolumesSetbootPutParams().
-		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+		WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithVolumeID(volumename)
-	_, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesSetbootPut(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesSetbootPutContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf("failed to set the boot volume %s for instance %s", volumename, id)
 	}
@@ -183,10 +183,10 @@ func (f *IBMPIVolumeClient) SetBootVolume(id, volumename string) error {
 // Check if a Volume is attached to an Instance
 func (f *IBMPIVolumeClient) CheckVolumeAttach(id, volumeID string) (*models.Volume, error) {
 	params := p_cloud_volumes.NewPcloudPvminstancesVolumesGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithVolumeID(volumeID)
-	resp, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to validate that the volume %s is attached to the pvminstance %s: %w", volumeID, id, err))
 	}
@@ -199,10 +199,10 @@ func (f *IBMPIVolumeClient) CheckVolumeAttach(id, volumeID string) (*models.Volu
 // Update a Volume attached to an Instance
 func (f *IBMPIVolumeClient) UpdateVolumeAttach(id, volumeID string, body *models.PVMInstanceVolumeUpdate) error {
 	params := p_cloud_volumes.NewPcloudPvminstancesVolumesPutParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
+		WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).
 		WithVolumeID(volumeID).WithBody(body)
-	resp, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesPut(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudPvminstancesVolumesPutContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf("failed to validate that the volume %s is attached to the pvminstance %s: %w", volumeID, id, err)
 	}
@@ -215,9 +215,9 @@ func (f *IBMPIVolumeClient) UpdateVolumeAttach(id, volumeID string, body *models
 // Performs action on volume
 func (f *IBMPIVolumeClient) VolumeAction(id string, body *models.VolumeAction) error {
 	params := p_cloud_volumes.NewPcloudCloudinstancesVolumesActionPostParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
+		WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVolumeID(id).WithBody(body)
-	_, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesActionPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	_, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesActionPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return fmt.Errorf("failed to perform action on volume %s with error %w", id, err)
 	}
@@ -227,9 +227,9 @@ func (f *IBMPIVolumeClient) VolumeAction(id string, body *models.VolumeAction) e
 // Get remote copy relationship of a volume
 func (f *IBMPIVolumeClient) GetVolumeRemoteCopyRelationships(id string) (*models.VolumeRemoteCopyRelationship, error) {
 	params := p_cloud_volumes.NewPcloudCloudinstancesVolumesRemoteCopyRelationshipGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVolumeID(id)
-	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesRemoteCopyRelationshipGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesRemoteCopyRelationshipGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetVolumeRemoteCopyRelationshipsOperationFailed, id, f.cloudInstanceID, err))
 	}
@@ -242,9 +242,9 @@ func (f *IBMPIVolumeClient) GetVolumeRemoteCopyRelationships(id string) (*models
 // Get a list of flashcopy mappings of a given volume
 func (f *IBMPIVolumeClient) GetVolumeFlashCopyMappings(id string) (models.FlashCopyMappings, error) {
 	params := p_cloud_volumes.NewPcloudCloudinstancesVolumesFlashCopyMappingsGetParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
+		WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVolumeID(id)
-	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesFlashCopyMappingsGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudCloudinstancesVolumesFlashCopyMappingsGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.GetVolumeFlashCopyMappingOperationFailed, id, f.cloudInstanceID, err))
 	}
@@ -257,9 +257,9 @@ func (f *IBMPIVolumeClient) GetVolumeFlashCopyMappings(id string) (models.FlashC
 // Bulk volume detach
 func (f *IBMPIVolumeClient) BulkVolumeDetach(pvmID string, body *models.VolumesDetach) (*models.VolumesDetachmentResponse, error) {
 	params := p_cloud_volumes.NewPcloudV2PvminstancesVolumesDeleteParams().
-		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(pvmID).
+		WithTimeout(helpers.PIDeleteTimeOut).WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(pvmID).
 		WithBody(body)
-	resp, err := f.session.Power.PCloudVolumes.PcloudV2PvminstancesVolumesDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudV2PvminstancesVolumesDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.DetachVolumesOperationFailed, pvmID, f.cloudInstanceID, err))
 	}
@@ -271,9 +271,9 @@ func (f *IBMPIVolumeClient) BulkVolumeDetach(pvmID string, body *models.VolumesD
 
 // Bulk volume delete
 func (f *IBMPIVolumeClient) BulkVolumeDelete(body *models.VolumesDelete) (*models.VolumesDeleteResponse, error) {
-	params := p_cloud_volumes.NewPcloudV2VolumesDeleteParams().WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
+	params := p_cloud_volumes.NewPcloudV2VolumesDeleteParams().WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
-	respOk, respPartial, err := f.session.Power.PCloudVolumes.PcloudV2VolumesDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	respOk, respPartial, err := f.session.Power.PCloudVolumes.PcloudV2VolumesDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.DeleteVolumeOperationFailed, body.VolumeIDs, err))
 	}
@@ -288,9 +288,9 @@ func (f *IBMPIVolumeClient) BulkVolumeDelete(body *models.VolumesDelete) (*model
 
 // Bulk volutme attach
 func (f *IBMPIVolumeClient) BulkVolumeAttach(pvmID string, body *models.VolumesAttach) (*models.VolumesAttachmentResponse, error) {
-	params := p_cloud_volumes.NewPcloudV2PvminstancesVolumesPostParams().WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
+	params := p_cloud_volumes.NewPcloudV2PvminstancesVolumesPostParams().WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(pvmID).WithBody(body)
-	resp, err := f.session.Power.PCloudVolumes.PcloudV2PvminstancesVolumesPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.PCloudVolumes.PcloudV2PvminstancesVolumesPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf(errors.AttachVolumesOperationFailed, body.VolumeIDs, err))
 	}

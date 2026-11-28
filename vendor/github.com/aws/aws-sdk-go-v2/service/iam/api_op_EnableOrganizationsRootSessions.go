@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Allows the management account or delegated administrator to perform privileged
@@ -43,6 +44,15 @@ type EnableOrganizationsRootSessionsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *EnableOrganizationsRootSessionsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.EnableOrganizationsRootSessionsRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *EnableOrganizationsRootSessionsInput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+
 type EnableOrganizationsRootSessionsOutput struct {
 
 	// The features you have enabled for centralized root access.
@@ -57,22 +67,40 @@ type EnableOrganizationsRootSessionsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *EnableOrganizationsRootSessionsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.EnableOrganizationsRootSessionsResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *EnableOrganizationsRootSessionsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.EnabledFeatures != nil {
+		serializeFeaturesListType(s, schemas.EnableOrganizationsRootSessionsResponse_EnabledFeatures, v.EnabledFeatures)
+	}
+	if v.OrganizationId != nil {
+		s.WriteString(schemas.EnableOrganizationsRootSessionsResponse_OrganizationId, *v.OrganizationId)
+	}
+}
+func (v *EnableOrganizationsRootSessionsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.EnableOrganizationsRootSessionsResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.EnableOrganizationsRootSessionsResponse_EnabledFeatures:
+			return deserializeFeaturesListType(d, schemas.EnableOrganizationsRootSessionsResponse_EnabledFeatures, &v.EnabledFeatures)
+		case schemas.EnableOrganizationsRootSessionsResponse_OrganizationId:
+			v.OrganizationId = new(string)
+			return d.ReadString(schemas.EnableOrganizationsRootSessionsResponse_OrganizationId, v.OrganizationId)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationEnableOrganizationsRootSessionsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpEnableOrganizationsRootSessions{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.EnableOrganizationsRootSessions, schemas.EnableOrganizationsRootSessionsRequest, schemas.EnableOrganizationsRootSessionsResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpEnableOrganizationsRootSessions{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.EnableOrganizationsRootSessions, schemas.EnableOrganizationsRootSessionsRequest, schemas.EnableOrganizationsRootSessionsResponse), output: &EnableOrganizationsRootSessionsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -82,16 +110,7 @@ func (c *Client) addOperationEnableOrganizationsRootSessionsMiddlewares(stack *m
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "EnableOrganizationsRootSessions"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

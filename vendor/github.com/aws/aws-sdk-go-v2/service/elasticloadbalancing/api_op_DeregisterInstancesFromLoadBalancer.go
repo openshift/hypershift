@@ -4,9 +4,10 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Deregisters the specified instances from the specified load balancer. After the
@@ -48,6 +49,21 @@ type DeregisterInstancesFromLoadBalancerInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeregisterInstancesFromLoadBalancerInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeregisterEndPointsInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeregisterInstancesFromLoadBalancerInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Instances != nil {
+		serializeInstances(s, schemas.DeregisterEndPointsInput_Instances, v.Instances)
+	}
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.DeregisterEndPointsInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+}
+
 // Contains the output of DeregisterInstancesFromLoadBalancer.
 type DeregisterInstancesFromLoadBalancerOutput struct {
 
@@ -60,22 +76,34 @@ type DeregisterInstancesFromLoadBalancerOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeregisterInstancesFromLoadBalancerOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeregisterEndPointsOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeregisterInstancesFromLoadBalancerOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Instances != nil {
+		serializeInstances(s, schemas.DeregisterEndPointsOutput_Instances, v.Instances)
+	}
+}
+func (v *DeregisterInstancesFromLoadBalancerOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DeregisterEndPointsOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.DeregisterEndPointsOutput_Instances:
+			return deserializeInstances(d, schemas.DeregisterEndPointsOutput_Instances, &v.Instances)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDeregisterInstancesFromLoadBalancerMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeregisterInstancesFromLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeregisterInstancesFromLoadBalancer, schemas.DeregisterEndPointsInput, schemas.DeregisterEndPointsOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeregisterInstancesFromLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeregisterInstancesFromLoadBalancer, schemas.DeregisterEndPointsInput, schemas.DeregisterEndPointsOutput), output: &DeregisterInstancesFromLoadBalancerOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -85,19 +113,10 @@ func (c *Client) addOperationDeregisterInstancesFromLoadBalancerMiddlewares(stac
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDeregisterInstancesFromLoadBalancerValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DeregisterInstancesFromLoadBalancer"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

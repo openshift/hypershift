@@ -406,6 +406,8 @@ type NUMAGuestMappingPassthrough struct {
 type NUMA struct {
 	// GuestMappingPassthrough will create an efficient guest topology based on host CPUs exclusively assigned to a pod.
 	// The created topology ensures that memory and CPUs on the virtual numa nodes never cross boundaries of host numa nodes.
+	// It is not supported on a VMI with dedicatedCPUPlacement while the CPUsWithDRA feature gate is enabled, because the
+	// host CPUs are then assigned by the DRA driver instead of by kubelet's CPU manager.
 	// +optional
 	GuestMappingPassthrough *NUMAGuestMappingPassthrough `json:"guestMappingPassthrough,omitempty"`
 }
@@ -708,14 +710,15 @@ type GPU struct {
 }
 
 type ClaimRequest struct {
-	// ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this
-	// device is allocated
-	// +optional
-	ClaimName *string `json:"claimName,omitempty"`
-	// RequestName needs to be provided from resourceClaim.spec.devices.requests[].name where this
-	// device is requested
-	// +optional
-	RequestName *string `json:"requestName,omitempty"`
+	// ClaimName references the name of an entry in the
+	// VMI's spec.resourceClaims[] array. The referenced
+	// entry may use either resourceClaimName or
+	// resourceClaimTemplateName.
+	ClaimName string `json:"claimName,omitempty"`
+	// RequestName specifies which request from the
+	// ResourceClaim/ResourceClaimTemplate spec.devices.requests array this
+	// claim request corresponds to.
+	RequestName string `json:"requestName,omitempty"`
 }
 
 type VGPUOptions struct {
@@ -781,6 +784,7 @@ type Disk struct {
 	// none: Guest I/O not cached on the host, but may be kept in a disk cache.
 	// writethrough: Guest I/O cached on the host but written through to the physical medium. Slowest but with most guarantees.
 	// writeback: Guest I/O cached on the host.
+	// directsync: Guest I/O bypasses the host page cache and is written to the physical medium synchronously.
 	// Defaults to none if the storage supports O_DIRECT, otherwise writethrough.
 	// +optional
 	Cache DriverCache `json:"cache,omitempty"`
@@ -962,14 +966,14 @@ type VolumeSource struct {
 	// +optional
 	Sysprep *SysprepSource `json:"sysprep,omitempty"`
 	// ContainerDisk references a docker image, embedding a qcow or raw disk.
-	// More info: https://kubevirt.gitbooks.io/user-guide/registry-disk.html
+	// More info: https://kubevirt.io/user-guide/storage/disks_and_volumes/#containerdisk
 	// +optional
 	ContainerDisk *ContainerDiskSource `json:"containerDisk,omitempty"`
 	// Ephemeral is a special volume source that "wraps" specified source and provides copy-on-write image on top of it.
 	// +optional
 	Ephemeral *EphemeralVolumeSource `json:"ephemeral,omitempty"`
 	// EmptyDisk represents a temporary disk which shares the vmis lifecycle.
-	// More info: https://kubevirt.gitbooks.io/user-guide/disks-and-volumes.html
+	// More info: https://kubevirt.io/user-guide/storage/disks_and_volumes/#emptydisk
 	// +optional
 	EmptyDisk *EmptyDiskSource `json:"emptyDisk,omitempty"`
 	// DataVolume represents the dynamic creation a PVC for this volume as well as
@@ -996,6 +1000,7 @@ type VolumeSource struct {
 	// metrics. The disk content is compatible with vhostmd (https://github.com/vhostmd/vhostmd) and vm-dump-metrics.
 	DownwardMetrics *DownwardMetricsVolumeSource `json:"downwardMetrics,omitempty"`
 	// MemoryDump is attached to the virt launcher and is populated with a memory dump of the vmi
+	// Deprecated: memory dumps are attached as utility volumes of type MemoryDump.
 	MemoryDump *MemoryDumpVolumeSource `json:"memoryDump,omitempty"`
 	// ContainerPath exposes a path from the virt-launcher container to the VM via virtiofs.
 	// The path must correspond to an existing volumeMount in the compute container.
@@ -1036,6 +1041,8 @@ type PersistentVolumeClaimVolumeSource struct {
 	Hotpluggable bool `json:"hotpluggable,omitempty"`
 }
 
+// MemoryDumpVolumeSource represents a memory dump PVC in the volumes of a VMI.
+// Deprecated: memory dumps are attached as utility volumes of type MemoryDump.
 type MemoryDumpVolumeSource struct {
 	// PersistentVolumeClaimVolumeSource represents a reference to a PersistentVolumeClaim in the same namespace.
 	// Directly attached to the virt launcher
@@ -1082,6 +1089,10 @@ const (
 
 	// Backup represents a utility volume which will be used to collect backup output
 	Backup UtilityVolumeType = "Backup"
+
+	// SnapshotOverlay represents a utility volume which holds the copy-on-write
+	// overlays of an External mode VirtualMachineSnapshot
+	SnapshotOverlay UtilityVolumeType = "SnapshotOverlay"
 )
 
 type UtilityVolume struct {
@@ -1455,7 +1466,14 @@ type Interface struct {
 	// version: 1alphav1
 	Binding *PluginBinding `json:"binding,omitempty"`
 	// List of ports to be forwarded to the virtual machine.
+	// Mutually exclusive with portRanges.
 	Ports []Port `json:"ports,omitempty"`
+	// List of port ranges to be forwarded to the virtual machine.
+	// Mutually exclusive with ports. Only supported on masquerade interfaces.
+	// This feature is in Alpha.
+	// +optional
+	// +listType=atomic
+	PortRanges []PortRange `json:"portRanges,omitempty"`
 	// Interface MAC address. For example: de:ad:00:00:be:af or DE-AD-00-00-BE-AF.
 	MacAddress string `json:"macAddress,omitempty"`
 	// BootOrder is an integer value > 0, used to determine ordering of boot devices.
@@ -1613,6 +1631,20 @@ type Port struct {
 	Port int32 `json:"port"`
 }
 
+// PortRange represents a range of ports to be forwarded to the virtual machine.
+// All fields are mandatory.
+type PortRange struct {
+	// Required. Must be UDP or TCP.
+	Protocol string `json:"protocol"`
+	// First port of the range to expose for the virtual machine.
+	// This must be a valid port number, 0 < x < 65536.
+	Start int32 `json:"start"`
+	// Last port of the range to expose for the virtual machine.
+	// This must be a valid port number, 0 < x < 65536.
+	// Must be greater than or equal to start.
+	End int32 `json:"end"`
+}
+
 type AccessCredentialSecretSource struct {
 	// SecretName represents the name of the secret in the VMI's namespace
 	SecretName string `json:"secretName"`
@@ -1740,6 +1772,12 @@ type Network struct {
 type NetworkSource struct {
 	Pod    *PodNetwork    `json:"pod,omitempty"`
 	Multus *MultusNetwork `json:"multus,omitempty"`
+	// ResourceClaim represents a network resource requested
+	// via a VMI spec.resourceClaims[] entry, backed by either a
+	// Kubernetes ResourceClaim or ResourceClaimTemplate.
+	// This field should only be configured if the NetworkDevicesWithDRA feature-gate is enabled.
+	// This feature is in alpha.
+	ResourceClaim *ClaimRequest `json:"resourceClaim,omitempty"`
 }
 
 // Represents the stock pod network interface.

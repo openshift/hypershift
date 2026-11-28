@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Describes the entries in image usage reports, showing how your images are used
@@ -48,7 +47,8 @@ type DescribeImageUsageReportEntriesInput struct {
 	//   2025-11-29T11:04:43.305Z . You can use a wildcard ( * ), for example,
 	//   2025-11-29T* , which matches an entire day.
 	//
-	//   - resource-type - The resource type ( ec2:Instance | ec2:LaunchTemplate ).
+	//   - resource-type - The resource type ( ec2:Instance | ec2:LaunchTemplate |
+	//   imagebuilder:ImageRecipe | imagebuilder:ContainerRecipe ).
 	Filters []types.Filter
 
 	// The IDs of the images for filtering the report entries. If specified, only
@@ -97,12 +97,6 @@ func (c *Client) addOperationDescribeImageUsageReportEntriesMiddlewares(stack *m
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -112,16 +106,7 @@ func (c *Client) addOperationDescribeImageUsageReportEntriesMiddlewares(stack *m
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeImageUsageReportEntries"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

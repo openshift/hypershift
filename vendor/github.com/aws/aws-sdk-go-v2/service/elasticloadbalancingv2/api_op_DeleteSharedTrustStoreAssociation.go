@@ -4,8 +4,9 @@ package elasticloadbalancingv2
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Deletes a shared trust store association.
@@ -39,6 +40,21 @@ type DeleteSharedTrustStoreAssociationInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteSharedTrustStoreAssociationInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeleteSharedTrustStoreAssociationInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteSharedTrustStoreAssociationInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ResourceArn != nil {
+		s.WriteString(schemas.DeleteSharedTrustStoreAssociationInput_ResourceArn, *v.ResourceArn)
+	}
+	if v.TrustStoreArn != nil {
+		s.WriteString(schemas.DeleteSharedTrustStoreAssociationInput_TrustStoreArn, *v.TrustStoreArn)
+	}
+}
+
 type DeleteSharedTrustStoreAssociationOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -46,22 +62,29 @@ type DeleteSharedTrustStoreAssociationOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteSharedTrustStoreAssociationOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeleteSharedTrustStoreAssociationOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteSharedTrustStoreAssociationOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *DeleteSharedTrustStoreAssociationOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.DeleteSharedTrustStoreAssociationOutput, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDeleteSharedTrustStoreAssociationMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeleteSharedTrustStoreAssociation{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteSharedTrustStoreAssociation, schemas.DeleteSharedTrustStoreAssociationInput, schemas.DeleteSharedTrustStoreAssociationOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeleteSharedTrustStoreAssociation{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteSharedTrustStoreAssociation, schemas.DeleteSharedTrustStoreAssociationInput, schemas.DeleteSharedTrustStoreAssociationOutput), output: &DeleteSharedTrustStoreAssociationOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -71,19 +94,10 @@ func (c *Client) addOperationDeleteSharedTrustStoreAssociationMiddlewares(stack 
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDeleteSharedTrustStoreAssociationValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DeleteSharedTrustStoreAssociation"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

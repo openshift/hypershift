@@ -4,8 +4,9 @@ package elasticloadbalancingv2
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Retrieves the resource policy for a specified resource.
@@ -34,6 +35,18 @@ type GetResourcePolicyInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetResourcePolicyInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetResourcePolicyInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetResourcePolicyInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ResourceArn != nil {
+		s.WriteString(schemas.GetResourcePolicyInput_ResourceArn, *v.ResourceArn)
+	}
+}
+
 type GetResourcePolicyOutput struct {
 
 	// The content of the resource policy.
@@ -45,22 +58,35 @@ type GetResourcePolicyOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetResourcePolicyOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetResourcePolicyOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetResourcePolicyOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Policy != nil {
+		s.WriteString(schemas.GetResourcePolicyOutput_Policy, *v.Policy)
+	}
+}
+func (v *GetResourcePolicyOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetResourcePolicyOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetResourcePolicyOutput_Policy:
+			v.Policy = new(string)
+			return d.ReadString(schemas.GetResourcePolicyOutput_Policy, v.Policy)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetResourcePolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetResourcePolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetResourcePolicy, schemas.GetResourcePolicyInput, schemas.GetResourcePolicyOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetResourcePolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetResourcePolicy, schemas.GetResourcePolicyInput, schemas.GetResourcePolicyOutput), output: &GetResourcePolicyOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -70,19 +96,10 @@ func (c *Client) addOperationGetResourcePolicyMiddlewares(stack *middleware.Stac
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetResourcePolicyValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetResourcePolicy"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

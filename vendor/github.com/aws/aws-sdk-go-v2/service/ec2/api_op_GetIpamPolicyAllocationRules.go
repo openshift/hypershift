@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Gets the allocation rules for an IPAM policy.
@@ -69,6 +68,16 @@ type GetIpamPolicyAllocationRulesInput struct {
 	// through IPAM policies. Supported services and resource types include:
 	//
 	//   - Elastic IP addresses
+	//
+	//   - Application Load Balancers
+	//
+	//   - Amazon RDS
+	//
+	//   - NAT gateways in regional availability mode
+	//
+	//   - Lambda Network Connector
+	//
+	//   - Automated Internet Firewall
 	ResourceType types.IpamPolicyResourceType
 
 	noSmithyDocumentSerde
@@ -102,12 +111,6 @@ func (c *Client) addOperationGetIpamPolicyAllocationRulesMiddlewares(stack *midd
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -117,19 +120,10 @@ func (c *Client) addOperationGetIpamPolicyAllocationRulesMiddlewares(stack *midd
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetIpamPolicyAllocationRulesValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetIpamPolicyAllocationRules"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

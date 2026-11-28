@@ -571,7 +571,7 @@ func (d *downloader) download(ctx context.Context) (*DownloadObjectOutput, error
 	clientOptions := []func(*s3.Options){
 		func(o *s3.Options) {
 			o.APIOptions = append(o.APIOptions,
-				middleware.AddSDKAgentKey(middleware.FeatureMetadata, userAgentKey),
+				middleware.AddSDKAgentKeyValue(middleware.FeatureMetadata, userAgentKey, goModuleVersion),
 				addFeatureUserAgent,
 			)
 		}}
@@ -793,10 +793,31 @@ func (d *downloader) tryDownloadChunk(ctx context.Context, params *s3.GetObjectI
 		if err != nil {
 			return nil, err
 		}
-		// don't validate first chunk since object size is unknown when getting that
-		if reqStart != 0 && (reqStart != respStart || reqEnd != respEnd) {
+		// S3 truncates a requested range at EOF.
+		expectedEnd := reqEnd
+		if respEnd < reqEnd {
+			_, totalStr, _ := strings.Cut(aws.ToString(out.ContentRange), "/")
+			if total, err := strconv.ParseInt(totalStr, 10, 64); err == nil && respEnd == total-1 {
+				expectedEnd = respEnd
+			}
+		}
+		// Don't validate the initial zero-start chunk before the size is known.
+		if reqStart != 0 && (reqStart != respStart || expectedEnd != respEnd) {
 			return nil, fmt.Errorf("range mismatch between request %d-%d and response %d-%d", reqStart, reqEnd, respStart, respEnd)
 		}
+	}
+
+	if params.PartNumber != nil && out.ContentRange != nil {
+		// The parts of a multipart object may have unequal sizes, so the
+		// queue-time chunk start — computed by advancing part 1's size once
+		// per part — can point at the wrong offset. The part's absolute
+		// offset in the assembled object is authoritative in the response
+		// Content-Range; correct the write offset from it.
+		respStart, _, err := getRespRange(aws.ToString(out.ContentRange))
+		if err != nil {
+			return nil, err
+		}
+		chunk.start = respStart
 	}
 
 	d.totalBytesOnce.Do(func() {
@@ -822,14 +843,13 @@ func (d *downloader) tryDownloadChunk(ctx context.Context, params *s3.GetObjectI
 // does not include a Content-Range. Meaning the object was not chunked. This
 // occurs when the full file fits within the PartSize directive.
 func (d *downloader) setTotalBytes(resp *s3.GetObjectOutput) {
-	if d.totalBytes >= 0 {
-		return
-	}
-
 	if resp.ContentRange == nil {
 		// ContentRange is nil when the full file contents is provided, and
 		// is not chunked. Use ContentLength instead.
-		d.totalBytes = aws.ToInt64(resp.ContentLength)
+		length := aws.ToInt64(resp.ContentLength)
+		if d.totalBytes < 0 || length < d.totalBytes {
+			d.totalBytes = length
+		}
 	} else {
 		parts := strings.Split(*resp.ContentRange, "/")
 		totalStr := parts[len(parts)-1]
@@ -839,7 +859,10 @@ func (d *downloader) setTotalBytes(resp *s3.GetObjectOutput) {
 			return
 		}
 
-		d.totalBytes = total
+		// Preserve a shorter requested range, but never schedule past EOF.
+		if d.totalBytes < 0 || total < d.totalBytes {
+			d.totalBytes = total
+		}
 	}
 }
 
@@ -896,11 +919,11 @@ func getRespRange(rng string) (int64, int64, error) {
 	ranges := strings.Split(strings.Split(strings.Split(rng, " ")[1], "/")[0], "-")
 	start, err := strconv.ParseInt(ranges[0], 10, 64)
 	if err != nil {
-		return 0, 0, fmt.Errorf("error when parsing response start: %v", err)
+		return -1, -1, fmt.Errorf("error when parsing response start: %v", err)
 	}
 	end, err := strconv.ParseInt(ranges[1], 10, 64)
 	if err != nil {
-		return 0, 0, fmt.Errorf("error when parsing response end: %v", err)
+		return -1, -1, fmt.Errorf("error when parsing response end: %v", err)
 	}
 	return start, end, nil
 }

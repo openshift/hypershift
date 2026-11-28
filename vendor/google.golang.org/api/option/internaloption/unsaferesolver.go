@@ -96,6 +96,15 @@ func (ur *UnsafeResolver) ResolvedEnableDirectPathXds() bool {
 	return ur.ds.EnableDirectPathXds
 }
 
+// ResolvedEnableDirectPathXdsOverInterconnect returns whether DirectPath xDS over
+// Cloud Interconnect was requested. This corresponds to the
+// EnableDirectPathXdsOverInterconnect option in this package.
+//
+// This is an EXPERIMENTAL API and may be changed or removed in the future.
+func (ur *UnsafeResolver) ResolvedEnableDirectPathXdsOverInterconnect() bool {
+	return ur.ds.EnableDirectPathXdsOverInterconnect
+}
+
 // ResolvedWithoutAuthentication returns whether the option to explicitly disable
 // authentication was requested.  This corresponds to the WithoutAuthentication
 // ClientOption in google.golang.org/option.
@@ -103,4 +112,16 @@ func (ur *UnsafeResolver) ResolvedEnableDirectPathXds() bool {
 // This is an EXPERIMENTAL API and may be changed or removed in the future.
 func (ur *UnsafeResolver) ResolvedWithoutAuthentication() bool {
 	return ur.ds.NoAuth
+}
+
+// ResolvedUniverseDomain returns the resolved universe domain with the
+// following precedence:
+//
+//  1. A non-empty option.WithUniverseDomain.
+//  2. A non-empty environment variable GOOGLE_CLOUD_UNIVERSE_DOMAIN.
+//  3. The default value "googleapis.com".
+//
+// This is an EXPERIMENTAL API and may be changed or removed in the future.
+func (ur *UnsafeResolver) ResolvedUniverseDomain() string {
+	return ur.ds.GetUniverseDomain()
 }

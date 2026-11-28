@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Purchase the Capacity Block for use with your account. With Capacity Blocks you
@@ -59,6 +58,11 @@ type PurchaseCapacityBlockOutput struct {
 	// The Capacity Reservation.
 	CapacityReservation *types.CapacityReservation
 
+	// The Capacity Reservations created as a result of the Capacity Block purchase.
+	// When a Capacity Block offering contains multiple segments, a separate Capacity
+	// Reservation is created for each segment.
+	CapacityReservations []types.CapacityReservation
+
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
 
@@ -75,12 +79,6 @@ func (c *Client) addOperationPurchaseCapacityBlockMiddlewares(stack *middleware.
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -90,19 +88,10 @@ func (c *Client) addOperationPurchaseCapacityBlockMiddlewares(stack *middleware.
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpPurchaseCapacityBlockValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "PurchaseCapacityBlock"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -4,8 +4,9 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Deletes the specified version from the specified managed policy.
@@ -64,6 +65,21 @@ type DeletePolicyVersionInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeletePolicyVersionInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeletePolicyVersionRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeletePolicyVersionInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.PolicyArn != nil {
+		s.WriteString(schemas.DeletePolicyVersionRequest_PolicyArn, *v.PolicyArn)
+	}
+	if v.VersionId != nil {
+		s.WriteString(schemas.DeletePolicyVersionRequest_VersionId, *v.VersionId)
+	}
+}
+
 type DeletePolicyVersionOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -71,22 +87,29 @@ type DeletePolicyVersionOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeletePolicyVersionOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(nil)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeletePolicyVersionOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *DeletePolicyVersionOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, nil, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDeletePolicyVersionMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeletePolicyVersion{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeletePolicyVersion, schemas.DeletePolicyVersionRequest, nil)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeletePolicyVersion{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeletePolicyVersion, schemas.DeletePolicyVersionRequest, nil), output: &DeletePolicyVersionOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -96,19 +119,10 @@ func (c *Client) addOperationDeletePolicyVersionMiddlewares(stack *middleware.St
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDeletePolicyVersionValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DeletePolicyVersion"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

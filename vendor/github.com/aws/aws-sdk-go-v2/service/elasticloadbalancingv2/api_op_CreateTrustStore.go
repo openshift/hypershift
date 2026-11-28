@@ -4,16 +4,18 @@ package elasticloadbalancingv2
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a trust store.
 //
-// For more information, see [Mutual TLS for Application Load Balancers].
+// For more information, see [Mutual TLS for Application Load Balancers] or [Mutual TLS for Network Load Balancers].
 //
 // [Mutual TLS for Application Load Balancers]: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/mutual-authentication.html
+// [Mutual TLS for Network Load Balancers]: https://docs.aws.amazon.com/elasticloadbalancing/latest/network/mutual-authentication.html
 func (c *Client) CreateTrustStore(ctx context.Context, params *CreateTrustStoreInput, optFns ...func(*Options)) (*CreateTrustStoreOutput, error) {
 	if params == nil {
 		params = &CreateTrustStoreInput{}
@@ -58,6 +60,30 @@ type CreateTrustStoreInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateTrustStoreInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateTrustStoreInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateTrustStoreInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.CaCertificatesBundleS3Bucket != nil {
+		s.WriteString(schemas.CreateTrustStoreInput_CaCertificatesBundleS3Bucket, *v.CaCertificatesBundleS3Bucket)
+	}
+	if v.CaCertificatesBundleS3Key != nil {
+		s.WriteString(schemas.CreateTrustStoreInput_CaCertificatesBundleS3Key, *v.CaCertificatesBundleS3Key)
+	}
+	if v.CaCertificatesBundleS3ObjectVersion != nil {
+		s.WriteString(schemas.CreateTrustStoreInput_CaCertificatesBundleS3ObjectVersion, *v.CaCertificatesBundleS3ObjectVersion)
+	}
+	if v.Name != nil {
+		s.WriteString(schemas.CreateTrustStoreInput_Name, *v.Name)
+	}
+	if v.Tags != nil {
+		serializeTagList(s, schemas.CreateTrustStoreInput_Tags, v.Tags)
+	}
+}
+
 type CreateTrustStoreOutput struct {
 
 	// Information about the trust store created.
@@ -69,22 +95,34 @@ type CreateTrustStoreOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateTrustStoreOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateTrustStoreOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateTrustStoreOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.TrustStores != nil {
+		serializeTrustStores(s, schemas.CreateTrustStoreOutput_TrustStores, v.TrustStores)
+	}
+}
+func (v *CreateTrustStoreOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreateTrustStoreOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreateTrustStoreOutput_TrustStores:
+			return deserializeTrustStores(d, schemas.CreateTrustStoreOutput_TrustStores, &v.TrustStores)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreateTrustStoreMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpCreateTrustStore{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateTrustStore, schemas.CreateTrustStoreInput, schemas.CreateTrustStoreOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpCreateTrustStore{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateTrustStore, schemas.CreateTrustStoreInput, schemas.CreateTrustStoreOutput), output: &CreateTrustStoreOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -94,19 +132,10 @@ func (c *Client) addOperationCreateTrustStoreMiddlewares(stack *middleware.Stack
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateTrustStoreValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateTrustStore"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

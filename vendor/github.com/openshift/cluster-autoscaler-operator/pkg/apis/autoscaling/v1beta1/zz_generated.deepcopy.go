@@ -22,6 +22,7 @@
 package v1beta1
 
 import (
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -122,6 +123,13 @@ func (in *MachineAutoscalerStatus) DeepCopyInto(out *MachineAutoscalerStatus) {
 		in, out := &in.LastTargetRef, &out.LastTargetRef
 		*out = new(CrossVersionObjectReference)
 		**out = **in
+	}
+	if in.Conditions != nil {
+		in, out := &in.Conditions, &out.Conditions
+		*out = make([]v1.Condition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 }
 

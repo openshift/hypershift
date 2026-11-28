@@ -4,8 +4,9 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Deletes a signing certificate associated with the specified IAM user.
@@ -55,6 +56,21 @@ type DeleteSigningCertificateInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteSigningCertificateInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.DeleteSigningCertificateRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteSigningCertificateInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.CertificateId != nil {
+		s.WriteString(schemas.DeleteSigningCertificateRequest_CertificateId, *v.CertificateId)
+	}
+	if v.UserName != nil {
+		s.WriteString(schemas.DeleteSigningCertificateRequest_UserName, *v.UserName)
+	}
+}
+
 type DeleteSigningCertificateOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -62,22 +78,29 @@ type DeleteSigningCertificateOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *DeleteSigningCertificateOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(nil)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *DeleteSigningCertificateOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *DeleteSigningCertificateOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, nil, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationDeleteSigningCertificateMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeleteSigningCertificate{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteSigningCertificate, schemas.DeleteSigningCertificateRequest, nil)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeleteSigningCertificate{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.DeleteSigningCertificate, schemas.DeleteSigningCertificateRequest, nil), output: &DeleteSigningCertificateOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -87,19 +110,10 @@ func (c *Client) addOperationDeleteSigningCertificateMiddlewares(stack *middlewa
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDeleteSigningCertificateValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DeleteSigningCertificate"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

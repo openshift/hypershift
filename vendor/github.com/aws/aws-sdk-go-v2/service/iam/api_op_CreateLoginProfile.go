@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a password for the specified IAM user. A password allows an IAM user to
@@ -38,6 +39,14 @@ func (c *Client) CreateLoginProfile(ctx context.Context, params *CreateLoginProf
 }
 
 type CreateLoginProfileInput struct {
+
+	// The maximum duration (in seconds) of an Amazon Web Services Sign-In session for
+	// this IAM user. This setting can have a value from 1 hour (3600 seconds) to 90
+	// days (7776000 seconds), inclusive. If you do not specify a value, the setting
+	// remains unset and the existing sign-in session behavior applies.
+	//
+	// This setting is not supported for the root user.
+	MaxSigninSessionDuration *int32
 
 	// The new password for the user.
 	//
@@ -77,6 +86,27 @@ type CreateLoginProfileInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateLoginProfileInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateLoginProfileRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateLoginProfileInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.MaxSigninSessionDuration != nil {
+		s.WriteInt32(schemas.CreateLoginProfileRequest_MaxSigninSessionDuration, *v.MaxSigninSessionDuration)
+	}
+	if v.Password != nil {
+		s.WriteString(schemas.CreateLoginProfileRequest_Password, *v.Password)
+	}
+	if v.PasswordResetRequired != false {
+		s.WriteBool(schemas.CreateLoginProfileRequest_PasswordResetRequired, v.PasswordResetRequired)
+	}
+	if v.UserName != nil {
+		s.WriteString(schemas.CreateLoginProfileRequest_UserName, *v.UserName)
+	}
+}
+
 // Contains the response to a successful [CreateLoginProfile] request.
 //
 // [CreateLoginProfile]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateLoginProfile.html
@@ -93,22 +123,37 @@ type CreateLoginProfileOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateLoginProfileOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateLoginProfileResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateLoginProfileOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.LoginProfile != nil {
+		s.WriteStruct(schemas.CreateLoginProfileResponse_LoginProfile)
+		v.LoginProfile.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *CreateLoginProfileOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreateLoginProfileResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreateLoginProfileResponse_LoginProfile:
+			v.LoginProfile = &types.LoginProfile{}
+			return v.LoginProfile.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreateLoginProfileMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpCreateLoginProfile{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateLoginProfile, schemas.CreateLoginProfileRequest, schemas.CreateLoginProfileResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpCreateLoginProfile{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateLoginProfile, schemas.CreateLoginProfileRequest, schemas.CreateLoginProfileResponse), output: &CreateLoginProfileOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -118,16 +163,7 @@ func (c *Client) addOperationCreateLoginProfileMiddlewares(stack *middleware.Sta
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateLoginProfile"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

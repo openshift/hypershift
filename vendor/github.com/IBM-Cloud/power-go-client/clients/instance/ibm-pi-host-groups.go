@@ -27,8 +27,8 @@ func (f *IBMPIHostGroupsClient) GetAvailableHosts() (models.AvailableHostList, e
 	if f.session.IsOnPrem() {
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
-	params := host_groups.NewV1AvailableHostsParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut)
-	resp, err := f.session.Power.HostGroups.V1AvailableHosts(params, f.session.AuthInfo(f.cloudInstanceID))
+	params := host_groups.NewV1AvailableHostsParams().WithTimeout(helpers.PIGetTimeOut)
+	resp, err := f.session.Power.HostGroups.V1AvailableHostsContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to Get available hosts for %s: %w", f.cloudInstanceID, err))
 	}
@@ -44,8 +44,8 @@ func (f *IBMPIHostGroupsClient) GetHostGroups() (models.HostGroupList, error) {
 	if f.session.IsOnPrem() {
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
-	params := host_groups.NewV1HostGroupsGetParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut)
-	resp, err := f.session.Power.HostGroups.V1HostGroupsGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	params := host_groups.NewV1HostGroupsGetParams().WithTimeout(helpers.PIGetTimeOut)
+	resp, err := f.session.Power.HostGroups.V1HostGroupsGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to get Host groups for %s: %w", f.cloudInstanceID, err))
 	}
@@ -61,8 +61,8 @@ func (f *IBMPIHostGroupsClient) CreateHostGroup(body *models.HostGroupCreate) (*
 	if f.session.IsOnPrem() {
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
-	params := host_groups.NewV1HostGroupsPostParams().WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).WithBody(body)
-	resp, err := f.session.Power.HostGroups.V1HostGroupsPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	params := host_groups.NewV1HostGroupsPostParams().WithTimeout(helpers.PICreateTimeOut).WithBody(body)
+	resp, err := f.session.Power.HostGroups.V1HostGroupsPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to create host group for %s: %w", f.cloudInstanceID, err))
 	}
@@ -78,8 +78,8 @@ func (f *IBMPIHostGroupsClient) UpdateHostGroup(body *models.HostGroupShareOp, i
 	if f.session.IsOnPrem() {
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
-	params := host_groups.NewV1HostGroupsIDPutParams().WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).WithBody(body).WithHostGroupID(id)
-	resp, err := f.session.Power.HostGroups.V1HostGroupsIDPut(params, f.session.AuthInfo(f.cloudInstanceID))
+	params := host_groups.NewV1HostGroupsIDPutParams().WithTimeout(helpers.PICreateTimeOut).WithBody(body).WithHostGroupID(id)
+	resp, err := f.session.Power.HostGroups.V1HostGroupsIDPutContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to update host group for %s: %w", f.cloudInstanceID, err))
 	}
@@ -95,8 +95,8 @@ func (f *IBMPIHostGroupsClient) GetHostGroup(id string) (*models.HostGroup, erro
 	if f.session.IsOnPrem() {
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
-	params := host_groups.NewV1HostGroupsIDGetParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).WithHostGroupID(id)
-	resp, err := f.session.Power.HostGroups.V1HostGroupsIDGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	params := host_groups.NewV1HostGroupsIDGetParams().WithTimeout(helpers.PIGetTimeOut).WithHostGroupID(id)
+	resp, err := f.session.Power.HostGroups.V1HostGroupsIDGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to get host group %s for %s: %w", id, f.cloudInstanceID, err))
 	}
@@ -113,9 +113,9 @@ func (f *IBMPIHostGroupsClient) GetHosts() (models.HostList, error) {
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	hostReference := true
-	params := host_groups.NewV1HostsGetParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut)
+	params := host_groups.NewV1HostsGetParams().WithTimeout(helpers.PIGetTimeOut)
 	params.HostReference = &hostReference
-	resp, err := f.session.Power.HostGroups.V1HostsGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.HostGroups.V1HostsGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to get hosts for %s: %w", f.cloudInstanceID, err))
 	}
@@ -131,8 +131,8 @@ func (f *IBMPIHostGroupsClient) CreateHost(body *models.HostCreate) (models.Host
 	if f.session.IsOnPrem() {
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
-	params := host_groups.NewV1HostsPostParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).WithBody(body)
-	resp, err := f.session.Power.HostGroups.V1HostsPost(params, f.session.AuthInfo(f.cloudInstanceID))
+	params := host_groups.NewV1HostsPostParams().WithTimeout(helpers.PIGetTimeOut).WithBody(body)
+	resp, err := f.session.Power.HostGroups.V1HostsPostContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to create a host for %s: %w", f.cloudInstanceID, err))
 	}
@@ -149,9 +149,9 @@ func (f *IBMPIHostGroupsClient) GetHost(id string) (*models.Host, error) {
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	hostReference := true
-	params := host_groups.NewV1HostsIDGetParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).WithHostID(id)
+	params := host_groups.NewV1HostsIDGetParams().WithTimeout(helpers.PIGetTimeOut).WithHostID(id)
 	params.HostReference = &hostReference
-	resp, err := f.session.Power.HostGroups.V1HostsIDGet(params, f.session.AuthInfo(f.cloudInstanceID))
+	resp, err := f.session.Power.HostGroups.V1HostsIDGetContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to get host %s for %s: %w", id, f.cloudInstanceID, err))
 	}
@@ -167,8 +167,8 @@ func (f *IBMPIHostGroupsClient) UpdateHost(body *models.HostPut, id string) (*mo
 	if f.session.IsOnPrem() {
 		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
-	params := host_groups.NewV1HostsIDPutParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).WithHostID(id).WithBody(body)
-	resp, err := f.session.Power.HostGroups.V1HostsIDPut(params, f.session.AuthInfo(f.cloudInstanceID))
+	params := host_groups.NewV1HostsIDPutParams().WithTimeout(helpers.PIGetTimeOut).WithHostID(id).WithBody(body)
+	resp, err := f.session.Power.HostGroups.V1HostsIDPutContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return nil, ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to update host %s for %s: %w", id, f.cloudInstanceID, err))
 	}
@@ -184,8 +184,8 @@ func (f *IBMPIHostGroupsClient) DeleteHost(id string) error {
 	if f.session.IsOnPrem() {
 		return fmt.Errorf(helpers.NotOnPremSupported)
 	}
-	params := host_groups.NewV1HostsIDDeleteParams().WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).WithHostID(id)
-	resp, err := f.session.Power.HostGroups.V1HostsIDDelete(params, f.session.AuthInfo(f.cloudInstanceID))
+	params := host_groups.NewV1HostsIDDeleteParams().WithTimeout(helpers.PIGetTimeOut).WithHostID(id)
+	resp, err := f.session.Power.HostGroups.V1HostsIDDeleteContext(f.ctx, params, f.session.AuthInfo(f.cloudInstanceID))
 	if err != nil {
 		return ibmpisession.SDKFailWithAPIError(err, fmt.Errorf("failed to delete host %s for %s: %w", id, f.cloudInstanceID, err))
 	}

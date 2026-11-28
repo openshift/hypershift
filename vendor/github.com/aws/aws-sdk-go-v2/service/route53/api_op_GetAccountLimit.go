@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Gets the specified limit for the current account, for example, the maximum
@@ -45,6 +44,9 @@ type GetAccountLimitInput struct {
 	//
 	//   - MAX_HEALTH_CHECKS_BY_OWNER: The maximum number of health checks that you
 	//   can create using the current account.
+	//
+	//   - MAX_HEALTH_CHECK_SOURCES_BY_OWNER: The maximum number of health check
+	//   sources that you can create using the current account.
 	//
 	//   - MAX_HOSTED_ZONES_BY_OWNER: The maximum number of hosted zones that you can
 	//   create using the current account.
@@ -101,12 +103,6 @@ func (c *Client) addOperationGetAccountLimitMiddlewares(stack *middleware.Stack,
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -116,19 +112,10 @@ func (c *Client) addOperationGetAccountLimitMiddlewares(stack *middleware.Stack,
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetAccountLimitValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetAccountLimit"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

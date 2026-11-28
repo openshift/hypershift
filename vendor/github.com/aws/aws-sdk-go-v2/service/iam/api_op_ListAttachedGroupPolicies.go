@@ -5,9 +5,10 @@ package iam
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Lists all managed policies that are attached to the specified IAM group.
@@ -84,6 +85,27 @@ type ListAttachedGroupPoliciesInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListAttachedGroupPoliciesInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListAttachedGroupPoliciesRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListAttachedGroupPoliciesInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.GroupName != nil {
+		s.WriteString(schemas.ListAttachedGroupPoliciesRequest_GroupName, *v.GroupName)
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.ListAttachedGroupPoliciesRequest_Marker, *v.Marker)
+	}
+	if v.MaxItems != nil {
+		s.WriteInt32(schemas.ListAttachedGroupPoliciesRequest_MaxItems, *v.MaxItems)
+	}
+	if v.PathPrefix != nil {
+		s.WriteString(schemas.ListAttachedGroupPoliciesRequest_PathPrefix, *v.PathPrefix)
+	}
+}
+
 // Contains the response to a successful [ListAttachedGroupPolicies] request.
 //
 // [ListAttachedGroupPolicies]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListAttachedGroupPolicies.html
@@ -110,22 +132,45 @@ type ListAttachedGroupPoliciesOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListAttachedGroupPoliciesOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListAttachedGroupPoliciesResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListAttachedGroupPoliciesOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AttachedPolicies != nil {
+		serializeattachedPoliciesListType(s, schemas.ListAttachedGroupPoliciesResponse_AttachedPolicies, v.AttachedPolicies)
+	}
+	if v.IsTruncated != false {
+		s.WriteBool(schemas.ListAttachedGroupPoliciesResponse_IsTruncated, v.IsTruncated)
+	}
+	if v.Marker != nil {
+		s.WriteString(schemas.ListAttachedGroupPoliciesResponse_Marker, *v.Marker)
+	}
+}
+func (v *ListAttachedGroupPoliciesOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ListAttachedGroupPoliciesResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ListAttachedGroupPoliciesResponse_AttachedPolicies:
+			return deserializeattachedPoliciesListType(d, schemas.ListAttachedGroupPoliciesResponse_AttachedPolicies, &v.AttachedPolicies)
+		case schemas.ListAttachedGroupPoliciesResponse_IsTruncated:
+			return d.ReadBool(schemas.ListAttachedGroupPoliciesResponse_IsTruncated, &v.IsTruncated)
+		case schemas.ListAttachedGroupPoliciesResponse_Marker:
+			v.Marker = new(string)
+			return d.ReadString(schemas.ListAttachedGroupPoliciesResponse_Marker, v.Marker)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationListAttachedGroupPoliciesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpListAttachedGroupPolicies{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListAttachedGroupPolicies, schemas.ListAttachedGroupPoliciesRequest, schemas.ListAttachedGroupPoliciesResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListAttachedGroupPolicies{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListAttachedGroupPolicies, schemas.ListAttachedGroupPoliciesRequest, schemas.ListAttachedGroupPoliciesResponse), output: &ListAttachedGroupPoliciesOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -135,19 +180,10 @@ func (c *Client) addOperationListAttachedGroupPoliciesMiddlewares(stack *middlew
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpListAttachedGroupPoliciesValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ListAttachedGroupPolicies"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

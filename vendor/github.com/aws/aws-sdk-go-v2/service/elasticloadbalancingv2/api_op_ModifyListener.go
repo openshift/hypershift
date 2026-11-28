@@ -4,9 +4,10 @@ package elasticloadbalancingv2
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Replaces the specified properties of the specified listener. Any properties
@@ -68,7 +69,7 @@ type ModifyListenerInput struct {
 	// The actions for the default rule.
 	DefaultActions []types.Action
 
-	// [HTTPS listeners] The mutual authentication configuration information.
+	// [HTTPS and TLS listeners] The mutual authentication configuration information.
 	MutualAuthentication *types.MutualAuthenticationAttributes
 
 	// The port for connections from clients to the load balancer. You can't specify a
@@ -94,6 +95,41 @@ type ModifyListenerInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ModifyListenerInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ModifyListenerInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ModifyListenerInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AlpnPolicy != nil {
+		serializeAlpnPolicyName(s, schemas.ModifyListenerInput_AlpnPolicy, v.AlpnPolicy)
+	}
+	if v.Certificates != nil {
+		serializeCertificateList(s, schemas.ModifyListenerInput_Certificates, v.Certificates)
+	}
+	if v.DefaultActions != nil {
+		serializeActions(s, schemas.ModifyListenerInput_DefaultActions, v.DefaultActions)
+	}
+	if v.ListenerArn != nil {
+		s.WriteString(schemas.ModifyListenerInput_ListenerArn, *v.ListenerArn)
+	}
+	if v.MutualAuthentication != nil {
+		s.WriteStruct(schemas.ModifyListenerInput_MutualAuthentication)
+		v.MutualAuthentication.SerializeMembers(s)
+		s.CloseStruct()
+	}
+	if v.Port != nil {
+		s.WriteInt32(schemas.ModifyListenerInput_Port, *v.Port)
+	}
+	if v.Protocol != "" {
+		s.WriteString(schemas.ModifyListenerInput_Protocol, string(v.Protocol))
+	}
+	if v.SslPolicy != nil {
+		s.WriteString(schemas.ModifyListenerInput_SslPolicy, *v.SslPolicy)
+	}
+}
+
 type ModifyListenerOutput struct {
 
 	// Information about the modified listener.
@@ -105,22 +141,34 @@ type ModifyListenerOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ModifyListenerOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ModifyListenerOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ModifyListenerOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Listeners != nil {
+		serializeListeners(s, schemas.ModifyListenerOutput_Listeners, v.Listeners)
+	}
+}
+func (v *ModifyListenerOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ModifyListenerOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ModifyListenerOutput_Listeners:
+			return deserializeListeners(d, schemas.ModifyListenerOutput_Listeners, &v.Listeners)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationModifyListenerMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpModifyListener{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ModifyListener, schemas.ModifyListenerInput, schemas.ModifyListenerOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpModifyListener{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ModifyListener, schemas.ModifyListenerInput, schemas.ModifyListenerOutput), output: &ModifyListenerOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -130,19 +178,10 @@ func (c *Client) addOperationModifyListenerMiddlewares(stack *middleware.Stack, 
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpModifyListenerValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ModifyListener"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

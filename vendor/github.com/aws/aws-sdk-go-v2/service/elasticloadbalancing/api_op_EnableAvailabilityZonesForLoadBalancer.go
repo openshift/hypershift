@@ -4,8 +4,9 @@ package elasticloadbalancing
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Adds the specified Availability Zones to the set of Availability Zones for the
@@ -49,6 +50,21 @@ type EnableAvailabilityZonesForLoadBalancerInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *EnableAvailabilityZonesForLoadBalancerInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.AddAvailabilityZonesInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *EnableAvailabilityZonesForLoadBalancerInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AvailabilityZones != nil {
+		serializeAvailabilityZones(s, schemas.AddAvailabilityZonesInput_AvailabilityZones, v.AvailabilityZones)
+	}
+	if v.LoadBalancerName != nil {
+		s.WriteString(schemas.AddAvailabilityZonesInput_LoadBalancerName, *v.LoadBalancerName)
+	}
+}
+
 // Contains the output of EnableAvailabilityZonesForLoadBalancer.
 type EnableAvailabilityZonesForLoadBalancerOutput struct {
 
@@ -61,22 +77,34 @@ type EnableAvailabilityZonesForLoadBalancerOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *EnableAvailabilityZonesForLoadBalancerOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.AddAvailabilityZonesOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *EnableAvailabilityZonesForLoadBalancerOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AvailabilityZones != nil {
+		serializeAvailabilityZones(s, schemas.AddAvailabilityZonesOutput_AvailabilityZones, v.AvailabilityZones)
+	}
+}
+func (v *EnableAvailabilityZonesForLoadBalancerOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.AddAvailabilityZonesOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.AddAvailabilityZonesOutput_AvailabilityZones:
+			return deserializeAvailabilityZones(d, schemas.AddAvailabilityZonesOutput_AvailabilityZones, &v.AvailabilityZones)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationEnableAvailabilityZonesForLoadBalancerMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpEnableAvailabilityZonesForLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.EnableAvailabilityZonesForLoadBalancer, schemas.AddAvailabilityZonesInput, schemas.AddAvailabilityZonesOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpEnableAvailabilityZonesForLoadBalancer{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.EnableAvailabilityZonesForLoadBalancer, schemas.AddAvailabilityZonesInput, schemas.AddAvailabilityZonesOutput), output: &EnableAvailabilityZonesForLoadBalancerOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -86,19 +114,10 @@ func (c *Client) addOperationEnableAvailabilityZonesForLoadBalancerMiddlewares(s
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpEnableAvailabilityZonesForLoadBalancerValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "EnableAvailabilityZonesForLoadBalancer"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

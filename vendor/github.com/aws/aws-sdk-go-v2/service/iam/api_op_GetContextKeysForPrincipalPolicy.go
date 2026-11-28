@@ -4,8 +4,9 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Gets a list of all of the context keys referenced in all the IAM policies that
@@ -24,7 +25,10 @@ import (
 // Context keys are variables maintained by Amazon Web Services and its services
 // that provide details about the context of an API query request. Context keys can
 // be evaluated by testing against a value in an IAM policy. Use [GetContextKeysForPrincipalPolicy]to understand
-// what key names and values you must supply when you call [SimulatePrincipalPolicy].
+// what key names and values you must supply when you call [SimulatePrincipalPolicy]. This operation
+// doesn't return context keys referenced by service control policies (SCPs). Only
+// context keys referenced by the identity-based policies attached to the specified
+// entity, and any additional policies that you provide, are included.
 //
 // [GetContextKeysForPrincipalPolicy]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetContextKeysForPrincipalPolicy.html
 // [GetContextKeysForCustomPolicy]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetContextKeysForCustomPolicy.html
@@ -83,6 +87,21 @@ type GetContextKeysForPrincipalPolicyInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetContextKeysForPrincipalPolicyInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetContextKeysForPrincipalPolicyRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetContextKeysForPrincipalPolicyInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.PolicyInputList != nil {
+		serializeSimulationPolicyListType(s, schemas.GetContextKeysForPrincipalPolicyRequest_PolicyInputList, v.PolicyInputList)
+	}
+	if v.PolicySourceArn != nil {
+		s.WriteString(schemas.GetContextKeysForPrincipalPolicyRequest_PolicySourceArn, *v.PolicySourceArn)
+	}
+}
+
 // Contains the response to a successful [GetContextKeysForPrincipalPolicy] or [GetContextKeysForCustomPolicy] request.
 //
 // [GetContextKeysForPrincipalPolicy]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetContextKeysForPrincipalPolicy.html
@@ -98,22 +117,34 @@ type GetContextKeysForPrincipalPolicyOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetContextKeysForPrincipalPolicyOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetContextKeysForPolicyResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetContextKeysForPrincipalPolicyOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ContextKeyNames != nil {
+		serializeContextKeyNamesResultListType(s, schemas.GetContextKeysForPolicyResponse_ContextKeyNames, v.ContextKeyNames)
+	}
+}
+func (v *GetContextKeysForPrincipalPolicyOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetContextKeysForPolicyResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetContextKeysForPolicyResponse_ContextKeyNames:
+			return deserializeContextKeyNamesResultListType(d, schemas.GetContextKeysForPolicyResponse_ContextKeyNames, &v.ContextKeyNames)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetContextKeysForPrincipalPolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetContextKeysForPrincipalPolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetContextKeysForPrincipalPolicy, schemas.GetContextKeysForPrincipalPolicyRequest, schemas.GetContextKeysForPolicyResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetContextKeysForPrincipalPolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetContextKeysForPrincipalPolicy, schemas.GetContextKeysForPrincipalPolicyRequest, schemas.GetContextKeysForPolicyResponse), output: &GetContextKeysForPrincipalPolicyOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -123,19 +154,10 @@ func (c *Client) addOperationGetContextKeysForPrincipalPolicyMiddlewares(stack *
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetContextKeysForPrincipalPolicyValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetContextKeysForPrincipalPolicy"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

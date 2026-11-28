@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Requests a VPC peering connection between two VPCs: a requester VPC that you
@@ -21,6 +20,9 @@ import (
 // The owner of the accepter VPC must accept the peering request to activate the
 // peering connection. The VPC peering connection request expires after 7 days,
 // after which it cannot be accepted or rejected.
+//
+// Multipath resilience replicates the traffic of an inter-Region VPC peering
+// connection across multiple network paths.
 //
 // If you create a VPC peering connection request between VPCs with overlapping
 // CIDR blocks, the VPC peering connection has a status of failed .
@@ -69,6 +71,9 @@ type CreateVpcPeeringConnectionInput struct {
 	// must specify this parameter in the request.
 	PeerVpcId *string
 
+	// The VPC peering connection options to apply to the requester VPC.
+	RequesterPeeringConnectionOptions *types.CreatePeeringConnectionOptionsRequest
+
 	// The tags to assign to the peering connection.
 	TagSpecifications []types.TagSpecification
 
@@ -96,12 +101,6 @@ func (c *Client) addOperationCreateVpcPeeringConnectionMiddlewares(stack *middle
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -111,19 +110,10 @@ func (c *Client) addOperationCreateVpcPeeringConnectionMiddlewares(stack *middle
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateVpcPeeringConnectionValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateVpcPeeringConnection"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

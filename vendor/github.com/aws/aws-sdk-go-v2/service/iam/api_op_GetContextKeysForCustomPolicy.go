@@ -4,8 +4,9 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Gets a list of all of the context keys referenced in the input policies. The
@@ -63,6 +64,18 @@ type GetContextKeysForCustomPolicyInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetContextKeysForCustomPolicyInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetContextKeysForCustomPolicyRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetContextKeysForCustomPolicyInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.PolicyInputList != nil {
+		serializeSimulationPolicyListType(s, schemas.GetContextKeysForCustomPolicyRequest_PolicyInputList, v.PolicyInputList)
+	}
+}
+
 // Contains the response to a successful [GetContextKeysForPrincipalPolicy] or [GetContextKeysForCustomPolicy] request.
 //
 // [GetContextKeysForPrincipalPolicy]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetContextKeysForPrincipalPolicy.html
@@ -78,22 +91,34 @@ type GetContextKeysForCustomPolicyOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetContextKeysForCustomPolicyOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetContextKeysForPolicyResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetContextKeysForCustomPolicyOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ContextKeyNames != nil {
+		serializeContextKeyNamesResultListType(s, schemas.GetContextKeysForPolicyResponse_ContextKeyNames, v.ContextKeyNames)
+	}
+}
+func (v *GetContextKeysForCustomPolicyOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetContextKeysForPolicyResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetContextKeysForPolicyResponse_ContextKeyNames:
+			return deserializeContextKeyNamesResultListType(d, schemas.GetContextKeysForPolicyResponse_ContextKeyNames, &v.ContextKeyNames)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetContextKeysForCustomPolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetContextKeysForCustomPolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetContextKeysForCustomPolicy, schemas.GetContextKeysForCustomPolicyRequest, schemas.GetContextKeysForPolicyResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetContextKeysForCustomPolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetContextKeysForCustomPolicy, schemas.GetContextKeysForCustomPolicyRequest, schemas.GetContextKeysForPolicyResponse), output: &GetContextKeysForCustomPolicyOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -103,19 +128,10 @@ func (c *Client) addOperationGetContextKeysForCustomPolicyMiddlewares(stack *mid
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetContextKeysForCustomPolicyValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetContextKeysForCustomPolicy"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

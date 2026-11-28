@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Accepts connection requests to your VPC endpoint service.
@@ -34,6 +33,9 @@ type AcceptVpcEndpointConnectionsInput struct {
 
 	// The IDs of the interface VPC endpoints.
 	//
+	// You must specify either VpcEndpointIds or TransitGatewayAttachmentIds , but not
+	// both.
+	//
 	// This member is required.
 	VpcEndpointIds []string
 
@@ -42,6 +44,13 @@ type AcceptVpcEndpointConnectionsInput struct {
 	// required permissions, the error response is DryRunOperation . Otherwise, it is
 	// UnauthorizedOperation .
 	DryRun *bool
+
+	// The IDs of the transit gateway attachments to accept. This parameter is
+	// supported only for Gateway Load Balancer endpoint services.
+	//
+	// You must specify either VpcEndpointIds or TransitGatewayAttachmentIds , but not
+	// both.
+	TransitGatewayAttachmentIds []string
 
 	noSmithyDocumentSerde
 }
@@ -67,12 +76,6 @@ func (c *Client) addOperationAcceptVpcEndpointConnectionsMiddlewares(stack *midd
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -82,19 +85,10 @@ func (c *Client) addOperationAcceptVpcEndpointConnectionsMiddlewares(stack *midd
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpAcceptVpcEndpointConnectionsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "AcceptVpcEndpointConnections"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

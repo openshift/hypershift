@@ -108,6 +108,9 @@ type CacheOptions struct {
 	// This is an experimental feature, a form of this will be kept but both the details of
 	// how exactly it works and how exactly it is configured may change.
 	//
+	// This feature does not work correctly when a resource has more than one Namespace
+	// configured.
+	//
 	// Defaults to false.
 	EnableReadYourWritesConsistency *bool
 }
@@ -382,7 +385,12 @@ func (c *client) delete(ctx context.Context, obj Object, opts ...DeleteOption) (
 	switch obj.(type) {
 	case runtime.Unstructured:
 		return c.unstructuredClient.Delete(ctx, obj, opts...)
-	// The typed client can also delete PartialObjectMeta
+	case *metav1.PartialObjectMetadata:
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(obj.GetObjectKind().GroupVersionKind())
+		u.SetNamespace(obj.GetNamespace())
+		u.SetName(obj.GetName())
+		return c.unstructuredClient.Delete(ctx, u, opts...)
 	default:
 		return c.typedClient.Delete(ctx, obj, opts...)
 	}
@@ -601,7 +609,7 @@ func (co *SubResourceCreateOptions) ApplyOptions(opts []SubResourceCreateOption)
 
 // ApplyToSubResourceCreate applies the the configuration on the given create options.
 func (co *SubResourceCreateOptions) ApplyToSubResourceCreate(o *SubResourceCreateOptions) {
-	co.CreateOptions.ApplyToCreate(&co.CreateOptions)
+	co.CreateOptions.ApplyToCreate(&o.CreateOptions)
 }
 
 // SubResourcePatchOptions holds all possible configurations for a subresource patch

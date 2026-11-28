@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Generates a report that includes details about when an IAM resource (user,
@@ -107,6 +108,21 @@ type GenerateServiceLastAccessedDetailsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GenerateServiceLastAccessedDetailsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GenerateServiceLastAccessedDetailsRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GenerateServiceLastAccessedDetailsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Arn != nil {
+		s.WriteString(schemas.GenerateServiceLastAccessedDetailsRequest_Arn, *v.Arn)
+	}
+	if v.Granularity != "" {
+		s.WriteString(schemas.GenerateServiceLastAccessedDetailsRequest_Granularity, string(v.Granularity))
+	}
+}
+
 type GenerateServiceLastAccessedDetailsOutput struct {
 
 	// The JobId that you can use in the [GetServiceLastAccessedDetails] or [GetServiceLastAccessedDetailsWithEntities] operations. The JobId returned by
@@ -123,22 +139,35 @@ type GenerateServiceLastAccessedDetailsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GenerateServiceLastAccessedDetailsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GenerateServiceLastAccessedDetailsResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GenerateServiceLastAccessedDetailsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.JobId != nil {
+		s.WriteString(schemas.GenerateServiceLastAccessedDetailsResponse_JobId, *v.JobId)
+	}
+}
+func (v *GenerateServiceLastAccessedDetailsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GenerateServiceLastAccessedDetailsResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GenerateServiceLastAccessedDetailsResponse_JobId:
+			v.JobId = new(string)
+			return d.ReadString(schemas.GenerateServiceLastAccessedDetailsResponse_JobId, v.JobId)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGenerateServiceLastAccessedDetailsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpGenerateServiceLastAccessedDetails{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GenerateServiceLastAccessedDetails, schemas.GenerateServiceLastAccessedDetailsRequest, schemas.GenerateServiceLastAccessedDetailsResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGenerateServiceLastAccessedDetails{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GenerateServiceLastAccessedDetails, schemas.GenerateServiceLastAccessedDetailsRequest, schemas.GenerateServiceLastAccessedDetailsResponse), output: &GenerateServiceLastAccessedDetailsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -148,19 +177,10 @@ func (c *Client) addOperationGenerateServiceLastAccessedDetailsMiddlewares(stack
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGenerateServiceLastAccessedDetailsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GenerateServiceLastAccessedDetails"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

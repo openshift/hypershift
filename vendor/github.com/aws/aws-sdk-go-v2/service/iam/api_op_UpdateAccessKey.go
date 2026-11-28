@@ -4,9 +4,10 @@ package iam
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/iam/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Changes the status of the specified access key from Active to Inactive, or vice
@@ -70,6 +71,24 @@ type UpdateAccessKeyInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *UpdateAccessKeyInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.UpdateAccessKeyRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateAccessKeyInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AccessKeyId != nil {
+		s.WriteString(schemas.UpdateAccessKeyRequest_AccessKeyId, *v.AccessKeyId)
+	}
+	if v.Status != "" {
+		s.WriteString(schemas.UpdateAccessKeyRequest_Status, string(v.Status))
+	}
+	if v.UserName != nil {
+		s.WriteString(schemas.UpdateAccessKeyRequest_UserName, *v.UserName)
+	}
+}
+
 type UpdateAccessKeyOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -77,22 +96,29 @@ type UpdateAccessKeyOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *UpdateAccessKeyOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(nil)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateAccessKeyOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *UpdateAccessKeyOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, nil, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationUpdateAccessKeyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsquery_serializeOpUpdateAccessKey{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateAccessKey, schemas.UpdateAccessKeyRequest, nil)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpUpdateAccessKey{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateAccessKey, schemas.UpdateAccessKeyRequest, nil), output: &UpdateAccessKeyOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -102,19 +128,10 @@ func (c *Client) addOperationUpdateAccessKeyMiddlewares(stack *middleware.Stack,
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpUpdateAccessKeyValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "UpdateAccessKey"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
