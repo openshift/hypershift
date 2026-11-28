@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift/hack/capi-vendor/ibmcloud
 
-go 1.25.7
+go 1.26
 
 require sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
 
@@ -28,7 +28,7 @@ require (
 	github.com/go-openapi/swag/typeutils v0.25.4 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.4 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
-	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/universal-translator v0.18.2 // indirect
 	github.com/go-playground/validator/v10 v10.28.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
