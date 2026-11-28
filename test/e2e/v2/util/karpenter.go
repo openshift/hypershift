@@ -378,6 +378,39 @@ func waitForNodeCountByLabels(g Gomega, ctx context.Context, client crclient.Cli
 		Should(Succeed())
 }
 
+// WaitForReadyNodesByLabels waits until exactly want nodes match nodeLabels and all of them have NodeReady=True,
+// and returns them. It lives here to avoid an import cycle (test/e2e/util imports this package for certs).
+func WaitForReadyNodesByLabels(g Gomega, ctx context.Context, client crclient.Client, platform hyperv1.PlatformType, want int32, nodeLabels map[string]string) []corev1.Node {
+	ginkgo.GinkgoHelper()
+	timeout := 45 * time.Minute
+	if platform == hyperv1.PowerVSPlatform {
+		timeout = 60 * time.Minute
+	}
+	var readyNodes []corev1.Node
+	g.Eventually(func(pollG Gomega, pollCtx context.Context) {
+		nodes := &corev1.NodeList{}
+		pollG.Expect(client.List(pollCtx, nodes, crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))})).To(Succeed())
+		pollG.Expect(nodes.Items).To(HaveLen(int(want)), "expected %d nodes with labels %v, got %d", want, nodeLabels, len(nodes.Items))
+		for i := range nodes.Items {
+			ready := false
+			for _, condition := range nodes.Items[i].Status.Conditions {
+				if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+					ready = true
+					break
+				}
+			}
+			pollG.Expect(ready).To(BeTrue(), "node %s does not have NodeReady=True", nodes.Items[i].Name)
+		}
+		readyNodes = nodes.Items
+	}).
+		WithContext(ctx).
+		WithTimeout(timeout).
+		WithPolling(3 * time.Second).
+		Should(Succeed())
+
+	return readyNodes
+}
+
 // WaitForGlobalPSSyncerOnNode verifies that a global-pull-secret-syncer DaemonSet pod is running on the specified node.
 // It skips the check if the DaemonSet cannot be retrieved or lacks the expected Karpenter node affinity.
 // Otherwise, it fails the current spec if no matching running pod appears within five
