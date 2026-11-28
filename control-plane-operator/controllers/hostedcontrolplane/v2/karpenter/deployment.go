@@ -35,6 +35,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 				Value: hcp.Spec.InfraID,
 			},
 		)
+		if queueName := hcp.Spec.AutoNode.Provisioner.Karpenter.AWS.InterruptionQueueName; queueName != "" {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "INTERRUPTION_QUEUE",
+				Value: queueName,
+			})
+		}
 		proxy.SetEnvVars(&c.Env)
 		// Override the image if specified in the HCP annotations.
 		karpenterProviderAWSOverride, exists := hcp.Annotations[hyperkarpenterv1.KarpenterProviderAWSImage]

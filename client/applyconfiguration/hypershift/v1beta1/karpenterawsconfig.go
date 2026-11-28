@@ -20,7 +20,8 @@ package v1beta1
 // KarpenterAWSConfigApplyConfiguration represents a declarative configuration of the KarpenterAWSConfig type for use
 // with apply.
 type KarpenterAWSConfigApplyConfiguration struct {
-	RoleARN *string `json:"roleARN,omitempty"`
+	RoleARN               *string `json:"roleARN,omitempty"`
+	InterruptionQueueName *string `json:"interruptionQueueName,omitempty"`
 }
 
 // KarpenterAWSConfigApplyConfiguration constructs a declarative configuration of the KarpenterAWSConfig type for use with
@@ -34,5 +35,13 @@ func KarpenterAWSConfig() *KarpenterAWSConfigApplyConfiguration {
 // If called multiple times, the RoleARN field is set to the value of the last call.
 func (b *KarpenterAWSConfigApplyConfiguration) WithRoleARN(value string) *KarpenterAWSConfigApplyConfiguration {
 	b.RoleARN = &value
+	return b
+}
+
+// WithInterruptionQueueName sets the InterruptionQueueName field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the InterruptionQueueName field is set to the value of the last call.
+func (b *KarpenterAWSConfigApplyConfiguration) WithInterruptionQueueName(value string) *KarpenterAWSConfigApplyConfiguration {
+	b.InterruptionQueueName = &value
 	return b
 }
