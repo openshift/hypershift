@@ -186,6 +186,17 @@ const (
 	// of the cluster will be removed, including image registry storage, ingress dns records, load balancers, and persistent storage.
 	CleanupCloudResourcesAnnotation = "hypershift.openshift.io/cleanup-cloud-resources"
 
+	// PreserveImageRegistryStorageOnDeleteAnnotation, when set to "true" on a HostedCluster, instructs the
+	// hosted cluster config operator to preserve the internal image registry's backing object storage (e.g.
+	// the AWS S3 bucket) when the HostedCluster is deleted. Instead of removing the registry storage during
+	// cloud-resource cleanup, the operator sets the image registry config's spec.storage.managementState to
+	// "Unmanaged", so the in-guest image registry operator relinquishes ownership of the bucket and leaves it
+	// intact. This is intended for disaster-recovery deletions, where a restored cluster is expected to
+	// readopt the same bucket. It has no effect unless CleanupCloudResourcesAnnotation is also "true" (the
+	// registry storage is only touched on the cleanup path). It only governs the HCCO cleanup path; it does
+	// not prevent a CLI/infra bucket deletion that matches by name prefix.
+	PreserveImageRegistryStorageOnDeleteAnnotation = "hypershift.openshift.io/preserve-image-registry-storage"
+
 	// ResourceRequestOverrideAnnotationPrefix is a prefix for an annotation to override resource requests for a particular deployment/container
 	// in a hosted control plane. The format of the annotation is:
 	// resource-request-override.hypershift.openshift.io/[deployment-name].[container-name]: [resource-type-1]=[value1],[resource-type-2]=[value2],...
