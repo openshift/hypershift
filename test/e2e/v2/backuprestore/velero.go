@@ -51,6 +51,7 @@ const (
 	BSLPhaseAvailable = "Available"
 
 	ScheduleBackupCreationTimeout = 5 * time.Minute
+	ServerStatusRequestTimeout    = 2 * time.Minute
 )
 
 // EnsureVeleroPodRunning checks if at least one Velero pod is running and ready in the specified namespace.
@@ -129,6 +130,55 @@ func WaitForBackupStorageLocationAvailable(testCtx *internal.TestContext, name s
 		return fmt.Errorf("BackupStorageLocation %s did not become Available: %w", name, err)
 	}
 	return nil
+}
+
+// GetVeleroServerVersion returns the version reported by the running Velero server (for example
+// "v1.16.2") by creating a ServerStatusRequest, the same mechanism `velero version` uses. Unlike
+// parsing the container image reference, it also works for digest-pinned images.
+func GetVeleroServerVersion(testCtx *internal.TestContext) (string, error) {
+	request := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "velero.io/v1",
+		"kind":       "ServerStatusRequest",
+		"metadata": map[string]interface{}{
+			"generateName": "e2e-server-version-",
+			"namespace":    DefaultOADPNamespace,
+		},
+	}}
+	if err := testCtx.MgmtClient.Create(testCtx.Context, request); err != nil {
+		return "", fmt.Errorf("failed to create ServerStatusRequest: %w", err)
+	}
+	defer func() {
+		if err := testCtx.MgmtClient.Delete(testCtx.Context, request); err != nil && !apierrors.IsNotFound(err) {
+			log.Printf("failed to delete ServerStatusRequest %s: %v", request.GetName(), err)
+		}
+	}()
+
+	var version string
+	err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, ServerStatusRequestTimeout, true, func(ctx context.Context) (bool, error) {
+		current, err := getVeleroResource(ctx, testCtx.MgmtClient, DefaultOADPNamespace, request.GetName(), "ServerStatusRequest")
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		phase, _, err := unstructured.NestedString(current.Object, "status", "phase")
+		if err != nil {
+			return false, fmt.Errorf("failed to get ServerStatusRequest phase: %w", err)
+		}
+		if phase != "Processed" {
+			return false, nil
+		}
+		version, _, err = unstructured.NestedString(current.Object, "status", "serverVersion")
+		if err != nil {
+			return false, fmt.Errorf("failed to get ServerStatusRequest serverVersion: %w", err)
+		}
+		return version != "", nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("ServerStatusRequest %s did not report a server version: %w", request.GetName(), err)
+	}
+	return version, nil
 }
 
 // WaitForBackupCompletion waits for a backup to complete.
