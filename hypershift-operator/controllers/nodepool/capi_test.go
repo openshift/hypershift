@@ -2736,7 +2736,7 @@ func TestPause(t *testing.T) {
 	err = capi.Client.Create(t.Context(), ms)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	// Test Pause
+	// Test Pause without AutoRepair — MHC should not be required
 	err = capi.Pause(t.Context())
 	g.Expect(err).NotTo(HaveOccurred())
 
@@ -2749,6 +2749,113 @@ func TestPause(t *testing.T) {
 	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
+
+	// Test Pause with AutoRepair — MHC should also be paused
+	nodePool.Spec.Management.AutoRepair = true
+	mhc := capi.machineHealthCheck()
+	err = capi.Client.Create(t.Context(), mhc)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to create MachineHealthCheck")
+
+	// Remove pause annotations to re-test
+	delete(md.Annotations, capiv1.PausedAnnotation)
+	err = capi.Client.Update(t.Context(), md)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to clear MachineDeployment pause annotation")
+	delete(ms.Annotations, capiv1.PausedAnnotation)
+	err = capi.Client.Update(t.Context(), ms)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to clear MachineSet pause annotation")
+
+	err = capi.Pause(t.Context())
+	g.Expect(err).NotTo(HaveOccurred(), "failed to pause NodePool with AutoRepair enabled")
+
+	// Verify MachineHealthCheck is paused
+	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(mhc), mhc)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get MachineHealthCheck after pausing NodePool")
+	g.Expect(mhc.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"),
+		"MachineHealthCheck should be paused when AutoRepair is enabled")
+
+	// Verify MD/MS are still paused
+	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(md), md)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get MachineDeployment after pausing NodePool")
+	g.Expect(md.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"),
+		"MachineDeployment should remain paused when AutoRepair is enabled")
+	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get MachineSet after pausing NodePool")
+	g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"),
+		"MachineSet should remain paused when AutoRepair is enabled")
+
+	t.Run("When spot is enabled and AutoRepair is disabled, it should pause the spot MachineHealthCheck", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-nodepool",
+				Namespace: "test-namespace",
+				Annotations: map[string]string{
+					AnnotationEnableSpot: "true",
+				},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "test-cluster",
+				Replicas:    ptr.To[int32](3),
+				Management: hyperv1.NodePoolManagement{
+					UpgradeType: hyperv1.UpgradeTypeReplace,
+				},
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSNodePoolPlatform{},
+				},
+			},
+		}
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cluster",
+				Namespace: "test-namespace",
+			},
+		}
+
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		capi := &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					nodePool:              nodePool,
+					hostedCluster:         hostedCluster,
+					controlplaneNamespace: "test-cp-namespace",
+					Client:                c,
+				},
+			},
+			capiClusterName: "test-cluster",
+		}
+
+		md := capi.machineDeployment()
+		g.Expect(c.Create(t.Context(), md)).To(Succeed(), "failed to create MachineDeployment")
+		ms := capi.machineSet()
+		g.Expect(c.Create(t.Context(), ms)).To(Succeed(), "failed to create MachineSet")
+		spotMHC := capi.spotMachineHealthCheck()
+		g.Expect(c.Create(t.Context(), spotMHC)).To(Succeed(), "failed to create spot MachineHealthCheck")
+
+		g.Expect(capi.Pause(t.Context())).To(Succeed(), "failed to pause NodePool")
+
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(spotMHC), spotMHC)).To(
+			Succeed(), "failed to get spot MachineHealthCheck after pausing NodePool")
+		g.Expect(spotMHC.Annotations).To(
+			HaveKeyWithValue(capiv1.PausedAnnotation, "true"),
+			"spot MachineHealthCheck should be paused when spot is enabled and AutoRepair is disabled")
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(md), md)).To(
+			Succeed(), "failed to get MachineDeployment after pausing NodePool")
+		g.Expect(md.Annotations).To(
+			HaveKeyWithValue(capiv1.PausedAnnotation, "true"),
+			"MachineDeployment should be paused when spot is enabled")
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)).To(
+			Succeed(), "failed to get MachineSet after pausing NodePool")
+		g.Expect(ms.Annotations).To(
+			HaveKeyWithValue(capiv1.PausedAnnotation, "true"),
+			"MachineSet should be paused when spot is enabled")
+
+		regularMHC := capi.machineHealthCheck()
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(regularMHC), regularMHC)
+		g.Expect(apierrors.IsNotFound(err)).To(
+			BeTrue(), "regular MachineHealthCheck should not exist when AutoRepair is disabled")
+	})
 }
 
 func TestSetMachineDeploymentMetadata(t *testing.T) {
@@ -4324,6 +4431,11 @@ func TestPauseUnpauseCycle(t *testing.T) {
 			}
 			g.Expect(c.Create(t.Context(), ms)).To(Succeed())
 
+			// Create MachineHealthCheck (AutoRepair enabled for this test).
+			nodePool.Spec.Management.AutoRepair = true
+			mhc := capiObj.machineHealthCheck()
+			g.Expect(c.Create(t.Context(), mhc)).To(Succeed(), "failed to create MachineHealthCheck")
+
 			// Step 1: Pause.
 			g.Expect(capiObj.Pause(t.Context())).To(Succeed())
 
@@ -4332,6 +4444,12 @@ func TestPauseUnpauseCycle(t *testing.T) {
 
 			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)).To(Succeed())
 			g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
+
+			// Verify MachineHealthCheck is paused.
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(mhc), mhc)).To(
+				Succeed(), "failed to get MachineHealthCheck after pausing NodePool")
+			g.Expect(mhc.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"),
+				"MachineHealthCheck should be paused when AutoRepair is enabled")
 
 			// Step 2: Simulate replica drift while paused (e.g. CAS decrementing via Scale subresource).
 			if tc.upgradeType == hyperv1.UpgradeTypeReplace {
@@ -4385,6 +4503,13 @@ func TestPauseUnpauseCycle(t *testing.T) {
 				g.Expect(ms.Annotations).To(HaveKeyWithValue(autoscalerMinAnnotation, fmt.Sprintf("%d", expectedMinAnnotation)))
 				g.Expect(ms.Annotations).To(HaveKeyWithValue(autoscalerMaxAnnotation, fmt.Sprintf("%d", tc.autoscalingMax)))
 			}
+
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(mhc), mhc)).To(
+				Succeed(), "failed to get MachineHealthCheck during unpause")
+			g.Expect(capiObj.reconcileMachineHealthCheck(t.Context(), mhc)).To(
+				Succeed(), "failed to reconcile MachineHealthCheck during unpause")
+			g.Expect(mhc.Annotations).NotTo(HaveKey(capiv1.PausedAnnotation),
+				"MachineHealthCheck pause annotation should be removed during unpause")
 		})
 	}
 }
