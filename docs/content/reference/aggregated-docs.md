@@ -2195,7 +2195,7 @@ To run the HyperShift Operator locally, follow these steps:
 
 !!! note
 
-    `requires go v1.22+
+    Requires the Go version specified in `go.mod`.
 
 ```shell linenums="1"
   make build
@@ -2210,13 +2210,13 @@ To run the HyperShift Operator locally, follow these steps:
 
 !!! note
 
-    `Consider setting HYPERSHIFT_REGION and HYPERSHIFT_BUCKET_NAME in your shell init script (e.g., $HOME/.bashrc).
+    Consider setting `HYPERSHIFT_REGION` and `HYPERSHIFT_BUCKET_NAME` in your shell init script (e.g., `$HOME/.bashrc`).
 
 !!! note
 
-    `Default values are provided for HYPERSHIFT_REGION and HYPERSHIFT_BUCKET_NAME so Step #4 will function without requiring you to export any values.
+    Default values are provided for `HYPERSHIFT_REGION` and `HYPERSHIFT_BUCKET_NAME` so Step #4 will function without requiring you to export any values.
 
-4. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see Prerequisites):
+4. Install HyperShift in development mode, which causes the operator deployment to be scaled to zero so that it doesn't conflict with your local operator process (see Prerequisites):
 
 ```shell linenums="1"
   make hypershift-install-aws-dev
