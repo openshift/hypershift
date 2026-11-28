@@ -1197,6 +1197,22 @@ autoScaling is mutually exclusive with replicas. If replicas is set, this field 
 </tr>
 <tr>
 <td>
+<code>scaleDown,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolScaleDown">
+NodePoolScaleDown
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scaleDown configures which Machines are removed when the NodePool scales down.
+When omitted, Cluster API uses its default &ldquo;Random&rdquo; order.
+Changing this field does not trigger a rollout.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>config</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
@@ -15894,6 +15910,32 @@ int64
 </tr>
 </tbody>
 </table>
+###NodePoolDeletionOrder { #hypershift.openshift.io/v1beta1.NodePoolDeletionOrder }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolScaleDown">NodePoolScaleDown</a>)
+</p>
+<p>
+<p>NodePoolDeletionOrder is the order in which Machines are deleted when a NodePool scales down.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Newest&#34;</p></td>
+<td><p>NodePoolDeletionOrderNewest deletes the most recently created healthy Machines first.</p>
+</td>
+</tr><tr><td><p>&#34;Oldest&#34;</p></td>
+<td><p>NodePoolDeletionOrderOldest deletes the least recently created healthy Machines first.</p>
+</td>
+</tr><tr><td><p>&#34;Random&#34;</p></td>
+<td><p>NodePoolDeletionOrderRandom does not consider the age of healthy Machines.</p>
+</td>
+</tr></tbody>
+</table>
 ###NodePoolManagement { #hypershift.openshift.io/v1beta1.NodePoolManagement }
 <p>
 (<em>Appears on:</em>
@@ -16183,6 +16225,45 @@ KubeVirtNodePoolStatus
 </tr>
 </tbody>
 </table>
+###NodePoolScaleDown { #hypershift.openshift.io/v1beta1.NodePoolScaleDown }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>)
+</p>
+<p>
+<p>NodePoolScaleDown configures which Machines are removed when a NodePool scales down.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>deletionOrder</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolDeletionOrder">
+NodePoolDeletionOrder
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>deletionOrder is the order in which Cluster API deletes the healthy Machines of a MachineSet when it scales down.
+Valid values are &ldquo;Random&rdquo;, &ldquo;Newest&rdquo; and &ldquo;Oldest&rdquo;. When omitted, &ldquo;Random&rdquo; is used.
+Machines that are being deleted, annotated with &ldquo;cluster.x-k8s.io/delete-machine&rdquo;, being updated in place by
+Cluster API, or unhealthy are deleted before healthy Machines, with one exception below.
+&ldquo;Newest&rdquo; and &ldquo;Oldest&rdquo; lose precision as Machines age: healthy Machines that are both older than about 375 days
+get the same priority and are picked by name, and with &ldquo;Oldest&rdquo; such a Machine also gets the same priority as
+an unhealthy Machine, so it can be deleted before the unhealthy one.
+For the Replace upgrade type, the order applies within the MachineSet that Cluster API scales down.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###NodePoolSpec { #hypershift.openshift.io/v1beta1.NodePoolSpec }
 <p>
 (<em>Appears on:</em>
@@ -16288,6 +16369,22 @@ NodePoolAutoScaling
 <em>(Optional)</em>
 <p>autoScaling specifies auto-scaling behavior for the NodePool.
 autoScaling is mutually exclusive with replicas. If replicas is set, this field must be omitted.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>scaleDown,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolScaleDown">
+NodePoolScaleDown
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scaleDown configures which Machines are removed when the NodePool scales down.
+When omitted, Cluster API uses its default &ldquo;Random&rdquo; order.
+Changing this field does not trigger a rollout.</p>
 </td>
 </tr>
 <tr>
