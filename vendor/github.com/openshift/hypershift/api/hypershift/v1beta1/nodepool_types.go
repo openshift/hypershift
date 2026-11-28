@@ -241,6 +241,21 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:MaxItems=10
 	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
 
+	// containerRuntimeDefaultEnv specifies environment variables that the container
+	// runtime (CRI-O) injects into every container launched on nodes in this
+	// NodePool. This is implemented as a CRI-O drop-in configuration file
+	// delivered via MachineConfig.
+	//
+	// Use cases include node-level security hooks such as RDMA authorization
+	// plugins (IBV_AUTH_PLUGIN, NIXL_AUTH_PLUGIN) that must be set on all
+	// workload containers.
+	//
+	// Changing this field will trigger a NodePool rollout.
+	// +rollout
+	// +optional
+	// +kubebuilder:validation:MaxItems=20
+	ContainerRuntimeDefaultEnv []corev1.EnvVar `json:"containerRuntimeDefaultEnv,omitempty"`
+
 	// arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
 	// TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 	//	https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215

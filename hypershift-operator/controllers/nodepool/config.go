@@ -258,6 +258,19 @@ func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyper
 	}
 	configs = append(configs, platformConfigs...)
 
+	// Generate CRI-O default_env MachineConfig if containerRuntimeDefaultEnv is set.
+	crioEnvConfig, err := GenerateCRIODefaultEnvMachineConfig(cg.nodePool)
+	if err != nil {
+		return "", "", err
+	}
+	if crioEnvConfig != "" {
+		configs = append(configs, corev1.ConfigMap{
+			Data: map[string]string{
+				TokenSecretConfigKey: crioEnvConfig,
+			},
+		})
+	}
+
 	fullConfig, err := cg.parse(configs)
 	if err != nil {
 		return "", "", err
